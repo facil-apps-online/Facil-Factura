@@ -1,0 +1,15 @@
+C:\Desarrollos\FEL\src\Fel.Infrastructure\bin\Debug\net9.0\Fel.Infrastructure.deps.json
+C:\Desarrollos\FEL\src\Fel.Infrastructure\bin\Debug\net9.0\Fel.Infrastructure.dll
+C:\Desarrollos\FEL\src\Fel.Infrastructure\bin\Debug\net9.0\Fel.Infrastructure.pdb
+C:\Desarrollos\FEL\src\Fel.Infrastructure\bin\Debug\net9.0\Fel.Core.dll
+C:\Desarrollos\FEL\src\Fel.Infrastructure\bin\Debug\net9.0\Fel.Core.pdb
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\Fel.Infrastructure.csproj.AssemblyReference.cache
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\Fel.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\Fel.Infrastructure.AssemblyInfoInputs.cache
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\Fel.Infrastructure.AssemblyInfo.cs
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\Fel.Infrastructure.csproj.CoreCompileInputs.cache
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\Fel.Infr.FF6AF38E.Up2Date
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\Fel.Infrastructure.dll
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\refint\Fel.Infrastructure.dll
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\Fel.Infrastructure.pdb
+C:\Desarrollos\FEL\src\Fel.Infrastructure\obj\Debug\net9.0\ref\Fel.Infrastructure.dll

@@ -4,17 +4,18 @@ ARG PROJECT=Fel.Api.Tenant
 
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
+ARG PROJECT=Fel.Api.Tenant
 
 # Copy solution and project files for restore
 COPY src/Fel.sln .
-COPY src/Fel.Core/Fel.Core.csproj src/Fel.Core/
-COPY src/Fel.Infrastructure/Fel.Infrastructure.csproj src/Fel.Infrastructure/
-COPY src/Fel.Api.Tenant/Fel.Api.Tenant.csproj src/Fel.Api.Tenant/
-COPY src/Fel.Api.Integration/Fel.Api.Integration.csproj src/Fel.Api.Integration/
-COPY src/Fel.Api.Superadmin/Fel.Api.Superadmin.csproj src/Fel.Api.Superadmin/
-COPY src/Fel.Api.Client/Fel.Api.Client.csproj src/Fel.Api.Client/
-COPY src/Fel.Worker/Fel.Worker.csproj src/Fel.Worker/
-RUN dotnet restore src/Fel.sln
+COPY src/Fel.Core/Fel.Core.csproj Fel.Core/
+COPY src/Fel.Infrastructure/Fel.Infrastructure.csproj Fel.Infrastructure/
+COPY src/Fel.Api.Tenant/Fel.Api.Tenant.csproj Fel.Api.Tenant/
+COPY src/Fel.Api.Integration/Fel.Api.Integration.csproj Fel.Api.Integration/
+COPY src/Fel.Api.Superadmin/Fel.Api.Superadmin.csproj Fel.Api.Superadmin/
+COPY src/Fel.Api.Client/Fel.Api.Client.csproj Fel.Api.Client/
+COPY src/Fel.Worker/Fel.Worker.csproj Fel.Worker/
+RUN dotnet restore Fel.sln
 
 # Copy all source and publish the target project
 COPY src/ src/

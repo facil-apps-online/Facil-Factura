@@ -1,4 +1,4 @@
-services:
+﻿services:
   # ---------- Infra ----------
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -50,6 +50,7 @@ services:
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
       - ConnectionStrings__RedisConnection=redis:6379
       - Security__MasterKey=${FEL_MASTER_KEY}
+      - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
     volumes:
       - fel_certs:/app/secure-storage
@@ -74,6 +75,7 @@ services:
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
       - ConnectionStrings__RedisConnection=redis:6379
       - Security__MasterKey=${FEL_MASTER_KEY}
+      - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
     volumes:
       - fel_certs:/app/secure-storage
@@ -98,6 +100,7 @@ services:
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
       - ConnectionStrings__RedisConnection=redis:6379
       - Security__MasterKey=${FEL_MASTER_KEY}
+      - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
     volumes:
       - fel_certs:/app/secure-storage
@@ -122,6 +125,7 @@ services:
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
       - ConnectionStrings__RedisConnection=redis:6379
       - Security__MasterKey=${FEL_MASTER_KEY}
+      - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
     volumes:
       - fel_certs:/app/secure-storage
@@ -146,6 +150,7 @@ services:
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
       - ConnectionStrings__RedisConnection=redis:6379
       - Security__MasterKey=${FEL_MASTER_KEY}
+      - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
     volumes:
       - fel_certs:/app/secure-storage
@@ -226,3 +231,4 @@ volumes:
   certbot_www:
   certbot_conf:
   certbot_lib:
+

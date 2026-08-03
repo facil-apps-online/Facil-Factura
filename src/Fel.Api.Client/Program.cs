@@ -1,10 +1,8 @@
-using Fel.Infrastructure.Data;
+﻿using Fel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using DevExpress.AspNetCore;
-using DevExpress.AspNetCore.Reporting;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Fel.Api.Validations;
@@ -31,16 +29,16 @@ builder.Services.AddSwaggerGen(c =>
     { 
         Title = "Facil-Factura.pro API (B2B)", 
         Version = "v1",
-        Description = "API de Integración para emisión de Documentos Electrónicos (DIAN)."
+        Description = "API de IntegraciÃ³n para emisiÃ³n de Documentos ElectrÃ³nicos (DIAN)."
     });
 
-    // Configurar Swagger para que pida el API Key en la interfaz gráfica
+    // Configurar Swagger para que pida el API Key en la interfaz grÃ¡fica
     c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
     {
         In = ParameterLocation.Header,
         Name = "x-api-key",
         Type = SecuritySchemeType.ApiKey,
-        Description = "Ingresa tu API Key. (Adicionalmente, se requerirá x-api-timestamp y x-api-signature en código real)"
+        Description = "Ingresa tu API Key. (Adicionalmente, se requerirÃ¡ x-api-timestamp y x-api-signature en cÃ³digo real)"
     });
 
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -64,7 +62,7 @@ builder.Services.AddRateLimiter(options =>
         var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 100, // Max 100 request (Ajustado según solicitud)
+            PermitLimit = 100, // Max 100 request (Ajustado segÃºn solicitud)
             Window = TimeSpan.FromSeconds(1), // Por 1 segundo
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             QueueLimit = 10
@@ -84,7 +82,6 @@ builder.Services.AddCors(options =>
         });
 });
 
-builder.Services.AddDevExpressControls();
 // Repositories and Services
 builder.Services.AddScoped<Fel.Core.Interfaces.ICryptoVault, Fel.Infrastructure.Security.CryptoVault>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IUblGenerator, Fel.Infrastructure.Ubl.UblGenerator>();
@@ -92,14 +89,6 @@ builder.Services.AddScoped<Fel.Core.Interfaces.IXmlSigner, Fel.Infrastructure.Se
 builder.Services.AddSingleton<Fel.Core.Interfaces.IMessageQueue, Fel.Infrastructure.Messaging.RedisMessageQueue>();
 // WCF SOAP Client
 builder.Services.AddScoped<Fel.Core.Interfaces.IDianSoapClient, Fel.Infrastructure.Dian.DianSoapClient>();
-builder.Services.ConfigureReportingServices(configurator => {
-    configurator.ConfigureReportDesigner(designerConfigurator => {
-        designerConfigurator.RegisterDataSourceWizardConfigFileConnectionStringsProvider();
-    });
-    configurator.ConfigureWebDocumentViewer(viewerConfigurator => {
-        viewerConfigurator.UseCachedReportSourceBuilder();
-    });
-});
 
 builder.Services.AddDbContext<FelDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
@@ -144,9 +133,8 @@ app.UseRateLimiter();
 // 2. Activar el interceptor de Seguridad HMAC (Firmas de payload)
 app.UseMiddleware<HmacAuthenticationMiddleware>();
 
-app.UseDevExpressControls();
-
 app.MapGet("/", () => "FEL API is running.");
 app.MapControllers();
 
 app.Run();
+

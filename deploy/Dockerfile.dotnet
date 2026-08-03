@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+# Multi-stage parametrizable: ARG PROJECT = Fel.Api.Tenant | Fel.Api.Integration | Fel.Api.Superadmin | Fel.Api.Client | Fel.Worker
+ARG PROJECT=Fel.Api.Tenant
+
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Copy solution and project files for restore
+COPY src/Fel.sln .
+COPY src/Fel.Core/Fel.Core.csproj src/Fel.Core/
+COPY src/Fel.Infrastructure/Fel.Infrastructure.csproj src/Fel.Infrastructure/
+COPY src/Fel.Api.Tenant/Fel.Api.Tenant.csproj src/Fel.Api.Tenant/
+COPY src/Fel.Api.Integration/Fel.Api.Integration.csproj src/Fel.Api.Integration/
+COPY src/Fel.Api.Superadmin/Fel.Api.Superadmin.csproj src/Fel.Api.Superadmin/
+COPY src/Fel.Api.Client/Fel.Api.Client.csproj src/Fel.Api.Client/
+COPY src/Fel.Worker/Fel.Worker.csproj src/Fel.Worker/
+RUN dotnet restore src/Fel.sln
+
+# Copy all source and publish the target project
+COPY src/ src/
+RUN dotnet publish "src/${PROJECT}/${PROJECT}.csproj" -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+WORKDIR /app
+
+# Install curl for healthchecks
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# SkiaSharp native libs for DevExpress rendering on Linux
+ENV SKIA_LIBRARY_PATH=/usr/lib/libSkiaSharp.so
+
+COPY --from=build /app/publish .
+
+ARG PROJECT=Fel.Api.Tenant
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV PROJECT_NAME=${PROJECT}.dll
+
+ENTRYPOINT ["sh", "-c", "dotnet /app/$PROJECT_NAME"]

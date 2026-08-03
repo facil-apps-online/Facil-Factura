@@ -1,0 +1,228 @@
+services:
+  # ---------- Infra ----------
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: fel-sqlserver
+    restart: unless-stopped
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
+      - MSSQL_PID=Developer
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: fel-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- APIs .NET ----------
+  fel-api-tenant:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet
+      args:
+        PROJECT: Fel.Api.Tenant
+    container_name: fel-api-tenant
+    restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5103
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
+      - ConnectionStrings__RedisConnection=redis:6379
+      - Security__MasterKey=${FEL_MASTER_KEY}
+      - CertificateStoragePath=/app/secure-storage
+    volumes:
+      - fel_certs:/app/secure-storage
+      - fel_templates:/app/templates
+
+  fel-api-integration:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet
+      args:
+        PROJECT: Fel.Api.Integration
+    container_name: fel-api-integration
+    restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5104
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
+      - ConnectionStrings__RedisConnection=redis:6379
+      - Security__MasterKey=${FEL_MASTER_KEY}
+      - CertificateStoragePath=/app/secure-storage
+    volumes:
+      - fel_certs:/app/secure-storage
+      - fel_templates:/app/templates
+
+  fel-api-superadmin:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet
+      args:
+        PROJECT: Fel.Api.Superadmin
+    container_name: fel-api-superadmin
+    restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5105
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
+      - ConnectionStrings__RedisConnection=redis:6379
+      - Security__MasterKey=${FEL_MASTER_KEY}
+      - CertificateStoragePath=/app/secure-storage
+    volumes:
+      - fel_certs:/app/secure-storage
+      - fel_templates:/app/templates
+
+  fel-api-client:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet
+      args:
+        PROJECT: Fel.Api.Client
+    container_name: fel-api-client
+    restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5106
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
+      - ConnectionStrings__RedisConnection=redis:6379
+      - Security__MasterKey=${FEL_MASTER_KEY}
+      - CertificateStoragePath=/app/secure-storage
+    volumes:
+      - fel_certs:/app/secure-storage
+      - fel_templates:/app/templates
+
+  # ---------- Worker ----------
+  fel-worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet
+      args:
+        PROJECT: Fel.Worker
+    container_name: fel-worker
+    restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
+      - ConnectionStrings__RedisConnection=redis:6379
+      - Security__MasterKey=${FEL_MASTER_KEY}
+      - CertificateStoragePath=/app/secure-storage
+    volumes:
+      - fel_certs:/app/secure-storage
+      - fel_templates:/app/templates
+
+  # ---------- Frontends ----------
+  tenant-web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        APP: tenant-web
+        VITE_API_URL: https://api.facil-factura.pro/api
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
+    container_name: fel-tenant-web
+    restart: unless-stopped
+
+  superadmin-web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        APP: superadmin-web
+        VITE_API_URL: https://api.facil-factura.pro/api/superadmin
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
+    container_name: fel-superadmin-web
+    restart: unless-stopped
+
+  client-web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        APP: client-web
+        VITE_API_URL: https://api.facil-factura.pro/api
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
+    container_name: fel-client-web
+    restart: unless-stopped
+
+  # ---------- Reverse proxy ----------
+  nginx:
+    image: nginx:alpine
+    container_name: fel-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/sites:/etc/nginx/conf.d:ro
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+      - certbot_lib:/var/lib/letsencrypt
+    depends_on:
+      - fel-api-tenant
+      - fel-api-integration
+      - fel-api-superadmin
+      - fel-api-client
+      - tenant-web
+      - superadmin-web
+      - client-web
+
+  certbot:
+    image: certbot/certbot
+    container_name: fel-certbot
+    restart: unless-stopped
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+      - certbot_lib:/var/lib/letsencrypt
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+
+volumes:
+  mssql_data:
+  redis_data:
+  fel_certs:
+  fel_templates:
+  certbot_www:
+  certbot_conf:
+  certbot_lib:

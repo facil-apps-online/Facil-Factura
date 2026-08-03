@@ -169,6 +169,13 @@ app.UseDevExpressControls();
 app.MapGet("/", () => "FEL API is running.");
 app.MapControllers();
 
+// Aplicar migraciones pendientes al arrancar
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<FelDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 // Call seeder for RIPS
 await RipsDataSeeder.SeedRipsDataAsync(app.Services);
 

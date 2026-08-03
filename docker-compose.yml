@@ -157,6 +157,15 @@
       - fel_templates:/app/templates
 
   # ---------- Frontends ----------
+  landing-web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        APP: landing-web
+    container_name: fel-landing-web
+    restart: unless-stopped
+
   tenant-web:
     build:
       context: .
@@ -209,6 +218,7 @@
       - fel-api-integration
       - fel-api-superadmin
       - fel-api-client
+      - landing-web
       - tenant-web
       - superadmin-web
       - client-web

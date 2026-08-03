@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: 14 165 233;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+@layer utilities {
+  .bg-primary {
+    background-color: rgb(var(--color-primary));
+  }
+  .bg-primary-hover:hover {
+    background-color: rgb(var(--color-primary) / 0.9);
+  }
+  .text-primary {
+    color: rgb(var(--color-primary));
+  }
+  .border-primary {
+    border-color: rgb(var(--color-primary));
+  }
+  .shadow-primary {
+    box-shadow: 0 4px 14px 0 rgb(var(--color-primary) / 0.39);
+  }
+}

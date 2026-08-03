@@ -69,13 +69,14 @@ if ($SkipBuild) {
 # 5. Verify endpoints
 Write-Host "[5/5] Verifying endpoints..."
 Start-Sleep 10
-foreach ($sub in @("api", "tenants", "clients", "admin")) {
+foreach ($sub in @("facil-factura.pro", "api", "tenants", "clients", "admin")) {
+    $hostname = if ($sub -eq "facil-factura.pro") { "facil-factura.pro" } else { "$sub.facil-factura.pro" }
     try {
-        $r = Invoke-WebRequest -Uri "https://$sub.facil-factura.pro" -UseBasicParsing -TimeoutSec 20
-        Write-Host "  https://$sub.facil-factura.pro -> HTTP $($r.StatusCode)"
+        $r = Invoke-WebRequest -Uri "https://$hostname" -UseBasicParsing -TimeoutSec 20
+        Write-Host "  https://$hostname -> HTTP $($r.StatusCode)"
     } catch {
         $code = $_.Exception.Response.StatusCode.value__
-        Write-Host "  https://$sub.facil-factura.pro -> HTTP $code"
+        Write-Host "  https://$hostname -> HTTP $code"
     }
 }
 
@@ -87,6 +88,7 @@ Write-Host "  Deploy Complete!"
 Write-Host "=========================================="
 Write-Host ""
 Write-Host "Apps:"
+Write-Host "  Landing:    https://facil-factura.pro"
 Write-Host "  Tenants:    https://tenants.facil-factura.pro"
 Write-Host "  Clients:    https://clients.facil-factura.pro"
 Write-Host "  Admin:      https://admin.facil-factura.pro"

@@ -69,12 +69,12 @@ const features = [
   {
     icon: <Zap size={22} />,
     title: 'Emisión instantánea',
-    desc: 'Genera facturas electrónicas FEL al instante, con validación automática ante la SAT y respuesta en segundos.',
+    desc: 'Genera facturas electrónicas al instante, con validación automática ante la DIAN y respuesta en segundos.',
   },
   {
     icon: <ShieldCheck size={22} />,
-    title: 'Cumplimiento FEL',
-    desc: 'Totalmente alineado con la Facturación en Línea de la SAT: CFE, FEL y todos los tipos de documento exigidos.',
+    title: 'Cumplimiento DIAN',
+    desc: 'Totalmente alineado con la Facturación Electrónica de la DIAN: factura de venta, nota crédito, débito y más.',
   },
   {
     icon: <BarChart3 size={22} />,
@@ -102,12 +102,12 @@ const steps = [
   {
     step: '1',
     title: 'Crea tu cuenta',
-    desc: 'Regístrate en minutos y configura los datos de tu empresa (NIT, razón social y resolución SAT).',
+    desc: 'Regístrate en minutos y configura los datos de tu empresa (NIT, razón social y resolución DIAN).',
   },
   {
     step: '2',
     title: 'Configura tu certificado',
-    desc: 'Carga tu certificado digital y resolución de la SAT una sola vez. Nosotros gestionamos el resto.',
+    desc: 'Carga tu certificado digital y resolución de la DIAN una sola vez. Nosotros gestionamos el resto.',
   },
   {
     step: '3',
@@ -119,15 +119,15 @@ const steps = [
 const plans = [
   {
     name: 'Básico',
-    price: 'Q199',
+    price: '$39.900',
     period: '/mes',
     desc: 'Para emprendedores que emiten poco volumen.',
-    features: ['Hasta 50 facturas/mes', '1 empresa', 'Factura FEL y CFE', 'Soporte por correo'],
+    features: ['Hasta 50 facturas/mes', '1 empresa', 'Factura de venta', 'Soporte por correo'],
     highlight: false,
   },
   {
     name: 'Profesional',
-    price: 'Q499',
+    price: '$99.900',
     period: '/mes',
     desc: 'Para negocios en crecimiento.',
     features: ['Facturas ilimitadas', 'Hasta 3 empresas', 'Notas crédito y débito', 'Reportes avanzados', 'Soporte prioritario'],
@@ -135,7 +135,7 @@ const plans = [
   },
   {
     name: 'Empresarial',
-    price: 'Q999',
+    price: '$199.900',
     period: '/mes',
     desc: 'Para contadores y empresas grandes.',
     features: ['Facturas ilimitadas', 'Empresas ilimitadas', 'API para integraciones', 'Soporte dedicado', 'Múltiples usuarios'],
@@ -153,14 +153,14 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-semibold mb-6">
             <ShieldCheck size={14} />
-            Autorizado SAT · Facturación Electrónica en Línea (FEL)
+            Autorizado DIAN · Facturación Electrónica en Colombia
           </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-tight">
             Facturación electrónica{' '}
             <span className="text-primary">sin complicaciones</span>
           </h1>
           <p className="mt-6 max-w-2xl mx-auto text-lg text-slate-600">
-            Emite facturas FEL validadas por la SAT en segundos, desde cualquier dispositivo.
+            Emite facturas electrónicas validadas por la DIAN en segundos, desde cualquier dispositivo.
             Facil Factura hace que facturar sea tan fácil como enviar un mensaje.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -189,7 +189,7 @@ function App() {
               Todo lo que necesitas para facturar
             </h2>
             <p className="mt-4 text-slate-600">
-              Una plataforma completa para emitir, validar y gestionar tus documentos electrónicos ante la SAT.
+              Una plataforma completa para emitir, validar y gestionar tus documentos electrónicos ante la DIAN.
             </p>
           </div>
           <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -303,7 +303,7 @@ function App() {
           <div>
             <h3 className="font-semibold text-slate-900">Facil Factura</h3>
             <p className="mt-2 text-sm text-slate-600">
-              Plataforma de facturación electrónica FEL para Guatemala.
+              Plataforma de facturación electrónica DIAN para Colombia.
             </p>
           </div>
           <div>

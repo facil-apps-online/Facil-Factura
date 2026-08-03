@@ -6,6 +6,7 @@ import { api } from './api';
 
 import { TenantEdit } from './TenantEdit';
 import { DocumentTypes } from './DocumentTypes';
+import { DocumentTemplates } from './DocumentTemplates';
 import { Billing } from './Billing';
 
 // --- Types ---
@@ -384,6 +385,7 @@ const App = () => {
                   <Route path="/tenants" element={<TenantsList />} />
                   <Route path="/tenants/edit/:id" element={<TenantEdit />} />
                   <Route path="/document-types" element={<DocumentTypes />} />
+                  <Route path="/document-types/:typeId/templates" element={<DocumentTemplates />} />
                   <Route path="/billing" element={<Billing />} />
                   <Route path="/settings" element={<div className="p-10"><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Configuración del Motor</h1></div>} />
                 </Routes>

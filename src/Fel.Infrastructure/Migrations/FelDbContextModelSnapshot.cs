@@ -17,7 +17,7 @@ namespace Fel.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.17")
+                .HasAnnotation("ProductVersion", "9.0.18")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -81,6 +81,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("DianHabilitationMessage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("DianHabilitationProgress")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DianHabilitationStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("EconomicActivity")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -111,6 +122,9 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<decimal>("PricePerDocument")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<string>("SoftwareId")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -140,6 +154,10 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("TestSetId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("VerificationDigit")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -155,6 +173,35 @@ namespace Fel.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Clients", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientDocumentSetting", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("DocumentTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SelectedTemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("DocumentTypeId");
+
+                    b.HasIndex("SelectedTemplateId");
+
+                    b.ToTable("ClientDocumentSettings", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.ClientUser", b =>
@@ -191,6 +238,75 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("ClientUsers");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.Customer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CityCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CityName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FiscalResponsibilities")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IdentificationNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("IdentificationType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TaxRegime")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("VerificationDigit")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "IdentificationNumber")
+                        .IsUnique();
+
+                    b.ToTable("Customers", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Document", b =>
                 {
                     b.Property<Guid>("Id")
@@ -206,6 +322,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("Cufe")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("CustomerId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("DianResponseCode")
                         .HasColumnType("nvarchar(max)");
 
@@ -214,6 +333,10 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<Guid?>("DocumentTypeId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Number")
                         .IsRequired()
@@ -229,10 +352,30 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<DateTime?>("ProcessedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ReferenceConcept")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ReferenceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SectorExtensionData")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,4)");
 
                     b.Property<string>("TrackingId")
                         .IsRequired()
@@ -243,6 +386,9 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("UsedTemplateId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("XmlUrl")
                         .HasColumnType("nvarchar(max)");
 
@@ -250,9 +396,123 @@ namespace Fel.Infrastructure.Migrations
 
                     b.HasIndex("ClientId");
 
+                    b.HasIndex("CustomerId");
+
                     b.HasIndex("DocumentTypeId");
 
+                    b.HasIndex("ReferenceDocumentId");
+
+                    b.HasIndex("UsedTemplateId");
+
                     b.ToTable("Documents", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<Guid?>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("SectorExtensionData")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("DocumentItems", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClonedFromId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DocumentTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid?>("PreviousVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RepxTemplateKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("ClonedFromId");
+
+                    b.HasIndex("DocumentTypeId");
+
+                    b.HasIndex("PreviousVersionId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("DocumentTemplates", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentType", b =>
@@ -585,6 +845,53 @@ namespace Fel.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.Product", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("StandardCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("UnitOfMeasure")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("Products", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Resolution", b =>
                 {
                     b.Property<Guid>("Id")
@@ -632,6 +939,63 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("Resolutions", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.RipsCie10Rule", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("AllowedGender")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("MaxAgeYears")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinAgeYears")
+                        .HasColumnType("int");
+
+                    b.HasKey("Code");
+
+                    b.ToTable("RipsCie10Rules");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.RipsCupsRule", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("AllowedGender")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<int>("MaxAgeDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinAgeDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("RequiresDiagnosis")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Code");
+
+                    b.ToTable("RipsCupsRules");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.SuperadminUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -656,6 +1020,79 @@ namespace Fel.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("SuperadminUsers", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TariffTier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("MaxDocuments")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinDocuments")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("PricePerDocument")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TariffTiers", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            IsActive = true,
+                            MaxDocuments = 2000,
+                            MinDocuments = 1,
+                            Name = "Nivel 1",
+                            PricePerDocument = 70m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000002"),
+                            IsActive = true,
+                            MaxDocuments = 5000,
+                            MinDocuments = 2001,
+                            Name = "Nivel 2",
+                            PricePerDocument = 50m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000003"),
+                            IsActive = true,
+                            MaxDocuments = 10000,
+                            MinDocuments = 5001,
+                            Name = "Nivel 3",
+                            PricePerDocument = 40m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000004"),
+                            IsActive = true,
+                            MaxDocuments = 100000,
+                            MinDocuments = 10001,
+                            Name = "Nivel 4",
+                            PricePerDocument = 30m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000005"),
+                            IsActive = true,
+                            MinDocuments = 100001,
+                            Name = "Nivel 5",
+                            PricePerDocument = 20m
+                        });
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Tenant", b =>
@@ -879,12 +1316,49 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.ClientDocumentSetting", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.DocumentType", "DocumentType")
+                        .WithMany()
+                        .HasForeignKey("DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.DocumentTemplate", "SelectedTemplate")
+                        .WithMany()
+                        .HasForeignKey("SelectedTemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("DocumentType");
+
+                    b.Navigation("SelectedTemplate");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.ClientUser", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Client", "Client")
                         .WithMany("Users")
                         .HasForeignKey("ClientId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Customer", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany("Customers")
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Client");
@@ -898,14 +1372,102 @@ namespace Fel.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Fel.Core.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Fel.Core.Entities.DocumentType", "DocumentType")
                         .WithMany("Documents")
                         .HasForeignKey("DocumentTypeId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("Fel.Core.Entities.Document", "ReferenceDocument")
+                        .WithMany()
+                        .HasForeignKey("ReferenceDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.DocumentTemplate", "UsedTemplate")
+                        .WithMany()
+                        .HasForeignKey("UsedTemplateId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Client");
 
+                    b.Navigation("Customer");
+
                     b.Navigation("DocumentType");
+
+                    b.Navigation("ReferenceDocument");
+
+                    b.Navigation("UsedTemplate");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Document", "Document")
+                        .WithMany("Items")
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Document");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentTemplate", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.DocumentTemplate", "ClonedFrom")
+                        .WithMany()
+                        .HasForeignKey("ClonedFromId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.DocumentType", "DocumentType")
+                        .WithMany()
+                        .HasForeignKey("DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.DocumentTemplate", "PreviousVersion")
+                        .WithMany()
+                        .HasForeignKey("PreviousVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Client");
+
+                    b.Navigation("ClonedFrom");
+
+                    b.Navigation("DocumentType");
+
+                    b.Navigation("PreviousVersion");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Product", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany("Products")
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Resolution", b =>
@@ -964,11 +1526,20 @@ namespace Fel.Infrastructure.Migrations
                 {
                     b.Navigation("Certificates");
 
+                    b.Navigation("Customers");
+
                     b.Navigation("Documents");
+
+                    b.Navigation("Products");
 
                     b.Navigation("Resolutions");
 
                     b.Navigation("Users");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Document", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentType", b =>

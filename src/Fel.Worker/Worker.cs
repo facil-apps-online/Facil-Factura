@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Fel.Core.Interfaces;
 using Fel.Core.Models;
+using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -72,6 +73,31 @@ namespace Fel.Worker
                             _logger.LogError("No hay certificado activo para el cliente con TaxId: {TaxId}", issuerTaxId);
                             continue; // No podemos firmar, skip a la siguiente
                         }
+
+                        // 2.1 REGISTRO DE TRANSACCIÓN E INMUTABILIDAD DE PLANTILLA
+                        var docType = await dbContext.DocumentTypes
+                            .FirstOrDefaultAsync(d => d.DianCode == invoiceData.DianCode && (invoiceData.OperationType == null || d.OperationType == invoiceData.OperationType));
+
+                        var setting = docType != null 
+                            ? await dbContext.ClientDocumentSettings.FirstOrDefaultAsync(s => s.ClientId == certificateInfo.ClientId && s.DocumentTypeId == docType.Id)
+                            : null;
+
+                        var newDoc = new Document
+                        {
+                            Id = Guid.NewGuid(),
+                            ClientId = certificateInfo.ClientId,
+                            TrackingId = $"{invoiceData.Prefix}{invoiceData.DocumentNumber}",
+                            TypeCode = docType?.Code ?? "UNKNOWN",
+                            Number = invoiceData.DocumentNumber,
+                            Status = "PROCESSING",
+                            DocumentTypeId = docType?.Id,
+                            PriceCharged = 0, // Se liquida después
+                            CreatedAt = DateTime.UtcNow,
+                            UsedTemplateId = setting?.SelectedTemplateId
+                        };
+                        
+                        dbContext.Documents.Add(newDoc);
+                        await dbContext.SaveChangesAsync();
                         
                         string mockPath = certificateInfo.FileName; // Archivo real guardado
                         string mockPasswordEncrypted = certificateInfo.EncryptedPassword; // Contraseña en BD
@@ -99,10 +125,20 @@ namespace Fel.Worker
                             var cert = cryptoVault.GetCertificate(mockPath, mockPasswordEncrypted);
                             string dianResponse = await dianClient.SendBillAsync($"FE{invoiceData.DocumentNumber}.xml", base64Xml, cert);
                             _logger.LogInformation("Respuesta DIAN: {Response}", dianResponse);
+
+                            newDoc.Status = "APPROVED";
+                            newDoc.DianResponseMessage = "Success"; // En prod, extraer de dianResponse
+                            newDoc.ProcessedAt = DateTime.UtcNow;
+                            await dbContext.SaveChangesAsync();
                         }
                         catch(Exception ex)
                         {
                             _logger.LogWarning("Modo Simulación: El endpoint de la DIAN rechazó el envío (o falta el certificado válido). Error: {Message}", ex.Message);
+                            
+                            newDoc.Status = "REJECTED";
+                            newDoc.DianResponseMessage = ex.Message;
+                            newDoc.ProcessedAt = DateTime.UtcNow;
+                            await dbContext.SaveChangesAsync();
                         }
                     }
                 }

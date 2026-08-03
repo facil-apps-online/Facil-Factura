@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
-import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, MapPin, Plus, Trash2, X, Copy } from 'lucide-react';
+import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, MapPin, Plus, Trash2, X, Copy, Zap } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
 
@@ -16,6 +16,7 @@ export default function ClientEdit() {
   const [activeTab, setActiveTab] = useState('info');
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [showResModal, setShowResModal] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
   const [newRes, setNewRes] = useState({
     resolutionNumber: '',
     prefix: '',
@@ -30,6 +31,11 @@ export default function ClientEdit() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPassword, setCertPassword] = useState('');
   const [uploadingCert, setUploadingCert] = useState(false);
+  const [habilitationStatus, setHabilitationStatus] = useState<any>(null);
+  const [magicLink, setMagicLink] = useState('');
+  const [softwareId, setSoftwareId] = useState('');
+  const [softwarePin, setSoftwarePin] = useState('');
+  const [isHabilitating, setIsHabilitating] = useState(false);
   const [client, setClient] = useState({
     companyName: '',
     commercialName: '',
@@ -76,10 +82,27 @@ export default function ClientEdit() {
       .catch(() => setCertInfo(null));
   };
 
+  const loadHabilitationStatus = () => {
+    api.get(`/tenant/clients/${id}/dian/habilitation-status`)
+      .then(res => setHabilitationStatus(res.data))
+      .catch(() => setHabilitationStatus(null));
+  };
+
   useEffect(() => {
     if (activeTab === 'resolutions') loadResolutions();
     if (activeTab === 'certificate') loadCertificate();
+    if (activeTab === 'dian') loadHabilitationStatus();
   }, [activeTab]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (habilitationStatus?.status === 'Testing') {
+      interval = setInterval(() => {
+        loadHabilitationStatus();
+      }, 4000);
+    }
+    return () => clearInterval(interval);
+  }, [habilitationStatus?.status]);
 
   const autocompleteRef = React.useRef<google.maps.places.Autocomplete | null>(null);
 
@@ -176,6 +199,38 @@ export default function ClientEdit() {
     }
   };
 
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingPdf(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await api.post(`/tenant/clients/${id}/resolutions/parse`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      
+      const parsed = res.data;
+      setNewRes(prev => ({
+        ...prev,
+        resolutionNumber: parsed.resolutionNumber || prev.resolutionNumber,
+        prefix: parsed.prefix || prev.prefix,
+        numberStart: parsed.numberStart || prev.numberStart,
+        numberEnd: parsed.numberEnd || prev.numberEnd,
+        validFrom: parsed.validFrom ? parsed.validFrom.split('T')[0] : prev.validFrom,
+        validTo: parsed.validTo ? parsed.validTo.split('T')[0] : prev.validTo
+      }));
+      toast.success("PDF procesado. Verifica los datos extraídos.");
+    } catch (err: any) {
+      toast.error(err.response?.data || "Error al procesar el PDF");
+    } finally {
+      setUploadingPdf(false);
+      e.target.value = '';
+    }
+  };
+
   const handleDeleteResolution = async (resId: string) => {
     if (!confirm("¿Eliminar esta resolución?")) return;
     try {
@@ -211,6 +266,25 @@ export default function ClientEdit() {
       toast.error(err.response?.data || "Error al cargar el certificado");
     } finally {
       setUploadingCert(false);
+    }
+  };
+
+  const handleStartHabilitation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!magicLink) return;
+
+    setIsHabilitating(true);
+    try {
+      await api.post(`/tenant/clients/${id}/dian/start-habilitation`, { magicLink, softwareId, softwarePin });
+      toast.success("¡Habilitación configurada y en progreso!");
+      setMagicLink('');
+      setSoftwareId('');
+      setSoftwarePin('');
+      loadHabilitationStatus();
+    } catch (err: any) {
+      toast.error(err.response?.data || "Error al iniciar habilitación");
+    } finally {
+      setIsHabilitating(false);
     }
   };
 
@@ -265,6 +339,14 @@ export default function ClientEdit() {
             }`}
           >
             <FileSignature size={18} /> Resoluciones DIAN
+          </button>
+          <button 
+            onClick={() => setActiveTab('dian')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'dian' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Zap size={18} /> Habilitación DIAN
           </button>
           <button 
             onClick={() => setActiveTab('certificate')}
@@ -609,6 +691,142 @@ export default function ClientEdit() {
                 </div>
               </div>
             )}
+
+            {activeTab === 'dian' && (
+              <div className="relative">
+                {/* Splash Screen Overlay for DIAN Tab */}
+                {(isHabilitating || habilitationStatus?.status === 'Testing' || habilitationStatus?.status === 'Approved') && (
+                  <div className="absolute inset-0 bg-white/90 backdrop-blur-md z-20 flex items-center justify-center p-4 rounded-3xl min-h-[500px]">
+                    <div className="bg-white rounded-3xl p-10 max-w-lg w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300 border border-slate-100">
+                      {habilitationStatus?.status === 'Approved' ? (
+                        <>
+                          <div className="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-inner ring-8 ring-emerald-50">
+                            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                          </div>
+                          <h2 className="text-3xl font-black text-slate-800 mb-2">¡Habilitación Exitosa!</h2>
+                          <p className="text-slate-500 mb-8 text-lg">El cliente ya está sincronizado y listo para emitir facturación electrónica en Producción.</p>
+                          <button onClick={() => {
+                            setHabilitationStatus({ ...habilitationStatus, status: 'Production' });
+                            setClient({...client, isActive: true});
+                          }} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-bold text-lg transition-all shadow-lg hover:shadow-xl hover:-translate-y-1">
+                            Continuar gestionando cliente
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="relative w-28 h-28 mb-8">
+                            <div className="absolute inset-0 bg-blue-500/20 rounded-full animate-ping"></div>
+                            <div className="absolute inset-2 bg-blue-500/20 rounded-full animate-pulse"></div>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+                            </div>
+                          </div>
+                          <h2 className="text-2xl font-bold text-slate-800 mb-3">
+                            {isHabilitating && !habilitationStatus?.progress ? 'Conectando con la DIAN...' : 'Configuración en Progreso'}
+                          </h2>
+                          
+                          {/* Progress Bar Container */}
+                          <div className="w-full mt-6 mb-4">
+                            <div className="flex justify-between items-end mb-2">
+                              <span className="text-sm font-bold text-blue-600">{habilitationStatus?.message || (isHabilitating ? 'Autenticando...' : '')}</span>
+                              <span className="text-sm font-bold text-slate-500">{habilitationStatus?.progress || 0}%</span>
+                            </div>
+                            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-blue-600 transition-all duration-500 ease-out rounded-full"
+                                style={{ width: `${habilitationStatus?.progress || 0}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <p className="text-slate-500 text-sm">
+                            {isHabilitating && !habilitationStatus?.progress 
+                              ? 'Extrayendo el identificador de software del cliente.' 
+                              : 'Automatizando la configuración ante el ente fiscal. Esto puede tomar unos segundos.'}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Panel de Habilitación DIAN Automática */}
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 min-h-[400px]">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                      <Zap size={24} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-800">Habilitación y Set de Pruebas</h2>
+                      <p className="text-sm text-slate-500">Automatiza la habilitación pegando el enlace de acceso enviado por la DIAN al correo del cliente.</p>
+                    </div>
+                  </div>
+
+                  {habilitationStatus?.status === 'Production' ? (
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-6 flex items-center gap-4">
+                      <div className="w-12 h-12 bg-emerald-500 text-white rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-emerald-900 text-lg">Cliente Habilitado en Producción</h3>
+                        <p className="text-emerald-700/80">Este cliente ha completado satisfactoriamente los requisitos técnicos y puede emitir comprobantes con validez legal.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleStartHabilitation} className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <label className="block text-sm font-bold text-slate-700 mb-2">Software ID (MUISCA)</label>
+                          <input 
+                            type="text" 
+                            placeholder="Ej: 7a12b4c9-8f3e-4b... (Opcional)" 
+                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
+                            value={softwareId}
+                            onChange={e => setSoftwareId(e.target.value)}
+                            disabled={isHabilitating}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold text-slate-700 mb-2">PIN del Software</label>
+                          <input 
+                            type="text" 
+                            placeholder="Ej: 12345 (Opcional)" 
+                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
+                            value={softwarePin}
+                            onChange={e => setSoftwarePin(e.target.value)}
+                            disabled={isHabilitating}
+                          />
+                        </div>
+                      </div>
+
+                      <label className="block text-sm font-bold text-slate-700 mb-3">Enlace Mágico de Acceso (Token DIAN)</label>
+                      <div className="flex flex-col gap-4">
+                        <input 
+                          type="url" 
+                          required 
+                          placeholder="https://catalogo-vpfe.dian.gov.co/User/Login?token=..." 
+                          className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                          value={magicLink}
+                          onChange={e => setMagicLink(e.target.value)}
+                          disabled={isHabilitating}
+                        />
+                        <button 
+                          type="submit" 
+                          disabled={isHabilitating || !magicLink}
+                          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-8 py-3 rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2"
+                        >
+                          {isHabilitating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap size={18} />}
+                          {isHabilitating ? 'Conectando...' : 'Guardar e Iniciar Automatización'}
+                        </button>
+                      </div>
+                      <p className="text-sm text-slate-500 mt-4">
+                        Si dejas los campos de Software ID y PIN en blanco, el sistema registrará automáticamente el Software Propio en la DIAN por ti en el futuro. Al hacer clic, extraeremos tu TestSetId e iniciaremos las pruebas.
+                      </p>
+                    </form>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -627,6 +845,21 @@ export default function ClientEdit() {
             </div>
             
             <form onSubmit={handleCreateResolution} className="space-y-4">
+              {/* Botón de carga de PDF */}
+              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-blue-800">Autocompletar con PDF</h4>
+                  <p className="text-xs text-blue-600/70 mt-0.5">Sube el Formulario 1876 de la DIAN para extraer los datos.</p>
+                </div>
+                <div>
+                  <label className="cursor-pointer bg-white text-blue-600 border border-blue-200 hover:border-blue-400 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
+                    {uploadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSignature size={16} />}
+                    {uploadingPdf ? 'Leyendo...' : 'Cargar PDF'}
+                    <input type="file" accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={uploadingPdf} />
+                  </label>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Tipo de Documento</label>

@@ -28,14 +28,22 @@ namespace Fel.Core.Entities
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
 
+        // --- DIAN Habilitation & Software Propio ---
         public string SoftwareId { get; set; } = string.Empty;
         public string SoftwarePin { get; set; } = string.Empty;
+        public string TestSetId { get; set; } = string.Empty;
+        public string DianHabilitationStatus { get; set; } = "Pending"; // Pending, InProgress, Passed, Production
+        public int DianHabilitationProgress { get; set; } = 0;
+        public string DianHabilitationMessage { get; set; } = string.Empty;
         
         // --- API Integration (HMAC) ---
         public string LiveApiKey { get; set; } = Guid.NewGuid().ToString("N");
         public string LiveApiSecret { get; set; } = Guid.NewGuid().ToString("N");
         public string TestApiKey { get; set; } = "test_" + Guid.NewGuid().ToString("N");
         public string TestApiSecret { get; set; } = Guid.NewGuid().ToString("N");
+        
+        // --- Billing ---
+        public decimal PricePerDocument { get; set; } = 0m; // Default price set by Tenant for this Client
         
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
@@ -44,5 +52,7 @@ namespace Fel.Core.Entities
         public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
         public ICollection<Document> Documents { get; set; } = new List<Document>();
         public ICollection<ClientUser> Users { get; set; } = new List<ClientUser>();
+        public ICollection<Customer> Customers { get; set; } = new List<Customer>();
+        public ICollection<Product> Products { get; set; } = new List<Product>();
     }
 }

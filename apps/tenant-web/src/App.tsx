@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { Home, Users, FileKey, FileSignature, LogOut, Settings, Palette } from 'lucide-react';
+import { Home, Users, FileKey, FileSignature, LogOut, Settings, Palette, FileText } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from './lib/api';
 import { Toaster } from 'sonner';
@@ -11,6 +11,7 @@ import Certificates from './pages/Certificates';
 import Resolutions from './pages/Resolutions';
 import Branding from './pages/Branding';
 import Login from './pages/Login';
+import DocumentTemplates from './pages/DocumentTemplates';
 
 function Sidebar() {
   const location = useLocation();
@@ -19,6 +20,7 @@ function Sidebar() {
     { to: "/", icon: <Home size={20} />, label: "Dashboard" },
     { to: "/clients", icon: <Users size={20} />, label: "Clientes" },
     { to: "/branding", icon: <Palette size={20} />, label: "Apariencia (Branding)" },
+    { to: "/templates", icon: <FileText size={20} />, label: "Modelos de Documentos" },
   ];
 
   const selfBillingLinks = [
@@ -165,6 +167,7 @@ function App() {
                   <Route path="/certificates" element={<Certificates />} />
                   <Route path="/resolutions" element={<Resolutions />} />
                   <Route path="/branding" element={<Branding tenant={null} setTenant={() => {}} />} />
+                  <Route path="/templates" element={<DocumentTemplates />} />
                 </Routes>
               </ProtectedLayout>
             ) : (

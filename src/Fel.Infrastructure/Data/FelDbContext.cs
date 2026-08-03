@@ -18,6 +18,17 @@ namespace Fel.Infrastructure.Data
         public DbSet<ClientUser> ClientUsers { get; set; }
         public DbSet<TenantBilling> TenantBillings => Set<TenantBilling>();
         public DbSet<SuperadminUser> SuperadminUsers => Set<SuperadminUser>();
+        public DbSet<DocumentTemplate> DocumentTemplates => Set<DocumentTemplate>();
+        public DbSet<ClientDocumentSetting> ClientDocumentSettings => Set<ClientDocumentSetting>();
+        public DbSet<Customer> Customers => Set<Customer>();
+        public DbSet<Product> Products => Set<Product>();
+        public DbSet<DocumentItem> DocumentItems { get; set; }
+
+        // RIPS Clinical Validation Rules
+        public DbSet<RipsCupsRule> RipsCupsRules { get; set; }
+        public DbSet<RipsCie10Rule> RipsCie10Rules { get; set; }
+
+        public DbSet<TariffTier> TariffTiers { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -90,6 +101,50 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.Number).HasMaxLength(50);
                 entity.Property(e => e.Status).HasMaxLength(50);
                 entity.Property(e => e.PriceCharged).HasColumnType("decimal(18,2)");
+                
+                entity.HasOne(e => e.UsedTemplate)
+                      .WithMany()
+                      .HasForeignKey(e => e.UsedTemplateId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Customer)
+                      .WithMany()
+                      .HasForeignKey(e => e.CustomerId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.ReferenceDocument)
+                      .WithMany()
+                      .HasForeignKey(e => e.ReferenceDocumentId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.Property(e => e.Subtotal).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.TaxAmount).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.TotalAmount).HasColumnType("decimal(18,4)");
+            });
+
+            modelBuilder.Entity<DocumentItem>(entity =>
+            {
+                entity.ToTable("DocumentItems");
+                entity.HasKey(e => e.Id);
+                
+                entity.Property(e => e.Code).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(250);
+                
+                entity.Property(e => e.Quantity).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.TaxRate).HasColumnType("decimal(5,2)");
+                entity.Property(e => e.TaxAmount).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.TotalAmount).HasColumnType("decimal(18,4)");
+
+                entity.HasOne(e => e.Document)
+                      .WithMany(d => d.Items)
+                      .HasForeignKey(e => e.DocumentId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Product)
+                      .WithMany()
+                      .HasForeignKey(e => e.ProductId)
+                      .OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<DocumentType>(entity =>
@@ -182,6 +237,108 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.Email).IsRequired().HasMaxLength(150);
                 entity.HasIndex(e => e.Email).IsUnique();
                 entity.Property(e => e.PasswordHash).IsRequired();
+            });
+
+            modelBuilder.Entity<DocumentTemplate>(entity =>
+            {
+                entity.ToTable("DocumentTemplates");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+                entity.Property(e => e.RepxTemplateKey).IsRequired().HasMaxLength(150);
+                
+                entity.HasOne(e => e.DocumentType)
+                      .WithMany()
+                      .HasForeignKey(e => e.DocumentTypeId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Tenant)
+                      .WithMany()
+                      .HasForeignKey(e => e.TenantId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Client)
+                      .WithMany()
+                      .HasForeignKey(e => e.ClientId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.PreviousVersion)
+                      .WithMany()
+                      .HasForeignKey(e => e.PreviousVersionId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.ClonedFrom)
+                      .WithMany()
+                      .HasForeignKey(e => e.ClonedFromId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<ClientDocumentSetting>(entity =>
+            {
+                entity.ToTable("ClientDocumentSettings");
+                entity.HasKey(e => e.Id);
+                
+                entity.HasOne(e => e.Client)
+                      .WithMany()
+                      .HasForeignKey(e => e.ClientId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                      
+                entity.HasOne(e => e.DocumentType)
+                      .WithMany()
+                      .HasForeignKey(e => e.DocumentTypeId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.SelectedTemplate)
+                      .WithMany()
+                      .HasForeignKey(e => e.SelectedTemplateId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<Customer>(entity =>
+            {
+                entity.ToTable("Customers");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(250);
+                entity.Property(e => e.IdentificationNumber).IsRequired().HasMaxLength(50);
+                
+                entity.HasOne(e => e.Client)
+                      .WithMany(c => c.Customers)
+                      .HasForeignKey(e => e.ClientId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                      
+                entity.HasIndex(e => new { e.ClientId, e.IdentificationNumber }).IsUnique();
+            });
+
+            modelBuilder.Entity<Product>(entity =>
+            {
+                entity.ToTable("Products");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Code).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(250);
+                entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.TaxRate).HasColumnType("decimal(5,2)");
+                
+                entity.HasOne(e => e.Client)
+                      .WithMany(c => c.Products)
+                      .HasForeignKey(e => e.ClientId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                      
+                entity.HasIndex(e => new { e.ClientId, e.Code }).IsUnique();
+            });
+
+            modelBuilder.Entity<TariffTier>(entity =>
+            {
+                entity.ToTable("TariffTiers");
+                entity.HasKey(e => e.Id);
+                
+                entity.Property(e => e.PricePerDocument).HasColumnType("decimal(18,2)");
+                
+                entity.HasData(
+                    new TariffTier { Id = Guid.Parse("00000000-0000-0000-0000-000000000001"), Name = "Nivel 1", MinDocuments = 1, MaxDocuments = 2000, PricePerDocument = 70m },
+                    new TariffTier { Id = Guid.Parse("00000000-0000-0000-0000-000000000002"), Name = "Nivel 2", MinDocuments = 2001, MaxDocuments = 5000, PricePerDocument = 50m },
+                    new TariffTier { Id = Guid.Parse("00000000-0000-0000-0000-000000000003"), Name = "Nivel 3", MinDocuments = 5001, MaxDocuments = 10000, PricePerDocument = 40m },
+                    new TariffTier { Id = Guid.Parse("00000000-0000-0000-0000-000000000004"), Name = "Nivel 4", MinDocuments = 10001, MaxDocuments = 100000, PricePerDocument = 30m },
+                    new TariffTier { Id = Guid.Parse("00000000-0000-0000-0000-000000000005"), Name = "Nivel 5", MinDocuments = 100001, MaxDocuments = null, PricePerDocument = 20m }
+                );
             });
         }
     }

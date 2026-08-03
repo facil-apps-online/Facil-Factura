@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Fel.Core.Entities
 {
@@ -7,6 +8,9 @@ namespace Fel.Core.Entities
         public Guid Id { get; set; }
         public Guid ClientId { get; set; }
         public Client Client { get; set; } = null!;
+        
+        public Guid? CustomerId { get; set; }
+        public Customer? Customer { get; set; }
         
         public string TrackingId { get; set; } = string.Empty; // Transaction ID for Webhook
         public string TypeCode { get; set; } = string.Empty;
@@ -28,5 +32,21 @@ namespace Fel.Core.Entities
         public decimal PriceCharged { get; set; } // Valor facturado por este documento
         
         public DateTime? ProcessedAt { get; set; }
+        
+        // Histórico de plantilla usada para garantizar inmutabilidad visual
+        public Guid? UsedTemplateId { get; set; }
+        public DocumentTemplate? UsedTemplate { get; set; }
+
+        public decimal Subtotal { get; set; }
+        public decimal TaxAmount { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string Notes { get; set; } = string.Empty;
+        public string SectorExtensionData { get; set; } = "{}";
+
+        public Guid? ReferenceDocumentId { get; set; }
+        public Document? ReferenceDocument { get; set; }
+        public string ReferenceConcept { get; set; } = string.Empty;
+
+        public ICollection<DocumentItem> Items { get; set; } = new List<DocumentItem>();
     }
 }

@@ -156,14 +156,6 @@ const steps = [
   },
 ];
 
-const tiers = [
-  { name: 'Nivel 1', range: '1 – 2.000', price: '$70' },
-  { name: 'Nivel 2', range: '2.001 – 5.000', price: '$50' },
-  { name: 'Nivel 3', range: '5.001 – 10.000', price: '$40' },
-  { name: 'Nivel 4', range: '10.001 – 100.000', price: '$30' },
-  { name: 'Nivel 5', range: 'Más de 100.000', price: '$20' },
-];
-
 function App() {
   return (
     <div className="min-h-screen">
@@ -199,7 +191,7 @@ function App() {
               Ver tarifas
             </a>
           </div>
-          <p className="mt-6 text-sm text-slate-500">Paga solo por documento emitido · Desde $70 COP</p>
+          <p className="mt-6 text-sm text-slate-500">Paga solo por documento emitido · Desde $20 COP</p>
         </div>
       </section>
 
@@ -295,32 +287,22 @@ function App() {
               Cuanto más facturas, menos pagas. Sin cuotas fijas ni compromisos.
             </p>
           </div>
-          <div className="mt-14 overflow-hidden rounded-2xl border border-slate-200">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 text-sm">
-                  <th className="px-6 py-4 font-semibold">Nivel</th>
-                  <th className="px-6 py-4 font-semibold">Documentos por mes</th>
-                  <th className="px-6 py-4 font-semibold">Precio por documento</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {tiers.map((t) => (
-                  <tr key={t.name} className="hover:bg-sky-50/50">
-                    <td className="px-6 py-4 font-semibold text-slate-900">{t.name}</td>
-                    <td className="px-6 py-4 text-slate-600">{t.range}</td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1 font-bold text-slate-900">
-                        {t.price} <span className="text-sm font-medium text-slate-500">COP</span>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-14 grid md:grid-cols-3 gap-8">
+            <div className="p-8 rounded-2xl border border-slate-200 bg-slate-50 text-center">
+              <h3 className="text-3xl font-extrabold text-slate-900">Por volumen</h3>
+              <p className="mt-2 text-sm text-slate-600">Cobra por documento emitido, sin cuotas fijas.</p>
+            </div>
+            <div className="p-8 rounded-2xl border border-primary bg-gradient-to-b from-sky-50 to-white shadow-primary text-center">
+              <h3 className="text-3xl font-extrabold text-primary">Desde $20</h3>
+              <p className="mt-2 text-sm text-slate-700 font-medium">COP por documento</p>
+            </div>
+            <div className="p-8 rounded-2xl border border-slate-200 bg-slate-50 text-center">
+              <h3 className="text-3xl font-extrabold text-slate-900">Cuanto más, menos</h3>
+              <p className="mt-2 text-sm text-slate-600">El precio por documento baja a mayor volumen.</p>
+            </div>
           </div>
-          <p className="mt-6 text-sm text-slate-500 text-center">
-            Los precios de reventa a tus clientes son decisión tuya. Contáctanos para volúmenes mayores.
+          <p className="mt-8 text-sm text-slate-500 text-center">
+            Los precios de reventa a tus clientes son decisión tuya. Contáctanos para volúmenes y tarifas detalladas.
           </p>
         </div>
       </section>

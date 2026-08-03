@@ -1,4 +1,33 @@
+﻿# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+TestResults/
+.vs/
+
+# Node / Vite
+node_modules/
+dist/
+*.tsbuildinfo
+.eslintcache
+
+# Env / secrets
 .env
 .env.*
-.lovable
-plan.md
+*.local
+
+# PDFs, zips y artefactos sueltos
+*.pdf
+*.zip
+
+# Herramientas / scratch
+scratch/
+MdbReader/bin/
+MdbReader/obj/
+Validador_rips_ips/
+
+# IDE
+.vscode/
+.idea/

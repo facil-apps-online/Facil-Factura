@@ -13,8 +13,9 @@ import Branding from './pages/Branding';
 import Login from './pages/Login';
 import DocumentTemplates from './pages/DocumentTemplates';
 
-function Sidebar() {
+function Sidebar({ tenantBranding }: { tenantBranding: TenantBranding | null }) {
   const location = useLocation();
+  const tenantName = tenantBranding?.commercialName || 'Tenant';
 
   const links = [
     { to: "/", icon: <Home size={20} />, label: "Dashboard" },
@@ -31,10 +32,16 @@ function Sidebar() {
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shrink-0 z-20 shadow-xl">
       <div className="p-6">
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <span className="text-primary font-extrabold">FEL</span> Hub
-        </h2>
-        <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">Tenant Portal</p>
+        <div className="flex items-center gap-2 mb-2">
+          <img src="/brand/isotipo-blanco.png" alt="Facil Factura" className="w-7 h-7 object-contain" />
+          <span className="text-lg font-bold text-white tracking-tight">Facil Factura</span>
+        </div>
+        {tenantBranding?.logoLightUrl && (
+          <div className="flex items-center gap-2 mt-2 pt-3 border-t border-slate-800/80">
+            <img src={tenantBranding.logoLightUrl} alt={tenantName} className="w-6 h-6 object-contain" />
+            <span className="text-sm font-semibold text-slate-200">{tenantName}</span>
+          </div>
+        )}
       </div>
       
       <nav className="flex-1 px-4 space-y-2 mt-4">
@@ -95,8 +102,15 @@ function Sidebar() {
   );
 }
 
+interface TenantBranding {
+  commercialName: string;
+  logoLightUrl: string;
+  primaryColorLight: string;
+}
+
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [tenantName, setTenantName] = useState('Cargando...');
+  const [tenantBranding, setTenantBranding] = useState<TenantBranding | null>(null);
 
   useEffect(() => {
     // Cargamos el branding basado en la sesión del Tenant
@@ -110,6 +124,11 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       if (res.data.primaryColorLight) {
         document.documentElement.style.setProperty('--color-primary', hexToRgb(res.data.primaryColorLight));
       }
+      setTenantBranding({
+        commercialName: res.data.commercialName || localStorage.getItem('fel_tenant_name') || 'Tenant',
+        logoLightUrl: res.data.logoLightUrl || '',
+        primaryColorLight: res.data.primaryColorLight || '',
+      });
     }).catch(err => console.error("No se pudo cargar el branding", err));
 
     const name = localStorage.getItem('fel_tenant_name') || 'Tenant';
@@ -118,7 +137,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
-      <Sidebar />
+      <Sidebar tenantBranding={tenantBranding} />
       <main className="flex-1 flex flex-col min-w-0 relative z-10">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shadow-sm">
           <h1 className="text-lg font-semibold text-slate-700">

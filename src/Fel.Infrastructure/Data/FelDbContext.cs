@@ -43,6 +43,25 @@ namespace Fel.Infrastructure.Data
                 
                 entity.Property(e => e.Slug).HasMaxLength(100);
                 entity.HasIndex(e => e.Slug).IsUnique();
+                entity.Property(e => e.CoreTenantId).HasMaxLength(64);
+
+                entity.Property(e => e.LegalName).HasMaxLength(200);
+                entity.Property(e => e.ContactPerson).HasMaxLength(150);
+                entity.Property(e => e.ContactEmail).HasMaxLength(150);
+                entity.Property(e => e.ContactPhone).HasMaxLength(30);
+                entity.Property(e => e.WhatsAppPhone).HasMaxLength(30);
+                entity.Property(e => e.EinvoicingEmail).HasMaxLength(150);
+                entity.Property(e => e.CommercialEmail).HasMaxLength(150);
+                entity.Property(e => e.Website).HasMaxLength(200);
+                entity.Property(e => e.PhysicalAddressLine1).HasMaxLength(200);
+                entity.Property(e => e.PhysicalAddressLine2).HasMaxLength(200);
+                entity.Property(e => e.PhysicalCity).HasMaxLength(100);
+                entity.Property(e => e.PhysicalState).HasMaxLength(100);
+                entity.Property(e => e.PhysicalPostalCode).HasMaxLength(20);
+                entity.Property(e => e.BillingAddress).HasMaxLength(300);
+                entity.Property(e => e.DefaultLanguageCode).HasMaxLength(10);
+                entity.Property(e => e.DefaultTimezone).HasMaxLength(50);
+                entity.Property(e => e.DefaultCurrencyId).HasMaxLength(64);
             });
 
             modelBuilder.Entity<Client>(entity =>

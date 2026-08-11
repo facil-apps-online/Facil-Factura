@@ -62,9 +62,35 @@ if ($SkipBuild) {
     Write-Host "[4/5] Skipping Docker build (SkipBuild)."
 } else {
     Write-Host "[4/5] Building Docker images and starting containers..."
-    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build && docker compose up -d"
+    # 2>&1 en el shell remoto: docker compose escribe el progreso por stderr y
+    # PowerShell 5.1 lo convierte en error terminante con ErrorActionPreference=Stop.
+    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build 2>&1 && docker compose up -d 2>&1"
     if ($LASTEXITCODE -ne 0) { throw "docker build/up failed" }
 }
+
+# 4b. Aplicar configuracion de nginx
+#
+# Hace falta RECREAR, no basta con recargar. docker-compose monta nginx.conf como bind
+# mount de un fichero suelto, y ese tipo de montaje fija el inodo al crear el contenedor.
+# tar recrea el fichero con inodo nuevo al desplegar, asi que el contenedor sigue viendo
+# el viejo: un reload releeria la version anterior. El directorio deploy/sites si se
+# actualiza en vivo por ser montaje de directorio, lo que deja ambos lados descuadrados.
+#
+# Se valida antes en un contenedor desechable, porque `nginx -t` dentro del que esta
+# corriendo probaria la configuracion vieja por el mismo motivo. Una config invalida
+# dejaria caido el proxy entero.
+Write-Host "[4b/5] Validating nginx config..."
+$validate = "docker run --rm -v ${RemoteDir}/deploy/nginx.conf:/etc/nginx/nginx.conf:ro " +
+            "-v ${RemoteDir}/deploy/sites:/etc/nginx/conf.d:ro " +
+            # 2>&1 lo ejecuta el shell remoto: nginx -t escribe siempre por stderr y
+            # PowerShell 5.1 convierte el stderr de un nativo en error terminante.
+            "-v facilfactura_certbot_conf:/etc/letsencrypt:ro nginx:alpine nginx -t 2>&1"
+& ssh -o BatchMode=yes -i $Key "root@${Server}" $validate
+if ($LASTEXITCODE -ne 0) { throw "nginx config invalida - despliegue detenido antes de aplicarla" }
+
+Write-Host "[4b/5] Recreating nginx..."
+& ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose up -d --force-recreate nginx 2>&1"
+if ($LASTEXITCODE -ne 0) { throw "nginx recreate failed" }
 
 # 5. Verify endpoints
 Write-Host "[5/5] Verifying endpoints..."

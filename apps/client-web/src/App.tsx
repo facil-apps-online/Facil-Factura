@@ -1,7 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Home, FileText, Settings, CreditCard, LogOut, FileSignature, Users, Package } from 'lucide-react';
-import React from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
+import { api } from './lib/api';
 
 import TemplateSettings from './pages/TemplateSettings';
 import ResolutionsSettings from './pages/ResolutionsSettings';
@@ -9,8 +10,48 @@ import CustomersPage from './pages/CustomersPage';
 import ProductsPage from './pages/ProductsPage';
 import InvoicesPage from './pages/InvoicesPage';
 
+interface ClientBranding {
+  companyName: string;
+  logoLightUrl: string;
+  logoDarkUrl: string;
+  primaryColorLight: string;
+  primaryColorDark: string;
+  hasCustomLogo: boolean;
+}
+
+const BrandingContext = createContext<ClientBranding | null>(null);
+
+function hexToRgb(hex: string) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? `${parseInt(result[1], 16)} ${parseInt(result[2], 16)} ${parseInt(result[3], 16)}` : '37 99 235';
+}
+
+function BrandingProvider({ children }: { children: React.ReactNode }) {
+  const [branding, setBranding] = useState<ClientBranding | null>(null);
+
+  useEffect(() => {
+    api.get('/v1/branding/my-branding')
+      .then(res => {
+        setBranding(res.data);
+        if (res.data.primaryColorLight) {
+          document.documentElement.style.setProperty('--color-primary', hexToRgb(res.data.primaryColorLight));
+        }
+      })
+      .catch(err => console.error("No se pudo cargar el branding", err));
+  }, []);
+
+  return (
+    <BrandingContext.Provider value={branding}>
+      {children}
+    </BrandingContext.Provider>
+  );
+}
+
 function Sidebar() {
   const location = useLocation();
+  const branding = useContext(BrandingContext);
+  const logo = branding?.logoLightUrl || '/brand/isotipo-blanco.png';
+  const name = branding?.companyName || 'Facil Factura';
 
   const links = [
     { to: "/", icon: <Home size={20} />, label: "Inicio" },
@@ -26,7 +67,12 @@ function Sidebar() {
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shrink-0 z-20 shadow-xl">
       <div className="p-6">
         <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <span className="text-primary font-extrabold">Mi</span> Empresa
+          {branding?.logoLightUrl ? (
+            <img src={branding.logoLightUrl} alt={name} className="w-7 h-7 object-contain" />
+          ) : (
+            <img src={logo} alt={name} className="w-7 h-7 object-contain" />
+          )}
+          {name}
         </h2>
         <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">Portal de Facturación</p>
       </div>
@@ -62,6 +108,9 @@ function Sidebar() {
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
+  const branding = useContext(BrandingContext);
+  const name = branding?.companyName || 'Facil Factura';
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
       <Sidebar />
@@ -72,7 +121,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           </h1>
           <div className="flex items-center gap-4">
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm shadow-md">
-              ME
+              {name.substring(0, 2).toUpperCase()}
             </div>
           </div>
         </header>
@@ -129,25 +178,27 @@ const Dashboard = () => {
 
 function App() {
   return (
-    <Router>
-      <Toaster position="top-right" richColors />
-      <Routes>
-        <Route path="/*" element={
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/settings" element={<TemplateSettings />} />
-              <Route path="/resolutions" element={<ResolutionsSettings />} />
-              <Route path="/customers" element={<CustomersPage />} />
-              <Route path="/products" element={<ProductsPage />} />
-              <Route path="/invoices" element={<InvoicesPage />} />
-              {/* Rutas ficticias para completar el sidebar */}
-              <Route path="/payments" element={<div className="p-8">Módulo en construcción...</div>} />
-            </Routes>
-          </Layout>
-        } />
-      </Routes>
-    </Router>
+    <BrandingProvider>
+      <Router>
+        <Toaster position="top-right" richColors />
+        <Routes>
+          <Route path="/*" element={
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/settings" element={<TemplateSettings />} />
+                <Route path="/resolutions" element={<ResolutionsSettings />} />
+                <Route path="/customers" element={<CustomersPage />} />
+                <Route path="/products" element={<ProductsPage />} />
+                <Route path="/invoices" element={<InvoicesPage />} />
+                {/* Rutas ficticias para completar el sidebar */}
+                <Route path="/payments" element={<div className="p-8">Módulo en construcción...</div>} />
+              </Routes>
+            </Layout>
+          } />
+        </Routes>
+      </Router>
+    </BrandingProvider>
   );
 }
 

@@ -1,155 +1,164 @@
 # Facil Factura — Integración con el ecosistema FacilApps (Core)
 
-> Estado: **Borrador para validación**
-> Fecha: 2026-08-02
-> Alcance: diseño de integración de Facil Factura con Core (SSO, tenants, planes, pagos, reporting)
+> Estado: **Diseño validado**
+> Fecha: 2026-08-03
+> Alcance: integración de Facil Factura con Core para planes/productos por país, creación de tenants, consumos y pagos.
 
 ---
 
-## 1. Objetivo
+## 1. Principio rector
 
-Definir cómo Facil Factura (facturación electrónica FEL, DIAN) se integra con el **Core central** del ecosistema FacilApps, siguiendo el patrón ya probado en Glamtica, Tattoo Suite y NexuHR.
+**El auth queda a nivel del proyecto** (como en Glamtica/Nexu/Core): Facil Factura conserva su autenticación local
+(SQL Server, BCrypt) y su token `x-tenant-id`. **No** se sustituye por el JWT de Core.
 
-**Principio rector:** doble presencia de tenants.
-- **Core** (Supabase central `lvdrwumtbhvbtolqgrwi`): identidad del tenant, cobros, suscripciones, pagos, límites de plan, integraciones.
-- **FacilFactura** (SQL Server `FelDb`): reglas de negocio FEL — clientes, resoluciones DIAN, certificados, documentos, RIPS, tarifas.
+Core es la fuente de verdad de **comercial** (planes, productos, suscripciones, cobros, pagos).
+Facil Factura es la fuente de verdad de **operación** (clientes, resoluciones, certificados, documentos, RIPS).
 
----
+Lo que sí se controla desde Core:
 
-## 2. Arquitectura general
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        FACIL FACTURA                            │
-│                                                                 │
-│  apps/tenant-web      apps/client-web      apps/superadmin-web  │
-│  (tenants.facil-factura.pro) (clients...) (admin...)            │
-│                        │ (JWT de Core)                          │
-│  ┌──────────────────────────────────────────┐                   │
-│  │  Fel.Api.Tenant / Client / Superadmin    │  (.NET 9 + DIAN)  │
-│  │  - API Key HMAC (B2B)                    │                   │
-│  │  - JWT Supabase/Core (web)               │                   │
-│  └──────────────────┬───────────────────────┘                   │
-│                     │                                           │
-│  ┌──────────────────┴───────────────────┐                       │
-│  │  Fel.Infrastructure (EF Core)        │  Fel.Worker (Redis)   │
-│  │  SQL Server: FelDb                   │  cola fel:invoices    │
-│  └──────────────────┬───────────────────┘                       │
-└─────────────────────┼───────────────────────────────────────────┘
-                      │ CORE_SUPABASE_URL + SERVICE_ROLE_KEY
-┌─────────────────────┴───────────────────────────────────────────┐
-│                       CORE (Supabase central)                    │
-│  platforms · tenants · subscription_plans · tenant_subscriptions │
-│  payments → transactions · payment_intents · monthly_charges     │
-│  platform_assignments · tenant_integrations · wompi webhooks     │
-└──────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 3. Identidad y autenticación (híbrido)
-
-### 3.1 Usuarios web (apps React)
-- Login contra **Core** (Supabase Auth). El JWT emitido por Core lleva `sub` (user id).
-- La relación **usuario → tenant → plataforma** se resuelve vía `platform_assignments` en Core (`user_id`, `platform_id` de Facil Factura, `role_id`).
-- Las edge functions de FacilFactura (futuro proyecto Supabase propio) validan el JWT y consultan Core para confirmar que el usuario está asignado a la plataforma y a un tenant activo.
-
-### 3.2 Integración B2B (APIs .NET)
-- Se mantiene el esquema actual: **API Key** + firma HMAC (`x-api-key`, `x-api-timestamp`, `x-api-signature`) en `Fel.Api.Integration` (endpoints `/api/invoices`, `/api/credit-notes`, etc.).
-- La API key se emite desde FacilFactura (tabla `Clients.LiveApiKey`) y opcionalmente se refleja en `tenant_integrations` de Core para trazabilidad.
-- `Fel.Api.Tenant` y `Fel.Api.Client` también exponen su seguridad actual; se añadirá validación de JWT de Core para el acceso web.
-
-### 3.3 Modelo de datos de seguridad en FacilFactura (SQL Server)
-| Entidad | Propósito |
+| Necesidad | Flujo |
 |---|---|
-| `TenantUser` | usuarios web del tenant (vinculados a `auth.users` de Core por `sub`) |
-| `ClientUser` | usuarios del cliente final |
-| `SuperadminUser` | operadores de la plataforma |
-| `Client.LiveApiKey` | API key B2B (HMAC) |
+| Cargar consumos del tenant a Core | Diario / fin de mes, para emitir las facturas del tenant |
+| Planes y productos disponibles por país | Facil Factura consulta planes/limitaciones de Core (multipaís) |
+| Creación de tenants | Se crea desde Facil Factura, pero **debe quedar en Core** |
+| Registros de pagos | Pasan de vuelta a Facil Factura para que el cliente descargue las facturas de sus pagos |
 
 ---
 
-## 4. Tenants (doble presencia)
+## 2. Identidades y llaves
 
-### 4.1 Core (`tenants`)
-Tabla ya existente en Core (`20251227000010_create_definitive_core_schema.sql`):
-- `id`, `name`, `subscription_status` (trial/active/canceled), `is_active`
-- Datos fiscales: `legal_name`, `tax_id`, `billing_address`, `website`, `whatsapp_phone`, `einvoicing_email`, dirección física
+### 2.1 Plataforma en Core
 
-### 4.2 FacilFactura (SQL Server `Fel.Tenant`)
-- Modelo propio con reglas de negocio (branding, configuración de documentos, etc.).
-- Se añade una **columna de vínculo** `CoreTenantId` (uuid) para mantener la correlación.
+- `platforms.id` de Facil Factura: **`acd97b41-2e4d-4742-9a80-5e6e9acb7958`** (referenciado en `platform_reporting_config`, pendiente de creación real en `platforms`).
+- API key reporting de la plataforma: `faculfactura_live_m4n6b8v0c2x5z1w3` (prefix `faculfactura_live_`).
+- **Pendiente**: crear el registro `platforms` de Facil Factura (Nombre, base_url, países operativos).
 
-### 4.3 Ciclo de vida
-1. **Creación**: un superadmin crea el tenant en Core (con plan y cobro). Se propaga a FelDb (automático vía edge function o manual en la API).
-2. **Activación/estado**: Core es la fuente de verdad del estado de suscripción. FacilFactura consulta Core (edge function `get-tenant-plan`) para saber si el tenant puede emitir documentos.
-3. **Sincronización**: `tenant_subscriptions` (Core) → estado de emisión (FacilFactura). Si el plan está cancelado, FacilFactura bloquea nuevas emisiones.
+### 2.2 Comunicación servidor-a-servidor
+
+Facil Factura (servidor) llama a Core autenticándose con la **service role key** de Core (clave con bypass de RLS).
+Core se comunica con Facil Factura (pagos → webhook) usando un **Service Secret** (`FAO_..._SERVICE_SECRET`) propio,
+firmando/via HTTP una cabecera de confianza.
+
+> No exponer nunca la service role key en los frontends; solo desde las APIs .NET / worker.
 
 ---
 
-## 5. Planes, suscripciones y pagos (en Core)
+## 3. Modelo de datos en Core (ya existente)
 
-Reutilizamos la infraestructura de cobro de Core (wompi), sin duplicar:
+Tablas Core reutilizadas:
 
-| Capa | Tabla (Core) | Uso |
-|---|---|---|
-| Plan | `subscription_plans` + `plan_assets` | define límites (clientes, docs/mes, RIPS) |
-| País/precio | `plan_country_configurations` | precios por país (COL) |
-| Suscripción | `tenant_subscriptions` | tenant activo o no |
-| Checkout | `payment_intents` | intento de pago wompi |
-| Pago | `transactions` (reemplaza `payments`) | transacciones confirmadas |
-| Recurrente | `monthly_charges` | cobro mensual programado |
+| Tabla | Uso |
+|---|---|
+| `platforms` | Registro de la plataforma y pa países operativos (`platform_countries`) |
+| `subscription_plans` | Planes de la plataforma, `billing_frequency_months`, `is_default_trial` |
+| `plan_assets` | Productos/recursos de la plataforma (docs, clientes, RIPS, usuarios…) |
+| `plan_country_configurations` | Plan activo por país (multipaís) con `features[]` |
+| `plan_asset_limits` | Límite/valor + `extra_unit_price` / `overage_unit_price` por asset |
+| `tenants` | Registro comercial del tenant creado desde Facil Factura |
+| `tenant_subscriptions` | Suscripción activa del tenant (plan, fechas, trial) |
+| `transactions` | Pagos confirmados (reemplazó `payment_intents`/`payments`) |
+| `monthly_charges` | Cargo mensual del tenant (base + overage) |
+| `platform_assignments` | Vinculación usuario↔platform (uso opcional si es multiplataforma) |
 
-**Flujo de pago (ya operativo en Core):**
+---
+
+## 4. Planes y servicios por país (multipaís)
+
+**Decisión (2026-08-03):** Facil Factura maneja su **propio modelo de precios** (TariffTier local en
+FelDb, pago por documento por niveles). Core **NO** almacena los precios de Facil Factura.
+
+El **único** uso de Core en este punto es: registrar en `platform_countries` qué países tiene
+habilitado el producto, para **describir los servicios disponibles por país** (catálogo de
+documentos/tipos según país). Actualmente solo **Colombia (CO)** está habilitado (código UBL
+hardcodeado a CO; la API ya recibe `{country}` como parámetro de ruta). Se aspira a ampliar el
+portafolio a otros países (CL/AR/ES) en el futuro.
+
+**Estado en Core (verificado 2026-08-03):**
+- `platforms` Facil Factura: `acd97b41-2e4d-4742-9a80-5e6e9acb7958` / slug `facil-factura` /
+  status `development` / base_url `https://facil-factura.pro`.
+- `platform_countries`: ✓ **Colombia (CO)** asociada. Vacío: planes, tenants.
+- Países disponibles en Core: AR, CL, CO, ES (Glamtica tiene los 4 asociados).
+
+La descripción de "servicios disponibles por país" puede exponerse desde Facil Factura consultando
+Core los países de la plataforma (`platform_countries`) y cruzando con el catálogo local de
+`DocumentTypes`.
+
+---
+
+## 5. Consumos del tenant → Core (carga diaria / fin de mes)
+
+**Dirección:** Facil Factura → Core.
+
+- FelDb ya cuenta:
+  - `TenantBilling` (Month, Year, TotalDocuments, TotalAmount, Status).
+  - `TariffTier` por niveles (Nivel 1…5 con `PricePerDocument`).
+- Se debe exponer en Core el acumulado de documentos emitidos por tenant para facturar a fin de mes.
+
+**Propuesta:**
+1. Worker de Facil Factura (nico técnico, adelantado a fin de mes) envía a Core el total de
+   documentos emitidos por `tenant` en el periodo (`billing_period_start/end`).
+2. Core lo refleja en `monthly_charges`: `base_plan_charge` + `total_overage_charge` = `total_charge`.
+3. Facil Factura guarda/aconseja el `reference` y estado del mesh.
+
+**Endpoint propuesto en Core (edge function `fel-sync-usage` o vía RPC):**
 ```
-tenant-web → edge function wompi-generate-checkout (Core)
-         → payment_intents (Core) → wompi checkout → webhook wompi (Core)
-         → transactions (Core) → tenant_subscriptions.is_active = true
-FacilFactura consulta estado de suscripción antes de emitir.
+POST /functions/fel-sync-usage
+X-Service-Secret: …
+{ "tenant_core_id": uuid,
+  "period_start": "2026-08-01", "period_end": "2026-08-31",
+  "documents": 1234 }
+```
+→ devuelve `{ monthly_charge_id, total_charge, status }`.
+
+---
+
+## 6. Pagos (Core → Facil Factura)
+
+**Flujo:** 1. tenant paga en Core (wompi). 2. Core registra `transactions` + `tenant_subscriptions` activa.
+3. Core debe **notificar a Facil Factura** para que el cliente pueda descargar la factura de su pago.
+
+**Dos opciones (recomendada A):**
+
+- **A (webhook/edge + consulta):** Core, al resolver una transacción de una plataforma destino
+  (Facil Factura), hace `POST` a `/api/fel/webhooks/payment` de Facil Factura con
+  `{ transaction_id, tenant_id, reference, amount, currency, fecha }`.
+  Facil Factura guarda el registro de pago y emite el PDF de recibo que el cliente descarga.
+- **B (polling):** Facil Factura consulta `transactions` de Core por plataforma/tenant cada cierto tiempo.
+
+## 7. LLaves y variables de entorno Facil Factura
+
+En el compose/`appsettings` se añaden:
+```
+Core__SupabaseUrl=...
+Core__ServiceRoleKey=...
+Core__PlatformId=acd97741-2e4d-4742-9a80-5e6e9acb7958
+```
+En Core, para el webhook hacia Facil Factura:
+```
+FACILFACTURA_WEBHOOK_URL=https://api.facil-factura.pro/api/fel/webhooks/payment
+FACILFACTURA_WEBHOOK_SECRET=...
 ```
 
 ---
 
-## 6. Reporting (integración con FacilReports)
+## 8. Planes de trabajo
 
-- Facil Factura ya está registrado en `platform_reporting_config` (Core) con:
-  - `platformId`: `acd97b41-2e4d-4742-9a80-5e6e9acb7958`
-  - `apiKeyPrefix`: `faculfactura_live_`
-  - API key: `faculfactura_live_m4n6b8v0c2x5z1w3`
-- **Pendiente**: poblar `supabaseUrl`, `supabaseServiceKey`, `driveFolderId` una vez exista el proyecto Supabase propio.
-- Los `.repx` de plantillas de documentos FEL se gestionarán con el **vault híbrido** (local + Drive) que ya implementa `FacilReports/Services/GoogleDriveService.cs`.
-- La generación de PDFs de factura y documentos FEL se delega a `reports.facil-apps.online`.
-
----
-
-## 7. Proyecto Supabase propio (futuro)
-
-Siguiendo el patrón de `C:\Desarrollos\supabase\Nexu`:
-
-```
-supabase/
-  config.toml
-  functions/
-    _shared/supabaseClients.ts     # cliente admin propio + getCoreSupabaseClient()
-    tenant-actions/                # switch de acciones del tenant
-    superadmin-actions/            # operaciones de plataforma
-    client-actions/                # acciones del cliente final
-  migrations/
-    <timestamp>_initial_schema.sql
-```
-
-- **Auth**: conectado a Core para SSO (mismo patrón que Glamtica/Nexu).
-- **Edge functions**: validan JWT de Core, consultan `platform_assignments`, y exponen datos FEL cuando sea necesario.
-- La **fuente de verdad de negocio** sigue siendo SQL Server (`Fel.Api.*`), el proyecto Supabase propio es auxiliar para acciones serverless/notificaciones que requieran el contexto de Core.
+- [ ] Registrar `platforms` de Facil Factura en Core (con `platform_countries` = CO).
+- [ ] Definir `asset_key` de la plataforma (docs, RIPS) y plan (sender/productos en Core).
+- [ ] Crear RPC/`fel-sync-usage` para consumos + documental que refleje `monthly_charges`.
+- [ ] Cliente .NET (fref) para consultar planes (registro cod) y crear tenants en Core.
+- [ ] Al crear tenant hacia Facil Factura: crear también en Core (`register-tenant` / RPC).
+- [ ] Servicio de pagos en Facil Factura + endpoint webhook de pago + descarga de recibo.
+- [ ] Worker de carga diaria de consumos a Core.
 
 ---
 
-## 8. Decisiones abiertas
+## 9. Decisiones abiertas (avance)
 
 | # | Pregunta | Estado |
 |---|---|---|
-| 1 | ¿Quién crea el tenant? Propuesta: Core (con plan) → propagación a FelDb | PENDIENTE VALIDAR |
-| 2 | ¿API keys B2B se reflejan en `tenant_integrations` de Core? | PENDIENTE |
-| 3 | ¿Proyecto Supabase propio es indispensable o basta con edge functions en Core? | PENDIENTE |
-| 4 | ¿Límites de plan se aplican en FelDb vía Core o por configuración local? | PENDIENTE |
-| 5 | ¿Google Drive folder id por tenant o global? | PENDIENTE |
+| 1 | ¿Apagar `auth`/SSO de core para facilitar la caída? (se mantiene local) | NO aplica |
+| 2 | ¿Los límites de plan se validan localmente (wor.cache) o contra Core en cada emisión? | Por validar |
+| 3 | ¿Tarifas por niveles (TariffTier local) se reemplazan por planes de Core? | **No** — precios quedan locales (decisión 2026-08-03) |
+| 4 | ¿Moneda/pais por país configurado solo en Core? | Parcial — país sí (descripción de servicios); precios locales |
+| 5 | ¿El tenant crea a sus clientes en Core también? | No (solo tenant) |

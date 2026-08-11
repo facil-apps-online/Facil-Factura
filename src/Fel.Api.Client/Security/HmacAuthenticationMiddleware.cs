@@ -34,7 +34,8 @@ namespace Fel.Api.Security
             // Aplicar solo a los endpoints de la API B2B (Excluir Swagger, Docs, Superadmin y Tenant)
             if (!context.Request.Path.StartsWithSegments("/api") || 
                 context.Request.Path.StartsWithSegments("/api/superadmin") ||
-                context.Request.Path.StartsWithSegments("/api/tenant"))
+                context.Request.Path.StartsWithSegments("/api/tenant") ||
+                context.Request.Path.StartsWithSegments("/api/v1/branding"))
             {
                 await _next(context);
                 return;

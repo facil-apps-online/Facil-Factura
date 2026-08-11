@@ -45,6 +45,12 @@ namespace Fel.Core.Entities
         // --- Billing ---
         public decimal PricePerDocument { get; set; } = 0m; // Default price set by Tenant for this Client
         
+        // --- Branding (White Label, con fallback al branding del Tenant) ---
+        public string LogoLightUrl { get; set; } = string.Empty;
+        public string LogoDarkUrl { get; set; } = string.Empty;
+        public string PrimaryColorLight { get; set; } = "#2563eb"; // Blue-600 default
+        public string PrimaryColorDark { get; set; } = "#f8fafc";  // Slate-50 default
+
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
 

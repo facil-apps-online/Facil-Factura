@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate } from 'lucide-react';
+import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Palette } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 
@@ -17,10 +17,26 @@ interface AvailableTemplate {
   isGlobal: boolean;
 }
 
+interface BrandingData {
+  logoLightUrl: string;
+  primaryColorLight: string;
+}
+
 export default function TemplateSettings() {
   const [settings, setSettings] = useState<ClientSetting[]>([]);
   const [selectedSetting, setSelectedSetting] = useState<ClientSetting | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<AvailableTemplate[]>([]);
+  const [branding, setBranding] = useState<BrandingData>({ logoLightUrl: '', primaryColorLight: '#2563eb' });
+  const [savingBranding, setSavingBranding] = useState(false);
+
+  const loadBranding = () => {
+    api.get<BrandingData & { hasCustomLogo?: boolean }>('/v1/branding/my-branding')
+      .then(res => setBranding({
+        logoLightUrl: res.data.logoLightUrl || '',
+        primaryColorLight: res.data.primaryColorLight || '#2563eb'
+      }))
+      .catch(() => toast.error("No se pudo cargar el branding"));
+  };
 
   const loadSettings = () => {
     api.get<ClientSetting[]>('/client/templates/settings')
@@ -30,6 +46,7 @@ export default function TemplateSettings() {
 
   useEffect(() => {
     loadSettings();
+    loadBranding();
   }, []);
 
   const handleSelectType = async (setting: ClientSetting) => {
@@ -57,6 +74,18 @@ export default function TemplateSettings() {
     }
   };
 
+  const handleSaveBranding = async () => {
+    setSavingBranding(true);
+    try {
+      await api.put('/v1/branding/my-branding', branding);
+      toast.success("Tu identidad visual fue actualizada correctamente");
+    } catch (err: any) {
+      toast.error(err.response?.data || "Error al guardar tu identidad");
+    } finally {
+      setSavingBranding(false);
+    }
+  };
+
   return (
     <div className="p-8 max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-10">
@@ -67,6 +96,64 @@ export default function TemplateSettings() {
         <p className="text-slate-500 mt-2 text-base font-medium">
           Personaliza el aspecto visual que verán tus clientes al recibir sus comprobantes electrónicos.
         </p>
+      </div>
+
+      {/* Identidad Visual del Cliente */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
+        <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
+          <Palette className="w-5 h-5 text-primary" /> Tu Identidad Visual
+        </h2>
+        <p className="text-sm text-slate-500 mb-6">
+          Este logo y color identifican tu empresa en tu portal y en los comprobantes que emites.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1">
+              <Image className="w-4 h-4" /> Logo (URL)
+            </label>
+            <input
+              type="text"
+              placeholder="https://tusitio.com/logo.png"
+              value={branding.logoLightUrl}
+              onChange={e => setBranding({ ...branding, logoLightUrl: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-slate-800"
+            />
+            {branding.logoLightUrl && (
+              <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-center">
+                <img src={branding.logoLightUrl} alt="Vista previa" className="max-h-16 max-w-full object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1">
+              <Palette className="w-4 h-4" /> Color Principal
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={branding.primaryColorLight}
+                onChange={e => setBranding({ ...branding, primaryColorLight: e.target.value })}
+                className="w-14 h-14 rounded-xl border border-slate-200 cursor-pointer bg-slate-50 p-1"
+              />
+              <input
+                type="text"
+                value={branding.primaryColorLight}
+                onChange={e => setBranding({ ...branding, primaryColorLight: e.target.value })}
+                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-slate-800 font-mono"
+              />
+            </div>
+            <p className="text-xs text-slate-400 mt-2">Este color se usa en los botones y enlaces de tu portal.</p>
+          </div>
+        </div>
+        <div className="mt-6">
+          <button
+            onClick={handleSaveBranding}
+            disabled={savingBranding}
+            className="px-6 py-3 bg-primary text-white font-bold rounded-xl hover:opacity-90 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50"
+          >
+            {savingBranding ? 'Guardando...' : 'Guardar Identidad Visual'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">

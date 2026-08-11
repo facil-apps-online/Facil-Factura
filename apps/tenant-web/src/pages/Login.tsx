@@ -39,13 +39,11 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
 
       <div className="bg-white border border-slate-200 p-10 rounded-[2rem] shadow-xl w-full max-w-[420px] relative z-10 animate-in fade-in zoom-in-95 duration-500">
         <div className="flex justify-center mb-6">
-          <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-inner">
-            <Building2 className="w-12 h-12 text-blue-600" />
-          </div>
+          <img src="/brand/isotipo-color.png" alt="Facil Factura" className="w-20 h-20 object-contain" />
         </div>
         
         <h1 className="text-3xl font-extrabold text-slate-800 text-center tracking-tight mb-2">
-          Portal Tenant
+          Facil Factura
         </h1>
         <p className="text-slate-500 text-center text-sm mb-8 px-2">
           Accede a tu cuenta de distribuidor para gestionar emisores y facturación electrónica.

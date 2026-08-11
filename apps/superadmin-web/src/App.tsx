@@ -1,13 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Receipt, Settings, Plus, LogOut, ShieldCheck, Mail, Lock, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, Settings, Plus, LogOut, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
+import axios from 'axios';
 import { api } from './api';
+import { useJsApiLoader, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 
 import { TenantEdit } from './TenantEdit';
 import { DocumentTypes } from './DocumentTypes';
 import { DocumentTemplates } from './DocumentTemplates';
 import { Billing } from './Billing';
+
+const libraries: "places"[] = ['places'];
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSy_TU_LLAVE_DE_PRUEBA_AQUI";
 
 // --- Types ---
 interface DashboardMetrics {
@@ -89,13 +94,11 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
 
       <div className="bg-white/5 backdrop-blur-2xl border border-white/10 p-10 rounded-[2rem] shadow-2xl w-full max-w-[420px] relative z-10 animate-in fade-in zoom-in-95 duration-500">
         <div className="flex justify-center mb-6">
-          <div className="bg-gradient-to-b from-blue-500/20 to-transparent p-4 rounded-2xl border border-blue-500/20 shadow-inner">
-            <ShieldCheck className="w-12 h-12 text-blue-400" />
-          </div>
+          <img src="/brand/isotipo-color.png" alt="Facil Factura" className="w-20 h-20 object-contain drop-shadow-lg" />
         </div>
         
         <h1 className="text-3xl font-extrabold text-white text-center tracking-tight mb-2">
-          {mode === 'setup' ? 'Inicialización FEL' : 'Bóveda FEL'}
+          {mode === 'setup' ? 'Inicialización Facil Factura' : 'Acceso Superadmin'}
         </h1>
         <p className="text-slate-400 text-center text-sm mb-8 px-2">
           {mode === 'setup' 
@@ -196,11 +199,71 @@ const Dashboard = () => {
 };
 
 // --- Tenants Component ---
+const emptyTenantForm = {
+  name: '',
+  commercialName: '',
+  legalName: '',
+  email: '',
+  slug: '',
+  taxId: '',
+  verificationDigit: '',
+  contactPerson: '',
+  contactEmail: '',
+  contactPhone: '',
+  whatsappPhone: '',
+  einvoicingEmail: '',
+  commercialEmail: '',
+  website: '',
+  countryId: '4a2b129d-85cd-4069-97e2-2aafd96d5b05',
+  physicalAddressLine1: '',
+  physicalAddressLine2: '',
+  physicalCity: '',
+  physicalState: '',
+  physicalPostalCode: '',
+  billingAddress: '',
+  latitude: null as number | null,
+  longitude: null as number | null,
+  defaultLanguageCode: 'es-CO',
+  defaultTimezone: 'America/Bogota',
+  defaultCurrencyId: '284d016a-80ba-4667-a3d0-a23989eb2733',
+  adminName: '',
+  adminEmail: '',
+  adminPassword: '',
+};
+
+interface RegCountry {
+  id: string;
+  name: string;
+  isoCode: string;
+  defaultCurrencyId: string | null;
+  defaultLanguageIsoCode: string | null;
+  defaultLocalizationId: string | null;
+  timezones: string[];
+  defaultLatitude: number | null;
+  defaultLongitude: number | null;
+}
+interface RegLanguage { id: string; name: string; isoCode: string; }
+interface RegCurrency { id: string; name: string; code: string; symbol?: string; }
+interface RegistrationData {
+  countries: RegCountry[];
+  languages: RegLanguage[];
+  currencies: RegCurrency[];
+}
+
 const TenantsList = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ name: '', commercialName: '', email: '', slug: '' });
+  const [formData, setFormData] = useState({ ...emptyTenantForm });
+  const [saving, setSaving] = useState(false);
+  const [regData, setRegData] = useState<RegistrationData | null>(null);
   const navigate = useNavigate();
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries
+  });
 
   const loadTenants = () => {
     api.get<Tenant[]>('/tenants')
@@ -212,17 +275,102 @@ const TenantsList = () => {
     loadTenants();
   }, []);
 
+  const openModal = () => {
+    setShowModal(true);
+    setFormData({ ...emptyTenantForm });
+    if (!regData) {
+      api.get<RegistrationData>('/registration-data')
+        .then(res => setRegData(res.data))
+        .catch(() => toast.error("No se pudieron cargar los países disponibles."));
+    }
+  };
+
+  const selectedCountry = regData?.countries.find(c => c.id === formData.countryId) || null;
+
+  const handleCountryChange = (id: string) => {
+    const country = regData?.countries.find(c => c.id === id);
+    if (!country) { setField('countryId', id); return; }
+
+    const defaults: Record<string, string> = { countryId: id };
+
+    if (country.defaultCurrencyId) {
+      defaults.defaultCurrencyId = country.defaultCurrencyId;
+    }
+    const lang = country.defaultLanguageIsoCode
+      ? regData?.languages.find(l => l.isoCode === country.defaultLanguageIsoCode)
+      : country.defaultLocalizationId
+        ? regData?.languages.find(l => l.id === country.defaultLocalizationId)
+        : null;
+    if (lang) {
+      defaults.defaultLanguageCode = lang.isoCode;
+    }
+    if (country.timezones?.length) {
+      defaults.defaultTimezone = country.timezones[0];
+    }
+    setFormData(prev => ({ ...prev, ...defaults }));
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
     try {
       await api.post('/tenants', formData);
       setShowModal(false);
-      setFormData({ name: '', commercialName: '', email: '', slug: '' });
+      setFormData({ ...emptyTenantForm });
       toast.success("Tenant registrado con éxito.");
       loadTenants();
     } catch (err) {
-      toast.error("Error al crear Tenant. Verifica el slug.");
+      const detail = axios.isAxiosError(err)
+        ? (typeof err.response?.data === 'string' ? err.response.data : err.response?.data?.title) ?? err.message
+        : null;
+      toast.error(detail ? `Error al crear Tenant: ${detail}` : "Error al crear Tenant.");
+      console.error('CreateTenant failed', err);
+    } finally {
+      setSaving(false);
     }
+  };
+
+  const setField = (field: string, value: string) => setFormData(prev => ({ ...prev, [field]: value }));
+
+  const onLoadAutocomplete = (autocomplete: google.maps.places.Autocomplete) => {
+    autocompleteRef.current = autocomplete;
+  };
+
+  const onPlaceChanged = () => {
+    if (!autocompleteRef.current) return;
+    const place = autocompleteRef.current.getPlace();
+    if (!place.geometry) return;
+
+    let line1 = '', line2 = '', city = '', state = '', postal = '', countryIso = '';
+    place.address_components?.forEach(component => {
+      const t = component.types;
+      if (t.includes('street_number')) line1 = component.long_name + ' ' + line1;
+      if (t.includes('route')) line1 += component.long_name;
+      if (t.includes('sublocality_level_1') || t.includes('neighborhood') || t.includes('sublocality')) line2 = component.long_name;
+      if (t.includes('locality')) city = component.long_name;
+      if (t.includes('administrative_area_level_1')) state = component.long_name;
+      if (t.includes('postal_code')) postal = component.long_name;
+      if (t.includes('country')) countryIso = component.short_name;
+    });
+
+    const lat = place.geometry.location?.lat() ?? null;
+    const lng = place.geometry.location?.lng() ?? null;
+
+    setFormData(prev => {
+      const country = countryIso ? regData?.countries.find(c => c.isoCode === countryIso) : null;
+      return {
+        ...prev,
+        physicalAddressLine1: line1.trim() || place.formatted_address || prev.physicalAddressLine1,
+        physicalAddressLine2: line2,
+        physicalCity: city || prev.physicalCity,
+        physicalState: state || prev.physicalState,
+        physicalPostalCode: postal || prev.physicalPostalCode,
+        billingAddress: place.formatted_address || prev.billingAddress,
+        latitude: lat,
+        longitude: lng,
+        countryId: country?.id || prev.countryId,
+      };
+    });
   };
 
   return (
@@ -230,36 +378,234 @@ const TenantsList = () => {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-extrabold text-white tracking-tight">Gestión de Tenants</h1>
         <button 
-          onClick={() => setShowModal(true)}
+          onClick={openModal}
           className="flex items-center bg-slate-900 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-slate-800 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
           <Plus className="w-5 h-5 mr-2" /> Registrar Tenant
         </button>
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <h2 className="text-2xl font-bold text-slate-900 mb-6">Nuevo Tenant</h2>
-            <form onSubmit={handleCreate} className="space-y-5">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Razón Social</label>
-                <input required type="text" placeholder="Ej. Glamtica SAS" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Comercial</label>
-                <input required type="text" placeholder="Ej. Glamtica" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.commercialName} onChange={e => setFormData({...formData, commercialName: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Email de Facturación</label>
-                <input required type="email" placeholder="admin@glamtica.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Slug (Identificador URL)</label>
-                <input required type="text" placeholder="glamtica" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm" value={formData.slug} onChange={e => setFormData({...formData, slug: e.target.value.toLowerCase().replace(/\s+/g, '-')})} />
-              </div>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200 p-4 overflow-y-auto">
+          <div className="modal-light bg-white p-8 rounded-3xl w-full max-w-3xl shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-slate-900">Registrar Tenant</h2>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700 transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleCreate} className="space-y-6">
+
+              {/* Información Principal */}
+              <section className="border border-slate-200 rounded-2xl p-5">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-600" /> Información Principal</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Comercial</label>
+                    <input required type="text" placeholder="Ej. Glamtica" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.name} onChange={e => setField('name', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Razón Social (Legal Name)</label>
+                    <input type="text" placeholder="Ej. Glamtica SAS" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.legalName} onChange={e => setField('legalName', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Comercial Secundario</label>
+                    <input type="text" placeholder="Ej. Glamtica Spa" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.commercialName} onChange={e => setField('commercialName', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Slug (Identificador URL)</label>
+                    <input required type="text" placeholder="glamtica" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm" value={formData.slug} onChange={e => setField('slug', e.target.value.toLowerCase().replace(/\s+/g, '-'))} />
+                  </div>
+                </div>
+              </section>
+
+              {/* Información Fiscal */}
+              <section className="border border-slate-200 rounded-2xl p-5">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Hash className="w-5 h-5 text-blue-600" /> Información Fiscal (DIAN)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">NIT / ID Fiscal</label>
+                      <input required type="text" placeholder="Ej. 901958059" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.taxId} onChange={e => setField('taxId', e.target.value)} />
+                    </div>
+                    <div className="w-24">
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">DV</label>
+                      <input required type="text" maxLength={1} placeholder="4" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center" value={formData.verificationDigit} onChange={e => setField('verificationDigit', e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email Facturación Electrónica</label>
+                    <input required type="email" placeholder="admin@glamtica.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.einvoicingEmail} onChange={e => setField('einvoicingEmail', e.target.value)} />
+                  </div>
+                </div>
+              </section>
+
+              {/* Configuración Regional */}
+              <section className="border border-slate-200 rounded-2xl p-5">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600" /> Configuración Regional</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">País</label>
+                    <select required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.countryId} onChange={e => handleCountryChange(e.target.value)}>
+                      {!regData && <option value="">Cargando países...</option>}
+                      {(regData?.countries || []).map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">Filtra las direcciones y sugiere idioma, moneda y zona horaria.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Idioma</label>
+                    <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.defaultLanguageCode} onChange={e => setField('defaultLanguageCode', e.target.value)}>
+                      {(regData?.languages || []).filter(l => !selectedCountry || l.id === selectedCountry.defaultLocalizationId || l.isoCode === selectedCountry.defaultLanguageIsoCode).map(l => (
+                        <option key={l.id} value={l.isoCode}>{l.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Moneda</label>
+                    <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.defaultCurrencyId} onChange={e => setField('defaultCurrencyId', e.target.value)}>
+                      {(regData?.currencies || []).filter(c => !selectedCountry || c.id === selectedCountry.defaultCurrencyId).map(c => (
+                        <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Zona Horaria</label>
+                    <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.defaultTimezone} onChange={e => setField('defaultTimezone', e.target.value)}>
+                      {(selectedCountry?.timezones?.length ? selectedCountry.timezones : ['America/Bogota']).map(tz => (
+                        <option key={tz} value={tz}>{tz}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </section>
+
+              {/* Dirección Física con Google Autocomplete */}
+              <section className="border border-slate-200 rounded-2xl p-5">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><MapPin className="w-5 h-5 text-emerald-600" /> Dirección Física</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Buscar Dirección</label>
+                    {isLoaded ? (
+                      <Autocomplete
+                        onLoad={onLoadAutocomplete}
+                        onPlaceChanged={onPlaceChanged}
+                        restrictions={selectedCountry ? { country: [selectedCountry.isoCode] } : undefined}
+                      >
+                        <input
+                          type="text"
+                          placeholder={selectedCountry ? `Busca dirección en ${selectedCountry.name}...` : "Selecciona un país para buscar..."}
+                          disabled={!selectedCountry}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all disabled:bg-slate-100 disabled:text-slate-400"
+                        />
+                      </Autocomplete>
+                    ) : (
+                      <input type="text" disabled placeholder="Cargando mapas..." className="w-full px-4 py-3 bg-slate-100 text-slate-400 border border-slate-200 rounded-xl" />
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Dirección (Línea 1)</label>
+                      <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalAddressLine1} onChange={e => setField('physicalAddressLine1', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Dirección (Línea 2, Opcional)</label>
+                      <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalAddressLine2} onChange={e => setField('physicalAddressLine2', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Ciudad</label>
+                      <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalCity} onChange={e => setField('physicalCity', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Estado/Departamento</label>
+                      <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalState} onChange={e => setField('physicalState', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Código Postal</label>
+                      <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalPostalCode} onChange={e => setField('physicalPostalCode', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Dirección de Facturación</label>
+                      <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.billingAddress} onChange={e => setField('billingAddress', e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Vista previa del mapa</label>
+                    <div className="h-48 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                      {isLoaded && formData.latitude && formData.longitude ? (
+                        <GoogleMap
+                          mapContainerStyle={{ width: '100%', height: '100%' }}
+                          center={{ lat: formData.latitude, lng: formData.longitude }}
+                          zoom={15}
+                          options={{ disableDefaultUI: true, zoomControl: true }}
+                        >
+                          <Marker position={{ lat: formData.latitude, lng: formData.longitude }} />
+                        </GoogleMap>
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400 font-medium">Selecciona una dirección para ver el mapa</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Contacto */}
+              <section className="border border-slate-200 rounded-2xl p-5">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Phone className="w-5 h-5 text-blue-600" /> Contacto</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Persona de Contacto</label>
+                    <input type="text" placeholder="Ej. Ana García" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.contactPerson} onChange={e => setField('contactPerson', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email Comercial</label>
+                    <input type="email" placeholder="comercial@glamtica.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.commercialEmail} onChange={e => setField('commercialEmail', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Teléfono</label>
+                    <input type="tel" placeholder="+57 321 000 0000" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.contactPhone} onChange={e => setField('contactPhone', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">WhatsApp</label>
+                    <input type="tel" placeholder="+57 321 000 0000" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.whatsappPhone} onChange={e => setField('whatsappPhone', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Sitio Web</label>
+                    <input type="url" placeholder="https://glamtica.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.website} onChange={e => setField('website', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email de Facturación (cuenta)</label>
+                    <input type="email" placeholder="facturacion@glamtica.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.email} onChange={e => setField('email', e.target.value)} />
+                  </div>
+                </div>
+              </section>
+
+              {/* Usuario Administrador del Tenant */}
+              <section className="border border-slate-200 rounded-2xl p-5 bg-blue-50/40">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> Cuenta de Administrador</h3>
+                <p className="text-sm text-slate-500 mb-4">Estas serán las credenciales para que el tenant inicie sesión en su portal (tenants.facil-factura.pro).</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Completo</label>
+                    <input type="text" placeholder="Ej. Ana García" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminName} onChange={e => setField('adminName', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email (Login)</label>
+                    <input type="email" placeholder="admin@glamtica.com" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminEmail} onChange={e => setField('adminEmail', e.target.value)} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña Inicial</label>
+                    <input type="password" placeholder="Mínimo 6 caracteres" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminPassword} onChange={e => setField('adminPassword', e.target.value)} />
+                    <p className="text-xs text-slate-500 mt-1">Comparte esta contraseña de forma segura con tu cliente.</p>
+                  </div>
+                </div>
+              </section>
+
               <div className="flex justify-end space-x-3 mt-8">
                 <button type="button" onClick={() => setShowModal(false)} className="px-5 py-2.5 font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-                <button type="submit" className="px-5 py-2.5 bg-blue-600 font-semibold text-white rounded-xl shadow-md shadow-blue-500/30 hover:bg-blue-500 transition-all">Guardar</button>
+                <button type="submit" disabled={saving} className="px-5 py-2.5 bg-blue-600 font-semibold text-white rounded-xl shadow-md shadow-blue-500/30 hover:bg-blue-500 transition-all">
+                  {saving ? 'Guardando...' : 'Guardar'}
+                </button>
               </div>
             </form>
           </div>
@@ -321,10 +667,8 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
       <aside className="w-64 bg-[#060B14] text-slate-300 flex flex-col border-r border-slate-800/50 relative z-20 shadow-2xl">
         <div className="p-8">
           <div className="flex items-center space-x-3 mb-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <span className="text-white font-bold text-lg">F</span>
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">FEL Hub</h2>
+            <img src="/brand/isotipo-blanco.png" alt="Facil Factura" className="w-8 h-8 object-contain" />
+            <h2 className="text-2xl font-extrabold text-white tracking-tight">Facil Factura</h2>
           </div>
           <p className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] ml-11">Superadmin</p>
         </div>

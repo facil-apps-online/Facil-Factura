@@ -24,6 +24,8 @@ builder.Services.AddFluentValidationAutoValidation()
 builder.Services.AddValidatorsFromAssemblyContaining<InvoiceRequestValidator>();
 
 builder.Services.AddHttpClient(); // Necesario para DianSoapClient
+builder.Services.AddHttpClient<Fel.Core.Interfaces.ICoreApiClient, Fel.Infrastructure.Services.CoreApiClient>();
+builder.Services.AddMemoryCache();
 builder.Services.AddOpenApi(); // .NET 9 json endpoint
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -156,9 +158,13 @@ app.UseMiddleware<HmacAuthenticationMiddleware>();
 app.MapGet("/", () => "FEL API is running.");
 app.MapControllers();
 
-// Aplicar migraciones pendientes al arrancar
-using (var scope = app.Services.CreateScope())
+// Migraciones: solo comodidad de desarrollo local.
+// En producción las aplica el servicio fel-migrator antes de arrancar cualquier API
+// (ver deploy/Dockerfile.migrator). Cinco servicios comparten FelDb: si migraran al
+// arrancar competirían entre sí, y uno podría cambiar el esquema bajo otro ya en marcha.
+if (app.Environment.IsDevelopment())
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<FelDbContext>();
     await db.Database.MigrateAsync();
 }

@@ -24,14 +24,17 @@ RUN dotnet publish "src/${PROJECT}/${PROJECT}.csproj" -c Release -o /app/publish
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
-# Install curl for healthchecks
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Install curl for healthchecks + fontconfig for SkiaSharp text rendering
+RUN apt-get update && apt-get install -y --no-install-recommends curl libfontconfig1 fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
 # SkiaSharp native libs for DevExpress rendering on Linux
 ENV SKIA_LIBRARY_PATH=/usr/lib/libSkiaSharp.so
 
 COPY --from=build /app/publish .
+
+# Colocar libSkiaSharp nativa donde la espera SKIA_LIBRARY_PATH (solo presente si el proyecto usa SkiaSharp)
+RUN cp /app/publish/runtimes/linux-x64/native/libSkiaSharp.so /usr/lib/ 2>/dev/null || true
 
 ARG PROJECT=Fel.Api.Tenant
 ENV ASPNETCORE_ENVIRONMENT=Production

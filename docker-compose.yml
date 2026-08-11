@@ -30,6 +30,22 @@
       timeout: 5s
       retries: 5
 
+  # ---------- Migraciones ----------
+  # Único punto donde cambia el esquema de FelDb. Corre una vez, hasta completar,
+  # y el resto de servicios .NET espera su salida con service_completed_successfully.
+  # No lleva restart: un fallo debe detener el despliegue, no entrar en bucle.
+  fel-migrator:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.migrator
+    container_name: fel-migrator
+    restart: "no"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
+
   # ---------- APIs .NET ----------
   fel-api-tenant:
     build:
@@ -44,6 +60,8 @@
         condition: service_healthy
       redis:
         condition: service_healthy
+      fel-migrator:
+        condition: service_completed_successfully
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5103
@@ -51,6 +69,8 @@
       - ConnectionStrings__RedisConnection=redis:6379
       - Security__MasterKey=${FEL_MASTER_KEY}
       - MasterKey=${FEL_MASTER_KEY}
+      # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
+      - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
       - CertificateStoragePath=/app/secure-storage
     volumes:
       - fel_certs:/app/secure-storage
@@ -69,6 +89,8 @@
         condition: service_healthy
       redis:
         condition: service_healthy
+      fel-migrator:
+        condition: service_completed_successfully
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5104
@@ -94,6 +116,8 @@
         condition: service_healthy
       redis:
         condition: service_healthy
+      fel-migrator:
+        condition: service_completed_successfully
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5105
@@ -101,6 +125,8 @@
       - ConnectionStrings__RedisConnection=redis:6379
       - Security__MasterKey=${FEL_MASTER_KEY}
       - MasterKey=${FEL_MASTER_KEY}
+      # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
+      - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
       - CertificateStoragePath=/app/secure-storage
     volumes:
       - fel_certs:/app/secure-storage
@@ -119,6 +145,8 @@
         condition: service_healthy
       redis:
         condition: service_healthy
+      fel-migrator:
+        condition: service_completed_successfully
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5106
@@ -145,6 +173,8 @@
         condition: service_healthy
       redis:
         condition: service_healthy
+      fel-migrator:
+        condition: service_completed_successfully
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { FileText, ShieldCheck, Zap, BarChart3, Smartphone, Users, Menu, X, Check, ArrowRight, Layers, Code2, Banknote, Palette } from 'lucide-react';
+import AvailabilityBanner from './AvailabilityBanner';
 
 function Navbar() {
   const [open, setOpen] = useState(false);
@@ -15,11 +16,8 @@ function Navbar() {
   return (
     <header className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur border-b border-slate-200">
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <a href="#" className="flex items-center gap-2">
-          <span className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <FileText size={18} className="text-white" />
-          </span>
-          <span className="text-lg font-bold tracking-tight">Facil <span className="text-primary">Factura</span></span>
+        <a href="#" className="flex items-center">
+          <img src="/brand/logo-horizontal.png" alt="Facil Factura" className="h-9 w-auto" />
         </a>
 
         <div className="hidden md:flex items-center gap-8">
@@ -168,6 +166,7 @@ function App() {
             <ShieldCheck size={14} />
             Facturación electrónica DIAN y RIPS (MinSalud) para Colombia
           </div>
+          <AvailabilityBanner />
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-tight">
             Facturación electrónica{' '}
             <span className="text-primary">para integradores</span>
@@ -350,8 +349,8 @@ function App() {
       <section id="contact" className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid md:grid-cols-3 gap-8 text-center md:text-left">
           <div>
-            <h3 className="font-semibold text-slate-900">Facil Factura</h3>
-            <p className="mt-2 text-sm text-slate-600">
+            <img src="/brand/logo-horizontal.png" alt="Facil Factura" className="h-8 w-auto mb-3" />
+            <p className="text-sm text-slate-600">
               Plataforma de facturación electrónica DIAN y RIPS (MinSalud) para Colombia.
             </p>
           </div>

@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+# Aplica las migraciones EF Core de FelDb como paso único y explícito del despliegue.
+# Se ejecuta antes que cualquier API/worker; ninguno de ellos migra por su cuenta.
+#
+# Produce un "migration bundle": un ejecutable autocontenido que lleva dentro las
+# migraciones compiladas, de modo que la imagen final no necesita el SDK ni dotnet-ef.
+
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Restore (mismo layout de capas que Dockerfile.dotnet para reaprovechar caché)
+COPY src/Fel.sln .
+COPY src/Fel.Core/Fel.Core.csproj Fel.Core/
+COPY src/Fel.Infrastructure/Fel.Infrastructure.csproj Fel.Infrastructure/
+COPY src/Fel.Api.Tenant/Fel.Api.Tenant.csproj Fel.Api.Tenant/
+COPY src/Fel.Api.Integration/Fel.Api.Integration.csproj Fel.Api.Integration/
+COPY src/Fel.Api.Superadmin/Fel.Api.Superadmin.csproj Fel.Api.Superadmin/
+COPY src/Fel.Api.Client/Fel.Api.Client.csproj Fel.Api.Client/
+COPY src/Fel.Worker/Fel.Worker.csproj Fel.Worker/
+RUN dotnet restore Fel.sln
+
+COPY src/ src/
+
+# La versión de la herramienta debe acompañar a la del runtime EF Core del proyecto.
+RUN dotnet tool install --global dotnet-ef --version 9.*
+ENV PATH="${PATH}:/root/.dotnet/tools"
+
+RUN dotnet ef migrations bundle \
+      --project src/Fel.Infrastructure/Fel.Infrastructure.csproj \
+      --startup-project src/Fel.Api.Superadmin/Fel.Api.Superadmin.csproj \
+      --configuration Release \
+      --self-contained \
+      --target-runtime linux-x64 \
+      --output /app/efbundle \
+      --force
+
+# runtime-deps basta: el bundle es autocontenido.
+FROM mcr.microsoft.com/dotnet/runtime-deps:9.0 AS final
+WORKDIR /app
+COPY --from=build /app/efbundle .
+
+# Sin --connection el bundle buscaría appsettings.json, que no viaja en esta imagen.
+ENTRYPOINT ["sh", "-c", "exec /app/efbundle --connection \"$ConnectionStrings__DefaultConnection\""]

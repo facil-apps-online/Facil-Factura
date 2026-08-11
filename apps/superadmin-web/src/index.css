@@ -24,6 +24,27 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Modal de formulario claro: forzar texto oscuro (el body hereda --foreground claro) */
+.modal-light,
+.modal-light input,
+.modal-light select,
+.modal-light textarea,
+.modal-light label {
+  color: #0f172a;
+}
+
+.modal-light input::placeholder {
+  color: #64748b;
+}
+
+.modal-light select {
+  color: #0f172a;
+}
+
+.modal-light option {
+  color: #0f172a;
+}
+
 /* Clases Premium UI (Glassmorphism & Gradients) */
 .glass {
   background: var(--glass-bg);

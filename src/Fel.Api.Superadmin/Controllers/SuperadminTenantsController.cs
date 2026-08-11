@@ -52,7 +52,7 @@ namespace Fel.Api.Superadmin.Controllers
         {
             var tenant = await _dbContext.Tenants.FindAsync(id);
             if (tenant == null) return NotFound();
-            return Ok(tenant);
+            return Ok(Project(tenant));
         }
 
         [HttpPost]
@@ -194,7 +194,7 @@ namespace Fel.Api.Superadmin.Controllers
 
             return Ok(new
             {
-                tenant,
+                tenant = Project(tenant),
                 coreSync = new
                 {
                     status = coreResult.Outcome.ToString(),
@@ -203,6 +203,51 @@ namespace Fel.Api.Superadmin.Controllers
                 }
             });
         }
+
+        /// <summary>
+        /// Proyecta el tenant a un objeto plano para la respuesta.
+        /// Nunca devolver la entidad directamente: al crear el usuario administrador, EF
+        /// enlaza las navegaciones (tenant.Users -> user.Tenant -> tenant) y System.Text.Json
+        /// entra en ciclo, tumbando la respuesta con la transaccion ya confirmada. El cliente
+        /// veria un fallo de red con el tenant realmente creado.
+        /// </summary>
+        private static object Project(Tenant t) => new
+        {
+            t.Id,
+            t.Name,
+            t.CommercialName,
+            t.LegalName,
+            t.Email,
+            t.Slug,
+            t.CoreTenantId,
+            t.TaxId,
+            t.VerificationDigit,
+            t.ContactPerson,
+            t.ContactEmail,
+            t.ContactPhone,
+            t.WhatsAppPhone,
+            t.EinvoicingEmail,
+            t.CommercialEmail,
+            t.Website,
+            t.PhysicalAddressLine1,
+            t.PhysicalAddressLine2,
+            t.PhysicalCity,
+            t.PhysicalState,
+            t.PhysicalPostalCode,
+            t.BillingAddress,
+            t.Address,
+            t.City,
+            t.Phone,
+            t.TaxRegime,
+            t.EconomicActivity,
+            t.DefaultLanguageCode,
+            t.DefaultTimezone,
+            t.DefaultCurrencyId,
+            t.Latitude,
+            t.Longitude,
+            t.IsActive,
+            t.CreatedAt
+        };
 
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> UpdateTenant(Guid id, [FromBody] UpdateTenantRequest request)
@@ -269,7 +314,7 @@ namespace Fel.Api.Superadmin.Controllers
 
             await tx.CommitAsync();
 
-            return Ok(new { tenant, coreSync = new { status = coreStatus, coreTenantId = tenant.CoreTenantId } });
+            return Ok(new { tenant = Project(tenant), coreSync = new { status = coreStatus, coreTenantId = tenant.CoreTenantId } });
         }
 
         /// <summary>

@@ -19,7 +19,11 @@ namespace Fel.Core.Entities
         [MaxLength(2)]
         public string AllowedGender { get; set; } = string.Empty;
 
-        public int MinAgeYears { get; set; }
-        public int MaxAgeYears { get; set; }
+        // En días, no en años: el catálogo oficial (LIM_INF/LIM_SUP) codifica el límite como
+        // unidad+valor (1=Horas, 2=Días, 3=Meses, 4=Años) — hay diagnósticos con límites reales
+        // de pocos días (ej. tétanos neonatal, máximo 27 días) que un entero en años no puede
+        // representar sin perder precisión.
+        public int MinAgeDays { get; set; }
+        public int MaxAgeDays { get; set; }
     }
 }

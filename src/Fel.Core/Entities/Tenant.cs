@@ -57,9 +57,28 @@ namespace Fel.Core.Entities
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
 
+        // --- Facturación ---
+        public TenantBillingMode BillingMode { get; set; } = TenantBillingMode.PerDocument;
+        // Controla si el portal del cliente final (client-web) puede mostrar información de
+        // consumo/facturación de ese cliente. El tenant decide qué tanto expone a ese nivel.
+        public bool ShowUsageToClients { get; set; } = false;
+
         public ICollection<Client> Clients { get; set; } = new List<Client>();
         public ICollection<TenantPricing> Pricings { get; set; } = new List<TenantPricing>();
         public ICollection<TenantBilling> Billings { get; set; } = new List<TenantBilling>();
         public ICollection<TenantUser> Users { get; set; } = new List<TenantUser>();
+        public TenantUserPricing? UserPricing { get; set; }
+        public ICollection<PrepaidPackage> PrepaidPackages { get; set; } = new List<PrepaidPackage>();
+        public ICollection<TenantPrepaidBag> PrepaidBags { get; set; } = new List<TenantPrepaidBag>();
+
+        // --- Grupo empresarial ---
+        // Un tenant puede agrupar a otros tenants (ej. R&W agrupa a DGS): cada tenant asociado
+        // sigue siendo 100% independiente (sus propios Clients, branding, usuarios) — lo único
+        // que cambia es que R&W puede ver el consolidado de lo que a cada uno se le ha facturado
+        // (ver "Facturación de mi grupo" en el portal de Tenant). No afecta cómo se calcula
+        // TenantBilling: cada tenant sigue generando su propio corte mensual igual que siempre.
+        public Guid? ParentTenantId { get; set; }
+        public Tenant? ParentTenant { get; set; }
+        public ICollection<Tenant> ChildTenants { get; set; } = new List<Tenant>();
     }
 }

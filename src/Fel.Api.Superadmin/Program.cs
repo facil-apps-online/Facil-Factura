@@ -11,17 +11,50 @@ using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using Fel.Api.Security;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllers();
+// [Authorize] por defecto en todos los controladores — antes ningún middleware validaba el JWT
+// que SuperadminAuthController.Login sí emite, así que cualquiera podía llamar cualquier endpoint
+// de superadmin (el portal de más privilegio, administra todos los Tenants) sin credenciales.
+// Las acciones que deben quedar públicas (login, setup inicial, recuperar contraseña) llevan
+// [AllowAnonymous] explícito en SuperadminAuthController.
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add(new Microsoft.AspNetCore.Mvc.Authorization.AuthorizeFilter());
+});
+builder.Services.AddAuthorization();
+
+// Misma llave y algoritmo que usa SuperadminAuthController.Login para firmar el JWT — si se
+// cambia una, hay que cambiar la otra.
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var keyStr = builder.Configuration.GetValue<string>("MasterKey") ?? "SUPER_SECRET_FALLBACK_KEY_MUST_BE_32_CHARS_LONG_OR_MORE_123456";
+        var key = Encoding.UTF8.GetBytes(keyStr.PadRight(32, '0'));
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(key),
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
 builder.Services.AddFluentValidationAutoValidation()
                 .AddFluentValidationClientsideAdapters();
 builder.Services.AddValidatorsFromAssemblyContaining<InvoiceRequestValidator>();
 
 builder.Services.AddHttpClient(); // Necesario para DianSoapClient
 builder.Services.AddHttpClient<Fel.Core.Interfaces.ICoreApiClient, Fel.Infrastructure.Services.CoreApiClient>();
+builder.Services.AddHttpClient<Fel.Core.Interfaces.IFacilReportsClient, Fel.Infrastructure.Services.FacilReportsClient>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.PasswordResetService>();
 builder.Services.AddOpenApi(); // .NET 9 json endpoint
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -97,17 +130,23 @@ builder.Services.AddDbContext<FelDbContext>(options =>
 
 // Dependency Injection for Security Services
 builder.Services.AddSingleton<Fel.Core.Interfaces.ICryptoService, Fel.Infrastructure.Security.CryptoService>();
-builder.Services.AddHttpClient<Fel.Infrastructure.Services.DianHabilitationScraperService>();
-builder.Services.AddSingleton<Fel.Infrastructure.Services.DianTestSetRunnerService>();
+builder.Services.AddHttpClient<Fel.Infrastructure.Services.DianHabilitationScraperService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        UseCookies = true,
+        CookieContainer = new System.Net.CookieContainer(),
+        AllowAutoRedirect = true
+    });
+builder.Services.AddScoped<Fel.Infrastructure.Services.DianTestSetSubmissionService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.BillingMetricsService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.MonthlyBillingCutService>();
 builder.Services.AddSingleton<Fel.Core.Interfaces.ICertificateStorageService, Fel.Infrastructure.Security.CertificateStorageService>();
 builder.Services.AddTransient<Fel.Core.Interfaces.IXmlSignerService, Fel.Infrastructure.Security.XadesSignerService>();
 
 // Dependency Injection for XML Builder
 builder.Services.AddTransient<Fel.Core.Interfaces.IXmlBuilderService, Fel.Infrastructure.Services.XmlBuilderService>();
-
-// Dependency Injection for DIAN Integration
-// builder.Services.AddTransient<Fel.Infrastructure.Services.DianIntegrationService>();
+// Lee el RUT en PDF para prellenar el alta de tenants sin transcribir a mano.
+builder.Services.AddTransient<Fel.Infrastructure.Services.DianRutParserService>();
 
 var app = builder.Build();
 
@@ -132,6 +171,10 @@ app.UseRateLimiter();
 
 // 2. Activar el interceptor de Seguridad HMAC (Firmas de payload)
 app.UseMiddleware<HmacAuthenticationMiddleware>();
+
+// 3. Validar el JWT (debe ir antes de Authorization, y antes de MapControllers)
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGet("/", () => "FEL API is running.");
 app.MapControllers();

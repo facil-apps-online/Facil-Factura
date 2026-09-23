@@ -1,5 +1,6 @@
 using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -13,15 +14,20 @@ namespace Fel.Api.Superadmin.Controllers
 {
     [ApiController]
     [Route("api/superadmin/auth")]
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous] // Login/setup/recuperación deben quedar accesibles sin token — el resto de la API exige [Authorize] por defecto (ver Program.cs).
     public class SuperadminAuthController : ControllerBase
     {
         private readonly FelDbContext _context;
         private readonly IConfiguration _configuration;
+        private readonly PasswordResetService _passwordResetService;
+        private readonly string _portalUrl;
 
-        public SuperadminAuthController(FelDbContext context, IConfiguration configuration)
+        public SuperadminAuthController(FelDbContext context, IConfiguration configuration, PasswordResetService passwordResetService)
         {
             _context = context;
             _configuration = configuration;
+            _passwordResetService = passwordResetService;
+            _portalUrl = configuration["PortalUrl"] ?? "https://admin.facil-factura.pro";
         }
 
         [HttpGet("status")]
@@ -92,6 +98,36 @@ namespace Fel.Api.Superadmin.Controllers
             return Ok(new { token = jwtToken, email = user.Email });
         }
 
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] SuperadminForgotPasswordDto request)
+        {
+            const string genericMessage = "Si el correo está registrado, te enviamos un enlace para restablecer tu contraseña.";
+
+            var user = await _context.SuperadminUsers.FirstOrDefaultAsync(u => u.Email == request.Email);
+            if (user == null) return Ok(new { message = genericMessage });
+
+            // Sin tenantCoreId: el personal Superadmin no pertenece a ningún tenant de Core.
+            await _passwordResetService.RequestAsync(
+                PortalUserType.Superadmin, user.Id, user.Email, user.Email, _portalUrl, "password_reset");
+
+            return Ok(new { message = genericMessage });
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] SuperadminResetPasswordDto request)
+        {
+            var consumed = await _passwordResetService.ConsumeAsync(request.Token, PortalUserType.Superadmin);
+            if (consumed == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
+
+            var user = await _context.SuperadminUsers.FindAsync(consumed.Value.UserId);
+            if (user == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
+
+            user.PasswordHash = HashPassword(request.NewPassword);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Contraseña actualizada correctamente." });
+        }
+
         private string HashPassword(string password)
         {
             using (var sha256 = SHA256.Create())
@@ -113,5 +149,16 @@ namespace Fel.Api.Superadmin.Controllers
     {
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+    }
+
+    public class SuperadminForgotPasswordDto
+    {
+        public string Email { get; set; } = string.Empty;
+    }
+
+    public class SuperadminResetPasswordDto
+    {
+        public string Token { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
     }
 }

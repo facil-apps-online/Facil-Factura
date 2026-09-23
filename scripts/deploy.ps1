@@ -5,7 +5,8 @@
 param(
     [string]$Server = "137.184.208.78",
     [string]$Key = "$env:USERPROFILE\.ssh\deploy_facil_factura",
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [string]$Service = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,10 +61,14 @@ if ($LASTEXITCODE -ne 0) { throw "extract failed" }
 # 4. Build and start containers
 if ($SkipBuild) {
     Write-Host "[4/5] Skipping Docker build (SkipBuild)."
-} else {
-    Write-Host "[4/5] Building Docker images and starting containers..."
+} elseif ($Service) {
+    Write-Host "[4/5] Building and starting only '$Service'..."
     # 2>&1 en el shell remoto: docker compose escribe el progreso por stderr y
     # PowerShell 5.1 lo convierte en error terminante con ErrorActionPreference=Stop.
+    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $Service 2>&1 && docker compose up -d $Service 2>&1"
+    if ($LASTEXITCODE -ne 0) { throw "docker build/up failed" }
+} else {
+    Write-Host "[4/5] Building Docker images and starting containers..."
     & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build 2>&1 && docker compose up -d 2>&1"
     if ($LASTEXITCODE -ne 0) { throw "docker build/up failed" }
 }
@@ -79,6 +84,11 @@ if ($SkipBuild) {
 # Se valida antes en un contenedor desechable, porque `nginx -t` dentro del que esta
 # corriendo probaria la configuracion vieja por el mismo motivo. Una config invalida
 # dejaria caido el proxy entero.
+#
+# Con -Service (despliegue dirigido a un solo servicio) no aplica: nginx no cambio, y
+# esperar su validacion/recreate + el barrido de endpoints solo alarga una iteracion
+# que se supone rapida.
+if (-not $Service) {
 Write-Host "[4b/5] Validating nginx config..."
 $validate = "docker run --rm -v ${RemoteDir}/deploy/nginx.conf:/etc/nginx/nginx.conf:ro " +
             "-v ${RemoteDir}/deploy/sites:/etc/nginx/conf.d:ro " +
@@ -95,7 +105,7 @@ if ($LASTEXITCODE -ne 0) { throw "nginx recreate failed" }
 # 5. Verify endpoints
 Write-Host "[5/5] Verifying endpoints..."
 Start-Sleep 10
-foreach ($sub in @("facil-factura.pro", "api", "tenants", "clients", "admin")) {
+foreach ($sub in @("facil-factura.pro", "api", "tenants", "clients", "admin", "developers")) {
     $hostname = if ($sub -eq "facil-factura.pro") { "facil-factura.pro" } else { "$sub.facil-factura.pro" }
     try {
         $r = Invoke-WebRequest -Uri "https://$hostname" -UseBasicParsing -TimeoutSec 20
@@ -104,6 +114,7 @@ foreach ($sub in @("facil-factura.pro", "api", "tenants", "clients", "admin")) {
         $code = $_.Exception.Response.StatusCode.value__
         Write-Host "  https://$hostname -> HTTP $code"
     }
+}
 }
 
 Remove-Item $TempTar -Force -ErrorAction SilentlyContinue
@@ -118,4 +129,5 @@ Write-Host "  Landing:    https://facil-factura.pro"
 Write-Host "  Tenants:    https://tenants.facil-factura.pro"
 Write-Host "  Clients:    https://clients.facil-factura.pro"
 Write-Host "  Admin:      https://admin.facil-factura.pro"
+Write-Host "  Developers: https://developers.facil-factura.pro"
 Write-Host "  API:        https://api.facil-factura.pro"

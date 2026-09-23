@@ -60,7 +60,7 @@ namespace Fel.Infrastructure.Data
                     logger.LogInformation("Seeding CIE10 rules...");
                     var json = await File.ReadAllTextAsync(cieFile);
                     var cieDtoList = JsonSerializer.Deserialize<List<Cie10Dto>>(json);
-                    
+
                     if (cieDtoList != null)
                     {
                         var entities = cieDtoList.Select(dto => new RipsCie10Rule
@@ -68,8 +68,8 @@ namespace Fel.Infrastructure.Data
                             Code = dto.CODIGO?.Trim() ?? string.Empty,
                             Description = dto.DESCRIPCION?.Trim() ?? string.Empty,
                             AllowedGender = dto.SEXO?.Trim() ?? "A",
-                            MinAgeYears = int.TryParse(dto.LIM_INF, out var minY) ? minY : 0,
-                            MaxAgeYears = int.TryParse(dto.LIM_SUP, out var maxY) ? maxY : 135
+                            MinAgeDays = DecodeAgeLimitDays(dto.LIM_INF, isUpperBound: false),
+                            MaxAgeDays = DecodeAgeLimitDays(dto.LIM_SUP, isUpperBound: true)
                         }).ToList();
 
                         context.RipsCie10Rules.AddRange(entities);
@@ -78,6 +78,29 @@ namespace Fel.Infrastructure.Data
                     }
                 }
             }
+        }
+
+        // El catálogo oficial CIE10 (MinSalud) codifica LIM_INF/LIM_SUP como un entero de 3
+        // dígitos "unidad+valor": el primer dígito es la unidad (1=Horas, 2=Días, 3=Meses,
+        // 4=Años) y los dos últimos son la cantidad — ej. 227 = 2 (Días) + 27 = 27 días (encaja
+        // con la definición clínica real de tétanos neonatal). El valor 0 significa "sin
+        // restricción"; 599 es el centinela documentado para "sin límite superior".
+        private const int NoUpperLimitDays = 47450; // ~130 años, mismo centinela que usa CUPS
+        private static int DecodeAgeLimitDays(int raw, bool isUpperBound)
+        {
+            if (raw == 0) return isUpperBound ? NoUpperLimitDays : 0;
+            if (isUpperBound && raw == 599) return NoUpperLimitDays;
+
+            var unit = raw / 100;
+            var value = raw % 100;
+            return unit switch
+            {
+                1 => value / 24,   // Horas -> días
+                2 => value,        // Días
+                3 => value * 30,   // Meses -> días (aprox.)
+                4 => value * 365,  // Años -> días (aprox.)
+                _ => isUpperBound ? NoUpperLimitDays : 0 // unidad no reconocida: no restringir
+            };
         }
 
         private class CupsDto
@@ -97,8 +120,8 @@ namespace Fel.Infrastructure.Data
             public string? CODIGO { get; set; }
             public string? DESCRIPCION { get; set; }
             public string? SEXO { get; set; }
-            public string? LIM_INF { get; set; }
-            public string? LIM_SUP { get; set; }
+            public int LIM_INF { get; set; }
+            public int LIM_SUP { get; set; }
         }
     }
 }

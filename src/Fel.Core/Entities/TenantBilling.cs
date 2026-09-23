@@ -13,6 +13,7 @@ namespace Fel.Core.Entities
         public int Year { get; set; }
         
         public int TotalDocuments { get; set; }
+        public int? TotalUsers { get; set; } // Solo aplica cuando el tenant factura en modo PerUser
         public decimal TotalAmount { get; set; }
         
         public string Currency { get; set; } = "COP";

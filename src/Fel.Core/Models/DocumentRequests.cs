@@ -27,7 +27,14 @@ namespace Fel.Core.Models
 
     public class CreditNoteRequest : InvoiceRequest
     {
+        // Nota referenciada: los tres deben venir juntos (la DIAN exige CUFE + número de la
+        // factura original dentro de InvoiceDocumentReference). Si BillingReferenceCufe viene
+        // vacío, la nota se arma como no referenciada (ej. ajustes que no corresponden a una
+        // factura electrónica puntual).
         public string BillingReferenceCufe { get; set; } = string.Empty;
+        public string BillingReferenceDocumentNumber { get; set; } = string.Empty;
+        public DateTime? BillingReferenceDate { get; set; }
+
         public string DiscrepancyResponseCode { get; set; } = "2"; // 2=Anulación
         public string DiscrepancyDescription { get; set; } = string.Empty;
     }
@@ -37,26 +44,60 @@ namespace Fel.Core.Models
         // Mismos campos base que la nota crédito
     }
 
+    // El emisor (Empleador) y los datos de habilitación (SoftwareId/Pin, Ambiente) siempre salen
+    // del Client autenticado, igual que en InvoiceRequest — no se declaran aquí.
     public class PayrollRequest : DocumentRequestBase
     {
-        public WorkerData Worker { get; set; } = new WorkerData();
-        public decimal BasicSalary { get; set; }
-        public decimal TransportAllowance { get; set; }
-        public decimal Deductions { get; set; }
+        public WorkerPayrollData Worker { get; set; } = new WorkerPayrollData();
+        public PayrollPeriodData Period { get; set; } = new PayrollPeriodData();
+        public PayrollPaymentData Payment { get; set; } = new PayrollPaymentData();
+        public List<DateTime> PaymentDates { get; set; } = new List<DateTime>();
+        public PayrollEarningsData Earnings { get; set; } = new PayrollEarningsData();
+        public PayrollDeductionsData Deductions { get; set; } = new PayrollDeductionsData();
+        public decimal Rounding { get; set; }
+        public decimal EarningsTotal { get; set; }
+        public decimal DeductionsTotal { get; set; }
+        public decimal PayableTotal { get; set; }
+        public string Notes { get; set; } = string.Empty;
     }
 
-    public class WorkerData
+    // Anulación (TipoNota=2 "Eliminar") de un Documento Soporte de Pago de Nómina ya transmitido.
+    public class PayrollVoidRequest
     {
-        public string Identification { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public string ContractType { get; set; } = string.Empty;
+        public string Prefix { get; set; } = string.Empty;
+        public string DocumentNumber { get; set; } = string.Empty;
+        public DateTime IssueDate { get; set; } = DateTime.UtcNow;
+
+        public string PredecessorNumber { get; set; } = string.Empty;
+        public string PredecessorCune { get; set; } = string.Empty;
+        public DateTime PredecessorIssueDate { get; set; }
+
+        public string Notes { get; set; } = string.Empty;
     }
 
     public class PosDocumentRequest : InvoiceRequest
     {
         public string PosPointOfSaleId { get; set; } = string.Empty;
         public string HardwareId { get; set; } = string.Empty;
+
+        // false = CustomizationID 601 (facturación normal), true = 602 (facturación en sitio).
+        public bool OnSite { get; set; } = false;
     }
+
+    // Los demás subtipos de Documento Equivalente Electrónico comparten la misma estructura base
+    // (emisor=Client, adquirente/líneas/impuestos=lo que declare el caller) — solo cambia el
+    // InvoiceTypeCode/ProfileID, que cada controlador fija internamente. Son clases vacías (como
+    // DebitNoteRequest : CreditNoteRequest) solo para que cada endpoint tenga su propio tipo en el
+    // Swagger, no porque necesiten campos propios verificados todavía.
+    public class CinemaDocumentRequest : InvoiceRequest { }
+    public class PublicShowDocumentRequest : InvoiceRequest { }
+    public class LocalizedGamesDocumentRequest : InvoiceRequest { }
+    public class LandPassengerTransportDocumentRequest : InvoiceRequest { }
+    public class TollDocumentRequest : InvoiceRequest { }
+    public class FinancialStatementDocumentRequest : InvoiceRequest { }
+    public class AirTransportDocumentRequest : InvoiceRequest { }
+    public class StockExchangeDocumentRequest : InvoiceRequest { }
+    public class PublicUtilityDocumentRequest : InvoiceRequest { }
 
     public class HealthInvoiceRequest : InvoiceRequest
     {
@@ -77,23 +118,36 @@ namespace Fel.Core.Models
         public string ConsultationPurpose { get; set; } = string.Empty;
     }
 
-    // Nuevo: Transporte (Solicitado por el usuario)
-    public class TransportInvoiceRequest : InvoiceRequest
+    // Factura Electrónica de Transporte de Carga: NO es un tipo de documento aparte ante la DIAN —
+    // es una factura normal (mismo InvoiceTypeCode, mismo CUFE, mismo webservice) con
+    // OperationType=12 y, cuando aplica, cada línea marcada como remesa RNDC lleva sus propios
+    // datos (ver los campos Rndc* ya agregados a InvoiceLine — no hay nada propio que agregar acá).
+    public class TransportInvoiceRequest : InvoiceRequest { }
+
+    // A diferencia de InvoiceRequest, acá el Client autenticado es el ADQUIRENTE (ABS) — quien
+    // reporta la compra — no el emisor. El vendedor no obligado a facturar (SNO) no es nuestro
+    // Client, así que sus datos vienen en el request. No hereda InvoiceRequest porque ese Issuer
+    // implícito (siempre = Client) no aplica aquí.
+    public class SupportDocumentRequest : DocumentRequestBase
     {
-        public TransportData TransportDetails { get; set; } = new TransportData();
+        public IssuerData Seller { get; set; } = new IssuerData(); // SNO: Sujeto No Obligado
+        public bool SellerIsNonResident { get; set; } = false; // CustomizationID 10=Residente, 11=No residente
+
+        public List<PaymentMeansData> PaymentMeans { get; set; } = new List<PaymentMeansData>();
+        public List<AllowanceChargeData> AllowanceCharges { get; set; } = new List<AllowanceChargeData>();
+        public List<TaxSubtotal> Taxes { get; set; } = new List<TaxSubtotal>();
+        public List<InvoiceLine> Lines { get; set; } = new List<InvoiceLine>();
     }
 
-    public class TransportData
+    // Nota de Ajuste al Documento Soporte (DianCode 95) — referencia el CUDS del Documento Soporte
+    // original. A diferencia de la emisión, esta sí va en <CreditNote>.
+    public class SupportDocumentAdjustmentRequest : SupportDocumentRequest
     {
-        public string RadicacionRemesa { get; set; } = string.Empty; // MinTransporte RNDC
-        public decimal ValorFlete { get; set; }
-        public string PlacaVehiculo { get; set; } = string.Empty;
-    }
-
-    public class SupportDocumentRequest : InvoiceRequest
-    {
-        public string SellerIdentification { get; set; } = string.Empty;
-        public string SellerName { get; set; } = string.Empty;
+        public string BillingReferenceCuds { get; set; } = string.Empty;
+        public string BillingReferenceDocumentNumber { get; set; } = string.Empty;
+        public DateTime? BillingReferenceDate { get; set; }
+        public string DiscrepancyResponseCode { get; set; } = "2";
+        public string DiscrepancyDescription { get; set; } = string.Empty;
     }
 
     public class ReceptionEventRequest : DocumentRequestBase

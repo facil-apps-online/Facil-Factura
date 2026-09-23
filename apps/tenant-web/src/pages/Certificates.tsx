@@ -1,103 +1,121 @@
-import React from 'react';
-import { Upload, Lock, ShieldCheck, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ShieldCheck, AlertTriangle, Clock, FileKey } from 'lucide-react';
+import { api } from '../lib/api';
+
+interface CertificateRow {
+  clientId: string;
+  clientName: string;
+  fileName: string;
+  expirationDate: string;
+  createdAt: string;
+}
+
+const DAYS_SOON_THRESHOLD = 30;
+
+function daysUntil(dateStr: string): number {
+  const diffMs = new Date(dateStr).getTime() - Date.now();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
+function statusFor(days: number): { label: string; badgeClass: string; icon: React.ReactNode; rowClass: string } {
+  if (days < 0) {
+    return {
+      label: `Expirado hace ${Math.abs(days)} día${Math.abs(days) === 1 ? '' : 's'}`,
+      badgeClass: 'bg-rose-100 text-rose-700',
+      icon: <AlertTriangle size={24} />,
+      rowClass: 'border-rose-200',
+    };
+  }
+  if (days <= DAYS_SOON_THRESHOLD) {
+    return {
+      label: `Vence en ${days} día${days === 1 ? '' : 's'}`,
+      badgeClass: 'bg-amber-100 text-amber-700',
+      icon: <Clock size={24} />,
+      rowClass: 'border-amber-200',
+    };
+  }
+  return {
+    label: 'Válido',
+    badgeClass: 'bg-emerald-100 text-emerald-700',
+    icon: <ShieldCheck size={24} />,
+    rowClass: 'border-slate-200',
+  };
+}
 
 export default function Certificates() {
+  const [certificates, setCertificates] = useState<CertificateRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/tenant/certificates')
+      .then(res => setCertificates(res.data))
+      .catch(() => setCertificates([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const expiredCount = certificates.filter(c => daysUntil(c.expirationDate) < 0).length;
+  const soonCount = certificates.filter(c => { const d = daysUntil(c.expirationDate); return d >= 0 && d <= DAYS_SOON_THRESHOLD; }).length;
+
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-slate-800">Certificados Digitales (.p12)</h1>
-        <p className="text-slate-500 mt-2">Sube y gestiona los certificados de firma electrónica (XAdES-EPES) de tus clientes emisores.</p>
+        <p className="text-slate-500 mt-2">Vista consolidada de los certificados de firma electrónica (XAdES-EPES) de todos tus clientes, ordenados por fecha de vencimiento.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Upload Form */}
-        <div className="lg:col-span-1 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-6">
-            <Upload size={20} className="text-blue-500" />
-            Subir Certificado
-          </h2>
-          
-          <form className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Cliente Emisor</label>
-              <select className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm bg-slate-50">
-                <option>Seleccione un cliente...</option>
-                <option>Glamtica S.A.S</option>
-                <option>Tattoo Suite</option>
-              </select>
+      {!loading && certificates.length > 0 && (
+        <div className="flex gap-4 mb-6">
+          {expiredCount > 0 && (
+            <div className="px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm font-semibold">
+              {expiredCount} expirado{expiredCount === 1 ? '' : 's'}
             </div>
+          )}
+          {soonCount > 0 && (
+            <div className="px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm font-semibold">
+              {soonCount} por vencer (≤{DAYS_SOON_THRESHOLD} días)
+            </div>
+          )}
+        </div>
+      )}
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Archivo .p12 o .pfx</label>
-              <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:bg-slate-50 transition-colors cursor-pointer group">
-                <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Upload size={24} />
+      {loading ? (
+        <div className="text-slate-400">Cargando...</div>
+      ) : certificates.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-slate-400">
+          <FileKey className="mx-auto mb-3 text-slate-300" size={40} />
+          Ningún cliente tiene un certificado cargado todavía. Súbelos desde la ficha de cada cliente.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {certificates.map(cert => {
+            const days = daysUntil(cert.expirationDate);
+            const status = statusFor(days);
+            return (
+              <Link
+                key={cert.clientId}
+                to={`/clients/edit/${cert.clientId}?tab=certificate`}
+                className={`bg-white p-5 rounded-2xl shadow-sm border ${status.rowClass} flex items-center justify-between hover:shadow-md transition-shadow`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${status.badgeClass}`}>
+                    {status.icon}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">{cert.clientName}</h3>
+                    <p className="text-sm text-slate-500">
+                      Vence: {new Date(cert.expirationDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-sm font-medium text-slate-700">Haz clic o arrastra el archivo aquí</p>
-                <p className="text-xs text-slate-500 mt-1">Máximo 5MB</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña del Certificado</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  type="password" 
-                  placeholder="••••••••" 
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
-                />
-              </div>
-              <p className="text-xs text-slate-500 mt-2 flex items-start gap-1">
-                <ShieldCheck size={14} className="text-emerald-500 shrink-0" />
-                La contraseña será encriptada en la Bóveda Criptográfica antes de guardarse.
-              </p>
-            </div>
-
-            <button type="button" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-medium shadow-md shadow-blue-500/20 transition-colors mt-2">
-              Guardar Certificado
-            </button>
-          </form>
+                <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${status.badgeClass}`}>
+                  {status.label}
+                </span>
+              </Link>
+            );
+          })}
         </div>
-
-        {/* Certificates List */}
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Certificados Activos</h2>
-          
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between hover:border-blue-200 transition-colors">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
-                <ShieldCheck size={24} />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800">Glamtica S.A.S</h3>
-                <p className="text-sm text-slate-500">Expira: 15 de Noviembre, 2025</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100">Válido</span>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-rose-200 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center">
-                <AlertTriangle size={24} />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800">Tattoo Suite</h3>
-                <p className="text-sm text-rose-500 font-medium">Expirado hace 2 días</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100">Expirado</span>
-              <button className="block text-xs text-blue-600 font-medium mt-2 hover:underline">Actualizar</button>
-            </div>
-          </div>
-
-        </div>
-      </div>
+      )}
     </div>
   );
 }

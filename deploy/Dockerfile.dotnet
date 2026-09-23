@@ -6,6 +6,12 @@ FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 ARG PROJECT=Fel.Api.Tenant
 
+# Licencia de DevExpress (variable oficial DevExpress_License, ver
+# docs.devexpress.com/GeneralInformation/405494) — se valida en el momento de compilar, en esta
+# misma etapa de build, no en el contenedor final ni en la máquina que lanza el deploy.
+ARG DEVEXPRESS_LICENSE_KEY=""
+ENV DevExpress_License=${DEVEXPRESS_LICENSE_KEY}
+
 # Copy solution and project files for restore
 COPY src/Fel.sln .
 COPY src/Fel.Core/Fel.Core.csproj Fel.Core/
@@ -32,6 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl libfontcon
 ENV SKIA_LIBRARY_PATH=/usr/lib/libSkiaSharp.so
 
 COPY --from=build /app/publish .
+
+# RipsDataSeeder.cs busca "../../SeedData" relativo al WORKDIR (/app) -> /SeedData.
+COPY SeedData/ /SeedData/
 
 # Colocar libSkiaSharp nativa donde la espera SKIA_LIBRARY_PATH (solo presente si el proyecto usa SkiaSharp)
 RUN cp /app/publish/runtimes/linux-x64/native/libSkiaSharp.so /usr/lib/ 2>/dev/null || true

@@ -13,29 +13,65 @@ using Fel.Api.Security;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
 using System.IO;
-using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
+
+builder.Services.AddScoped<Fel.Core.Interfaces.ISessionTokenService, Fel.Infrastructure.Security.SessionTokenService>();
+
+// Misma llave/algoritmo que SessionTokenService usa para firmar — ver SessionHeaderGuardMiddleware
+// para cómo se aplica (solo exige el JWT cuando la petición ya trae x-tenant-id).
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var keyStr = builder.Configuration.GetValue<string>("MasterKey") ?? "SUPER_SECRET_FALLBACK_KEY_MUST_BE_32_CHARS_LONG_OR_MORE_123456";
+        var key = Encoding.UTF8.GetBytes(keyStr.PadRight(32, '0'));
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(key),
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
 builder.Services.AddFluentValidationAutoValidation()
                 .AddFluentValidationClientsideAdapters();
 builder.Services.AddValidatorsFromAssemblyContaining<InvoiceRequestValidator>();
 
 builder.Services.AddHttpClient(); // Necesario para DianSoapClient
 builder.Services.AddHttpClient<Fel.Core.Interfaces.ICoreApiClient, Fel.Infrastructure.Services.CoreApiClient>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.PasswordResetService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddOpenApi(); // .NET 9 json endpoint
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo 
-    { 
-        Title = "Facil-Factura.pro API (B2B)", 
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Facil-Factura.pro API (B2B) - MinSalud",
         Version = "v1",
-        Description = "API de IntegraciÃ³n para emisiÃ³n de Documentos ElectrÃ³nicos (DIAN)."
+        Description = "Emisión de RIPS de forma independiente (sin atarlo a una factura electrónica), vía integración directa con MinSalud (MUV-FEV-RIPS), no con Dataico ni la DIAN."
     });
+
+    // Este proyecto (Fel.Api.Tenant) también expone el resto de la administración interna del
+    // Tenant (Clientes, certificados, branding, TenantHabilitationController, etc.) — ninguno de
+    // esos controladores debe aparecer en este Swagger PÚBLICO, solo TenantDocumentsController
+    // (prefijo "api/co/", igual que Fel.Api.Integration, para mantener el mismo esquema
+    // país/autoridad en toda ruta que consuma un tenant/developer).
+    c.DocInclusionPredicate((docName, apiDesc) => apiDesc.RelativePath?.StartsWith("api/co/") == true);
+
+    // URL base explícita: sin esto, el JSON no dice dónde vive la API — funciona igual dentro del
+    // navegador (Swagger UI asume el origen de la página), pero un developer que descargue el JSON
+    // para importarlo en Postman o generar un cliente no tendría cómo saberlo.
+    c.AddServer(new OpenApiServer { Url = "https://api.facil-factura.pro" });
 
     // Configurar Swagger para que pida el API Key en la interfaz grÃ¡fica
     c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
@@ -109,41 +145,59 @@ builder.Services.AddDbContext<FelDbContext>(options =>
 // Dependency Injection for Security Services
 builder.Services.AddSingleton<Fel.Core.Interfaces.ICryptoService, Fel.Infrastructure.Security.CryptoService>();
 builder.Services.AddSingleton<Fel.Core.Interfaces.ICertificateStorageService, Fel.Infrastructure.Security.CertificateStorageService>();
+builder.Services.AddSingleton<Fel.Core.Interfaces.IPublicFileStorageService, Fel.Infrastructure.Storage.PublicFileStorageService>();
 builder.Services.AddTransient<Fel.Core.Interfaces.IXmlSignerService, Fel.Infrastructure.Security.XadesSignerService>();
 
 // Dependency Injection for XML Builder
 builder.Services.AddTransient<Fel.Core.Interfaces.IXmlBuilderService, Fel.Infrastructure.Services.XmlBuilderService>();
-
-// Dependency Injection for DIAN Integration
-// builder.Services.AddTransient<Fel.Infrastructure.Services.DianIntegrationService>();
 builder.Services.AddTransient<Fel.Infrastructure.Services.DianResolutionParserService>();
 builder.Services.AddScoped<Fel.Api.Tenant.Services.IClinicalValidationService, Fel.Api.Tenant.Services.ClinicalValidationService>();
-builder.Services.AddScoped<Fel.Api.Tenant.Services.MinSalud.IMinSaludMuvService, Fel.Api.Tenant.Services.MinSalud.MinSaludMuvService>();
+// El contenedor FEV-RIPS corre en el VPS de Bogotá (el MinSalud bloquea por geolocalización los
+// accesos desde fuera de Colombia) y se alcanza por un túnel WireGuard cifrado, en
+// https://10.10.0.2:9443, con un certificado autofirmado. Nunca queda expuesto a internet: el
+// puerto solo acepta conexiones desde la IP del droplet. Por eso se acepta el certificado sin
+// validar, y solo para este cliente específico.
+builder.Services.AddHttpClient<Fel.Api.Tenant.Services.MinSalud.IMinSaludMuvService, Fel.Api.Tenant.Services.MinSalud.MinSaludMuvService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    });
 
+// HandlerLifetime al mínimo permitido (1 segundo — SetHandlerLifetime no acepta TimeSpan.Zero):
+// sin esto, IHttpClientFactory reutiliza el mismo HttpClientHandler (y su
+// CookieContainer) hasta por 2 minutos entre llamadas — si dos registros de habilitación distintos
+// caen en esa ventana, las cookies de sesión de uno contaminan al otro y la DIAN responde con un
+// error genérico de su aplicación en vez de la página real.
 builder.Services.AddHttpClient<Fel.Infrastructure.Services.DianHabilitationScraperService>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
         UseCookies = true,
         CookieContainer = new System.Net.CookieContainer(),
         AllowAutoRedirect = true
-    });
+    })
+    .SetHandlerLifetime(TimeSpan.FromSeconds(1));
 
-builder.Services.AddSingleton<Fel.Infrastructure.Services.DianTestSetRunnerService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.DianTestSetSubmissionService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.BillingMetricsService>();
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+// Documentación pública del API v1 (documentos independientes de factura, incl. RIPS): va
+// disponible en todos los ambientes, no solo en Desarrollo — igual que el Swagger de
+// Fel.Api.Integration. Ruta propia ("swagger-v1") para no chocar con la de ese otro servicio,
+// que ya ocupa "/swagger" en api.facil-factura.pro.
+app.MapOpenApi();
+app.UseSwagger(c =>
 {
-    app.MapOpenApi();
-    app.UseSwagger();
-    app.UseSwaggerUI(c => 
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "FEL API v1");
-        c.RoutePrefix = "swagger"; // Interfaz disponible en http://localhost:port/swagger
-    });
-}
+    c.RouteTemplate = "swagger-v1/{documentName}/swagger.json";
+});
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger-v1/v1/swagger.json", "Facil Factura API v1");
+    c.DocumentTitle = "Facil Factura API v1";
+    c.RoutePrefix = "swagger-v1";
+});
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
@@ -154,6 +208,12 @@ app.UseRateLimiter();
 
 // 2. Activar el interceptor de Seguridad HMAC (Firmas de payload)
 app.UseMiddleware<HmacAuthenticationMiddleware>();
+
+// 3. Validar el JWT y, cuando la petición trae x-tenant-id, exigir que coincida con la claim
+// TenantId del token — antes ese header se aceptaba sin ninguna verificación.
+app.UseAuthentication();
+app.UseMiddleware<SessionHeaderGuardMiddleware>();
+app.UseAuthorization();
 
 app.MapGet("/", () => "FEL API is running.");
 app.MapControllers();

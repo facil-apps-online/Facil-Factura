@@ -40,7 +40,7 @@ namespace Fel.Api.Tenant.Controllers
             var tenantId = GetCurrentTenantId();
             
             var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
-            if (!clientExists) return Forbid();
+            if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
 
             var resolutions = await _dbContext.Set<Resolution>()
                 .Where(r => r.ClientId == clientId && r.IsActive)
@@ -54,7 +54,9 @@ namespace Fel.Api.Tenant.Controllers
                     r.ValidFrom,
                     r.ValidTo,
                     r.TechnicalKey,
-                    r.DocumentType
+                    r.DocumentType,
+                    r.NextNumber,
+                    r.IsDefault
                 })
                 .ToListAsync();
 
@@ -68,7 +70,7 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var tenantId = GetCurrentTenantId();
                 var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
-                if (!clientExists) return Forbid();
+                if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
 
                 if (file == null || file.Length == 0)
                     return BadRequest("No se proporcionó un archivo PDF válido.");
@@ -97,7 +99,10 @@ namespace Fel.Api.Tenant.Controllers
         {
             var tenantId = GetCurrentTenantId();
             var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
-            if (!clientExists) return Forbid();
+            if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
+
+            var hasOtherActiveOfType = await _dbContext.Set<Resolution>()
+                .AnyAsync(r => r.ClientId == clientId && r.DocumentType == request.DocumentType && r.IsActive);
 
             var resolution = new Resolution
             {
@@ -111,7 +116,8 @@ namespace Fel.Api.Tenant.Controllers
                 ValidTo = request.ValidTo,
                 TechnicalKey = request.TechnicalKey ?? "",
                 DocumentType = request.DocumentType,
-                IsActive = true
+                IsActive = true,
+                IsDefault = !hasOtherActiveOfType
             };
 
             _dbContext.Set<Resolution>().Add(resolution);
@@ -125,8 +131,64 @@ namespace Fel.Api.Tenant.Controllers
                 resolution.NumberEnd,
                 resolution.ValidFrom,
                 resolution.ValidTo,
-                resolution.DocumentType
+                resolution.DocumentType,
+                resolution.IsDefault
             });
+        }
+
+        public class SetNextNumberRequest
+        {
+            public long NextNumber { get; set; }
+        }
+
+        // Permite al tenant fijar manualmente el próximo consecutivo a usar en nombre del cliente —
+        // ej. al migrar desde otro sistema donde ya se emitieron facturas hasta cierto número.
+        [HttpPut("{id}/next-number")]
+        public async Task<IActionResult> SetNextNumber(Guid clientId, Guid id, [FromBody] SetNextNumberRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
+            if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
+
+            var resolution = await _dbContext.Set<Resolution>().FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId);
+            if (resolution == null) return NotFound();
+
+            if (request.NextNumber < resolution.NumberStart || request.NextNumber > resolution.NumberEnd)
+            {
+                return BadRequest($"El número debe estar entre {resolution.NumberStart} y {resolution.NumberEnd} (el rango autorizado de esta resolución).");
+            }
+
+            resolution.NextNumber = request.NextNumber;
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { resolution.Id, resolution.NextNumber });
+        }
+
+        // Marca esta resolución como la predeterminada de su tipo de documento, en nombre del
+        // cliente, desmarcando cualquier otra resolución activa del mismo ClientId+DocumentType.
+        [HttpPut("{id}/set-default")]
+        public async Task<IActionResult> SetDefault(Guid clientId, Guid id)
+        {
+            var tenantId = GetCurrentTenantId();
+            var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
+            if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
+
+            var resolution = await _dbContext.Set<Resolution>().FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId && r.IsActive);
+            if (resolution == null) return NotFound();
+
+            var others = await _dbContext.Set<Resolution>()
+                .Where(r => r.ClientId == clientId && r.DocumentType == resolution.DocumentType && r.IsActive && r.Id != id)
+                .ToListAsync();
+
+            foreach (var other in others)
+            {
+                other.IsDefault = false;
+            }
+
+            resolution.IsDefault = true;
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { resolution.Id, resolution.IsDefault });
         }
 
         [HttpDelete("{id}")]
@@ -134,7 +196,7 @@ namespace Fel.Api.Tenant.Controllers
         {
             var tenantId = GetCurrentTenantId();
             var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
-            if (!clientExists) return Forbid();
+            if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
 
             var resolution = await _dbContext.Set<Resolution>().FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId);
             if (resolution == null) return NotFound();

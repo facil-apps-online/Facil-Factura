@@ -4,9 +4,11 @@ using System.Threading.Tasks;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Fel.Api.Superadmin.Controllers
@@ -18,15 +20,79 @@ namespace Fel.Api.Superadmin.Controllers
         private readonly FelDbContext _dbContext;
         private readonly Fel.Core.Interfaces.ICoreApiClient _core;
         private readonly ILogger<SuperadminTenantsController> _logger;
+        private readonly PasswordResetService _passwordResetService;
+        private readonly Fel.Infrastructure.Services.DianRutParserService _rutParser;
+        private readonly string _tenantPortalUrl;
 
         public SuperadminTenantsController(
             FelDbContext dbContext,
             Fel.Core.Interfaces.ICoreApiClient core,
-            ILogger<SuperadminTenantsController> logger)
+            ILogger<SuperadminTenantsController> logger,
+            PasswordResetService passwordResetService,
+            Fel.Infrastructure.Services.DianRutParserService rutParser,
+            IConfiguration config)
         {
             _dbContext = dbContext;
             _core = core;
             _logger = logger;
+            _passwordResetService = passwordResetService;
+            _rutParser = rutParser;
+            _tenantPortalUrl = config["TenantPortalUrl"] ?? "https://tenants.facil-factura.pro";
+        }
+
+        /// <summary>
+        /// Lee un RUT (Formulario 001 de la DIAN) y devuelve sus datos para prellenar el alta de un
+        /// tenant. No crea nada: el superadmin revisa y confirma en el formulario.
+        /// </summary>
+        [HttpPost("parse-rut")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ParseRut([FromForm] IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { message = "No se adjuntó ningún archivo." });
+
+            if (!string.Equals(file.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "El RUT debe ser el PDF que descarga el portal de la DIAN." });
+
+            using var stream = file.OpenReadStream();
+            var rut = await _rutParser.ParsePdfAsync(stream);
+
+            if (!rut.IsSuccess)
+                return BadRequest(new { message = rut.ErrorMessage });
+
+            // El NIT ya en uso es lo único que se valida acá: evita que el superadmin llene todo
+            // el formulario para que el guardado falle al final por un tenant duplicado.
+            var yaExiste = await _dbContext.Tenants.AnyAsync(t => t.TaxId == rut.TaxId);
+
+            return Ok(new
+            {
+                taxId = rut.TaxId,
+                verificationDigit = rut.VerificationDigit,
+                name = rut.LegalName,
+                legalName = rut.LegalName,
+                commercialName = rut.CommercialName,
+                address = rut.Address,
+                city = rut.City,
+                department = rut.Department,
+                country = rut.Country,
+                email = rut.Email,
+                phone = rut.Phone,
+                economicActivity = rut.EconomicActivity,
+                taxRegime = RegimenDesdeResponsabilidades(rut.ResponsibilityCodes),
+                responsibilities = rut.Responsibilities,
+                alreadyRegistered = yaExiste
+            });
+        }
+
+        /// <summary>
+        /// Deduce el régimen tributario de las responsabilidades del RUT: la 47 es Régimen Simple
+        /// y la 48 marca responsable de IVA. Es solo una sugerencia para el formulario.
+        /// </summary>
+        private static string RegimenDesdeResponsabilidades(List<string> codigos)
+        {
+            if (codigos.Contains("47")) return "Régimen Simple de Tributación";
+            if (codigos.Contains("48")) return "Responsable de IVA";
+            return "No responsable de IVA";
         }
 
         [HttpGet]
@@ -40,7 +106,8 @@ namespace Fel.Api.Superadmin.Controllers
                     t.CommercialName,
                     t.Slug,
                     t.IsActive,
-                    t.CreatedAt
+                    t.CreatedAt,
+                    t.ParentTenantId
                 })
                 .ToListAsync();
 
@@ -55,20 +122,51 @@ namespace Fel.Api.Superadmin.Controllers
             return Ok(Project(tenant));
         }
 
+        // Core exige el slug en formato [a-z0-9]+(-[a-z0-9]+)* (constraint valid_slug_format).
+        // El formulario ya lo normaliza, pero esta es la última barrera antes de llamar a Core:
+        // un slug inválido ahí revienta la creación después de ya haber reservado el registro local.
+        private static string NormalizeSlug(string value)
+        {
+            var withoutDiacritics = value.Normalize(System.Text.NormalizationForm.FormD);
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in withoutDiacritics)
+            {
+                if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                {
+                    sb.Append(c);
+                }
+            }
+
+            var slug = System.Text.RegularExpressions.Regex.Replace(sb.ToString().ToLowerInvariant(), "[^a-z0-9]+", "-");
+            return slug.Trim('-');
+        }
+
         [HttpPost]
         public async Task<IActionResult> CreateTenant([FromBody] CreateTenantRequest request)
         {
+            request.Slug = NormalizeSlug(request.Slug);
+            if (string.IsNullOrEmpty(request.Slug))
+            {
+                return BadRequest("El slug no puede quedar vacío después de normalizarlo.");
+            }
+
             if (await _dbContext.Tenants.AnyAsync(t => t.Slug == request.Slug))
             {
                 return BadRequest("El slug ya está en uso.");
             }
 
-            // Validar el admin antes de persistir el tenant: si no, un email duplicado
-            // aborta el flujo dejando el tenant creado y bloqueando el slug en reintentos.
-            if (!string.IsNullOrWhiteSpace(request.AdminEmail)
-                && await _dbContext.TenantUsers.AnyAsync(u => u.Email == request.AdminEmail))
+            // Si el correo del admin ya existe, se reutiliza esa identidad (misma persona,
+            // administrando otro tenant) en vez de rechazar el alta. Antes esto bloqueaba, por
+            // ejemplo, dar de alta en un tenant nuevo a alguien a quien se le acababa de revocar
+            // el acceso en otro: su correo quedaba ocupado para siempre. TenantUser.Email es
+            // único a nivel de base (ver FelDbContext) precisamente porque el login del portal de
+            // tenants resuelve solo por correo, sin pedir slug — por eso no se crea un TenantUser
+            // nuevo con el mismo correo, se reutiliza el existente y se le agrega una asignación.
+            TenantUser? adminExistente = null;
+            if (!string.IsNullOrWhiteSpace(request.AdminEmail))
             {
-                return BadRequest("El email del administrador ya está registrado.");
+                adminExistente = await _dbContext.TenantUsers
+                    .FirstOrDefaultAsync(u => u.Email == request.AdminEmail);
             }
 
             var tenant = new Tenant
@@ -114,18 +212,39 @@ namespace Fel.Api.Superadmin.Controllers
             _dbContext.Tenants.Add(tenant);
             await _dbContext.SaveChangesAsync();
 
-            // Crear el usuario administrador del tenant si se proporcionó
+            // Crear (o reutilizar) el usuario administrador del tenant si se proporcionó
             if (!string.IsNullOrWhiteSpace(request.AdminEmail))
             {
-                string passwordHash = BCrypt.Net.BCrypt.HashPassword(request.AdminPassword ?? string.Empty);
+                TenantUser admin;
+                if (adminExistente != null)
+                {
+                    // La identidad ya existe: no se toca su nombre ni su contraseña — son de la
+                    // persona, no de este tenant — solo se le agrega acceso al nuevo.
+                    admin = adminExistente;
+                }
+                else
+                {
+                    admin = new TenantUser
+                    {
+                        Id = Guid.NewGuid(),
+                        // TenantId queda como el tenant por defecto (el que se abre al entrar
+                        // cuando la persona tiene acceso a varios).
+                        TenantId = tenant.Id,
+                        Name = string.IsNullOrWhiteSpace(request.AdminName) ? request.AdminEmail : request.AdminName,
+                        Email = request.AdminEmail,
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.AdminPassword ?? string.Empty),
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _dbContext.TenantUsers.Add(admin);
+                    await _dbContext.SaveChangesAsync();
+                }
 
-                _dbContext.TenantUsers.Add(new TenantUser
+                _dbContext.TenantUserAssignments.Add(new TenantUserAssignment
                 {
                     Id = Guid.NewGuid(),
+                    TenantUserId = admin.Id,
                     TenantId = tenant.Id,
-                    Name = string.IsNullOrWhiteSpace(request.AdminName) ? request.AdminEmail : request.AdminName,
-                    Email = request.AdminEmail,
-                    PasswordHash = passwordHash,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow
                 });
@@ -246,7 +365,8 @@ namespace Fel.Api.Superadmin.Controllers
             t.Latitude,
             t.Longitude,
             t.IsActive,
-            t.CreatedAt
+            t.CreatedAt,
+            t.ParentTenantId
         };
 
         [HttpPut("{id:guid}")]
@@ -254,6 +374,25 @@ namespace Fel.Api.Superadmin.Controllers
         {
             var tenant = await _dbContext.Tenants.FindAsync(id);
             if (tenant == null) return NotFound();
+
+            // Grupo empresarial: un tenant no puede ser su propio padre, ni el padre de un tenant
+            // que ya es su propio padre (ciclo de 2). No se valida más profundidad porque el caso
+            // de uso real es de un solo nivel (ej. R&W agrupa a DGS).
+            if (request.ParentTenantId.HasValue)
+            {
+                if (request.ParentTenantId.Value == id)
+                {
+                    return BadRequest("Un tenant no puede ser su propio grupo empresarial.");
+                }
+
+                var parent = await _dbContext.Tenants.FindAsync(request.ParentTenantId.Value);
+                if (parent == null) return BadRequest("El tenant padre indicado no existe.");
+                if (parent.ParentTenantId == id)
+                {
+                    return BadRequest("Esa asignación crearía un ciclo entre los dos tenants.");
+                }
+            }
+            tenant.ParentTenantId = request.ParentTenantId;
 
             tenant.Name = request.Name;
             tenant.CommercialName = request.CommercialName;
@@ -435,12 +574,25 @@ namespace Fel.Api.Superadmin.Controllers
             });
         }
 
+        // El estado que importa acá es el de la ASIGNACIÓN a este tenant, no el de la identidad
+        // (TenantUser.IsActive): la misma persona puede tener acceso vigente a un tenant y
+        // revocado en otro. Antes esto listaba/activaba/revocaba sobre la identidad completa, así
+        // que revocar a alguien en un tenant lo habría dejado sin acceso a TODOS los tenants a los
+        // que administrara.
+
         [HttpGet("{id:guid}/users")]
         public async Task<IActionResult> GetTenantUsers(Guid id)
         {
-            var users = await _dbContext.TenantUsers
-                .Where(u => u.TenantId == id)
-                .Select(u => new { u.Id, u.Name, u.Email, u.IsActive, u.CreatedAt })
+            var users = await _dbContext.TenantUserAssignments
+                .Where(a => a.TenantId == id)
+                .Select(a => new
+                {
+                    a.TenantUser.Id,
+                    a.TenantUser.Name,
+                    a.TenantUser.Email,
+                    IsActive = a.IsActive,
+                    a.CreatedAt
+                })
                 .ToListAsync();
 
             return Ok(users);
@@ -449,11 +601,47 @@ namespace Fel.Api.Superadmin.Controllers
         [HttpPost("{id:guid}/users")]
         public async Task<IActionResult> CreateTenantUser(Guid id, [FromBody] CreateTenantUserRequest request)
         {
-            if (!await _dbContext.Tenants.AnyAsync(t => t.Id == id)) return NotFound("Tenant no existe.");
-            if (await _dbContext.TenantUsers.AnyAsync(u => u.Email == request.Email)) return BadRequest("Email ya registrado.");
+            var tenant = await _dbContext.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+            if (tenant == null) return NotFound("Tenant no existe.");
 
-            // Hashing the password using BCrypt (assuming it's used or simple fallback)
-            string passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+            var existente = await _dbContext.TenantUsers.FirstOrDefaultAsync(u => u.Email == request.Email);
+
+            if (existente != null)
+            {
+                var asignacion = await _dbContext.TenantUserAssignments
+                    .FirstOrDefaultAsync(a => a.TenantUserId == existente.Id && a.TenantId == id);
+
+                if (asignacion != null)
+                {
+                    if (asignacion.IsActive) return BadRequest("Este administrador ya tiene acceso a este tenant.");
+
+                    // Tenía acceso, se lo habían revocado y se le está dando de nuevo: se
+                    // reactiva la asignación existente en vez de duplicarla (el índice único
+                    // sobre TenantUserId+TenantId lo impediría de todos modos).
+                    asignacion.IsActive = true;
+                    asignacion.RevokedAt = null;
+                    await _dbContext.SaveChangesAsync();
+                    return Ok(new { existente.Id, existente.Name, existente.Email, IsActive = true });
+                }
+
+                // Identidad ya registrada en otro tenant: se reutiliza, no se duplica el correo.
+                _dbContext.TenantUserAssignments.Add(new TenantUserAssignment
+                {
+                    Id = Guid.NewGuid(),
+                    TenantUserId = existente.Id,
+                    TenantId = id,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _dbContext.SaveChangesAsync();
+                return Ok(new { existente.Id, existente.Name, existente.Email, IsActive = true });
+            }
+
+            // Sin contraseña manual: se crea con un hash aleatorio inutilizable (nadie la conoce)
+            // y se invita al Tenant a que la establezca él mismo desde el enlace.
+            var passwordHash = string.IsNullOrWhiteSpace(request.Password)
+                ? BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString())
+                : BCrypt.Net.BCrypt.HashPassword(request.Password);
 
             var user = new TenantUser
             {
@@ -467,9 +655,81 @@ namespace Fel.Api.Superadmin.Controllers
             };
 
             _dbContext.TenantUsers.Add(user);
+            _dbContext.TenantUserAssignments.Add(new TenantUserAssignment
+            {
+                Id = Guid.NewGuid(),
+                TenantUserId = user.Id,
+                TenantId = id,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
             await _dbContext.SaveChangesAsync();
 
+            if (string.IsNullOrWhiteSpace(request.Password))
+            {
+                await _passwordResetService.RequestAsync(
+                    PortalUserType.Tenant, user.Id, user.Email, user.Name, _tenantPortalUrl, "invitation", tenant.CoreTenantId,
+                    tenant.LogoLightUrl, tenant.CommercialName);
+            }
+
             return Ok(new { user.Id, user.Name, user.Email, user.IsActive });
+        }
+
+        // Mismo patrón que TenantDevelopersController (Tenant -> Developer): reenviar, revocar
+        // y reactivar, para que el ciclo de vida de la invitación quede al mismo nivel en los
+        // tres flujos (Superadmin -> Tenant, Tenant -> Developer, Tenant -> Cliente).
+        [HttpPost("{id:guid}/users/{userId:guid}/resend-invitation")]
+        public async Task<IActionResult> ResendUserInvitation(Guid id, Guid userId)
+        {
+            var user = await _dbContext.TenantUsers.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null) return NotFound();
+
+            var asignacion = await _dbContext.TenantUserAssignments
+                .FirstOrDefaultAsync(a => a.TenantUserId == userId && a.TenantId == id);
+            if (asignacion == null) return NotFound();
+
+            if (!asignacion.IsActive)
+            {
+                return BadRequest("Este administrador fue revocado en este tenant; reactívalo antes de reenviar la invitación.");
+            }
+
+            var tenant = await _dbContext.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+            if (tenant == null) return NotFound("Tenant no encontrado.");
+
+            await _passwordResetService.RequestAsync(
+                PortalUserType.Tenant, user.Id, user.Email, user.Name, _tenantPortalUrl, "invitation", tenant.CoreTenantId,
+                tenant.LogoLightUrl, tenant.CommercialName);
+
+            return Ok(new { message = "Invitación reenviada." });
+        }
+
+        [HttpDelete("{id:guid}/users/{userId:guid}")]
+        public async Task<IActionResult> RevokeTenantUser(Guid id, Guid userId)
+        {
+            var asignacion = await _dbContext.TenantUserAssignments
+                .FirstOrDefaultAsync(a => a.TenantUserId == userId && a.TenantId == id);
+            if (asignacion == null) return NotFound();
+
+            asignacion.IsActive = false;
+            asignacion.RevokedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpPost("{id:guid}/users/{userId:guid}/reactivate")]
+        public async Task<IActionResult> ReactivateTenantUser(Guid id, Guid userId)
+        {
+            var asignacion = await _dbContext.TenantUserAssignments
+                .FirstOrDefaultAsync(a => a.TenantUserId == userId && a.TenantId == id);
+            if (asignacion == null) return NotFound();
+
+            asignacion.IsActive = true;
+            asignacion.RevokedAt = null;
+            await _dbContext.SaveChangesAsync();
+
+            var user = await _dbContext.TenantUsers.FirstAsync(u => u.Id == userId);
+            return Ok(new { user.Id, user.Name, user.Email, IsActive = true });
         }
     }
 
@@ -547,5 +807,6 @@ namespace Fel.Api.Superadmin.Controllers
         public string? DefaultLanguageCode { get; set; }
         public string? DefaultTimezone { get; set; }
         public string? DefaultCurrencyId { get; set; }
+        public Guid? ParentTenantId { get; set; }
     }
 }

@@ -17,10 +17,44 @@ namespace Fel.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.18")
+                .HasAnnotation("ProductVersion", "9.0.20")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("Fel.Core.Entities.Associate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("Associates");
+                });
 
             modelBuilder.Entity("Fel.Core.Entities.Certificate", b =>
                 {
@@ -65,8 +99,32 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("AppliesRetentions")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("AssociateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AutoSendAceptacion")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AutoSendAcuseRecibo")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AutoSendReciboBien")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AutoSendReclamo")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("BillingFrequency")
+                        .HasColumnType("int");
+
                     b.Property<string>("City")
                         .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CityCode")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("CommercialName")
@@ -80,6 +138,32 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("DataicoAccountId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DataicoApiPasswordEncrypted")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DataicoApiUser")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DataicoAuthTokenEncrypted")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DataicoEnvironment")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("DianFileSequence")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DianFileSequenceYear")
+                        .HasColumnType("int");
 
                     b.Property<string>("DianHabilitationMessage")
                         .IsRequired()
@@ -100,7 +184,32 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("IhceApimSubscriptionKey")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IhceClientId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IhceClientSecretEncrypted")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IhceEndpoint")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IhceEnvironment")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IhceTenantId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeveloperSandbox")
                         .HasColumnType("bit");
 
                     b.Property<double?>("Latitude")
@@ -126,6 +235,31 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<double?>("Longitude")
                         .HasColumnType("float");
 
+                    b.Property<string>("MinSaludEnvironment")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MinSaludIdentificationNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MinSaludIdentificationType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MinSaludPasswordEncrypted")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MinSaludTestIdentificationNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MinSaludTestIdentificationType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MinSaludTestPasswordEncrypted")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MinSaludUserType")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Phone")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -141,6 +275,27 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("ReceptionEmailEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ReceptionEmailHost")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReceptionEmailPasswordEncrypted")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ReceptionEmailPort")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ReceptionEmailUseSsl")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ReceptionEmailUser")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("SoftwareId")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -148,6 +303,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("SoftwarePin")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("SubscriptionRate")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("TaxId")
                         .IsRequired()
@@ -174,11 +332,48 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("TestSetLastInvoiceCufe")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TestSetLastInvoiceNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("TestSetRequiredAcceptedCreditNotes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TestSetRequiredAcceptedDebitNotes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TestSetRequiredAcceptedInvoices")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TestSetRequiredCreditNotes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TestSetRequiredDebitNotes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TestSetRequiredInvoices")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TestSetSentCreditNotes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TestSetSentDebitNotes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TestSetSentInvoices")
+                        .HasColumnType("int");
+
                     b.Property<string>("VerificationDigit")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AssociateId");
+
+                    b.HasIndex("IntegratorId");
 
                     b.HasIndex("LiveApiKey")
                         .IsUnique();
@@ -218,6 +413,189 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("SelectedTemplateId");
 
                     b.ToTable("ClientDocumentSettings", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientEnabledDocumentType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DocumentTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentTypeId");
+
+                    b.HasIndex("ClientId", "DocumentTypeId")
+                        .IsUnique();
+
+                    b.ToTable("ClientEnabledDocumentTypes", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientEnabledRetentionConcept", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RetentionConceptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RetentionConceptId");
+
+                    b.HasIndex("ClientId", "RetentionConceptId")
+                        .IsUnique();
+
+                    b.ToTable("ClientEnabledRetentionConcepts", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientIntegratorAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique()
+                        .HasFilter("[EffectiveTo] IS NULL");
+
+                    b.HasIndex("IntegratorId");
+
+                    b.ToTable("ClientIntegratorAssignments", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientIntegratorBilling", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Mode")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("PricePerDocument")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("PricePerUser")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegratorId");
+
+                    b.HasIndex("ClientId", "IntegratorId")
+                        .IsUnique();
+
+                    b.ToTable("ClientIntegratorBillings", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientPrepaidBag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AmountPaid")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("DiscountedPricePerDocument")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PackageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("PurchasedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("RemainingBalance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("IntegratorId");
+
+                    b.HasIndex("PackageId");
+
+                    b.ToTable("ClientPrepaidBags", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientPrepaidPackage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("DiscountedPricePerDocument")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("TotalPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("IntegratorId");
+
+                    b.ToTable("ClientPrepaidPackages", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.ClientUser", b =>
@@ -260,9 +638,21 @@ namespace Fel.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AccountNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AccountType")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Address")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Bank")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("BaseSalary")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("CityCode")
                         .IsRequired()
@@ -275,16 +665,39 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("ContractType")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("DataicoRegimen")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DataicoTaxLevelCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTime?>("FireDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FirstLastName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FirstName")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("FiscalResponsibilities")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("HighRisk")
+                        .HasColumnType("bit");
 
                     b.Property<string>("IdentificationNumber")
                         .IsRequired()
@@ -295,14 +708,41 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("IntegralSalary")
+                        .HasColumnType("bit");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<int>("PartyType")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PaymentMeans")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Phone")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PostalCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SecondLastName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SecondName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("TaxRegime")
                         .IsRequired()
@@ -315,12 +755,1117 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("WorkerType")
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ClientId", "IdentificationNumber")
                         .IsUnique();
 
                     b.ToTable("Customers", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DataicoTaxCatalogItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal?>("Rate")
+                        .HasColumnType("decimal(6,3)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DataicoTaxCatalogItems", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000001"),
+                            Category = "RET_FUENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = false,
+                            Kind = 0,
+                            Name = "Retención en la Fuente"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000002"),
+                            Category = "RET_ICA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = false,
+                            Kind = 0,
+                            Name = "Retención de ICA"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000003"),
+                            Category = "RET_IVA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = false,
+                            Kind = 0,
+                            Name = "Retención de IVA"
+                        },
+                        new
+                        {
+                            Id = new Guid("11000000-0000-0000-0000-000000000001"),
+                            Category = "RET_FUENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Compras generales (2.5%)",
+                            Rate = 2.5m
+                        },
+                        new
+                        {
+                            Id = new Guid("11000000-0000-0000-0000-000000000002"),
+                            Category = "RET_FUENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Servicios generales (4%)",
+                            Rate = 4m
+                        },
+                        new
+                        {
+                            Id = new Guid("11000000-0000-0000-0000-000000000003"),
+                            Category = "RET_FUENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Servicios profesionales / honorarios (11%)",
+                            Rate = 11m
+                        },
+                        new
+                        {
+                            Id = new Guid("11000000-0000-0000-0000-000000000004"),
+                            Category = "RET_ICA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Actividad industrial Bogotá (0.414%)",
+                            Rate = 0.414m
+                        },
+                        new
+                        {
+                            Id = new Guid("11000000-0000-0000-0000-000000000005"),
+                            Category = "RET_ICA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Actividad de servicios Bogotá (0.966%)",
+                            Rate = 0.966m
+                        },
+                        new
+                        {
+                            Id = new Guid("11000000-0000-0000-0000-000000000006"),
+                            Category = "RET_IVA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Estándar (15%)",
+                            Rate = 15m
+                        },
+                        new
+                        {
+                            Id = new Guid("11000000-0000-0000-0000-000000000007"),
+                            Category = "RET_IVA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Grandes contribuyentes (20%)",
+                            Rate = 20m
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000004"),
+                            Category = "IMP_CONSUMO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 1,
+                            Name = "Impuesto al Consumo"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000005"),
+                            Category = "IMP_CONSUMO_LICOR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 1,
+                            Name = "Impuesto al Consumo de Licores"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000006"),
+                            Category = "IMP_BOLSA_PLASTICA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 1,
+                            Name = "Impuesto a la Bolsa Plástica"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000007"),
+                            Category = "19",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 2,
+                            Name = "IVA General (19%)"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000008"),
+                            Category = "5",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 2,
+                            Name = "IVA Reducido (5%)"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000009"),
+                            Category = "0",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 3,
+                            Name = "Contado (0 días)"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-00000000000a"),
+                            Category = "15",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 3,
+                            Name = "15 días"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-00000000000b"),
+                            Category = "30",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 3,
+                            Name = "30 días"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-00000000000c"),
+                            Category = "45",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 3,
+                            Name = "45 días"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-00000000000d"),
+                            Category = "60",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 3,
+                            Name = "60 días"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-00000000000e"),
+                            Category = "90",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 3,
+                            Name = "90 días"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-00000000000f"),
+                            Category = "EFECTIVO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 4,
+                            Name = "Efectivo"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000010"),
+                            Category = "TRANSFERENCIA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 4,
+                            Name = "Transferencia Bancaria"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000011"),
+                            Category = "DEBIT_CARD",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 4,
+                            Name = "Tarjeta Débito"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000012"),
+                            Category = "CREDIT_CARD",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 4,
+                            Name = "Tarjeta Crédito"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000001"),
+                            Category = "DEPENDIENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Dependiente"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000002"),
+                            Category = "PROFESOR_DE_ESTABLECIMIENTO_PARTICULAR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Profesor De Establecimiento Particular"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000003"),
+                            Category = "PRE_PENSIONADO_CON_APORTE_VOLUNTARIO_A_SALUD",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Pre Pensionado Con Aporte Voluntario A Salud"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000004"),
+                            Category = "SERVICIO_DOMESTICO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Servicio Domestico"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000005"),
+                            Category = "APRENDICES_DEL_SENA_EN_ETAPA_LECTIVA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Aprendices Del Sena En Etapa Lectiva"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000006"),
+                            Category = "COOPERADOS_O_PRE_COOPERATIVAS_DE_TRABAJO_ASOCIADO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Cooperados O Pre Cooperativas De Trabajo Asociado"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000007"),
+                            Category = "ESTUDIANTES_DE_PRACTICAS_LABORALES_EN_EL_SECTOR_PUBLICO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Estudiantes De Practicas Laborales En El Sector Publico"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000008"),
+                            Category = "TRABAJADOR_DEPENDIENTE_DE_ENTIDAD_BENEFICIARIA_DEL_SISTEMA_GENERAL_DE_PARTICIPACIONES_APORTES_PATRONALES",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Trabajador Dependiente De Entidad Beneficiaria Del Sistema General De Participaciones Aportes Patronales"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000009"),
+                            Category = "FUNCIONARIOS_PUBLICOS_SIN_TOPE_MAXIMO_DE_IBC",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Funcionarios Publicos Sin Tope Maximo De Ibc"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000010"),
+                            Category = "MADRE_COMUNITARIA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Madre Comunitaria"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000011"),
+                            Category = "ESTUDIANTES_DE_POSTGRADO_EN_SALUD",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Estudiantes De Postgrado En Salud"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000012"),
+                            Category = "DEPENDIENTE_ENTIDADES_O_UNIVERSIDADES_PUBLICAS_CON_REGIMEN_ESPECIAL_EN_SALUD",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Dependiente Entidades O Universidades Publicas Con Regimen Especial En Salud"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000013"),
+                            Category = "PRE_PENSIONADO_DE_ENTIDAD_EN_LIQUIDACION",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Pre Pensionado De Entidad En Liquidacion"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000014"),
+                            Category = "ESTUDIANTES_APORTES_SOLO_RIESGOS_LABORALES",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Estudiantes Aportes Solo Riesgos Laborales"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000015"),
+                            Category = "TRABAJADOR_DE_TIEMPO_PARCIAL",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Trabajador De Tiempo Parcial"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000016"),
+                            Category = "APRENDICES_DEL_SENA_EN_ETAPA_PRODUCTIVA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Aprendices Del Sena En Etapa Productiva"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000017"),
+                            Category = "APRENDICES_DEL_SENA_EN_ETAPA_PRODUCTIVA_REFORMA_2025",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Aprendices Del Sena En Etapa Productiva Reforma 2025"
+                        },
+                        new
+                        {
+                            Id = new Guid("20000000-0000-0000-0000-000000000018"),
+                            Category = "APRENDICES_DEL_SENA_EN_ETAPA_LECTIVA_REFORMA_2025",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 5,
+                            Name = "Aprendices Del Sena En Etapa Lectiva Reforma 2025"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000001"),
+                            Category = "TERMINO_FIJO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 6,
+                            Name = "Termino Fijo"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000002"),
+                            Category = "TERMINO_INDEFINIDO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 6,
+                            Name = "Termino Indefinido"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000003"),
+                            Category = "OBRA_LABOR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 6,
+                            Name = "Obra Labor"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000004"),
+                            Category = "APRENDIZAJE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 6,
+                            Name = "Aprendizaje"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000005"),
+                            Category = "PRACTICAS_PASANTIAS",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 6,
+                            Name = "Practicas Pasantias"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000001"),
+                            Category = "CTX",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Ctx"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000002"),
+                            Category = "VALES",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Vales"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000003"),
+                            Category = "NOTA_PROMISORIA_FIRMADA_PRO_EL_BANCO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Promisoria Firmada Pro El Banco"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000004"),
+                            Category = "GIRO_URGENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Giro Urgente"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000005"),
+                            Category = "CONCENTRACION_EFECTIVO_AHORROS_/_DESEMBOLSO_CREDITO_CCD",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Concentración Efectivo/Ahorros - Desembolso Crédito CCD"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000006"),
+                            Category = "REVERSION_CREDITO_AHORRO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Reversion Credito Ahorro"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000007"),
+                            Category = "DEBITO_CTX",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Debito Ctx"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000008"),
+                            Category = "NOTA_RETIRO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Retiro"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000009"),
+                            Category = "NOTA_CAMBIARIA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Cambiaria"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000010"),
+                            Category = "NOTA_RETIRO_TERCERO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Retiro Tercero"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000011"),
+                            Category = "EFECTIVO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Efectivo"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000012"),
+                            Category = "CHEQUE_LOCAL_TRAFERIBLE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Cheque Local Traferible"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000013"),
+                            Category = "NOTA_BANCARIA_TRANFERIBLE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Bancaria Tranferible"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000014"),
+                            Category = "BOOKENTRY_DEBITO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Bookentry Debito"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000015"),
+                            Category = "NOTA_PROMISORIA_FIRMADA_POR_EL_ACREEDOR_AVALADA_POR_UN_TERCERO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Promisoria Firmada Por El Acreedor Avalada Por Un Tercero"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000016"),
+                            Category = "PAGO_TESORERIA_URGENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Pago Tesoreria Urgente"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000017"),
+                            Category = "REVERSION_CREDITO_DE_DEMANDA_ACH",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Reversion Credito De Demanda Ach"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000018"),
+                            Category = "ACUERDO_MUTUO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Acuerdo Mutuo"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000019"),
+                            Category = "TARJETA_CREDITO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Tarjeta Credito"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000020"),
+                            Category = "BONOS",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Bonos"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000021"),
+                            Category = "DESEMBOLSO_PLUS_DEBITO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Desembolso Plus Debito"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000022"),
+                            Category = "CREDITO_AHORRO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Credito Ahorro"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000023"),
+                            Category = "BOOKENTRY_CREDITO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Bookentry Credito"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000024"),
+                            Category = "METODO_DE_PAGO_SOLICITADO_NO_USUADO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Metodo De Pago Solicitado No Usuado"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000025"),
+                            Category = "TELEX_ESTANDAR_BANCARIO_FRANCES",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Telex Estandar Bancario Frances"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000026"),
+                            Category = "CREDITO_ACH",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Credito Ach"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000027"),
+                            Category = "CLEARING_ENTRE_PARTNERS",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Clearing Entre Partners"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000028"),
+                            Category = "DESEMBOLSO_DEBITO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Desembolso Debito"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000029"),
+                            Category = "DEBITO_DE_DEMANDA_ACH",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Debito De Demanda Ach"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000030"),
+                            Category = "INSTRUMENTO_NO_DEFINIDO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Instrumento No Definido"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000031"),
+                            Category = "TRANSFERENCIA_DEBITO_INTERBANCARIO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Transferencia Debito Interbancario"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000032"),
+                            Category = "DESEMBOLSO_CREDITO_PLUS",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Desembolso Credito Plus"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000033"),
+                            Category = "PAGO_DEPOSITO_PRE_ACORDADO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Pago Deposito Pre Acordado"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000034"),
+                            Category = "NOTA_PROMISORIA_FIRMADA_POR_UN_BANCO_AVALADA_POR_OTRO_BANCO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Promisoria Firmada Por Un Banco Avalada Por Otro Banco"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000035"),
+                            Category = "NOTA_PROMISORIA_FIRMADA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Promisoria Firmada"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000036"),
+                            Category = "CHEQUE_BANCARIO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Cheque Bancario"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000037"),
+                            Category = "CHEQUE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Cheque"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000038"),
+                            Category = "NOTA_PROMISORIA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Promisoria"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000039"),
+                            Category = "POSTGIRO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Postgiro"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000040"),
+                            Category = "RETIRO_DE_NOTA_POR_EL_POR_EL_ACREEDOR_SOBRE_UN_BANCO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Retiro De Nota Por El Por El Acreedor Sobre Un Banco"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000041"),
+                            Category = "PAGO_COMERCIAL_URGENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Pago Comercial Urgente"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000042"),
+                            Category = "RETIRO_DE_NOTA_POR_EL_ACREEDOR_AVALADA_POR_OTRO_BANCO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Retiro De Nota Por El Acreedor Avalada Por Otro Banco"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000043"),
+                            Category = "DEBITO_ACH",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Debito Ach"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000044"),
+                            Category = "TARJETA_DEBITO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Tarjeta Debito"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000045"),
+                            Category = "NOTA_PROMISORIA_FIRMADA_ACREEDOR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Promisoria Firmada Acreedor"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000046"),
+                            Category = "PROYECTO_BANCARIO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Proyecto Bancario"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000047"),
+                            Category = "NOTA_PROMISORIA_BANCO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Nota Promisoria Banco"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000048"),
+                            Category = "PAGO_NEGOCIO_CORPORATIVO_AHORROS_CREDITO_CTP",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Pago Negocio Corporativo Ahorros Credito Ctp"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000049"),
+                            Category = "PAGO_NEGOCIO_CORPORATIVO_AHORROS_DEBITO_CTP",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Pago Negocio Corporativo Ahorros Debito Ctp"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000050"),
+                            Category = "CONSIGNACION_BANCARIA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Consignacion Bancaria"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000051"),
+                            Category = "CHEQUE_LOCAL",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Cheque Local"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000052"),
+                            Category = "CREDITO_CTP",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Credito Ctp"
+                        },
+                        new
+                        {
+                            Id = new Guid("40000000-0000-0000-0000-000000000053"),
+                            Category = "GIRO_REFERENCIADO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 7,
+                            Name = "Giro Referenciado"
+                        },
+                        new
+                        {
+                            Id = new Guid("50000000-0000-0000-0000-000000000001"),
+                            Category = "SIMPLIFICADO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 8,
+                            Name = "Régimen Simplificado"
+                        },
+                        new
+                        {
+                            Id = new Guid("50000000-0000-0000-0000-000000000002"),
+                            Category = "COMUN",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 8,
+                            Name = "Régimen Común"
+                        },
+                        new
+                        {
+                            Id = new Guid("50000000-0000-0000-0000-000000000003"),
+                            Category = "RESPONSABLE_DE_IVA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 8,
+                            Name = "Responsable de IVA"
+                        },
+                        new
+                        {
+                            Id = new Guid("50000000-0000-0000-0000-000000000004"),
+                            Category = "NO_RESPONSABLE_DE_IVA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 8,
+                            Name = "No Responsable de IVA"
+                        },
+                        new
+                        {
+                            Id = new Guid("60000000-0000-0000-0000-000000000001"),
+                            Category = "SIMPLE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 9,
+                            Name = "Régimen Simple"
+                        },
+                        new
+                        {
+                            Id = new Guid("60000000-0000-0000-0000-000000000002"),
+                            Category = "ORDINARIO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 9,
+                            Name = "Régimen Ordinario"
+                        },
+                        new
+                        {
+                            Id = new Guid("60000000-0000-0000-0000-000000000003"),
+                            Category = "AUTORRETENEDOR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 9,
+                            Name = "Autorretenedor"
+                        },
+                        new
+                        {
+                            Id = new Guid("70000000-0000-0000-0000-000000000001"),
+                            Category = "AHORROS",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 10,
+                            Name = "Ahorros"
+                        },
+                        new
+                        {
+                            Id = new Guid("70000000-0000-0000-0000-000000000002"),
+                            Category = "CORRIENTE",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 10,
+                            Name = "Corriente"
+                        });
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DeveloperUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("DeveloperUsers", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DianMunicipality", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(5)
+                        .HasColumnType("nvarchar(5)");
+
+                    b.Property<string>("DepartmentCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("DepartmentName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Code");
+
+                    b.HasIndex("DepartmentCode");
+
+                    b.ToTable("DianMunicipalities", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Document", b =>
@@ -341,6 +1886,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<Guid?>("CustomerId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("DataicoDocumentId")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("DianResponseCode")
                         .HasColumnType("nvarchar(max)");
 
@@ -349,6 +1897,24 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<Guid?>("DocumentTypeId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("GeneralChargeAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("GeneralChargeReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("GeneralDiscountAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("GeneralDiscountReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("IssueDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Notes")
                         .IsRequired()
@@ -359,6 +1925,15 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("PaymentMeans")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PaymentMeansType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("PaymentTermDays")
+                        .HasColumnType("int");
+
                     b.Property<string>("PdfUrl")
                         .HasColumnType("nvarchar(max)");
 
@@ -368,11 +1943,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<DateTime?>("ProcessedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("PurchaseOrderReference")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ReferenceConcept")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("ReferenceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ResolutionId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("SectorExtensionData")
@@ -416,11 +1997,39 @@ namespace Fel.Infrastructure.Migrations
 
                     b.HasIndex("DocumentTypeId");
 
+                    b.HasIndex("IntegratorId");
+
                     b.HasIndex("ReferenceDocumentId");
+
+                    b.HasIndex("ResolutionId");
 
                     b.HasIndex("UsedTemplateId");
 
                     b.ToTable("Documents", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentGeneralRetention", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(6,3)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.ToTable("DocumentGeneralRetentions", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>
@@ -434,8 +2043,14 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<decimal>("DiscountRate")
+                        .HasColumnType("decimal(5,2)");
+
                     b.Property<Guid>("DocumentId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("IvaTreatment")
+                        .HasColumnType("int");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -447,6 +2062,9 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<decimal>("Quantity")
                         .HasColumnType("decimal(18,4)");
+
+                    b.Property<bool>("RetentionOverridden")
+                        .HasColumnType("bit");
 
                     b.Property<string>("SectorExtensionData")
                         .IsRequired()
@@ -471,6 +2089,36 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("DocumentItems", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentRetention", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("BaseAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("DocumentItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentItemId");
+
+                    b.ToTable("DocumentRetentions", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentTemplate", b =>
@@ -704,7 +2352,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("00000000-0000-0000-0000-000000000012"),
                             Code = "DE-CINE",
                             Description = "Boleta de ingreso a cine",
-                            DianCode = "06",
+                            DianCode = "25",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Cine"
@@ -713,8 +2361,8 @@ namespace Fel.Infrastructure.Migrations
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000013"),
                             Code = "DE-PASAJEROS",
-                            Description = "Tiquete de transporte de pasajeros",
-                            DianCode = "07",
+                            Description = "Tiquete de transporte terrestre de pasajeros",
+                            DianCode = "35",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Transporte Pasajeros"
@@ -723,8 +2371,8 @@ namespace Fel.Infrastructure.Migrations
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000014"),
                             Code = "DE-EXTRACTO",
-                            Description = "Extracto expedido por sociedades",
-                            DianCode = "08",
+                            Description = "Extracto expedido por sociedades financieras y fondos",
+                            DianCode = "45",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Extracto"
@@ -733,8 +2381,8 @@ namespace Fel.Infrastructure.Migrations
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000015"),
                             Code = "DE-AEREO",
-                            Description = "Tiquete de transporte aéreo",
-                            DianCode = "09",
+                            Description = "Tiquete de transporte aéreo de pasajeros",
+                            DianCode = "50",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Transporte Aéreo"
@@ -743,8 +2391,8 @@ namespace Fel.Infrastructure.Migrations
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000016"),
                             Code = "DE-JUEGOSLOC",
-                            Description = "Documento en juegos localizados",
-                            DianCode = "10",
+                            Description = "Documento en juegos localizados y no localizados",
+                            DianCode = "30",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Juegos Localizados"
@@ -753,8 +2401,8 @@ namespace Fel.Infrastructure.Migrations
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000017"),
                             Code = "DE-AZAR",
-                            Description = "Boletas en juegos de suerte y azar",
-                            DianCode = "11",
+                            Description = "Boletas en juegos de suerte y azar (mismo código DIAN que juegos localizados)",
+                            DianCode = "30",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Suerte y Azar"
@@ -764,7 +2412,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("00000000-0000-0000-0000-000000000018"),
                             Code = "DE-PEAJE",
                             Description = "Cobro de peajes",
-                            DianCode = "12",
+                            DianCode = "40",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Peajes"
@@ -773,8 +2421,8 @@ namespace Fel.Infrastructure.Migrations
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000019"),
                             Code = "DE-BOLSA",
-                            Description = "Operaciones Bolsa de Valores",
-                            DianCode = "13",
+                            Description = "Liquidación de operaciones Bolsa de Valores",
+                            DianCode = "55",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Bolsa de Valores"
@@ -783,8 +2431,8 @@ namespace Fel.Infrastructure.Migrations
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000020"),
                             Code = "DE-AGRO",
-                            Description = "Operaciones Bolsa Agropecuaria",
-                            DianCode = "14",
+                            Description = "Operaciones bolsa agropecuaria y otros commodities (mismo código DIAN que bolsa de valores)",
+                            DianCode = "55",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Bolsa Agropecuaria"
@@ -794,7 +2442,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("00000000-0000-0000-0000-000000000021"),
                             Code = "DE-SERVICIOSP",
                             Description = "Servicios públicos domiciliarios",
-                            DianCode = "15",
+                            DianCode = "60",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Servicios Públicos"
@@ -804,7 +2452,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("00000000-0000-0000-0000-000000000022"),
                             Code = "DE-ESPECTACULOS",
                             Description = "Ingreso a espectáculos públicos",
-                            DianCode = "16",
+                            DianCode = "27",
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Doc. Equivalente - Espectáculos Públicos"
@@ -812,12 +2460,22 @@ namespace Fel.Infrastructure.Migrations
                         new
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000023"),
-                            Code = "DE-AJUSTE",
-                            Description = "Nota de ajuste para documentos equivalentes",
+                            Code = "DE-AJUSTE-CREDITO",
+                            Description = "Nota de ajuste tipo crédito para documentos equivalentes",
                             DianCode = "94",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Nota de Ajuste - Doc. Equivalente"
+                            Name = "Nota de Ajuste (Crédito) - Doc. Equivalente"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000032"),
+                            Code = "DE-AJUSTE-DEBITO",
+                            Description = "Nota de ajuste tipo débito para documentos equivalentes",
+                            DianCode = "93",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Nota de Ajuste (Débito) - Doc. Equivalente"
                         },
                         new
                         {
@@ -861,6 +2519,124 @@ namespace Fel.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.Integrator", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Nit")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Integrators", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000101"),
+                            Code = "NATIVE",
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Emisión directa DIAN",
+                            Nit = ""
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000102"),
+                            Code = "DATAICO",
+                            IsActive = true,
+                            Kind = 1,
+                            Name = "Dataico S.A.S.",
+                            Nit = "900.XXX.XXX-X"
+                        });
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.PasswordResetToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("UserType")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PasswordResetTokens");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("DiscountedPricePerUser")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TotalPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("PrepaidPackages", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -878,17 +2654,23 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<decimal>("IvaRate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("IvaTreatment")
+                        .HasColumnType("int");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<string>("RetentionGroupKey")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("StandardCode")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("TaxRate")
-                        .HasColumnType("decimal(5,2)");
 
                     b.Property<string>("UnitOfMeasure")
                         .IsRequired()
@@ -908,6 +2690,117 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("Products", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.ProductTax", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductTaxes", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Cufe")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DocumentId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DocumentTypeCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("IssueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("IssuerName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IssuerTaxId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RawXml")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.ToTable("ReceivedDocuments");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocumentEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Cude")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DianResponseMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EventCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("ReceivedDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceivedDocumentId");
+
+                    b.ToTable("ReceivedDocumentEvents");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Resolution", b =>
                 {
                     b.Property<Guid>("Id")
@@ -923,6 +2816,12 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("NextNumber")
+                        .HasColumnType("bigint");
 
                     b.Property<long>("NumberEnd")
                         .HasColumnType("bigint");
@@ -955,6 +2854,54 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("Resolutions", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.RetentionConcept", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("BaseType")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("BaseUvt")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("GroupKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("GroupLabel")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("PersonType")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RetentionConcepts");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.RipsCie10Rule", b =>
                 {
                     b.Property<string>("Code")
@@ -971,10 +2918,10 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<int>("MaxAgeYears")
+                    b.Property<int>("MaxAgeDays")
                         .HasColumnType("int");
 
-                    b.Property<int>("MinAgeYears")
+                    b.Property<int>("MinAgeDays")
                         .HasColumnType("int");
 
                     b.HasKey("Code");
@@ -1044,6 +2991,9 @@ namespace Fel.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -1061,6 +3011,8 @@ namespace Fel.Infrastructure.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IntegratorId");
 
                     b.ToTable("TariffTiers", (string)null);
 
@@ -1111,6 +3063,30 @@ namespace Fel.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.TaxParameter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TaxParameters");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1124,6 +3100,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("BillingAddress")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("BillingMode")
+                        .HasColumnType("int");
 
                     b.Property<string>("City")
                         .IsRequired()
@@ -1209,6 +3188,9 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<Guid?>("ParentTenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Phone")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -1241,6 +3223,9 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("ShowUsageToClients")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1267,6 +3252,8 @@ namespace Fel.Infrastructure.Migrations
                         .HasColumnType("nvarchar(30)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ParentTenantId");
 
                     b.HasIndex("Slug")
                         .IsUnique();
@@ -1308,6 +3295,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<int>("TotalDocuments")
                         .HasColumnType("int");
 
+                    b.Property<int?>("TotalUsers")
+                        .HasColumnType("int");
+
                     b.Property<int>("Year")
                         .HasColumnType("int");
 
@@ -1316,6 +3306,70 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("TenantBillings", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantIntegratorBilling", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Mode")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("PricePerUser")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegratorId");
+
+                    b.HasIndex("TenantId", "IntegratorId")
+                        .IsUnique();
+
+                    b.ToTable("TenantIntegratorBillings", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantPrepaidBag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AmountPaid")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("DiscountedPricePerUser")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("PackageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("PurchasedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("RemainingBalance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PackageId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("TenantPrepaidBags", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.TenantPricing", b =>
@@ -1361,7 +3415,7 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<string>("Email")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -1379,9 +3433,82 @@ namespace Fel.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Email")
+                        .IsUnique();
+
                     b.HasIndex("TenantId");
 
                     b.ToTable("TenantUsers");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantUserAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantUserId", "TenantId")
+                        .IsUnique();
+
+                    b.ToTable("TenantUserAssignments", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantUserPricing", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<decimal>("PricePerUser")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique();
+
+                    b.ToTable("TenantUserPricings", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Associate", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Certificate", b =>
@@ -1397,11 +3524,25 @@ namespace Fel.Infrastructure.Migrations
 
             modelBuilder.Entity("Fel.Core.Entities.Client", b =>
                 {
+                    b.HasOne("Fel.Core.Entities.Associate", "Associate")
+                        .WithMany()
+                        .HasForeignKey("AssociateId");
+
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
                         .WithMany("Clients")
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Associate");
+
+                    b.Navigation("Integrator");
 
                     b.Navigation("Tenant");
                 });
@@ -1432,6 +3573,128 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("SelectedTemplate");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.ClientEnabledDocumentType", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.DocumentType", "DocumentType")
+                        .WithMany()
+                        .HasForeignKey("DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("DocumentType");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientEnabledRetentionConcept", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.RetentionConcept", "RetentionConcept")
+                        .WithMany()
+                        .HasForeignKey("RetentionConceptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("RetentionConcept");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientIntegratorAssignment", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Integrator");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientIntegratorBilling", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Integrator");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientPrepaidBag", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.ClientPrepaidPackage", "Package")
+                        .WithMany("Bags")
+                        .HasForeignKey("PackageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Integrator");
+
+                    b.Navigation("Package");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientPrepaidPackage", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Integrator");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.ClientUser", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Client", "Client")
@@ -1454,6 +3717,23 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Client");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.DeveloperUser", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Tenant");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Document", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Client", "Client")
@@ -1472,9 +3752,19 @@ namespace Fel.Infrastructure.Migrations
                         .HasForeignKey("DocumentTypeId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Fel.Core.Entities.Document", "ReferenceDocument")
                         .WithMany()
                         .HasForeignKey("ReferenceDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.Resolution", "Resolution")
+                        .WithMany()
+                        .HasForeignKey("ResolutionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Fel.Core.Entities.DocumentTemplate", "UsedTemplate")
@@ -1488,9 +3778,24 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Navigation("DocumentType");
 
+                    b.Navigation("Integrator");
+
                     b.Navigation("ReferenceDocument");
 
+                    b.Navigation("Resolution");
+
                     b.Navigation("UsedTemplate");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentGeneralRetention", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Document", "Document")
+                        .WithMany("GeneralRetentions")
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Document");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>
@@ -1509,6 +3814,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Document");
 
                     b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentRetention", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.DocumentItem", "DocumentItem")
+                        .WithMany("Retentions")
+                        .HasForeignKey("DocumentItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DocumentItem");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentTemplate", b =>
@@ -1549,6 +3865,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany("PrepaidPackages")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Product", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Client", "Client")
@@ -1558,6 +3885,39 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Client");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ProductTax", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Product", "Product")
+                        .WithMany("Taxes")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocument", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocumentEvent", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.ReceivedDocument", "ReceivedDocument")
+                        .WithMany("Events")
+                        .HasForeignKey("ReceivedDocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReceivedDocument");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Resolution", b =>
@@ -1571,6 +3931,26 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Client");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.TariffTier", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Integrator");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Tenant", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Tenant", "ParentTenant")
+                        .WithMany("ChildTenants")
+                        .HasForeignKey("ParentTenantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ParentTenant");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.TenantBilling", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
@@ -1578,6 +3958,44 @@ namespace Fel.Infrastructure.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantIntegratorBilling", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Integrator");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantPrepaidBag", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.PrepaidPackage", "Package")
+                        .WithMany("Bags")
+                        .HasForeignKey("PackageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany("PrepaidBags")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Package");
 
                     b.Navigation("Tenant");
                 });
@@ -1612,6 +4030,36 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.TenantUserAssignment", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.TenantUser", "TenantUser")
+                        .WithMany()
+                        .HasForeignKey("TenantUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
+
+                    b.Navigation("TenantUser");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantUserPricing", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithOne("UserPricing")
+                        .HasForeignKey("Fel.Core.Entities.TenantUserPricing", "TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Client", b =>
                 {
                     b.Navigation("Certificates");
@@ -1627,9 +4075,21 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Users");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.ClientPrepaidPackage", b =>
+                {
+                    b.Navigation("Bags");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Document", b =>
                 {
+                    b.Navigation("GeneralRetentions");
+
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>
+                {
+                    b.Navigation("Retentions");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentType", b =>
@@ -1639,13 +4099,36 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Pricings");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
+                {
+                    b.Navigation("Bags");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Product", b =>
+                {
+                    b.Navigation("Taxes");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocument", b =>
+                {
+                    b.Navigation("Events");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Tenant", b =>
                 {
                     b.Navigation("Billings");
 
+                    b.Navigation("ChildTenants");
+
                     b.Navigation("Clients");
 
+                    b.Navigation("PrepaidBags");
+
+                    b.Navigation("PrepaidPackages");
+
                     b.Navigation("Pricings");
+
+                    b.Navigation("UserPricing");
 
                     b.Navigation("Users");
                 });

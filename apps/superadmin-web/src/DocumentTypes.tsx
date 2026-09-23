@@ -106,10 +106,10 @@ export const DocumentTypes = () => {
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right space-x-2">
-                  <Link to={`/document-types/${doc.id}/templates`} className="inline-block p-2 text-indigo-400 hover:bg-indigo-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all" title="Ver Modelos de Diseño">
+                  <Link to={`/document-types/${doc.id}/templates`} className="inline-flex items-center justify-center p-2 text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-all" title="Ver Modelos de Diseño">
                     <FileText className="w-5 h-5" />
                   </Link>
-                  <button onClick={() => handleDelete(doc.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all" title="Eliminar Tipo">
+                  <button onClick={() => handleDelete(doc.id)} className="inline-flex items-center justify-center p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar Tipo">
                     <Trash2 className="w-5 h-5" />
                   </button>
                 </td>

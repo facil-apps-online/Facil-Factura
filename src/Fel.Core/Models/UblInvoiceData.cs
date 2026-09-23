@@ -12,8 +12,17 @@ namespace Fel.Core.Models
         public DateTime IssueTime { get; set; }
         
         public string TechnicalKey { get; set; } = string.Empty;
+        public string SoftwareId { get; set; } = string.Empty; // Client.SoftwareId (cada cliente hace su propia habilitación)
         public string SoftwarePin { get; set; } = string.Empty;
         public string Environment { get; set; } = "2"; // 1=Prod, 2=Pruebas
+
+        // Datos de la resolución de facturación real bajo la que se emite este documento (ver
+        // Fel.Core.Entities.Resolution) — antes iban fijos en el XML con valores de 2024.
+        public string ResolutionNumber { get; set; } = string.Empty;
+        public DateTime ResolutionValidFrom { get; set; }
+        public DateTime ResolutionValidTo { get; set; }
+        public long ResolutionNumberStart { get; set; }
+        public long ResolutionNumberEnd { get; set; }
         
         // Metadata DIAN
         public string DianCode { get; set; } = "01"; 
@@ -52,7 +61,9 @@ namespace Fel.Core.Models
         public List<string> TaxLevelCodes { get; set; } = new List<string> { "O-47" };
         public string TaxSchemeId { get; set; } = "01";
         public string DepartmentCode { get; set; } = "11";
+        public string DepartmentName { get; set; } = string.Empty;
         public string CityCode { get; set; } = "11001";
+        public string CityName { get; set; } = string.Empty;
         public string PostalZone { get; set; } = "110011";
         public string Address { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
@@ -62,12 +73,18 @@ namespace Fel.Core.Models
     {
         public string TaxId { get; set; } = string.Empty;
         public string IdentificationCode { get; set; } = "13"; // CC por defecto
-        public string TaxSchemeId { get; set; } = "ZY"; // No responsable por defecto
+        // "ZZ" ("Nombre de la figura tributaria" — código genérico/otro) es el único valor de la
+        // lista oficial TipoImpuesto-2.1.gc para un adquirente no responsable de IVA. "ZY" (el
+        // valor anterior) no existe en esa lista — probable causa de las notificaciones FAK40/FAK41
+        // ("contenido no corresponde a un contenido válido de la lista correspondiente").
+        public string TaxSchemeId { get; set; } = "ZZ";
         public List<string> TaxLevelCodes { get; set; } = new List<string> { "R-99-PN" };
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string DepartmentCode { get; set; } = string.Empty;
+        public string DepartmentName { get; set; } = string.Empty;
         public string CityCode { get; set; } = string.Empty;
+        public string CityName { get; set; } = string.Empty;
         public string PostalZone { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
     }
@@ -114,5 +131,15 @@ namespace Fel.Core.Models
         public decimal LineExtensionAmount { get; set; }
         public List<TaxSubtotal> Taxes { get; set; } = new List<TaxSubtotal>();
         public List<AllowanceChargeData> AllowanceCharges { get; set; } = new List<AllowanceChargeData>();
+
+        // Sector Transporte de Carga (Guía de Factura Electrónica de Transporte, Mintransporte) —
+        // null para cualquier documento que no sea factura de transporte. true = la línea corresponde
+        // a una remesa registrada en el RNDC; false = otro servicio (escolta, montacarga, etc.).
+        public bool? IsRndcRemittance { get; set; }
+        public string? RndcRemittanceRadicado { get; set; } // Radicado entregado por el RNDC
+        public string? RndcRemittanceConsecutive { get; set; } // Consecutivo interno de la empresa
+        public decimal? RndcFreightValue { get; set; } // Valor del flete de esta remesa
+        public decimal? RndcTransportedQuantity { get; set; } // Cantidad transportada
+        public string? RndcTransportedUnitCode { get; set; } // Unidad (ej. "KGM")
     }
 }

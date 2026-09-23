@@ -31,11 +31,36 @@ namespace Fel.Api.Security
                 return;
             }
 
-            // Aplicar solo a los endpoints de la API B2B (Excluir Swagger, Docs, Superadmin y Tenant)
-            if (!context.Request.Path.StartsWithSegments("/api") || 
-                context.Request.Path.StartsWithSegments("/api/superadmin") ||
-                context.Request.Path.StartsWithSegments("/api/tenant") ||
-                context.Request.Path.StartsWithSegments("/api/v1/branding"))
+            // Aplicar solo a los endpoints de la API B2B (Excluir Swagger, Docs, Superadmin, Tenant
+            // y el portal del cliente final, que se autentica con su propia sesión x-client-id
+            // en vez de HMAC — ver ClientAuthController y el resto de "api/client/*").
+            var path = context.Request.Path;
+            bool isClientPortalRoute =
+                path.StartsWithSegments("/api/client/auth") ||
+                path.StartsWithSegments("/api/client/customers") ||
+                path.StartsWithSegments("/api/client/products") ||
+                path.StartsWithSegments("/api/client/invoices") ||
+                path.StartsWithSegments("/api/client/support-documents") ||
+                path.StartsWithSegments("/api/client/payroll") ||
+                path.StartsWithSegments("/api/client/files") ||
+                path.StartsWithSegments("/api/client/resolutions") ||
+                path.StartsWithSegments("/api/client/templates") ||
+                path.StartsWithSegments("/api/client/dian") ||
+                path.StartsWithSegments("/api/client/tax-catalog") ||
+                path.StartsWithSegments("/api/client/retention-concepts") ||
+                path.StartsWithSegments("/api/client/me");
+
+            // El portal de developers se autentica con su propia sesión x-developer-id, igual
+            // que el resto de portales de este proyecto — no con HMAC (ver DeveloperAuthController
+            // y DeveloperController).
+            bool isDeveloperPortalRoute = path.StartsWithSegments("/api/developer");
+
+            if (!path.StartsWithSegments("/api") ||
+                path.StartsWithSegments("/api/superadmin") ||
+                path.StartsWithSegments("/api/tenant") ||
+                path.StartsWithSegments("/api/v1") ||
+                isClientPortalRoute ||
+                isDeveloperPortalRoute)
             {
                 await _next(context);
                 return;

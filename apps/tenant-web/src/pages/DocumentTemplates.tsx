@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, Save, FileText, Upload, Globe, User } from 'lucide-react';
+import { Copy, Save, FileText, Upload, Globe, User, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 
@@ -18,6 +18,8 @@ export default function DocumentTemplates() {
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [showCloneModal, setShowCloneModal] = useState<string | null>(null);
   const [cloneData, setCloneData] = useState({ newName: '', newRepxTemplateKey: '' });
+  const [showVersionModal, setShowVersionModal] = useState<string | null>(null);
+  const [versionKey, setVersionKey] = useState('');
 
   const loadTemplates = () => {
     api.get<DocumentTemplate[]>('/tenant/templates')
@@ -43,6 +45,20 @@ export default function DocumentTemplates() {
     }
   };
 
+  const handleNewVersion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showVersionModal) return;
+    try {
+      await api.post(`/tenant/templates/${showVersionModal}/new-version`, { newRepxTemplateKey: versionKey });
+      toast.success("Nueva versión creada en estado Borrador.");
+      setVersionKey('');
+      setShowVersionModal(null);
+      loadTemplates();
+    } catch (err: any) {
+      toast.error(err.response?.data || "Error al crear la versión");
+    }
+  };
+
   const handlePublish = async (id: string) => {
     if (!window.confirm("¿Seguro que deseas publicar esta plantilla? Se archivará la anterior.")) return;
     try {
@@ -64,7 +80,7 @@ export default function DocumentTemplates() {
   };
 
   return (
-    <div className="p-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
+    <div className="p-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-end mb-8">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
@@ -132,12 +148,21 @@ export default function DocumentTemplates() {
                   )}
                   
                   {!tpl.isGlobal && tpl.status === 'Draft' && (
-                    <button 
-                      onClick={() => handlePublish(tpl.id)} 
+                    <button
+                      onClick={() => handlePublish(tpl.id)}
                       className="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-blue-600 rounded-xl transition-all shadow-md shadow-blue-500/20 flex items-center inline-flex"
                     >
                       <Upload className="w-4 h-4 mr-2" />
                       Publicar
+                    </button>
+                  )}
+                  {!tpl.isGlobal && tpl.status === 'Published' && (
+                    <button
+                      onClick={() => { setVersionKey(''); setShowVersionModal(tpl.id); }}
+                      className="px-4 py-2 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all shadow-sm flex items-center inline-flex"
+                    >
+                      <GitBranch className="w-4 h-4 mr-2" />
+                      Nueva Versión
                     </button>
                   )}
                 </td>
@@ -190,6 +215,38 @@ export default function DocumentTemplates() {
                 <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-blue-600 text-white font-bold rounded-xl shadow-md shadow-blue-500/20 transition-all flex items-center">
                   <Save className="w-5 h-5 mr-2" />
                   Guardar Clon
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nueva Versión */}
+      {showVersionModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">Nueva Versión</h2>
+            <p className="text-slate-500 mb-6 text-sm">Se creará un borrador de la siguiente versión. Tu plantilla publicada actual no se ve afectada hasta que publiques esta nueva versión.</p>
+            <form onSubmit={handleNewVersion} className="space-y-5">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nueva Llave REPX (Motor DevExpress)</label>
+                <input
+                  type="text"
+                  required
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-mono text-sm"
+                  value={versionKey}
+                  onChange={e => setVersionKey(e.target.value)}
+                  placeholder="Ej. mi-tenant/factura-v2"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 mt-6">
+                <button type="button" onClick={() => setShowVersionModal(null)} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
+                  Cancelar
+                </button>
+                <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-blue-600 text-white font-bold rounded-xl shadow-md shadow-blue-500/20 transition-all flex items-center">
+                  <GitBranch className="w-5 h-5 mr-2" />
+                  Crear Versión
                 </button>
               </div>
             </form>

@@ -156,6 +156,54 @@ namespace Fel.Api.Tenant.Controllers
             }
         }
 
+        public class NewVersionRequest
+        {
+            public string NewRepxTemplateKey { get; set; } = string.Empty;
+        }
+
+        // POST: api/tenant/templates/{id}/new-version
+        [HttpPost("{id:guid}/new-version")]
+        public async Task<IActionResult> CreateNewVersion(Guid id, [FromBody] NewVersionRequest request)
+        {
+            try
+            {
+                var tenantId = GetCurrentTenantId();
+
+                var sourceTemplate = await _dbContext.DocumentTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId && t.ClientId == null);
+
+                if (sourceTemplate == null)
+                    return NotFound("Plantilla del Tenant no encontrada.");
+
+                if (sourceTemplate.Status != TemplateStatus.Published)
+                    return BadRequest("Solo puedes versionar plantillas que estén Publicadas.");
+
+                var newVersionTemplate = new DocumentTemplate
+                {
+                    Id = Guid.NewGuid(),
+                    Name = sourceTemplate.Name,
+                    RepxTemplateKey = string.IsNullOrWhiteSpace(request.NewRepxTemplateKey) ? sourceTemplate.RepxTemplateKey : request.NewRepxTemplateKey,
+                    Status = TemplateStatus.Draft,
+                    VersionNumber = sourceTemplate.VersionNumber + 1,
+                    PreviousVersionId = sourceTemplate.Id,
+                    ClonedFromId = sourceTemplate.ClonedFromId,
+                    DocumentTypeId = sourceTemplate.DocumentTypeId,
+                    TenantId = tenantId,
+                    ClientId = null,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _dbContext.DocumentTemplates.Add(newVersionTemplate);
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { message = $"Versión {newVersionTemplate.VersionNumber} creada en estado Borrador.", templateId = newVersionTemplate.Id });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         public class AssignRequest
         {
             public Guid ClientId { get; set; }

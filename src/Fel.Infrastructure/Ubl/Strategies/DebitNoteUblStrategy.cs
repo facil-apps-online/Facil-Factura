@@ -12,6 +12,10 @@ namespace Fel.Infrastructure.Ubl.Strategies
 
         public override XElement GenerateXml(UblInvoiceData data, string cufe)
         {
+            // Igual que en CreditNoteUblStrategy: BillingReference solo aplica cuando la nota
+            // referencia una factura puntual (viene CUFE); si no, se omite ese bloque.
+            bool isReferenced = !string.IsNullOrWhiteSpace(data.BillingReferenceCufe);
+
             var debitNote = new XElement(ubl + "DebitNote",
                 new XAttribute(XNamespace.Xmlns + "cac", cac),
                 new XAttribute(XNamespace.Xmlns + "cbc", cbc),
@@ -23,7 +27,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XAttribute(XNamespace.Xmlns + "xsi", "http://www.w3.org/2001/XMLSchema-instance"),
                 new XAttribute(XNamespace.Get("http://www.w3.org/2001/XMLSchema-instance") + "schemaLocation", "urn:oasis:names:specification:ubl:schema:xsd:DebitNote-2 http://docs.oasis-open.org/ubl/os-UBL-2.1/xsd/maindoc/UBL-DebitNote-2.1.xsd"),
 
-                BuildExtensions(data),
+                BuildExtensions(data, cufe),
                 
                 new XElement(cbc + "UBLVersionID", "UBL 2.1"),
                 new XElement(cbc + "CustomizationID", data.OperationType),
@@ -31,27 +35,29 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cbc + "ProfileExecutionID", data.Environment), 
                 new XElement(cbc + "ID", $"{data.Prefix}{data.DocumentNumber}"),
                 new XElement(cbc + "UUID", new XAttribute("schemeID", data.Environment), new XAttribute("schemeName", "CUDE-SHA384"), cufe),
-                new XElement(cbc + "IssueDate", data.IssueDate.ToString("yyyy-MM-dd")),
-                new XElement(cbc + "IssueTime", data.IssueTime.ToString("HH:mm:sszzz")),
+                new XElement(cbc + "IssueDate", DianTimeFormat.IssueDate(data.IssueDate)),
+                new XElement(cbc + "IssueTime", DianTimeFormat.IssueTime(data.IssueTime)),
                 new XElement(cbc + "DebitNoteTypeCode", data.DianCode),
-                new XElement(cbc + "DocumentCurrencyCode", data.Currency),
+                new XElement(cbc + "DocumentCurrencyCode", new XAttribute("listAgencyID", "6"), new XAttribute("listAgencyName", "United Nations Economic Commission for Europe"), new XAttribute("listID", "ISO 4217 Alpha"), data.Currency),
                 new XElement(cbc + "LineCountNumeric", data.Lines.Count.ToString()),
 
-                // DiscrepancyResponse
+                // DiscrepancyResponse: siempre presente (motivo del ajuste), referencie o no una factura puntual.
                 new XElement(cac + "DiscrepancyResponse",
-                    new XElement(cbc + "ReferenceID", data.BillingReferenceDocumentNumber ?? ""),
+                    new XElement(cbc + "ReferenceID", isReferenced ? data.BillingReferenceDocumentNumber : ""),
                     new XElement(cbc + "ResponseCode", data.DiscrepancyResponseCode ?? "2"),
                     new XElement(cbc + "Description", data.DiscrepancyDescription ?? "Intereses")
                 ),
 
-                // BillingReference
-                new XElement(cac + "BillingReference",
-                    new XElement(cac + "InvoiceDocumentReference",
-                        new XElement(cbc + "ID", data.BillingReferenceDocumentNumber ?? ""),
-                        new XElement(cbc + "UUID", new XAttribute("schemeName", "CUFE-SHA384"), data.BillingReferenceCufe ?? ""),
-                        new XElement(cbc + "IssueDate", data.BillingReferenceDate?.ToString("yyyy-MM-dd") ?? data.IssueDate.ToString("yyyy-MM-dd"))
-                    )
-                ),
+                // BillingReference: solo para notas referenciadas.
+                isReferenced
+                    ? new XElement(cac + "BillingReference",
+                        new XElement(cac + "InvoiceDocumentReference",
+                            new XElement(cbc + "ID", data.BillingReferenceDocumentNumber),
+                            new XElement(cbc + "UUID", new XAttribute("schemeName", "CUFE-SHA384"), data.BillingReferenceCufe),
+                            new XElement(cbc + "IssueDate", data.BillingReferenceDate?.ToString("yyyy-MM-dd") ?? DianTimeFormat.IssueDate(data.IssueDate))
+                        )
+                      )
+                    : null,
 
                 BuildAccountingSupplierParty(data),
                 BuildAccountingCustomerParty(data),
@@ -59,9 +65,9 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 BuildLegalMonetaryTotal(data)
             );
 
-            foreach (var line in data.Lines)
+            for (int i = 0; i < data.Lines.Count; i++)
             {
-                debitNote.Add(BuildLine("DebitNoteLine", "DebitedQuantity", line, data.Currency));
+                debitNote.Add(BuildLine("DebitNoteLine", "DebitedQuantity", data.Lines[i], data.Currency, i + 1));
             }
 
             return debitNote;

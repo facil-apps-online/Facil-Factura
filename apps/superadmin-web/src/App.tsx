@@ -1,18 +1,35 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Receipt, Settings, Plus, LogOut, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, Settings, Plus, LogOut, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
 import { api } from './api';
 import { useJsApiLoader, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 
 import { TenantEdit } from './TenantEdit';
+import { Certificates } from './Certificates';
 import { DocumentTypes } from './DocumentTypes';
+import { Integrators } from './Integrators';
+import { TariffTiers } from './TariffTiers';
+import { TaxCatalog } from './TaxCatalog';
+import { RetentionEngine } from './RetentionEngine';
 import { DocumentTemplates } from './DocumentTemplates';
+import { TemplateEditor } from './TemplateEditor';
 import { Billing } from './Billing';
+import { ForgotPassword } from './ForgotPassword';
+import { ResetPassword } from './ResetPassword';
 
 const libraries: "places"[] = ['places'];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSy_TU_LLAVE_DE_PRUEBA_AQUI";
+
+function slugify(value: string) {
+  const diacritics = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g');
+  return value
+    .normalize('NFD').replace(diacritics, '') // quita tildes/diacríticos
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-') // cualquier caracter no alfanumérico (&, espacios, puntuación) -> guion
+    .replace(/^-+|-+$/g, ''); // sin guiones al inicio/final
+}
 
 // --- Types ---
 interface DashboardMetrics {
@@ -134,13 +151,21 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
             />
           </div>
 
+          {mode === 'login' && (
+            <div className="text-right -mt-2">
+              <Link to="/forgot-password" className="text-sm text-slate-400 hover:text-blue-400 font-medium">
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center py-3 rounded-xl animate-in shake duration-300">
               {error}
             </div>
           )}
 
-          <button 
+          <button
             type="submit"
             disabled={isSubmitting}
             className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/25 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none flex justify-center items-center">
@@ -254,6 +279,55 @@ const TenantsList = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ ...emptyTenantForm });
+  const [parsingRut, setParsingRut] = useState(false);
+  const [rutMessage, setRutMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Lee el RUT en el servidor y vuelca lo que trajo sobre el formulario. Solo pisa los campos que
+  // el RUT informa: si el superadmin ya escribió algo que el PDF no trae, se respeta.
+  const handleRutUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setParsingRut(true);
+    setRutMessage(null);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      // El baseURL del cliente ya incluye /api/superadmin, así que la ruta va sin ese prefijo.
+      // Y hay que anular el Content-Type por defecto ('application/json'): con FormData tiene que
+      // ser multipart, y el separador de partes solo lo puede calcular axios. Forzarlo a JSON es
+      // lo que hacía que el servidor respondiera 415.
+      const { data } = await api.post('/tenants/parse-rut', body, {
+        headers: { 'Content-Type': undefined },
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        name: data.commercialName || data.name || prev.name,
+        legalName: data.legalName || prev.legalName,
+        commercialName: data.commercialName || prev.commercialName,
+        taxId: data.taxId || prev.taxId,
+        verificationDigit: data.verificationDigit || prev.verificationDigit,
+        email: data.email || prev.email,
+        contactEmail: data.email || prev.contactEmail,
+        contactPhone: data.phone || prev.contactPhone,
+        physicalAddressLine1: data.address || prev.physicalAddressLine1,
+        physicalCity: data.city || prev.physicalCity,
+        physicalState: data.department || prev.physicalState,
+        // El slug no viene en el RUT: se deriva de la razón social, como al escribirlo a mano.
+        slug: prev.slug || slugify(data.commercialName || data.legalName || ''),
+      }));
+
+      setRutMessage(data.alreadyRegistered
+        ? { ok: false, text: `Ya existe un tenant con el NIT ${data.taxId}. Revísalo antes de crear otro.` }
+        : { ok: true, text: `RUT leído: ${data.legalName} (NIT ${data.taxId}-${data.verificationDigit}).` });
+    } catch (err: any) {
+      setRutMessage({ ok: false, text: err?.response?.data?.message || 'No se pudo leer el RUT.' });
+    } finally {
+      setParsingRut(false);
+      e.target.value = '';
+    }
+  };
   const [saving, setSaving] = useState(false);
   const [regData, setRegData] = useState<RegistrationData | null>(null);
   const navigate = useNavigate();
@@ -395,6 +469,28 @@ const TenantsList = () => {
             </div>
             <form onSubmit={handleCreate} className="space-y-6">
 
+              {/* Carga del RUT: evita transcribir a mano los datos del cliente. Solo rellena el
+                  formulario; no crea nada hasta que se envíe. */}
+              <section className="border border-dashed border-blue-300 bg-blue-50/40 rounded-2xl p-5">
+                <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-blue-600" /> Cargar RUT
+                </h3>
+                <p className="text-sm text-slate-500 mb-4">
+                  Sube el RUT en PDF descargado del portal de la DIAN y se rellenan los datos de la empresa.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    disabled={parsingRut}
+                    onChange={handleRutUpload}
+                    className="text-sm file:mr-3 file:px-4 file:py-2 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:font-medium file:cursor-pointer hover:file:bg-blue-500 disabled:opacity-50"
+                  />
+                  {parsingRut && <span className="text-sm text-slate-500">Leyendo el RUT...</span>}
+                  {rutMessage && <span className={`text-sm ${rutMessage.ok ? 'text-emerald-600' : 'text-rose-600'}`}>{rutMessage.text}</span>}
+                </div>
+              </section>
+
               {/* Información Principal */}
               <section className="border border-slate-200 rounded-2xl p-5">
                 <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-600" /> Información Principal</h3>
@@ -413,7 +509,7 @@ const TenantsList = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Slug (Identificador URL)</label>
-                    <input required type="text" placeholder="glamtica" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm" value={formData.slug} onChange={e => setField('slug', e.target.value.toLowerCase().replace(/\s+/g, '-'))} />
+                    <input required type="text" placeholder="glamtica" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm" value={formData.slug} onChange={e => setField('slug', slugify(e.target.value))} />
                   </div>
                 </div>
               </section>
@@ -587,15 +683,15 @@ const TenantsList = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Completo</label>
-                    <input type="text" placeholder="Ej. Ana García" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminName} onChange={e => setField('adminName', e.target.value)} />
+                    <input type="text" autoComplete="off" name="tenant-admin-name" placeholder="Ej. Ana García" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminName} onChange={e => setField('adminName', e.target.value)} />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Email (Login)</label>
-                    <input type="email" placeholder="admin@glamtica.com" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminEmail} onChange={e => setField('adminEmail', e.target.value)} />
+                    <input type="email" autoComplete="off" name="tenant-admin-email" placeholder="admin@glamtica.com" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminEmail} onChange={e => setField('adminEmail', e.target.value)} />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña Inicial</label>
-                    <input type="password" placeholder="Mínimo 6 caracteres" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminPassword} onChange={e => setField('adminPassword', e.target.value)} />
+                    <input type="password" autoComplete="new-password" name="tenant-admin-password" placeholder="Mínimo 6 caracteres" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminPassword} onChange={e => setField('adminPassword', e.target.value)} />
                     <p className="text-xs text-slate-500 mt-1">Comparte esta contraseña de forma segura con tu cliente.</p>
                   </div>
                 </div>
@@ -656,43 +752,84 @@ const TenantsList = () => {
 // --- Main App Layout ---
 const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('fel_superadmin_sidebar_collapsed') === '1');
 
   const handleLogout = () => {
     localStorage.removeItem('fel_superadmin_auth');
     navigate('/login');
   };
 
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('fel_superadmin_sidebar_collapsed', next ? '1' : '0');
+      return next;
+    });
+  };
+
+  const navLinks = [
+    { to: "/", icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard" },
+    { to: "/tenants", icon: <Users className="w-5 h-5" />, label: "Tenants (Clientes)" },
+    { to: "/certificates", icon: <FileKey className="w-5 h-5" />, label: "Certificados" },
+    { to: "/document-types", icon: <Settings className="w-5 h-5" />, label: "Tipos de Documento" },
+    { to: "/integrators", icon: <Cable className="w-5 h-5" />, label: "Integradores" },
+    { to: "/tariff-tiers", icon: <Coins className="w-5 h-5" />, label: "Tarifario por Volumen" },
+    { to: "/tax-catalog", icon: <Percent className="w-5 h-5" />, label: "Catálogo de Impuestos" },
+    { to: "/retention-engine", icon: <Calculator className="w-5 h-5" />, label: "Motor de Retenciones" },
+    { to: "/billing", icon: <Receipt className="w-5 h-5" />, label: "Facturación" },
+  ];
+
   return (
     <div className="flex h-screen bg-[#0B1120] text-slate-200 font-sans overflow-hidden">
-      <aside className="w-64 bg-[#060B14] text-slate-300 flex flex-col border-r border-slate-800/50 relative z-20 shadow-2xl">
+      <aside className={`${collapsed ? 'w-20' : 'w-64'} bg-[#060B14] text-slate-300 flex flex-col border-r border-slate-800/50 relative z-20 shadow-2xl transition-all duration-200`}>
         <div className="p-8">
-          <div className="flex items-center space-x-3 mb-2">
-            <img src="/brand/isotipo-blanco.png" alt="Facil Factura" className="w-8 h-8 object-contain" />
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">Facil Factura</h2>
+          <div className={`flex items-center mb-2 ${collapsed ? 'justify-center' : 'justify-between'}`}>
+            <div className="flex items-center space-x-3 min-w-0">
+              <img src="/brand/isotipo-blanco.png" alt="Facil Factura" className="w-8 h-8 object-contain shrink-0" />
+              {!collapsed && <h2 className="text-2xl font-extrabold text-white tracking-tight truncate">Facil Factura</h2>}
+            </div>
+            {!collapsed && (
+              <button
+                onClick={toggleCollapsed}
+                title="Colapsar menú"
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors shrink-0"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            )}
           </div>
-          <p className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] ml-11">Superadmin</p>
+          {collapsed && (
+            <button
+              onClick={toggleCollapsed}
+              title="Expandir menú"
+              className="mx-auto mt-2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors flex"
+            >
+              <ChevronRight size={18} />
+            </button>
+          )}
+          {!collapsed && <p className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] ml-11">Superadmin</p>}
         </div>
-        
-        <nav className="space-y-2 mb-8">
-          <Link to="/" className="flex items-center px-4 py-3 text-slate-300 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-            <LayoutDashboard className="w-5 h-5 mr-3" /> Dashboard
-          </Link>
-          <Link to="/tenants" className="flex items-center px-4 py-3 text-slate-300 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-            <Users className="w-5 h-5 mr-3" /> Tenants (Clientes)
-          </Link>
-          <Link to="/document-types" className="flex items-center px-4 py-3 text-slate-300 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-            <Settings className="w-5 h-5 mr-3" /> Tipos de Documento
-          </Link>
-          <Link to="/billing" className="flex items-center px-4 py-3 text-slate-300 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-            <Receipt className="w-5 h-5 mr-3" /> Facturación
-          </Link>
+
+        <nav className="space-y-2 mb-8 px-4">
+          {navLinks.map(link => (
+            <Link
+              key={link.to}
+              to={link.to}
+              title={collapsed ? link.label : undefined}
+              className={`flex items-center px-4 py-3 text-slate-300 hover:bg-slate-800 hover:text-white rounded-xl transition-all ${collapsed ? 'justify-center px-0' : ''}`}
+            >
+              <span className={collapsed ? '' : 'mr-3'}>{link.icon}</span>
+              {!collapsed && link.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="p-4 mt-auto border-t border-slate-800">
-          <button 
+          <button
             onClick={handleLogout}
-            className="flex items-center w-full px-4 py-3 rounded-xl font-medium text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-colors">
-            <LogOut className="w-5 h-5 mr-3 opacity-70" /> Cerrar Sesión
+            title={collapsed ? 'Cerrar Sesión' : undefined}
+            className={`flex items-center w-full px-4 py-3 rounded-xl font-medium text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-colors ${collapsed ? 'justify-center px-0' : ''}`}>
+            <LogOut className={`w-5 h-5 opacity-70 ${collapsed ? '' : 'mr-3'}`} /> {!collapsed && 'Cerrar Sesión'}
           </button>
         </div>
       </aside>
@@ -713,23 +850,31 @@ const App = () => {
     <Router>
       <Toaster position="top-right" richColors />
       <Routes>
-        <Route 
-          path="/login" 
+        <Route
+          path="/login"
           element={
             isAuthenticated ? <Navigate to="/" /> : <AuthScreen onAuthSuccess={() => setIsAuthenticated(true)} />
-          } 
+          }
         />
-        <Route 
-          path="/*" 
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route
+          path="/*"
           element={
             isAuthenticated ? (
               <ProtectedLayout>
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/tenants" element={<TenantsList />} />
+                  <Route path="/certificates" element={<Certificates />} />
                   <Route path="/tenants/edit/:id" element={<TenantEdit />} />
                   <Route path="/document-types" element={<DocumentTypes />} />
+                  <Route path="/integrators" element={<Integrators />} />
+                  <Route path="/tariff-tiers" element={<TariffTiers />} />
+                  <Route path="/tax-catalog" element={<TaxCatalog />} />
+                  <Route path="/retention-engine" element={<RetentionEngine />} />
                   <Route path="/document-types/:typeId/templates" element={<DocumentTemplates />} />
+                  <Route path="/document-types/:typeId/templates/:templateKey/edit" element={<TemplateEditor />} />
                   <Route path="/billing" element={<Billing />} />
                   <Route path="/settings" element={<div className="p-10"><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Configuración del Motor</h1></div>} />
                 </Routes>

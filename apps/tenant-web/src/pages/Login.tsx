@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Loader2, Building2 } from 'lucide-react';
 import { api } from '../lib/api';
 
@@ -17,11 +17,21 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
 
     try {
       const res = await api.post('/tenant/auth/login', { email, password });
-      
+
       // Guardar sesión y datos del tenant
       localStorage.setItem('fel_tenant_auth', res.data.token);
+      localStorage.setItem('fel_tenant_id', res.data.tenantId);
       localStorage.setItem('fel_tenant_name', res.data.commercialName);
-      
+
+      // Solo viene poblado cuando la cuenta administra más de un tenant: guardarlo es lo que
+      // habilita el selector en el sidebar. Con un único tenant no viene, así que se limpia
+      // cualquier lista vieja de una sesión anterior con más de uno.
+      if (res.data.tenants) {
+        localStorage.setItem('fel_tenant_list', JSON.stringify(res.data.tenants));
+      } else {
+        localStorage.removeItem('fel_tenant_list');
+      }
+
       onAuthSuccess();
       navigate('/');
     } catch (err: any) {
@@ -75,6 +85,12 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+          </div>
+
+          <div className="text-right -mt-2">
+            <Link to="/forgot-password" className="text-sm text-slate-500 hover:text-blue-600 font-medium">
+              ¿Olvidaste tu contraseña?
+            </Link>
           </div>
 
           {error && (

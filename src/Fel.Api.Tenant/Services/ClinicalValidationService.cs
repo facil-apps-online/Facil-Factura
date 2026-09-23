@@ -33,9 +33,9 @@ namespace Fel.Api.Tenant.Services
                         errors.Add($"Incongruencia clínica: El diagnóstico {rule.Code} ({rule.Description}) exige sexo {rule.AllowedGender}, pero el paciente es {sex}.");
                     }
 
-                    if (patientAgeYears < rule.MinAgeYears || patientAgeYears > rule.MaxAgeYears)
+                    if (patientAgeDays < rule.MinAgeDays || patientAgeDays > rule.MaxAgeDays)
                     {
-                        errors.Add($"Incongruencia clínica: El diagnóstico {rule.Code} es válido para edades entre {rule.MinAgeYears} y {rule.MaxAgeYears} años. El paciente tiene {patientAgeYears}.");
+                        errors.Add($"Incongruencia clínica: El diagnóstico {rule.Code} es válido para edades entre {rule.MinAgeDays} y {rule.MaxAgeDays} días. El paciente tiene {Math.Floor(patientAgeDays)} días.");
                     }
                 }
             }

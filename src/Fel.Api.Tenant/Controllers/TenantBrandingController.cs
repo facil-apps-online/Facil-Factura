@@ -1,7 +1,9 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,11 +13,14 @@ namespace Fel.Api.Tenant.Controllers
     [Route("api/tenant/branding")]
     public class TenantBrandingController : ControllerBase
     {
+        private const string ApiBaseUrl = "https://api.facil-factura.pro";
         private readonly FelDbContext _dbContext;
+        private readonly IPublicFileStorageService _fileStorage;
 
-        public TenantBrandingController(FelDbContext dbContext)
+        public TenantBrandingController(FelDbContext dbContext, IPublicFileStorageService fileStorage)
         {
             _dbContext = dbContext;
+            _fileStorage = fileStorage;
         }
 
         // Endpoint público para el cliente final (usa Slug en la URL)
@@ -62,7 +67,9 @@ namespace Fel.Api.Tenant.Controllers
                     t.LogoLightUrl,
                     t.LogoDarkUrl,
                     t.PrimaryColorLight,
-                    t.PrimaryColorDark
+                    t.PrimaryColorDark,
+                    BillingMode = t.BillingMode.ToString(),
+                    t.ShowUsageToClients
                 })
                 .FirstOrDefaultAsync();
 
@@ -94,10 +101,47 @@ namespace Fel.Api.Tenant.Controllers
 
             tenant.PrimaryColorLight = request.PrimaryColorLight;
             tenant.LogoLightUrl = request.LogoLightUrl;
-            
+            tenant.ShowUsageToClients = request.ShowUsageToClients;
+
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { Message = "Branding actualizado exitosamente" });
+        }
+
+        [HttpPost("logo")]
+        public async Task<IActionResult> UploadLogo(IFormFile file)
+        {
+            if (!Request.Headers.TryGetValue("x-tenant-id", out var tenantIdStr) || !Guid.TryParse(tenantIdStr, out Guid tenantId))
+            {
+                return Unauthorized("Tenant ID no proporcionado o inválido.");
+            }
+
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("Debes adjuntar un archivo de imagen.");
+            }
+
+            if (file.Length > 5 * 1024 * 1024)
+            {
+                return BadRequest("La imagen no puede superar 5MB.");
+            }
+
+            var tenant = await _dbContext.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId && t.IsActive);
+            if (tenant == null) return NotFound(new { Message = "Tenant no encontrado." });
+
+            try
+            {
+                using var stream = file.OpenReadStream();
+                var relativeKey = await _fileStorage.SaveFileAsync("logos", tenantId, stream, file.FileName);
+                tenant.LogoLightUrl = $"{ApiBaseUrl}/api/tenant/files/{relativeKey}";
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { logoLightUrl = tenant.LogoLightUrl });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpGet("check-slug")]
@@ -117,5 +161,6 @@ namespace Fel.Api.Tenant.Controllers
         public string Slug { get; set; } = string.Empty;
         public string PrimaryColorLight { get; set; } = string.Empty;
         public string LogoLightUrl { get; set; } = string.Empty;
+        public bool ShowUsageToClients { get; set; }
     }
 }

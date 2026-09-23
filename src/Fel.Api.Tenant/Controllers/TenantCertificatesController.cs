@@ -36,6 +36,29 @@ namespace Fel.Api.Tenant.Controllers
             throw new UnauthorizedAccessException("x-tenant-id Header is missing");
         }
 
+        // Vista consolidada de todos los certificados de los clientes de este tenant, ordenada
+        // por fecha de vencimiento — para que el tenant vea de un vistazo qué se vence pronto.
+        [HttpGet]
+        [Route("~/api/tenant/certificates")]
+        public async Task<IActionResult> GetAllCertificates()
+        {
+            var tenantId = GetCurrentTenantId();
+            var certificates = await _dbContext.Set<Certificate>()
+                .Where(c => c.IsActive && c.Client.TenantId == tenantId)
+                .OrderBy(c => c.ExpirationDate)
+                .Select(c => new
+                {
+                    c.ClientId,
+                    ClientName = string.IsNullOrWhiteSpace(c.Client.CommercialName) ? c.Client.CompanyName : c.Client.CommercialName,
+                    c.FileName,
+                    c.ExpirationDate,
+                    c.CreatedAt
+                })
+                .ToListAsync();
+
+            return Ok(certificates);
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetCertificate(Guid clientId)
         {

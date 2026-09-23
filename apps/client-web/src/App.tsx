@@ -1,5 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Home, FileText, Settings, CreditCard, LogOut, FileSignature, Users, Package } from 'lucide-react';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { Home, FileText, Settings, CreditCard, LogOut, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { api } from './lib/api';
@@ -9,6 +9,12 @@ import ResolutionsSettings from './pages/ResolutionsSettings';
 import CustomersPage from './pages/CustomersPage';
 import ProductsPage from './pages/ProductsPage';
 import InvoicesPage from './pages/InvoicesPage';
+import SupportDocumentsPage from './pages/SupportDocumentsPage';
+import PayrollPage from './pages/PayrollPage';
+import ReceivedDocumentsPage from './pages/ReceivedDocumentsPage';
+import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 interface ClientBranding {
   companyName: string;
@@ -47,7 +53,7 @@ function BrandingProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Sidebar() {
+function Sidebar({ onLogout, collapsed, onToggleCollapsed }: { onLogout: () => void, collapsed: boolean, onToggleCollapsed: () => void }) {
   const location = useLocation();
   const branding = useContext(BrandingContext);
   const logo = branding?.logoLightUrl || '/brand/isotipo-blanco.png';
@@ -56,7 +62,10 @@ function Sidebar() {
   const links = [
     { to: "/", icon: <Home size={20} />, label: "Inicio" },
     { to: "/invoices", icon: <FileText size={20} />, label: "Mis Facturas" },
-    { to: "/customers", icon: <Users size={20} />, label: "Mis Clientes" },
+    { to: "/support-documents", icon: <Receipt size={20} />, label: "Documentos Soporte" },
+    { to: "/payroll", icon: <Banknote size={20} />, label: "Nómina Electrónica" },
+    { to: "/received-documents", icon: <Inbox size={20} />, label: "Eventos de Recepción" },
+    { to: "/customers", icon: <Users size={20} />, label: "Mis Terceros" },
     { to: "/products", icon: <Package size={20} />, label: "Mis Productos" },
     { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos" },
     { to: "/resolutions", icon: <FileSignature size={20} />, label: "Resoluciones DIAN" },
@@ -64,19 +73,37 @@ function Sidebar() {
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shrink-0 z-20 shadow-xl">
-      <div className="p-6">
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+    <aside className={`${collapsed ? 'w-20' : 'w-64'} bg-slate-900 text-slate-300 flex flex-col h-full shrink-0 z-20 shadow-xl transition-all duration-200`}>
+      <div className={`p-6 flex items-center ${collapsed ? 'justify-center px-0' : 'justify-between'}`}>
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2 min-w-0">
           {branding?.logoLightUrl ? (
-            <img src={branding.logoLightUrl} alt={name} className="w-7 h-7 object-contain" />
+            <img src={branding.logoLightUrl} alt={name} className="w-7 h-7 object-contain shrink-0" />
           ) : (
-            <img src={logo} alt={name} className="w-7 h-7 object-contain" />
+            <img src={logo} alt={name} className="w-7 h-7 object-contain shrink-0" />
           )}
-          {name}
+          {!collapsed && <span className="truncate">{name}</span>}
         </h2>
-        <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">Portal de Facturación</p>
+        {!collapsed && (
+          <button
+            onClick={onToggleCollapsed}
+            title="Colapsar menú"
+            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors shrink-0"
+          >
+            <ChevronLeft size={18} />
+          </button>
+        )}
       </div>
-      
+      {!collapsed && <p className="text-xs text-slate-500 -mt-4 mb-2 px-6 uppercase tracking-wider">Portal de Facturación</p>}
+      {collapsed && (
+        <button
+          onClick={onToggleCollapsed}
+          title="Expandir menú"
+          className="mx-auto mb-2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+        >
+          <ChevronRight size={18} />
+        </button>
+      )}
+
       <nav className="flex-1 px-4 space-y-2 mt-4">
         {links.map((link) => {
           const isActive = location.pathname === link.to;
@@ -84,36 +111,46 @@ function Sidebar() {
             <Link
               key={link.to}
               to={link.to}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                isActive 
-                  ? 'bg-primary text-white shadow-primary' 
+              title={collapsed ? link.label : undefined}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${collapsed ? 'justify-center px-0' : ''} ${
+                isActive
+                  ? 'bg-primary text-white shadow-primary'
                   : 'hover:bg-slate-800 hover:text-white'
               }`}
             >
               {link.icon}
-              <span className="font-medium">{link.label}</span>
+              {!collapsed && <span className="font-medium">{link.label}</span>}
             </Link>
           );
         })}
       </nav>
 
       <div className="p-4 border-t border-slate-800">
-        <button className="flex items-center gap-3 px-4 py-3 w-full rounded-xl hover:bg-rose-500/10 hover:text-rose-400 transition-colors text-left">
+        <button onClick={onLogout} title={collapsed ? 'Cerrar Sesión' : undefined} className={`flex items-center gap-3 px-4 py-3 w-full rounded-xl hover:bg-rose-500/10 hover:text-rose-400 transition-colors text-left ${collapsed ? 'justify-center px-0' : ''}`}>
           <LogOut size={20} />
-          <span>Cerrar Sesión</span>
+          {!collapsed && <span>Cerrar Sesión</span>}
         </button>
       </div>
     </aside>
   );
 }
 
-function Layout({ children }: { children: React.ReactNode }) {
+function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: () => void }) {
   const branding = useContext(BrandingContext);
   const name = branding?.companyName || 'Facil Factura';
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('fel_client_sidebar_collapsed') === '1');
+
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('fel_client_sidebar_collapsed', next ? '1' : '0');
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
-      <Sidebar />
+      <Sidebar onLogout={onLogout} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
       <main className="flex-1 flex flex-col min-w-0 relative z-10">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shadow-sm">
           <h1 className="text-lg font-semibold text-slate-700">
@@ -177,28 +214,54 @@ const Dashboard = () => {
 };
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    !!localStorage.getItem('fel_client_auth')
+  );
+
+  const handleLogout = () => {
+    localStorage.removeItem('fel_client_auth');
+    localStorage.removeItem('fel_client_id');
+    setIsAuthenticated(false);
+  };
+
   return (
-    <BrandingProvider>
-      <Router>
-        <Toaster position="top-right" richColors />
-        <Routes>
-          <Route path="/*" element={
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/settings" element={<TemplateSettings />} />
-                <Route path="/resolutions" element={<ResolutionsSettings />} />
-                <Route path="/customers" element={<CustomersPage />} />
-                <Route path="/products" element={<ProductsPage />} />
-                <Route path="/invoices" element={<InvoicesPage />} />
-                {/* Rutas ficticias para completar el sidebar */}
-                <Route path="/payments" element={<div className="p-8">Módulo en construcción...</div>} />
-              </Routes>
-            </Layout>
-          } />
-        </Routes>
-      </Router>
-    </BrandingProvider>
+    <Router>
+      <Toaster position="top-right" richColors />
+      <Routes>
+        <Route
+          path="/login"
+          element={isAuthenticated ? <Navigate to="/" /> : <Login onAuthSuccess={() => setIsAuthenticated(true)} />}
+        />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route
+          path="/*"
+          element={
+            isAuthenticated ? (
+              <BrandingProvider>
+                <Layout onLogout={handleLogout}>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/settings" element={<TemplateSettings />} />
+                    <Route path="/resolutions" element={<ResolutionsSettings />} />
+                    <Route path="/customers" element={<CustomersPage />} />
+                    <Route path="/products" element={<ProductsPage />} />
+                    <Route path="/invoices" element={<InvoicesPage />} />
+                    <Route path="/support-documents" element={<SupportDocumentsPage />} />
+                    <Route path="/payroll" element={<PayrollPage />} />
+                    <Route path="/received-documents" element={<ReceivedDocumentsPage />} />
+                    {/* Rutas ficticias para completar el sidebar */}
+                    <Route path="/payments" element={<div className="p-8">Módulo en construcción...</div>} />
+                  </Routes>
+                </Layout>
+              </BrandingProvider>
+            ) : (
+              <Navigate to={`/login${localStorage.getItem('fel_client_tenant') ? `?tenant=${localStorage.getItem('fel_client_tenant')}` : ''}`} />
+            )
+          }
+        />
+      </Routes>
+    </Router>
   );
 }
 

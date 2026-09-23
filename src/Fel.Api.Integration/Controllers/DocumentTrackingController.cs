@@ -5,8 +5,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Integration.Controllers
 {
+    /// <summary>
+    /// Consulta de estado y archivos de los documentos electrónicos que el tenant ya envió por
+    /// cualquiera de los endpoints de recepción de este API (facturas, notas, nómina, etc.).
+    /// </summary>
     [ApiController]
-    [Route("api/documents")]
+    [Route("api/co/dian/documents")]
     public class DocumentTrackingController : ControllerBase
     {
         private readonly FelDbContext _context;
@@ -15,7 +19,19 @@ namespace Fel.Api.Integration.Controllers
         {
             _context = context;
         }
+
+        /// <summary>
+        /// Devuelve el estado actual de un documento por su <c>TrackingId</c> (el que se recibió
+        /// como respuesta al encolarlo).
+        /// </summary>
+        /// <param name="trackId">TrackingId devuelto al recibir el documento.</param>
+        /// <response code="200">Estado del documento, respuesta de la DIAN y CUFE si ya fue asignado.</response>
+        /// <response code="401">No se pudo resolver el Tenant autenticado.</response>
+        /// <response code="404">No existe un documento con ese TrackingId para este Tenant.</response>
         [HttpGet("{trackId}/status")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetStatus(string trackId)
         {
             // Extraer TenantId validado por el Middleware HMAC (Seguridad)
@@ -35,11 +51,21 @@ namespace Fel.Api.Integration.Controllers
                 Status = doc.Status,
                 DianResponse = doc.DianResponseMessage ?? "Procesando",
                 Cufe = doc.Cufe ?? "",
-                FilesUrl = $"/api/documents/{trackId}/files"
+                FilesUrl = $"/api/co/dian/documents/{trackId}/files"
             });
         }
 
+        /// <summary>
+        /// Devuelve el XML y PDF del documento (codificados en Base64) una vez fue procesado por la DIAN.
+        /// </summary>
+        /// <param name="trackId">TrackingId devuelto al recibir el documento.</param>
+        /// <response code="200">Archivos del documento en Base64.</response>
+        /// <response code="401">No se pudo resolver el Tenant autenticado.</response>
+        /// <response code="404">No existe un documento con ese TrackingId para este Tenant.</response>
         [HttpGet("{trackId}/files")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetFilesBase64(string trackId)
         {
             var tenantIdStr = HttpContext.Items["TenantId"]?.ToString();

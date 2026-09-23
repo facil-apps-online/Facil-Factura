@@ -9,12 +9,22 @@ WORKDIR /app
 COPY apps/${APP}/package.json apps/${APP}/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
+# Codigo compartido entre portales (SearchableSelect y demas). Va DENTRO de /app, no a la raiz:
+# desde /app/_shared, Node y tsc encuentran /app/node_modules subiendo un nivel, cosa que no pasa
+# si el archivo queda fuera del arbol de la app. En desarrollo el mismo codigo vive en
+# apps/_shared, y el alias de vite/tsconfig acepta las dos ubicaciones.
+COPY apps/_shared/ ./_shared/
+
 COPY apps/${APP}/ ./
 
 ARG VITE_API_URL
 ARG VITE_GOOGLE_MAPS_API_KEY
+ARG VITE_FACIL_REPORTS_URL
+ARG VITE_FACIL_REPORTS_API_KEY
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
+ENV VITE_FACIL_REPORTS_URL=$VITE_FACIL_REPORTS_URL
+ENV VITE_FACIL_REPORTS_API_KEY=$VITE_FACIL_REPORTS_API_KEY
 
 RUN npm run build
 

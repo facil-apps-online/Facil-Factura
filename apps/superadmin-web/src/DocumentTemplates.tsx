@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Plus, Save, Trash2, FileText, ArrowLeft, Upload } from 'lucide-react';
+import { Plus, Trash2, FileText, ArrowLeft, Upload, Loader2, Eye, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
 
 interface DocumentTemplate {
   id: string;
   name: string;
+  repxTemplateKey: string;
   version: number;
   status: 'Draft' | 'Published' | 'Archived';
   createdAt: string;
@@ -16,16 +17,41 @@ interface DocumentTemplate {
 export const DocumentTemplates = () => {
   const { typeId } = useParams();
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
+
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ name: '', content: '' });
-  
+  const [newName, setNewName] = useState('');
+  const [newFile, setNewFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const newFileInputRef = useRef<HTMLInputElement>(null);
+
   // Para nueva versión
   const [showVersionModal, setShowVersionModal] = useState<string | null>(null);
-  const [versionContent, setVersionContent] = useState('');
+  const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [uploadingVersion, setUploadingVersion] = useState(false);
+
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+
+  const handlePreview = async (id: string) => {
+    setPreviewingId(id);
+    try {
+      const res = await api.post(`/templates/${id}/preview`, {}, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      window.open(url, '_blank');
+    } catch (err: any) {
+      if (err.response?.data instanceof Blob) {
+        const text = await err.response.data.text();
+        toast.error(text || 'Error al generar la vista previa');
+      } else {
+        toast.error(err.response?.data || 'Error al generar la vista previa');
+      }
+    } finally {
+      setPreviewingId(null);
+    }
+  };
 
   const loadTemplates = () => {
-    api.get<DocumentTemplate[]>(`/superadmin/templates/${typeId}`)
-      .then(res => setTemplates(res.data))
+    api.get<DocumentTemplate[]>(`/templates/by-type/${typeId}`)
+      .then(res => setTemplates([...res.data].sort((a, b) => a.name.localeCompare(b.name))))
       .catch(() => toast.error("Error al cargar las plantillas"));
   };
 
@@ -33,37 +59,66 @@ export const DocumentTemplates = () => {
     loadTemplates();
   }, [typeId]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const resetNewForm = () => {
+    setNewName('');
+    setNewFile(null);
+    if (newFileInputRef.current) newFileInputRef.current.value = '';
+  };
+
+  const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newFile) {
+      toast.error("Selecciona un archivo .repx.");
+      return;
+    }
+    setUploading(true);
     try {
-      await api.post('/superadmin/templates', { ...formData, documentTypeId: typeId });
-      toast.success("Plantilla creada exitosamente");
-      setFormData({ name: '', content: '' });
+      const fd = new FormData();
+      fd.append('file', newFile);
+      fd.append('name', newName);
+      fd.append('documentTypeId', typeId || '');
+      await api.post('/templates/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success("Plantilla subida exitosamente");
+      resetNewForm();
       setShowModal(false);
       loadTemplates();
     } catch (err: any) {
-      toast.error(err.response?.data || "Error al crear la plantilla");
+      toast.error(err.response?.data || "Error al subir la plantilla");
+    } finally {
+      setUploading(false);
     }
   };
 
-  const handleNewVersion = async (e: React.FormEvent) => {
+  const handleUploadNewVersion = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!showVersionModal) return;
+    if (!showVersionModal || !versionFile) {
+      toast.error("Selecciona un archivo .repx.");
+      return;
+    }
+    setUploadingVersion(true);
     try {
-      await api.post(`/superadmin/templates/${showVersionModal}/new-version`, { content: versionContent });
-      toast.success("Nueva versión creada exitosamente");
-      setVersionContent('');
+      const fd = new FormData();
+      fd.append('file', versionFile);
+      await api.post(`/templates/${showVersionModal}/upload-new-version`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success("Nueva versión subida exitosamente");
+      setVersionFile(null);
       setShowVersionModal(null);
       loadTemplates();
     } catch (err: any) {
-      toast.error(err.response?.data || "Error al crear la versión");
+      toast.error(err.response?.data || "Error al subir la versión");
+    } finally {
+      setUploadingVersion(false);
     }
   };
 
   const handlePublish = async (id: string) => {
     if (!window.confirm("¿Publicar esta plantilla? Esto archivará las versiones publicadas anteriores.")) return;
     try {
-      await api.post(`/superadmin/templates/${id}/publish`);
+      await api.put(`/templates/${id}/publish`, {});
       toast.success("Plantilla publicada");
       loadTemplates();
     } catch (err: any) {
@@ -74,7 +129,7 @@ export const DocumentTemplates = () => {
   const handleDelete = async (id: string) => {
     if (!window.confirm("¿Seguro que deseas eliminar esta plantilla?")) return;
     try {
-      await api.delete(`/superadmin/templates/${id}`);
+      await api.delete(`/templates/${id}`);
       toast.success("Eliminada correctamente");
       loadTemplates();
     } catch (err: any) {
@@ -82,7 +137,6 @@ export const DocumentTemplates = () => {
     }
   };
 
-  // Status Badge Helper
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'Published': return <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">Publicado</span>;
@@ -103,9 +157,9 @@ export const DocumentTemplates = () => {
             <FileText className="w-8 h-8 text-indigo-400" />
             Modelos de Diseño
           </h1>
-          <p className="text-slate-400 mt-2 text-lg font-medium">Gestiona las plantillas base y sus versiones para este tipo de documento.</p>
+          <p className="text-slate-400 mt-2 text-lg font-medium">Sube archivos .repx (DevExpress Report Designer) y gestiona sus versiones para este tipo de documento.</p>
         </div>
-        <button 
+        <button
           onClick={() => setShowModal(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-600/30 transition-all transform hover:-translate-y-1"
         >
@@ -145,20 +199,34 @@ export const DocumentTemplates = () => {
                 <td className="px-6 py-4 text-slate-400 font-medium">
                   {new Date(tpl.createdAt).toLocaleDateString()}
                 </td>
-                <td className="px-6 py-4 text-right space-x-2">
-                  {tpl.status === 'Draft' && (
-                    <button onClick={() => handlePublish(tpl.id)} className="px-3 py-1.5 text-sm font-bold text-emerald-400 hover:bg-emerald-400/10 rounded-xl transition-all">
-                      Publicar
+                <td className="px-6 py-4">
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => handlePreview(tpl.id)} disabled={previewingId === tpl.id} className="w-32 px-3 py-1.5 text-sm font-bold text-indigo-400 hover:bg-indigo-400/10 rounded-xl transition-all disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
+                      {previewingId === tpl.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                      Vista Previa
                     </button>
-                  )}
-                  {tpl.status === 'Published' && (
-                    <button onClick={() => setShowVersionModal(tpl.id)} className="px-3 py-1.5 text-sm font-bold text-blue-400 hover:bg-blue-400/10 rounded-xl transition-all">
-                      Nueva Versión
+                    {tpl.status === 'Draft' ? (
+                      <Link to={`/document-types/${typeId}/templates/${tpl.repxTemplateKey}/edit`} className="w-24 px-3 py-1.5 text-sm font-bold text-amber-400 hover:bg-amber-400/10 rounded-xl transition-all inline-flex items-center justify-center gap-1.5">
+                        <Pencil className="w-4 h-4" /> Editar
+                      </Link>
+                    ) : (
+                      <span className="w-24" />
+                    )}
+                    {tpl.status === 'Draft' && (
+                      <button onClick={() => handlePublish(tpl.id)} className="w-28 px-3 py-1.5 text-sm font-bold text-emerald-400 hover:bg-emerald-400/10 rounded-xl transition-all">
+                        Publicar
+                      </button>
+                    )}
+                    {tpl.status === 'Published' && (
+                      <button onClick={() => setShowVersionModal(tpl.id)} className="w-28 px-3 py-1.5 text-sm font-bold text-blue-400 hover:bg-blue-400/10 rounded-xl transition-all">
+                        Nueva Versión
+                      </button>
+                    )}
+                    {tpl.status === 'Archived' && <span className="w-28" />}
+                    <button onClick={() => handleDelete(tpl.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
+                      <Trash2 className="w-5 h-5" />
                     </button>
-                  )}
-                  <button onClick={() => handleDelete(tpl.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -173,42 +241,43 @@ export const DocumentTemplates = () => {
         </table>
       </div>
 
-      {/* Modal Creación */}
+      {/* Modal Nueva Plantilla */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-xl animate-in zoom-in-95 duration-200 border-slate-700">
+          <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200 border-slate-700">
             <h2 className="text-2xl font-bold text-white mb-6">Nueva Plantilla Base</h2>
-            <form onSubmit={handleCreate} className="space-y-5">
+            <form onSubmit={handleUpload} className="space-y-5">
               <div>
                 <label className="block text-sm font-bold text-slate-300 mb-2">Nombre del Modelo</label>
-                <input 
-                  type="text" 
-                  required 
-                  className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500" 
-                  value={formData.name}
-                  onChange={e => setFormData({...formData, name: e.target.value})}
+                <input
+                  type="text"
+                  required
+                  className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500"
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
                   placeholder="Ej. Diseño Minimalista 2024"
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Contenido (REPX / XML DevExpress)</label>
-                <textarea 
-                  required 
-                  rows={6}
-                  className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono text-sm placeholder:text-slate-500 resize-none" 
-                  value={formData.content}
-                  onChange={e => setFormData({...formData, content: e.target.value})}
-                  placeholder="<XtraReportsLayoutSerializer>..."
+                <label className="block text-sm font-bold text-slate-300 mb-2">Archivo .repx</label>
+                <input
+                  ref={newFileInputRef}
+                  required
+                  type="file"
+                  accept=".repx"
+                  onChange={e => setNewFile(e.target.files?.[0] ?? null)}
+                  className="w-full text-sm text-slate-300 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer bg-slate-800/50 border border-slate-700 rounded-xl"
                 />
+                <p className="text-xs text-slate-500 mt-2">El archivo se sube directo a Facil Reports; la plantilla queda en Borrador hasta que la publiques.</p>
               </div>
-              
+
               <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-colors">
+                <button type="button" onClick={() => { resetNewForm(); setShowModal(false); }} className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-colors">
                   Cancelar
                 </button>
-                <button type="submit" className="flex-1 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex justify-center items-center">
-                  <Save className="w-5 h-5 mr-2" />
-                  Guardar
+                <button type="submit" disabled={uploading} className="flex-1 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex justify-center items-center disabled:opacity-50">
+                  {uploading ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Upload className="w-5 h-5 mr-2" />}
+                  {uploading ? 'Subiendo...' : 'Subir Plantilla'}
                 </button>
               </div>
             </form>
@@ -219,29 +288,28 @@ export const DocumentTemplates = () => {
       {/* Modal Nueva Versión */}
       {showVersionModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-xl animate-in zoom-in-95 duration-200 border-slate-700">
+          <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200 border-slate-700">
             <h2 className="text-2xl font-bold text-white mb-6">Subir Nueva Versión</h2>
             <p className="text-slate-400 mb-4 text-sm">Al guardar, se creará un borrador de la versión siguiente. Tu plantilla actualmente publicada no será afectada hasta que publiques la nueva versión.</p>
-            <form onSubmit={handleNewVersion} className="space-y-5">
+            <form onSubmit={handleUploadNewVersion} className="space-y-5">
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Nuevo Contenido (REPX / XML DevExpress)</label>
-                <textarea 
-                  required 
-                  rows={8}
-                  className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-blue-500 font-mono text-sm placeholder:text-slate-500 resize-none" 
-                  value={versionContent}
-                  onChange={e => setVersionContent(e.target.value)}
-                  placeholder="<XtraReportsLayoutSerializer>..."
+                <label className="block text-sm font-bold text-slate-300 mb-2">Archivo .repx</label>
+                <input
+                  required
+                  type="file"
+                  accept=".repx"
+                  onChange={e => setVersionFile(e.target.files?.[0] ?? null)}
+                  className="w-full text-sm text-slate-300 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 file:cursor-pointer cursor-pointer bg-slate-800/50 border border-slate-700 rounded-xl"
                 />
               </div>
-              
+
               <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowVersionModal(null)} className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-colors">
+                <button type="button" onClick={() => { setVersionFile(null); setShowVersionModal(null); }} className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-colors">
                   Cancelar
                 </button>
-                <button type="submit" className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all flex justify-center items-center">
-                  <Upload className="w-5 h-5 mr-2" />
-                  Crear Versión
+                <button type="submit" disabled={uploadingVersion} className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all flex justify-center items-center disabled:opacity-50">
+                  {uploadingVersion ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Upload className="w-5 h-5 mr-2" />}
+                  {uploadingVersion ? 'Subiendo...' : 'Crear Versión'}
                 </button>
               </div>
             </form>

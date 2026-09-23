@@ -54,7 +54,9 @@ namespace Fel.Api.Client.Controllers
                         r.ValidFrom,
                         r.ValidTo,
                         r.TechnicalKey,
-                        r.DocumentType
+                        r.DocumentType,
+                        r.NextNumber,
+                        r.IsDefault
                     })
                     .ToListAsync();
 
@@ -127,6 +129,12 @@ namespace Fel.Api.Client.Controllers
                     res.IsActive = false;
                 }
 
+                // Si es la primera resolución activa de este tipo de documento para el cliente, se
+                // marca como predeterminada de una vez — así nunca queda un tipo sin default cuando
+                // solo hay una opción.
+                var hasOtherActiveOfType = await _dbContext.Resolutions
+                    .AnyAsync(r => r.ClientId == clientId && r.DocumentType == request.DocumentType && r.IsActive);
+
                 var resolution = new Resolution
                 {
                     Id = Guid.NewGuid(),
@@ -139,7 +147,8 @@ namespace Fel.Api.Client.Controllers
                     ValidTo = request.ValidTo,
                     TechnicalKey = request.TechnicalKey ?? "",
                     DocumentType = request.DocumentType,
-                    IsActive = true
+                    IsActive = true,
+                    IsDefault = !hasOtherActiveOfType
                 };
 
                 _dbContext.Resolutions.Add(resolution);
@@ -153,7 +162,8 @@ namespace Fel.Api.Client.Controllers
                     resolution.NumberEnd,
                     resolution.ValidFrom,
                     resolution.ValidTo,
-                    resolution.DocumentType
+                    resolution.DocumentType,
+                    resolution.IsDefault
                 });
             }
             catch (Exception ex)
@@ -162,6 +172,57 @@ namespace Fel.Api.Client.Controllers
             }
         }
         
+        public class SetNextNumberRequest
+        {
+            public long NextNumber { get; set; }
+        }
+
+        // Permite fijar manualmente el próximo consecutivo a usar — ej. al migrar desde otro
+        // sistema donde ya se emitieron facturas hasta cierto número.
+        [HttpPut("{id:guid}/next-number")]
+        public async Task<IActionResult> SetNextNumber(Guid id, [FromBody] SetNextNumberRequest request)
+        {
+            var clientId = GetCurrentClientId();
+
+            var resolution = await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId);
+            if (resolution == null) return NotFound();
+
+            if (request.NextNumber < resolution.NumberStart || request.NextNumber > resolution.NumberEnd)
+            {
+                return BadRequest($"El número debe estar entre {resolution.NumberStart} y {resolution.NumberEnd} (el rango autorizado de esta resolución).");
+            }
+
+            resolution.NextNumber = request.NextNumber;
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { resolution.Id, resolution.NextNumber });
+        }
+
+        // Marca esta resolución como la predeterminada de su tipo de documento, desmarcando
+        // cualquier otra resolución activa del mismo ClientId+DocumentType.
+        [HttpPut("{id:guid}/set-default")]
+        public async Task<IActionResult> SetDefault(Guid id)
+        {
+            var clientId = GetCurrentClientId();
+
+            var resolution = await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId && r.IsActive);
+            if (resolution == null) return NotFound();
+
+            var others = await _dbContext.Resolutions
+                .Where(r => r.ClientId == clientId && r.DocumentType == resolution.DocumentType && r.IsActive && r.Id != id)
+                .ToListAsync();
+
+            foreach (var other in others)
+            {
+                other.IsDefault = false;
+            }
+
+            resolution.IsDefault = true;
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { resolution.Id, resolution.IsDefault });
+        }
+
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteResolution(Guid id)
         {

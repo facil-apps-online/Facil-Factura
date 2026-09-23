@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
+using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,11 +12,14 @@ namespace Fel.Api.Client.Controllers
     [Route("api/v1/branding")]
     public class ClientBrandingController : ControllerBase
     {
+        private const string ApiBaseUrl = "https://api.facil-factura.pro";
         private readonly FelDbContext _dbContext;
+        private readonly IPublicFileStorageService _fileStorage;
 
-        public ClientBrandingController(FelDbContext dbContext)
+        public ClientBrandingController(FelDbContext dbContext, IPublicFileStorageService fileStorage)
         {
             _dbContext = dbContext;
+            _fileStorage = fileStorage;
         }
 
         private Guid GetCurrentClientId()
@@ -57,6 +62,43 @@ namespace Fel.Api.Client.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 return Unauthorized(ex.Message);
+            }
+        }
+
+        [HttpPost("logo")]
+        public async Task<IActionResult> UploadLogo(IFormFile file)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest("Debes adjuntar un archivo de imagen.");
+                }
+
+                if (file.Length > 5 * 1024 * 1024)
+                {
+                    return BadRequest("La imagen no puede superar 5MB.");
+                }
+
+                var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);
+                if (client == null) return NotFound(new { Message = "Client not found" });
+
+                using var stream = file.OpenReadStream();
+                var relativeKey = await _fileStorage.SaveFileAsync("logos", clientId, stream, file.FileName);
+                client.LogoLightUrl = $"{ApiBaseUrl}/api/client/files/{relativeKey}";
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { logoLightUrl = client.LogoLightUrl });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
             }
         }
 

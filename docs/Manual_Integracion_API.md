@@ -32,8 +32,8 @@ using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(apiSecret)))
 Dado que la DIAN puede presentar intermitencias, nuestro sistema encola tus documentos y los procesa en segundo plano.
 
 1.  **Emisión:** Envías el JSON al endpoint correspondiente. La API te responderá inmediatamente un `202 Accepted` con un `TrackingId`.
-2.  **Consulta (Polling):** Haces un `GET` a `/api/documents/{TrackingId}/status` para verificar si la DIAN ya aceptó el documento y obtener el CUFE.
-3.  **Descarga:** Haces un `GET` a `/api/documents/{TrackingId}/files` para obtener los Base64 del XML oficial y el PDF.
+2.  **Consulta (Polling):** Haces un `GET` a `/api/co/dian/documents/{TrackingId}/status` para verificar si la DIAN ya aceptó el documento y obtener el CUFE.
+3.  **Descarga:** Haces un `GET` a `/api/co/dian/documents/{TrackingId}/files` para obtener los Base64 del XML oficial y el PDF.
 
 ---
 
@@ -41,17 +41,37 @@ Dado que la DIAN puede presentar intermitencias, nuestro sistema encola tus docu
 
 URL Base: `https://api.facil-factura.pro` (Sujeto a ambiente QA/PROD)
 
-| Documento | Endpoint | Método |
-| :--- | :--- | :--- |
-| **Factura de Venta** | `/api/invoices` | POST |
-| **Nota Crédito** | `/api/credit-notes` | POST |
-| **Nota Débito** | `/api/debit-notes` | POST |
-| **Nómina Electrónica** | `/api/payroll` | POST |
-| **Documento Soporte** | `/api/support-documents` | POST |
-| **Doc. Equivalente (POS)** | `/api/equivalent-documents/pos` | POST |
-| **Sector Salud (RIPS)** | `/api/health-invoices/rips` | POST |
-| **Sector Transporte** | `/api/transport-invoices` | POST |
-| **Eventos (Acuses/Radian)**| `/api/reception-events` | POST |
+Las rutas llevan el prefijo `co/dian` (país/autoridad regulatoria) para poder sumar otros países sin
+romper las existentes — ej. mañana `api/mx/sat/invoices`.
+
+| Documento | Endpoint | Método | Estado |
+| :--- | :--- | :--- | :--- |
+| **Factura de Venta** | `/api/co/dian/invoices` | POST | Disponible |
+| **Nota Crédito** | `/api/co/dian/credit-notes` | POST | Disponible |
+| **Nota Débito** | `/api/co/dian/debit-notes` | POST | Disponible |
+| **Nómina Electrónica (emisión)** | `/api/co/dian/payroll` | POST | Disponible |
+| **Nómina Electrónica (anulación)** | `/api/co/dian/payroll/void` | POST | Disponible |
+| **Documento Soporte (emisión)** | `/api/co/dian/support-documents` | POST | Disponible |
+| **Documento Soporte (nota de ajuste)** | `/api/co/dian/support-documents/adjustment` | POST | Disponible |
+| **Doc. Equivalente - POS** | `/api/co/dian/equivalent-documents/pos` | POST | Disponible |
+| **Doc. Equivalente - Cine** | `/api/co/dian/equivalent-documents/cine` | POST | Disponible |
+| **Doc. Equivalente - Espectáculos públicos** | `/api/co/dian/equivalent-documents/espectaculos` | POST | Disponible |
+| **Doc. Equivalente - Juegos localizados** | `/api/co/dian/equivalent-documents/juegos-localizados` | POST | Disponible |
+| **Doc. Equivalente - Transporte terrestre** | `/api/co/dian/equivalent-documents/transporte-terrestre` | POST | Disponible |
+| **Doc. Equivalente - Peajes** | `/api/co/dian/equivalent-documents/peajes` | POST | Disponible |
+| **Doc. Equivalente - Extracto** | `/api/co/dian/equivalent-documents/extracto` | POST | Disponible* |
+| **Doc. Equivalente - Transporte aéreo** | `/api/co/dian/equivalent-documents/transporte-aereo` | POST | Disponible |
+| **Doc. Equivalente - Bolsa de Valores/Agro** | `/api/co/dian/equivalent-documents/bolsa` | POST | Disponible |
+| **Doc. Equivalente - Servicios públicos** | `/api/co/dian/equivalent-documents/servicios-publicos` | POST | Disponible* |
+
+\* El literal exacto de `ProfileID` para Extracto y Servicios Públicos se reconstruyó a partir de la descripción del catálogo — no se pudo confirmar carácter por carácter contra el anexo por un salto de línea en el PDF. Conviene validarlo contra el set de pruebas de habilitación antes de producción real.
+| **Sector Salud (RIPS, con factura)** | `/api/co/dian/health-invoices/rips` | POST | Pendiente (501) |
+| **Sector Transporte** | `/api/co/dian/transport-invoices` | POST | Disponible |
+| **Eventos (Acuses/Radian)**| `/api/co/dian/reception-events` | POST | Pendiente (501) |
+| **RIPS independiente de factura** | `/api/co/minsalud/rips/emit` | POST | Disponible |
+
+Los endpoints marcados "Pendiente" responden `501 Not Implemented` y no aparecen en el Swagger
+público — se activan a medida que se construye su generación UBL propia.
 
 ---
 
@@ -60,7 +80,7 @@ URL Base: `https://api.facil-factura.pro` (Sujeto a ambiente QA/PROD)
 A continuación, se presentan los esqueletos simplificados de los JSON que espera cada endpoint. 
 *(Nota: El catálogo completo de catálogos paramétricos DIAN -ciudades, impuestos, unidades de medida- se encuentra en el Anexo Técnico V1.9).*
 
-### 4.1 Factura Electrónica Estándar (`/api/invoices`)
+### 4.1 Factura Electrónica Estándar (`/api/co/dian/invoices`)
 ```json
 {
   "prefix": "SETT",
@@ -92,7 +112,7 @@ A continuación, se presentan los esqueletos simplificados de los JSON que esper
 }
 ```
 
-### 4.2 Nota Crédito (`/api/credit-notes`)
+### 4.2 Nota Crédito (`/api/co/dian/credit-notes`) — Pendiente (501)
 Requiere referenciar obligatoriamente el CUFE de la factura original.
 ```json
 {
@@ -113,7 +133,7 @@ Requiere referenciar obligatoriamente el CUFE de la factura original.
 }
 ```
 
-### 4.3 Documento Equivalente POS (`/api/equivalent-documents/pos`)
+### 4.3 Documento Equivalente POS (`/api/co/dian/equivalent-documents/pos`) — Pendiente (501)
 ```json
 {
   "prefix": "POS",
@@ -136,7 +156,9 @@ Requiere referenciar obligatoriamente el CUFE de la factura original.
 }
 ```
 
-### 4.4 RIPS Sector Salud (`/api/health-invoices/rips`)
+### 4.4 RIPS Sector Salud, con factura (`/api/co/dian/health-invoices/rips`) — Pendiente (501)
+
+> Para RIPS sin factura de por medio, ve directo a MinSalud vía `/api/co/minsalud/rips/emit` (Fel.Api.Tenant), disponible hoy.
 Además de la factura, incluye la data clínica obligatoria del Ministerio de Salud.
 ```json
 {
@@ -157,7 +179,7 @@ Además de la factura, incluye la data clínica obligatoria del Ministerio de Sa
 }
 ```
 
-### 4.5 Sector Transporte de Carga (RNDC) (`/api/transport-invoices`)
+### 4.5 Sector Transporte de Carga (RNDC) (`/api/co/dian/transport-invoices`) — Pendiente (501)
 Facturación con los requisitos especiales del Ministerio de Transporte y DIAN.
 ```json
 {
@@ -186,13 +208,13 @@ Facturación con los requisitos especiales del Ministerio de Transporte y DIAN.
 }
 ```
 
-**Al Consultar Estado (GET /api/documents/{TrackingId}/status):**
+**Al Consultar Estado (GET /api/co/dian/documents/{TrackingId}/status):**
 ```json
 {
   "trackId": "POS-10045",
   "status": "ACCEPTED",
   "dianResponse": "Procesado Correctamente",
   "cufe": "3a4b5c6d...",
-  "filesUrl": "/api/documents/POS-10045/files"
+  "filesUrl": "/api/co/dian/documents/POS-10045/files"
 }
 ```

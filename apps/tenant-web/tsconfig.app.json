@@ -19,8 +19,14 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* Codigo compartido entre portales: vive en apps/_shared y se resuelve igual que en
+       vite.config.ts, para que tsc y el bundler vean la misma ruta. */
+    "paths": {
+      "@shared/*": ["./_shared/*", "../_shared/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "./_shared", "../_shared"]
 }
 

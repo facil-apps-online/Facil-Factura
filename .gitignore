@@ -18,9 +18,36 @@ dist/
 .env.*
 *.local
 
+# Material criptografico. NUNCA al repositorio: un .p12/.pfx lleva la LLAVE PRIVADA del
+# certificado de firma, y con ella cualquiera puede emitir facturas electronicas a nombre del
+# titular ante la DIAN. Este repositorio es publico.
+Certificado/
+*.p12
+*.pfx
+*.jks
+*.key
+*.pem
+*.crt
+*.cer
+
+# Documentos reales firmados y evidencia de depuracion: llevan NIT, razon social y datos de
+# clientes de verdad. Sirven para depurar en local, no para publicarse.
+Facturas/
+
 # PDFs, zips y artefactos sueltos
 *.pdf
 *.zip
+
+# Caja de Herramientas de la DIAN: material descargable de dian.gov.co (XSD, catalogos, listas de
+# codigos), no algo que hayamos producido nosotros. Engorda el repo sin aportar historia propia.
+Caja de Herramientas/
+
+# Notas de trabajo sueltas: correspondencia de soporte y archivos de prueba puntuales, no material
+# del proyecto.
+correo-ihce-anexo-tecnico.txt
+devexpress-support-reply-*.txt
+devexpress-support-ticket.txt
+importacion-nomina-ZEPA.xlsx
 
 # Herramientas / scratch
 scratch/

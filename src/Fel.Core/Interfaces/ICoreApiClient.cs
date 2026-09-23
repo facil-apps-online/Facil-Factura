@@ -154,5 +154,13 @@ namespace Fel.Core.Interfaces
         /// no puede haber clave foránea que lo garantice.
         /// </summary>
         Task<CoreResult<IReadOnlyList<string>>> GetExistingTenantIdsAsync(IEnumerable<string> ids, CancellationToken ct = default);
+
+        /// <summary>
+        /// Encola un correo transaccional (reseteo de contraseña, invitación, etc.) para que Core
+        /// lo envíe. FacilFactura arma el enlace y el resto del contenido de <paramref name="templateData"/>;
+        /// Core solo resuelve la plantilla por template_type y despacha el envío (vía Brevo).
+        /// tenantCoreId es opcional: se omite para destinatarios sin tenant (ej. Superadmin).
+        /// </summary>
+        Task<CoreResult<bool>> QueuePlatformEmailAsync(string recipientEmail, string templateType, IReadOnlyDictionary<string, string> templateData, string? tenantCoreId = null, CancellationToken ct = default);
     }
 }

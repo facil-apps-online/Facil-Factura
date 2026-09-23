@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { FileSignature, Plus, Trash2, X, Loader2 } from 'lucide-react';
-import { api } from '../lib/api';
+import { FileSignature, Plus, Trash2, X, Loader2, Pencil, Check, Star } from 'lucide-react';
+import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
+import SearchableSelect from '@shared/components/SearchableSelect';
 
 export default function ResolutionsSettings() {
   const [loading, setLoading] = useState(true);
@@ -21,9 +22,10 @@ export default function ResolutionsSettings() {
 
   const [habilitationStatus, setHabilitationStatus] = useState<any>(null);
   const [magicLink, setMagicLink] = useState('');
-  const [softwareId, setSoftwareId] = useState('');
-  const [softwarePin, setSoftwarePin] = useState('');
   const [isHabilitating, setIsHabilitating] = useState(false);
+  const [testDocPreview, setTestDocPreview] = useState<any>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [sendingTestDoc, setSendingTestDoc] = useState(false);
 
   const loadResolutions = () => {
     setLoading(true);
@@ -80,7 +82,7 @@ export default function ResolutionsSettings() {
       }));
       toast.success("PDF procesado. Verifica los datos extraídos.");
     } catch (err: any) {
-      toast.error(err.response?.data || "Error al procesar el PDF");
+      toast.error(getErrorMessage(err, "Error al procesar el PDF"));
     } finally {
       setUploadingPdf(false);
       e.target.value = '';
@@ -90,7 +92,18 @@ export default function ResolutionsSettings() {
   const handleCreateResolution = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/client/resolutions', newRes);
+      // La nómina no tiene resolución DIAN real: se completan con valores neutros los campos que
+      // el formulario ocultó para este tipo (no aplican, pero el modelo los sigue teniendo).
+      const payload = newRes.documentType === 'NE'
+        ? {
+            ...newRes,
+            resolutionNumber: newRes.resolutionNumber || 'N/A',
+            numberEnd: newRes.numberEnd || 999999999999,
+            validFrom: newRes.validFrom || new Date().toISOString().split('T')[0],
+            validTo: newRes.validTo || '2099-12-31',
+          }
+        : newRes;
+      await api.post('/client/resolutions', payload);
       toast.success("Resolución agregada");
       setShowResModal(false);
       setNewRes({
@@ -106,6 +119,34 @@ export default function ResolutionsSettings() {
       loadResolutions();
     } catch (err) {
       toast.error("Error al crear resolución");
+    }
+  };
+
+  const [editingNextNumberId, setEditingNextNumberId] = useState<string | null>(null);
+  const [nextNumberDraft, setNextNumberDraft] = useState('');
+  const [savingNextNumber, setSavingNextNumber] = useState(false);
+
+  const startEditNextNumber = (r: any) => {
+    setEditingNextNumberId(r.id);
+    setNextNumberDraft(String(r.nextNumber ?? r.numberStart));
+  };
+
+  const saveNextNumber = async (r: any) => {
+    const value = parseInt(nextNumberDraft, 10);
+    if (!Number.isFinite(value)) {
+      toast.error('Ingresa un número válido');
+      return;
+    }
+    setSavingNextNumber(true);
+    try {
+      await api.put(`/client/resolutions/${r.id}/next-number`, { nextNumber: value });
+      toast.success('Próximo consecutivo actualizado');
+      setEditingNextNumberId(null);
+      loadResolutions();
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Error al actualizar el consecutivo'));
+    } finally {
+      setSavingNextNumber(false);
     }
   };
 
@@ -126,18 +167,56 @@ export default function ResolutionsSettings() {
 
     setIsHabilitating(true);
     try {
-      await api.post('/client/dian/start-habilitation', { magicLink, softwareId, softwarePin });
+      await api.post('/client/dian/start-habilitation', { magicLink });
       toast.success("¡Habilitación configurada y en progreso!");
       setMagicLink('');
-      setSoftwareId('');
-      setSoftwarePin('');
       loadHabilitationStatus();
     } catch (err: any) {
-      toast.error(err.response?.data || "Error al iniciar habilitación");
+      toast.error(getErrorMessage(err, "Error al iniciar habilitación"));
     } finally {
       setIsHabilitating(false);
     }
   };
+
+  const handlePreviewTestDocument = async () => {
+    setLoadingPreview(true);
+    setTestDocPreview(null);
+    try {
+      const res = await api.get('/client/dian/preview-test-document');
+      setTestDocPreview(res.data);
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, "Error armando la vista previa"));
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const handleSendTestDocument = async () => {
+    if (!window.confirm("Esto envía un documento real al set de pruebas de la DIAN y gasta uno de los intentos disponibles (no se puede deshacer). ¿Continuar?")) return;
+    setSendingTestDoc(true);
+    try {
+      const res = await api.post('/client/dian/send-test-document');
+      toast.success(`Documento ${res.data.documentNumber} enviado a la DIAN.`);
+      setTestDocPreview(null);
+      loadHabilitationStatus();
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, "Error enviando el documento de prueba"));
+    } finally {
+      setSendingTestDoc(false);
+    }
+  };
+
+  const handleSetDefault = async (resId: string) => {
+    try {
+      await api.put(`/client/resolutions/${resId}/set-default`);
+      toast.success('Resolución marcada como predeterminada');
+      loadResolutions();
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Error al marcar como predeterminada'));
+    }
+  };
+
+  const isNomina = newRes.documentType === 'NE';
 
   if (loading) {
     return (
@@ -148,7 +227,7 @@ export default function ResolutionsSettings() {
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-8">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Mis Resoluciones DIAN</h1>
@@ -160,7 +239,7 @@ export default function ResolutionsSettings() {
       </div>
 
       {/* Splash Screen Full-Screen */}
-      {(isHabilitating || habilitationStatus?.status === 'Testing' || habilitationStatus?.status === 'Approved') && (
+      {(isHabilitating || habilitationStatus?.status === 'Approved') && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] p-10 max-w-lg w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
             {habilitationStatus?.status === 'Approved' ? (
@@ -206,16 +285,69 @@ export default function ResolutionsSettings() {
                     ? 'Extrayendo tu identificador de software.' 
                     : 'Automatizando la configuración ante el ente fiscal. Esto puede tomar unos segundos, no cierres esta ventana.'}
                 </p>
-                
-                {habilitationStatus?.status === 'Testing' && (
-                  <div className="mt-8 bg-slate-50 border border-slate-100 rounded-xl p-4 w-full flex items-center justify-between">
-                    <span className="text-sm font-bold text-slate-400">TestSetId</span>
-                    <span className="font-mono text-sm text-slate-600 bg-white px-2 py-1 rounded shadow-sm">{habilitationStatus.testSetId}</span>
-                  </div>
-                )}
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Panel de Set de Pruebas — visible una vez el software propio quedó registrado (status
+          "Testing"), en vez del overlay de "en progreso" que antes se quedaba pegado ahí para
+          siempre porque "Testing" es un estado real, no transitorio. */}
+      {habilitationStatus?.status === 'Testing' && (
+        <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 mb-8">
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Set de Pruebas DIAN</h2>
+          <p className="text-slate-500 mb-6">{habilitationStatus?.message}</p>
+
+          {habilitationStatus?.testSet && (
+            <div className="grid grid-cols-3 gap-4 mb-6 text-center">
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-2xl font-bold text-slate-800">{habilitationStatus.testSet.sentInvoices}/{habilitationStatus.testSet.requiredInvoices}</p>
+                <p className="text-xs text-slate-500 mt-1">Facturas enviadas</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-2xl font-bold text-slate-800">{habilitationStatus.testSet.sentDebitNotes}/{habilitationStatus.testSet.requiredDebitNotes}</p>
+                <p className="text-xs text-slate-500 mt-1">Notas débito enviadas</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-2xl font-bold text-slate-800">{habilitationStatus.testSet.sentCreditNotes}/{habilitationStatus.testSet.requiredCreditNotes}</p>
+                <p className="text-xs text-slate-500 mt-1">Notas crédito enviadas</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handlePreviewTestDocument}
+              disabled={loadingPreview}
+              className="bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all flex items-center gap-2"
+            >
+              {loadingPreview ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+              Vista previa del próximo documento
+            </button>
+            <button
+              onClick={handleSendTestDocument}
+              disabled={sendingTestDoc}
+              className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all flex items-center gap-2"
+            >
+              {sendingTestDoc ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+              Enviar a la DIAN
+            </button>
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
+            La vista previa arma y firma el XML sin enviarlo — no gasta cupo. "Enviar a la DIAN" sí gasta un intento real y no se puede deshacer.
+          </p>
+
+          {testDocPreview && (
+            <div className="mt-6 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+              <div className="flex flex-wrap gap-4 mb-3 text-sm">
+                <span><strong>Tipo:</strong> {testDocPreview.documentKind}</span>
+                <span><strong>Número:</strong> {testDocPreview.documentNumber}</span>
+                <span><strong>CUFE:</strong> <span className="font-mono">{testDocPreview.cufe}</span></span>
+              </div>
+              <pre className="text-xs bg-slate-900 text-slate-100 rounded-xl p-4 overflow-auto max-h-96 whitespace-pre-wrap break-all">{testDocPreview.signedXml}</pre>
+            </div>
+          )}
         </div>
       )}
 
@@ -239,24 +371,22 @@ export default function ResolutionsSettings() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Software ID (MUISCA)</label>
-                <input 
-                  type="text" 
-                  placeholder="Ej: 7a12b4c9-8f3e-4b... (Opcional)" 
-                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-mono text-sm"
-                  value={softwareId}
-                  onChange={e => setSoftwareId(e.target.value)}
-                  disabled={isHabilitating}
+                <input
+                  type="text"
+                  readOnly
+                  placeholder="Se completa automáticamente al registrar"
+                  className="w-full px-4 py-3 bg-slate-100 border border-slate-300 rounded-xl outline-none font-mono text-sm text-slate-600 cursor-not-allowed"
+                  value={habilitationStatus?.softwareId || ''}
                 />
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">PIN del Software</label>
-                <input 
-                  type="text" 
-                  placeholder="Ej: 12345 (Opcional)" 
-                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-mono text-sm"
-                  value={softwarePin}
-                  onChange={e => setSoftwarePin(e.target.value)}
-                  disabled={isHabilitating}
+                <input
+                  type="text"
+                  readOnly
+                  placeholder="Se completa automáticamente al registrar"
+                  className="w-full px-4 py-3 bg-slate-100 border border-slate-300 rounded-xl outline-none font-mono text-sm text-slate-600 cursor-not-allowed"
+                  value={habilitationStatus?.softwarePin || ''}
                 />
               </div>
             </div>
@@ -282,7 +412,7 @@ export default function ResolutionsSettings() {
               </button>
             </div>
             <p className="text-xs text-slate-400 mt-3">
-              Si dejas los campos de Software ID y PIN en blanco, FacilFactura creará automáticamente tu Software Propio en la DIAN. Al hacer clic, enviaremos automáticamente los documentos de prueba requeridos.
+              FacilFactura crea automáticamente tu Software Propio en la DIAN — el Software ID y el PIN los asigna la DIAN y se muestran arriba una vez completado el registro.
             </p>
           </form>
         )}
@@ -306,7 +436,9 @@ export default function ResolutionsSettings() {
                   <th className="font-semibold py-3 px-4 rounded-tl-xl">Tipo / Prefijo</th>
                   <th className="font-semibold py-3 px-4">No. Resolución</th>
                   <th className="font-semibold py-3 px-4">Rango Autorizado</th>
+                  <th className="font-semibold py-3 px-4">Próximo #</th>
                   <th className="font-semibold py-3 px-4">Vigencia</th>
+                  <th className="font-semibold py-3 px-4 text-center">Predeterminada</th>
                   <th className="font-semibold py-3 px-4 text-center rounded-tr-xl">Acciones</th>
                 </tr>
               </thead>
@@ -323,8 +455,46 @@ export default function ResolutionsSettings() {
                     <td className="py-4 px-4 text-sm text-slate-600">
                       <span className="font-bold">{r.numberStart}</span> a <span className="font-bold">{r.numberEnd}</span>
                     </td>
+                    <td className="py-4 px-4 text-sm">
+                      {editingNextNumberId === r.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={r.numberStart}
+                            max={r.numberEnd}
+                            autoFocus
+                            className="w-24 px-2 py-1.5 bg-white border border-primary rounded-lg outline-none text-sm font-mono"
+                            value={nextNumberDraft}
+                            onChange={e => setNextNumberDraft(e.target.value)}
+                            disabled={savingNextNumber}
+                          />
+                          <button onClick={() => saveNextNumber(r)} disabled={savingNextNumber} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Guardar">
+                            {savingNextNumber ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                          </button>
+                          <button onClick={() => setEditingNextNumberId(null)} disabled={savingNextNumber} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Cancelar">
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => startEditNextNumber(r)} className="flex items-center gap-1.5 font-mono font-bold text-slate-700 hover:text-primary group">
+                          {r.nextNumber ?? r.numberStart}
+                          <Pencil size={13} className="text-slate-300 group-hover:text-primary" />
+                        </button>
+                      )}
+                    </td>
                     <td className="py-4 px-4 text-sm text-slate-500">
-                      {new Date(r.validFrom).toLocaleDateString()} &mdash; {new Date(r.validTo).toLocaleDateString()}
+                      {r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} — ${new Date(r.validTo).toLocaleDateString()}`}
+                    </td>
+                    <td className="py-4 px-4 text-center">
+                      {r.isDefault ? (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                          <Star size={14} fill="currentColor" /> Predeterminada
+                        </span>
+                      ) : (
+                        <button onClick={() => handleSetDefault(r.id)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors" title="Marcar como predeterminada para este tipo de documento">
+                          <Star size={14} /> Marcar
+                        </button>
+                      )}
                     </td>
                     <td className="py-4 px-4 text-center">
                       <button onClick={() => handleDeleteResolution(r.id)} className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar">
@@ -369,49 +539,71 @@ export default function ResolutionsSettings() {
               <div className="grid grid-cols-2 gap-5">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1.5">Tipo de Documento</label>
-                  <select required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-medium text-slate-700" value={newRes.documentType} onChange={e => setNewRes({...newRes, documentType: e.target.value})}>
-                    <option value="FE">Factura Electrónica (FE)</option>
-                    <option value="NC">Nota Crédito (NC)</option>
-                    <option value="ND">Nota Débito (ND)</option>
-                    <option value="POS">Documento Soporte / POS</option>
-                  </select>
+                  <SearchableSelect
+                    required
+                    inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-medium text-slate-700"
+                    value={newRes.documentType}
+                    onChange={v => setNewRes({...newRes, documentType: v})}
+                    placeholder="Buscar tipo de documento..."
+                    options={[
+                      { value: 'FE', label: 'Factura Electrónica (FE)' },
+                      { value: 'NC', label: 'Nota Crédito (NC)' },
+                      { value: 'ND', label: 'Nota Débito (ND)' },
+                      { value: 'POS', label: 'Documento Soporte / POS' },
+                      { value: 'NE', label: 'Nómina Electrónica (NE)' }
+                    ]}
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1.5">No. de Resolución / Autorización</label>
-                  <input required type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-mono" placeholder="Ej. 1876..." value={newRes.resolutionNumber} onChange={e => setNewRes({...newRes, resolutionNumber: e.target.value})} />
-                </div>
+                {!isNomina && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">No. de Resolución / Autorización</label>
+                    <input required type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-mono" placeholder="Ej. 1876..." value={newRes.resolutionNumber} onChange={e => setNewRes({...newRes, resolutionNumber: e.target.value})} />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-3 gap-5">
+              {isNomina && (
+                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  La nómina electrónica no tiene una resolución de numeración autorizada por la DIAN — el consecutivo lo administras tú libremente. Solo indica desde qué número quieres empezar.
+                </p>
+              )}
+
+              <div className={`grid ${isNomina ? 'grid-cols-2' : 'grid-cols-3'} gap-5`}>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1.5">Prefijo</label>
                   <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all uppercase font-bold" placeholder="Opcional" value={newRes.prefix} onChange={e => setNewRes({...newRes, prefix: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1.5">Desde</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5">{isNomina ? 'Número Inicial' : 'Desde'}</label>
                   <input required type="number" min="1" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all" value={newRes.numberStart || ''} onChange={e => setNewRes({...newRes, numberStart: parseInt(e.target.value) || 0})} />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1.5">Hasta</label>
-                  <input required type="number" min="1" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all" value={newRes.numberEnd || ''} onChange={e => setNewRes({...newRes, numberEnd: parseInt(e.target.value) || 0})} />
-                </div>
+                {!isNomina && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Hasta</label>
+                    <input required type="number" min="1" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all" value={newRes.numberEnd || ''} onChange={e => setNewRes({...newRes, numberEnd: parseInt(e.target.value) || 0})} />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1.5">Válida Desde</label>
-                  <input required type="date" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all" value={newRes.validFrom} onChange={e => setNewRes({...newRes, validFrom: e.target.value})} />
+              {!isNomina && (
+                <div className="grid grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Válida Desde</label>
+                    <input required type="date" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all" value={newRes.validFrom} onChange={e => setNewRes({...newRes, validFrom: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Válida Hasta</label>
+                    <input required type="date" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all" value={newRes.validTo} onChange={e => setNewRes({...newRes, validTo: e.target.value})} />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1.5">Válida Hasta</label>
-                  <input required type="date" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all" value={newRes.validTo} onChange={e => setNewRes({...newRes, validTo: e.target.value})} />
-                </div>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1.5">Clave Técnica (Solo FE)</label>
-                <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-mono text-sm" placeholder="Pega aquí el hash técnico de la DIAN..." value={newRes.technicalKey} onChange={e => setNewRes({...newRes, technicalKey: e.target.value})} />
-              </div>
+              {!isNomina && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5">Clave Técnica (Solo FE)</label>
+                  <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-mono text-sm" placeholder="Pega aquí el hash técnico de la DIAN..." value={newRes.technicalKey} onChange={e => setNewRes({...newRes, technicalKey: e.target.value})} />
+                </div>
+              )}
 
               <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
                 <button type="button" onClick={() => setShowResModal(false)} className="px-6 py-3 text-slate-500 hover:bg-slate-100 rounded-xl font-bold transition-colors">Cancelar</button>

@@ -53,6 +53,13 @@ namespace Fel.Worker
 
                             _logger.LogInformation("✅ Correo enviado exitosamente para TrackId: {TrackId}", emailJob.TrackId);
                         }
+                        else
+                        {
+                            // Sin trabajos pendientes: esperar antes de volver a consultar Redis, igual
+                            // que Worker.cs — sin este delay, el bucle queda en espera activa (busy-wait)
+                            // consumiendo un núcleo completo todo el tiempo, ya que DequeueAsync no bloquea.
+                            await Task.Delay(1000, stoppingToken);
+                        }
                     }
                 }
                 catch (OperationCanceledException)

@@ -1,0 +1,115 @@
+import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { User, Mail, Lock, Loader2 } from 'lucide-react';
+import { api } from '../lib/api';
+
+export default function Register({ onAuthSuccess }: { onAuthSuccess: () => void }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const res = await api.post('/developer/auth/register', { name, email, password });
+      localStorage.setItem('fel_developer_auth', res.data.token);
+      localStorage.setItem('fel_developer_id', res.data.id);
+      localStorage.setItem('fel_developer_name', res.data.name);
+      onAuthSuccess();
+      navigate('/');
+    } catch (err: any) {
+      setError(err.response?.data || 'No se pudo completar el registro.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 relative overflow-hidden">
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+      <div className="bg-white border border-slate-200 p-10 rounded-[2rem] shadow-xl w-full max-w-[420px] relative z-10 animate-in fade-in zoom-in-95 duration-500">
+        <div className="flex justify-center mb-6">
+          <img src="/brand/isotipo-color.png" alt="Facil Factura" className="w-20 h-20 object-contain" />
+        </div>
+
+        <h1 className="text-3xl font-extrabold text-slate-800 text-center tracking-tight mb-2">
+          Crea tu cuenta
+        </h1>
+        <p className="text-slate-500 text-center text-sm mb-8 px-2">
+          Regístrate sin depender de ningún Tenant — te damos credenciales de prueba propias al instante.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <User className="h-5 w-5 text-slate-400" />
+            </div>
+            <input
+              type="text"
+              required
+              placeholder="Nombre completo"
+              className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <Mail className="h-5 w-5 text-slate-400" />
+            </div>
+            <input
+              type="email"
+              required
+              placeholder="Correo"
+              className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <Lock className="h-5 w-5 text-slate-400" />
+            </div>
+            <input
+              type="password"
+              required
+              minLength={8}
+              placeholder="Contraseña"
+              className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          {error && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-3 rounded-xl font-medium">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/25 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none flex justify-center items-center">
+            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Crear cuenta'}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-sm text-slate-500">
+          ¿Ya tienes cuenta?{' '}
+          <Link to="/login" className="text-blue-600 hover:text-blue-700 font-semibold">
+            Ingresa aquí
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}

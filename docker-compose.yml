@@ -53,6 +53,7 @@
       dockerfile: deploy/Dockerfile.dotnet
       args:
         PROJECT: Fel.Api.Tenant
+        DEVEXPRESS_LICENSE_KEY: ${DEVEXPRESS_LICENSE_KEY:-}
     container_name: fel-api-tenant
     restart: unless-stopped
     depends_on:
@@ -72,9 +73,19 @@
       # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
       - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
       - CertificateStoragePath=/app/secure-storage
+      - PublicFileStoragePath=/app/public-storage
+      # MUV de FEV-RIPS del MinSalud. Corre en el VPS de Bogota (el Ministerio bloquea por
+      # geolocalizacion todo acceso desde fuera de Colombia) y se alcanza por el tunel WireGuard.
+      # Son dos instalaciones distintas, con imagenes y hosts propios del Ministerio: produccion
+      # apunta a fevrips.sispro.gov.co y pruebas a stage-fevrips.sispropreprod.gov.co.
+      # Va aca y no en la base porque la instalacion es una sola y es nuestra: cambiarla es una
+      # operacion de infraestructura, no un dato que un usuario deba poder editar.
+      - MinSalud__MuvProductionUrl=https://10.10.0.2:9443
+      - MinSalud__MuvTestUrl=https://10.10.0.2:9444
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates
+      - fel_public_uploads:/app/public-storage
 
   fel-api-integration:
     build:
@@ -82,6 +93,7 @@
       dockerfile: deploy/Dockerfile.dotnet
       args:
         PROJECT: Fel.Api.Integration
+        DEVEXPRESS_LICENSE_KEY: ${DEVEXPRESS_LICENSE_KEY:-}
     container_name: fel-api-integration
     restart: unless-stopped
     depends_on:
@@ -109,6 +121,7 @@
       dockerfile: deploy/Dockerfile.dotnet
       args:
         PROJECT: Fel.Api.Superadmin
+        DEVEXPRESS_LICENSE_KEY: ${DEVEXPRESS_LICENSE_KEY:-}
     container_name: fel-api-superadmin
     restart: unless-stopped
     depends_on:
@@ -128,6 +141,7 @@
       # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
       - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
       - CertificateStoragePath=/app/secure-storage
+      - FacilReports__ApiKey=${FACIL_REPORTS_API_KEY}
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates
@@ -138,6 +152,7 @@
       dockerfile: deploy/Dockerfile.dotnet
       args:
         PROJECT: Fel.Api.Client
+        DEVEXPRESS_LICENSE_KEY: ${DEVEXPRESS_LICENSE_KEY:-}
     container_name: fel-api-client
     restart: unless-stopped
     depends_on:
@@ -155,9 +170,14 @@
       - Security__MasterKey=${FEL_MASTER_KEY}
       - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
+      - PublicFileStoragePath=/app/public-storage
+      # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
+      - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
+      - FacilReports__ApiKey=${FACIL_REPORTS_API_KEY}
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates
+      - fel_public_uploads:/app/public-storage
 
   # ---------- Worker ----------
   fel-worker:
@@ -166,6 +186,7 @@
       dockerfile: deploy/Dockerfile.dotnet
       args:
         PROJECT: Fel.Worker
+        DEVEXPRESS_LICENSE_KEY: ${DEVEXPRESS_LICENSE_KEY:-}
     container_name: fel-worker
     restart: unless-stopped
     depends_on:
@@ -185,6 +206,21 @@
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates
+
+  # ---------- MinSalud FEV-RIPS ----------
+  # El Mecanismo Unico de Validacion (MUV) del Ministerio YA NO CORRE EN ESTE DROPLET.
+  #
+  # El MSPS bloquea por geolocalizacion todo acceso a sispro.gov.co desde fuera de Colombia: desde
+  # este servidor el TCP ni siquiera conecta, ni con el portal web publico. Por eso el MUV se
+  # traslado a un VPS propio en Bogota (200.7.100.167), que si atraviesa ese filtro.
+  #
+  # Alla corre la imagen oficial vigente (crmspsgovcoprd.azurecr.io/production-fevrips-apilocal,
+  # version 1.4.11.0), no la que estaba aca: esta apuntaba a fevrips.sispropreprod.gov.co, un host
+  # de preproduccion dado de baja, y por eso se reiniciaba en bucle.
+  #
+  # Este droplet le habla por un tunel WireGuard cifrado, en https://10.10.0.2:9443, y ese puerto
+  # solo acepta conexiones desde la IP de este servidor. La URL se configura por cliente en
+  # Clients.MinSaludApiBaseUrl, no aca.
 
   # ---------- Frontends ----------
   landing-web:
@@ -215,6 +251,8 @@
         APP: superadmin-web
         VITE_API_URL: https://api.facil-factura.pro/api/superadmin
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
+        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.online
+        VITE_FACIL_REPORTS_API_KEY: ${FACIL_REPORTS_API_KEY}
     container_name: fel-superadmin-web
     restart: unless-stopped
 
@@ -227,6 +265,16 @@
         VITE_API_URL: https://api.facil-factura.pro/api
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
     container_name: fel-client-web
+    restart: unless-stopped
+
+  developers-web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        APP: developers-web
+        VITE_API_URL: https://api.facil-factura.pro/api
+    container_name: fel-developers-web
     restart: unless-stopped
 
   # ---------- Reverse proxy ----------
@@ -252,6 +300,7 @@
       - tenant-web
       - superadmin-web
       - client-web
+      - developers-web
 
   certbot:
     image: certbot/certbot
@@ -268,6 +317,7 @@ volumes:
   redis_data:
   fel_certs:
   fel_templates:
+  fel_public_uploads:
   certbot_www:
   certbot_conf:
   certbot_lib:

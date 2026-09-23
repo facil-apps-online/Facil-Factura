@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
-import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, MapPin, Plus, Trash2, X, Copy, Zap } from 'lucide-react';
+import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, MapPin, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, RotateCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
+import SearchableSelect from '@shared/components/SearchableSelect';
 
 const libraries: "places"[] = ['places'];
 // TODO: El usuario deberá reemplazar esto por su API Key real en el .env
@@ -12,9 +13,11 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSy_
 export default function ClientEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('info');
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'info');
   const [resolutions, setResolutions] = useState<any[]>([]);
+  const [associates, setAssociates] = useState<{ id: string, name: string, isActive: boolean }[]>([]);
   const [showResModal, setShowResModal] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [newRes, setNewRes] = useState({
@@ -33,9 +36,58 @@ export default function ClientEdit() {
   const [uploadingCert, setUploadingCert] = useState(false);
   const [habilitationStatus, setHabilitationStatus] = useState<any>(null);
   const [magicLink, setMagicLink] = useState('');
-  const [softwareId, setSoftwareId] = useState('');
-  const [softwarePin, setSoftwarePin] = useState('');
   const [isHabilitating, setIsHabilitating] = useState(false);
+  const [testDocPreview, setTestDocPreview] = useState<any>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [sendingTestDoc, setSendingTestDoc] = useState(false);
+  const [portalUser, setPortalUser] = useState({ name: '', email: '', password: '' });
+  const [hasPortalUser, setHasPortalUser] = useState(false);
+  const [portalUserActive, setPortalUserActive] = useState(true);
+  const [savingPortalUser, setSavingPortalUser] = useState(false);
+  const [docProvider, setDocProvider] = useState({
+    documentProvider: 'Native',
+    dataicoApiUser: '',
+    dataicoApiPassword: '',
+    dataicoAuthToken: '',
+    dataicoAccountId: '',
+    dataicoEnvironment: 'PRUEBAS',
+    hasApiPassword: false,
+    hasAuthToken: false
+  });
+  const [savingDocProvider, setSavingDocProvider] = useState(false);
+  const [minSaludConfig, setMinSaludConfig] = useState({
+    minSaludEnvironment: 'Test',
+    minSaludUserType: '',
+    minSaludIdentificationType: 'CC',
+    minSaludIdentificationNumber: '',
+    minSaludPassword: '',
+    hasPassword: false,
+    minSaludTestIdentificationType: 'CC',
+    minSaludTestIdentificationNumber: '',
+    minSaludTestPassword: '',
+    hasTestPassword: false
+  });
+  const [savingMinSalud, setSavingMinSalud] = useState(false);
+  // Catálogos del LoginSISPRO servidos por el backend, para no repetirlos en cada portal.
+  const [minSaludCatalogs, setMinSaludCatalogs] = useState<{
+    documentTypes: { code: string; name: string }[];
+    userTypes: { code: string; name: string }[];
+    environments: { code: string; name: string }[];
+  }>({ documentTypes: [], userTypes: [], environments: [] });
+  const [integrators, setIntegrators] = useState<{ id: string, code: string, name: string }[]>([]);
+  const [prepaidPackages, setPrepaidPackages] = useState<any[]>([]);
+  const [prepaidBags, setPrepaidBags] = useState<any[]>([]);
+  const [showPackageModal, setShowPackageModal] = useState(false);
+  const [editingPackage, setEditingPackage] = useState<any>(null);
+  const [packageForm, setPackageForm] = useState({ name: '', totalPrice: 0, discountedPricePerDocument: 0, integratorId: '', isActive: true });
+  const [savingPackage, setSavingPackage] = useState(false);
+  const [activatingBagPackageId, setActivatingBagPackageId] = useState<string | null>(null);
+  const [clientIntegratorBilling, setClientIntegratorBilling] = useState<any[]>([]);
+  const [savingClientIntegratorId, setSavingClientIntegratorId] = useState<string | null>(null);
+  const [enabledDocTypes, setEnabledDocTypes] = useState<any[]>([]);
+  const [enabledRetentions, setEnabledRetentions] = useState<any[]>([]);
+  const [savingDocTypes, setSavingDocTypes] = useState(false);
+  const [savingRetentions, setSavingRetentions] = useState(false);
   const [client, setClient] = useState({
     companyName: '',
     commercialName: '',
@@ -47,9 +99,13 @@ export default function ClientEdit() {
     city: '',
     taxRegime: '',
     economicActivity: '',
+    appliesRetentions: true,
+    associateId: '' as string | null,
     latitude: null as number | null,
     longitude: null as number | null,
     isActive: true,
+    subscriptionRate: 0,
+    billingFrequency: 'Monthly',
     liveApiKey: '',
     liveApiSecret: '',
     testApiKey: '',
@@ -62,18 +118,135 @@ export default function ClientEdit() {
         .then(res => setClient(prev => ({
           ...prev,
           ...res.data,
+          associateId: res.data.associateId || '',
           latitude: res.data.latitude || 4.6097, // Default a Bogotá si no tiene
           longitude: res.data.longitude || -74.0817
         })))
         .catch(() => toast.error("No se pudo cargar el cliente"))
         .finally(() => setLoading(false));
     }
+    api.get('/tenant/associates')
+      .then(res => setAssociates(res.data))
+      .catch(() => {});
   }, [id]);
 
   const loadResolutions = () => {
     api.get(`/tenant/clients/${id}/resolutions`)
       .then(res => setResolutions(res.data))
       .catch(() => toast.error("Error al cargar resoluciones"));
+  };
+
+  const [editingNextNumberId, setEditingNextNumberId] = useState<string | null>(null);
+  const [nextNumberDraft, setNextNumberDraft] = useState('');
+  const [savingNextNumber, setSavingNextNumber] = useState(false);
+
+  const startEditNextNumber = (r: any) => {
+    setEditingNextNumberId(r.id);
+    setNextNumberDraft(String(r.nextNumber ?? r.numberStart));
+  };
+
+  const saveNextNumber = async (r: any) => {
+    const value = parseInt(nextNumberDraft, 10);
+    if (!Number.isFinite(value)) {
+      toast.error('Ingresa un número válido');
+      return;
+    }
+    setSavingNextNumber(true);
+    try {
+      await api.put(`/tenant/clients/${id}/resolutions/${r.id}/next-number`, { nextNumber: value });
+      toast.success('Próximo consecutivo actualizado');
+      setEditingNextNumberId(null);
+      loadResolutions();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data || 'Error al actualizar el consecutivo');
+    } finally {
+      setSavingNextNumber(false);
+    }
+  };
+
+  const [receptionSettings, setReceptionSettings] = useState<any>({
+    receptionEmailEnabled: false, receptionEmailHost: '', receptionEmailPort: 993, receptionEmailUseSsl: true,
+    receptionEmailUser: '', hasPassword: false,
+    autoSendAcuseRecibo: false, autoSendReciboBien: false, autoSendAceptacion: false, autoSendReclamo: false
+  });
+  const [receptionPasswordDraft, setReceptionPasswordDraft] = useState('');
+  const [savingReception, setSavingReception] = useState(false);
+  const [testingReceptionConn, setTestingReceptionConn] = useState(false);
+
+  const loadReceptionSettings = () => {
+    api.get(`/tenant/clients/${id}/reception-settings`)
+      .then(res => setReceptionSettings(res.data))
+      .catch(() => toast.error('Error al cargar la configuración de recepción'));
+  };
+
+  const saveReceptionSettings = async () => {
+    setSavingReception(true);
+    try {
+      await api.put(`/tenant/clients/${id}/reception-settings`, {
+        ...receptionSettings,
+        receptionEmailPassword: receptionPasswordDraft || undefined
+      });
+      toast.success('Configuración guardada');
+      setReceptionPasswordDraft('');
+      loadReceptionSettings();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al guardar');
+    } finally {
+      setSavingReception(false);
+    }
+  };
+
+  const testReceptionConnection = async () => {
+    setTestingReceptionConn(true);
+    try {
+      const res = await api.post(`/tenant/clients/${id}/reception-settings/test-connection`);
+      if (res.data.success) toast.success(res.data.message);
+      else toast.error(res.data.message);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al probar la conexión');
+    } finally {
+      setTestingReceptionConn(false);
+    }
+  };
+
+  const [templateSettings, setTemplateSettings] = useState<any[]>([]);
+  const [selectedTemplateSetting, setSelectedTemplateSetting] = useState<any | null>(null);
+  const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
+  const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null);
+
+  const loadTemplateSettings = () => {
+    api.get(`/tenant/clients/${id}/templates/settings`)
+      .then(res => setTemplateSettings(res.data))
+      .catch(() => toast.error('Error al cargar las plantillas del cliente'));
+  };
+
+  const handleSelectTemplateType = async (setting: any) => {
+    setSelectedTemplateSetting(setting);
+    try {
+      const res = await api.get(`/tenant/clients/${id}/templates/available/${setting.documentTypeId}`);
+      setAvailableTemplates(res.data);
+    } catch {
+      toast.error('Error al cargar las plantillas disponibles');
+    }
+  };
+
+  const handleApplyTemplate = async (templateId: string) => {
+    if (!selectedTemplateSetting) return;
+    setApplyingTemplateId(templateId);
+    try {
+      await api.post('/tenant/templates/assign', {
+        clientId: id,
+        documentTypeId: selectedTemplateSetting.documentTypeId,
+        selectedTemplateId: templateId
+      });
+      toast.success('Plantilla asignada al cliente');
+      setSelectedTemplateSetting(null);
+      loadTemplateSettings();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data || 'Error al asignar la plantilla');
+    } finally {
+      setApplyingTemplateId(null);
+    }
   };
 
   const loadCertificate = () => {
@@ -88,11 +261,114 @@ export default function ClientEdit() {
       .catch(() => setHabilitationStatus(null));
   };
 
+  const loadPortalUser = () => {
+    api.get(`/tenant/clients/${id}/portal-user`)
+      .then(res => {
+        if (res.data) {
+          setPortalUser({ name: res.data.name, email: res.data.email, password: '' });
+          setHasPortalUser(true);
+          setPortalUserActive(res.data.isActive);
+        } else {
+          setHasPortalUser(false);
+        }
+      })
+      .catch(() => setHasPortalUser(false));
+  };
+
+  const loadDocProvider = () => {
+    api.get(`/tenant/clients/${id}/document-provider`)
+      .then(res => setDocProvider(prev => ({ ...prev, ...res.data, dataicoApiPassword: '', dataicoAuthToken: '' })))
+      .catch(() => {});
+  };
+
+  const loadMinSaludCatalogs = () => {
+    api.get('/tenant/clients/minsalud-catalogs')
+      .then(res => setMinSaludCatalogs(res.data))
+      .catch(() => toast.error('No se pudieron cargar los catálogos de MinSalud.'));
+  };
+
+  const loadMinSaludConfig = () => {
+    api.get(`/tenant/clients/${id}/minsalud-config`)
+      // Las contraseñas nunca vuelven del servidor: se limpian las dos para que el campo vacío
+      // signifique "no cambiar" y no se reenvíe basura.
+      .then(res => setMinSaludConfig(prev => ({
+        ...prev,
+        ...res.data,
+        minSaludEnvironment: res.data.minSaludEnvironment || 'Test',
+        minSaludUserType: res.data.minSaludUserType || '',
+        minSaludIdentificationType: res.data.minSaludIdentificationType || 'CC',
+        minSaludTestIdentificationType: res.data.minSaludTestIdentificationType || 'CC',
+        minSaludPassword: '',
+        minSaludTestPassword: ''
+      })))
+      .catch(() => {});
+  };
+
+  const loadPrepaid = () => {
+    api.get(`/tenant/clients/${id}/prepaid/packages`).then(res => setPrepaidPackages(res.data)).catch(() => {});
+    api.get(`/tenant/clients/${id}/prepaid/bags`).then(res => setPrepaidBags(res.data)).catch(() => {});
+  };
+
+  const loadIntegrators = () => {
+    api.get('/tenant/integrators').then(res => setIntegrators(res.data)).catch(() => {});
+  };
+
+  const loadClientIntegratorBilling = () => {
+    api.get(`/tenant/clients/${id}/integrator-billing`).then(res => setClientIntegratorBilling(res.data)).catch(() => {});
+  };
+
   useEffect(() => {
     if (activeTab === 'resolutions') loadResolutions();
     if (activeTab === 'certificate') loadCertificate();
     if (activeTab === 'dian') loadHabilitationStatus();
+    if (activeTab === 'credentials') { loadPortalUser(); loadDocProvider(); loadIntegrators(); loadClientIntegratorBilling(); loadMinSaludCatalogs(); loadMinSaludConfig(); }
+    if (activeTab === 'prepaid') { loadPrepaid(); loadIntegrators(); }
+    if (activeTab === 'enablements') { loadEnabledDocTypes(); loadEnabledRetentions(); }
+    if (activeTab === 'reception') loadReceptionSettings();
+    if (activeTab === 'templates') loadTemplateSettings();
   }, [activeTab]);
+
+  const loadEnabledDocTypes = () => {
+    api.get(`/tenant/clients/${id}/enabled-document-types`).then(res => setEnabledDocTypes(res.data)).catch(() => {});
+  };
+
+  const loadEnabledRetentions = () => {
+    api.get(`/tenant/clients/${id}/enabled-retention-concepts`).then(res => setEnabledRetentions(res.data)).catch(() => {});
+  };
+
+  const toggleDocType = (docTypeId: string) => {
+    setEnabledDocTypes(prev => prev.map(d => d.id === docTypeId ? { ...d, enabled: !d.enabled } : d));
+  };
+
+  const toggleRetention = (retentionId: string) => {
+    setEnabledRetentions(prev => prev.map(r => r.id === retentionId ? { ...r, enabled: !r.enabled } : r));
+  };
+
+  const handleSaveDocTypes = async () => {
+    setSavingDocTypes(true);
+    try {
+      const ids = enabledDocTypes.filter(d => d.enabled).map(d => d.id);
+      await api.put(`/tenant/clients/${id}/enabled-document-types`, { ids });
+      toast.success('Tipos de documento actualizados.');
+    } catch {
+      toast.error('Error al guardar los tipos de documento.');
+    } finally {
+      setSavingDocTypes(false);
+    }
+  };
+
+  const handleSaveRetentions = async () => {
+    setSavingRetentions(true);
+    try {
+      const ids = enabledRetentions.filter(r => r.enabled).map(r => r.id);
+      await api.put(`/tenant/clients/${id}/enabled-retention-concepts`, { ids });
+      toast.success('Retenciones actualizadas.');
+    } catch {
+      toast.error('Error al guardar las retenciones.');
+    } finally {
+      setSavingRetentions(false);
+    }
+  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -155,12 +431,173 @@ export default function ClientEdit() {
         city: client.city,
         taxRegime: client.taxRegime,
         economicActivity: client.economicActivity,
+        appliesRetentions: client.appliesRetentions,
+        associateId: client.associateId || null,
         latitude: client.latitude,
-        longitude: client.longitude
+        longitude: client.longitude,
+        subscriptionRate: client.subscriptionRate,
+        billingFrequency: client.billingFrequency
       });
       toast.success("Información del cliente actualizada exitosamente.");
     } catch (err) {
       toast.error("Error al actualizar la información.");
+    }
+  };
+
+  const handleSavePortalUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPortalUser(true);
+    try {
+      await api.put(`/tenant/clients/${id}/portal-user`, portalUser);
+      toast.success(hasPortalUser ? 'Acceso al portal actualizado.' : 'Acceso al portal creado exitosamente.');
+      setHasPortalUser(true);
+      setPortalUserActive(true);
+      setPortalUser(prev => ({ ...prev, password: '' }));
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al guardar el acceso al portal.');
+    } finally {
+      setSavingPortalUser(false);
+    }
+  };
+
+  const handleResendPortalInvitation = async () => {
+    try {
+      await api.post(`/tenant/clients/${id}/portal-user/resend-invitation`);
+      toast.success('Invitación reenviada.');
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al reenviar la invitación.');
+    }
+  };
+
+  const handleRevokePortalUser = async () => {
+    if (!window.confirm('¿Revocar el acceso de este cliente al portal?')) return;
+    try {
+      await api.post(`/tenant/clients/${id}/portal-user/revoke`);
+      toast.success('Acceso revocado.');
+      setPortalUserActive(false);
+    } catch {
+      toast.error('Error al revocar el acceso.');
+    }
+  };
+
+  const handleReactivatePortalUser = async () => {
+    try {
+      await api.post(`/tenant/clients/${id}/portal-user/reactivate`);
+      toast.success('Acceso reactivado.');
+      setPortalUserActive(true);
+    } catch {
+      toast.error('Error al reactivar el acceso.');
+    }
+  };
+
+  const handleSaveDocProvider = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingDocProvider(true);
+    try {
+      await api.put(`/tenant/clients/${id}/document-provider`, docProvider);
+      toast.success('Configuración de proveedor de documentos actualizada.');
+      loadDocProvider();
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al guardar la configuración.');
+    } finally {
+      setSavingDocProvider(false);
+    }
+  };
+
+  const handleSaveMinSalud = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingMinSalud(true);
+    try {
+      await api.put(`/tenant/clients/${id}/minsalud-config`, minSaludConfig);
+      toast.success('Configuración de MinSalud (RIPS) actualizada.');
+      loadMinSaludConfig();
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al guardar la configuración.');
+    } finally {
+      setSavingMinSalud(false);
+    }
+  };
+
+  const openNewPackageModal = () => {
+    setEditingPackage(null);
+    setPackageForm({ name: '', totalPrice: 0, discountedPricePerDocument: 0, integratorId: integrators[0]?.id || '', isActive: true });
+    setShowPackageModal(true);
+  };
+
+  const openEditPackageModal = (pkg: any) => {
+    setEditingPackage(pkg);
+    setPackageForm({ name: pkg.name, totalPrice: pkg.totalPrice, discountedPricePerDocument: pkg.discountedPricePerDocument, integratorId: pkg.integratorId, isActive: pkg.isActive });
+    setShowPackageModal(true);
+  };
+
+  const handleSavePackage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPackage(true);
+    try {
+      if (editingPackage) {
+        await api.put(`/tenant/clients/${id}/prepaid/packages/${editingPackage.id}`, packageForm);
+      } else {
+        await api.post(`/tenant/clients/${id}/prepaid/packages`, packageForm);
+      }
+      toast.success('Paquete guardado.');
+      setShowPackageModal(false);
+      loadPrepaid();
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al guardar el paquete.');
+    } finally {
+      setSavingPackage(false);
+    }
+  };
+
+  const handleTogglePackageActive = async (pkg: any) => {
+    try {
+      await api.put(`/tenant/clients/${id}/prepaid/packages/${pkg.id}`, {
+        name: pkg.name, totalPrice: pkg.totalPrice, discountedPricePerDocument: pkg.discountedPricePerDocument,
+        integratorId: pkg.integratorId, isActive: !pkg.isActive
+      });
+      loadPrepaid();
+    } catch {
+      toast.error('Error al actualizar el paquete.');
+    }
+  };
+
+  const handleActivateBag = async (packageId: string) => {
+    setActivatingBagPackageId(packageId);
+    try {
+      await api.post(`/tenant/clients/${id}/prepaid/bags`, { packageId });
+      toast.success('Bolsa activada para el Client.');
+      loadPrepaid();
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al activar la bolsa.');
+    } finally {
+      setActivatingBagPackageId(null);
+    }
+  };
+
+  const updateClientIntegratorRow = (integratorId: string, patch: any) => {
+    setClientIntegratorBilling(prev => prev.map(row => row.id === integratorId ? { ...row, ...patch } : row));
+  };
+
+  const handleSaveClientIntegratorBilling = async (row: any) => {
+    setSavingClientIntegratorId(row.id);
+    try {
+      await api.put(`/tenant/clients/${id}/integrator-billing/${row.id}`, { mode: row.mode, pricePerDocument: row.pricePerDocument, pricePerUser: row.pricePerUser });
+      toast.success(`Tarifa de ${row.name} actualizada.`);
+      loadClientIntegratorBilling();
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al guardar la tarifa.');
+    } finally {
+      setSavingClientIntegratorId(null);
+    }
+  };
+
+  const handleClearClientIntegratorBilling = async (row: any) => {
+    try {
+      await api.delete(`/tenant/clients/${id}/integrator-billing/${row.id}`);
+      toast.success(`${row.name} vuelve a la tarifa plana del Client.`);
+      loadClientIntegratorBilling();
+    } catch {
+      toast.error('Error al quitar el override.');
     }
   };
 
@@ -190,12 +627,33 @@ export default function ClientEdit() {
   const handleCreateResolution = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post(`/tenant/clients/${id}/resolutions`, newRes);
+      // La nómina no tiene resolución DIAN real: se completan con valores neutros los campos que
+      // el formulario ocultó para este tipo (no aplican, pero el modelo los sigue teniendo).
+      const payload = newRes.documentType === 'NE'
+        ? {
+            ...newRes,
+            resolutionNumber: newRes.resolutionNumber || 'N/A',
+            numberEnd: newRes.numberEnd || 999999999999,
+            validFrom: newRes.validFrom || new Date().toISOString().split('T')[0],
+            validTo: newRes.validTo || '2099-12-31',
+          }
+        : newRes;
+      await api.post(`/tenant/clients/${id}/resolutions`, payload);
       toast.success("Resolución agregada");
       setShowResModal(false);
       loadResolutions();
     } catch (err) {
       toast.error("Error al crear resolución");
+    }
+  };
+
+  const handleSetDefaultResolution = async (resId: string) => {
+    try {
+      await api.put(`/tenant/clients/${id}/resolutions/${resId}/set-default`);
+      toast.success("Resolución marcada como predeterminada");
+      loadResolutions();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Error al marcar como predeterminada");
     }
   };
 
@@ -275,16 +733,42 @@ export default function ClientEdit() {
 
     setIsHabilitating(true);
     try {
-      await api.post(`/tenant/clients/${id}/dian/start-habilitation`, { magicLink, softwareId, softwarePin });
+      await api.post(`/tenant/clients/${id}/dian/start-habilitation`, { magicLink });
       toast.success("¡Habilitación configurada y en progreso!");
       setMagicLink('');
-      setSoftwareId('');
-      setSoftwarePin('');
       loadHabilitationStatus();
     } catch (err: any) {
       toast.error(err.response?.data || "Error al iniciar habilitación");
     } finally {
       setIsHabilitating(false);
+    }
+  };
+
+  const handlePreviewTestDocument = async () => {
+    setLoadingPreview(true);
+    setTestDocPreview(null);
+    try {
+      const res = await api.get(`/tenant/clients/${id}/dian/preview-test-document`);
+      setTestDocPreview(res.data);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error armando la vista previa");
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const handleSendTestDocument = async () => {
+    if (!window.confirm("Esto envía un documento real al set de pruebas de la DIAN y gasta uno de los intentos disponibles (no se puede deshacer). ¿Continuar?")) return;
+    setSendingTestDoc(true);
+    try {
+      const res = await api.post(`/tenant/clients/${id}/dian/send-test-document`);
+      toast.success(`Documento ${res.data.documentNumber} enviado a la DIAN.`);
+      setTestDocPreview(null);
+      loadHabilitationStatus();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error enviando el documento de prueba");
+    } finally {
+      setSendingTestDoc(false);
     }
   };
 
@@ -356,13 +840,45 @@ export default function ClientEdit() {
           >
             <FileKey size={18} /> Certificado Digital
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('credentials')}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
               activeTab === 'credentials' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <ShieldAlert size={18} /> Credenciales API
+          </button>
+          <button
+            onClick={() => setActiveTab('prepaid')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'prepaid' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Package size={18} /> Paquetes Prepago
+          </button>
+          <button
+            onClick={() => setActiveTab('enablements')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'enablements' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <ListChecks size={18} /> Documentos y Retenciones
+          </button>
+          <button
+            onClick={() => setActiveTab('reception')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'reception' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Inbox size={18} /> Eventos de Recepción
+          </button>
+          <button
+            onClick={() => setActiveTab('templates')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'templates' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <LayoutTemplate size={18} /> Plantillas
           </button>
         </div>
 
@@ -413,6 +929,16 @@ export default function ClientEdit() {
                           <label className="block text-sm font-semibold text-slate-700 mb-2">CIIU</label>
                           <input type="text" placeholder="Ej. 6201" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.economicActivity} onChange={e => setClient({...client, economicActivity: e.target.value})} />
                         </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">Asociado (comercial a cargo)</label>
+                        <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.associateId || ''} onChange={e => setClient({...client, associateId: e.target.value})}>
+                          <option value="">Sin asociado</option>
+                          {associates.map(a => (
+                            <option key={a.id} value={a.id}>{a.name}{!a.isActive ? ' (inactivo)' : ''}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
 
@@ -472,6 +998,24 @@ export default function ClientEdit() {
                     </div>
                   </div>
 
+                  <div className="pt-6 border-t border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Tarifa a este Cliente</h3>
+                    <div className="grid grid-cols-2 gap-4 max-w-md">
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">Valor a Cobrar</label>
+                        <input type="number" min="0" step="0.01" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono" value={client.subscriptionRate} onChange={e => setClient({...client, subscriptionRate: parseFloat(e.target.value) || 0})} />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">Frecuencia</label>
+                        <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.billingFrequency} onChange={e => setClient({...client, billingFrequency: e.target.value})}>
+                          <option value="Monthly">Mensual</option>
+                          <option value="Annual">Anual</option>
+                        </select>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">Lo que le cobras a este cliente por el servicio — independiente de cómo Facil Factura te cobra a ti.</p>
+                  </div>
+
                   <div className="pt-6 border-t border-slate-100 flex justify-end">
                     <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-transform hover:-translate-y-0.5">
                       <Save size={18} />
@@ -507,7 +1051,9 @@ export default function ClientEdit() {
                           <th className="font-semibold py-3 px-4 rounded-tl-xl">Tipo / Prefijo</th>
                           <th className="font-semibold py-3 px-4">Resolución</th>
                           <th className="font-semibold py-3 px-4">Rango</th>
+                          <th className="font-semibold py-3 px-4">Próximo #</th>
                           <th className="font-semibold py-3 px-4">Vigencia</th>
+                          <th className="font-semibold py-3 px-4 text-center">Predeterminada</th>
                           <th className="font-semibold py-3 px-4 text-center rounded-tr-xl">Acciones</th>
                         </tr>
                       </thead>
@@ -522,8 +1068,46 @@ export default function ClientEdit() {
                             </td>
                             <td className="py-4 px-4 font-mono text-sm text-slate-600">{r.resolutionNumber}</td>
                             <td className="py-4 px-4 text-sm text-slate-600">{r.numberStart} a {r.numberEnd}</td>
+                            <td className="py-4 px-4 text-sm">
+                              {editingNextNumberId === r.id ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    min={r.numberStart}
+                                    max={r.numberEnd}
+                                    autoFocus
+                                    className="w-24 px-2 py-1.5 bg-white border border-blue-500 rounded-lg outline-none text-sm font-mono"
+                                    value={nextNumberDraft}
+                                    onChange={e => setNextNumberDraft(e.target.value)}
+                                    disabled={savingNextNumber}
+                                  />
+                                  <button onClick={() => saveNextNumber(r)} disabled={savingNextNumber} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Guardar">
+                                    {savingNextNumber ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                                  </button>
+                                  <button onClick={() => setEditingNextNumberId(null)} disabled={savingNextNumber} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Cancelar">
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button onClick={() => startEditNextNumber(r)} className="flex items-center gap-1.5 font-mono font-bold text-slate-700 hover:text-blue-600 group">
+                                  {r.nextNumber ?? r.numberStart}
+                                  <Pencil size={13} className="text-slate-300 group-hover:text-blue-600" />
+                                </button>
+                              )}
+                            </td>
                             <td className="py-4 px-4 text-sm text-slate-500">
-                              {new Date(r.validFrom).toLocaleDateString()} - {new Date(r.validTo).toLocaleDateString()}
+                              {r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} - ${new Date(r.validTo).toLocaleDateString()}`}
+                            </td>
+                            <td className="py-4 px-4 text-center">
+                              {r.isDefault ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                                  <Star size={14} fill="currentColor" /> Predeterminada
+                                </span>
+                              ) : (
+                                <button onClick={() => handleSetDefaultResolution(r.id)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors" title="Marcar como predeterminada para este tipo de documento">
+                                  <Star size={14} /> Marcar
+                                </button>
+                              )}
                             </td>
                             <td className="py-4 px-4 text-center">
                               <button onClick={() => handleDeleteResolution(r.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
@@ -627,7 +1211,296 @@ export default function ClientEdit() {
             )}
             
             {activeTab === 'credentials' && (
-              <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+              <div className="space-y-8">
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <h2 className="text-xl font-bold text-slate-800 mb-1">Proveedor de Documentos Electrónicos</h2>
+                  <p className="text-slate-500 text-sm mb-6">
+                    Por defecto los documentos se emiten con el motor propio. Si este emisor factura con Dataico, actívalo aquí y captura sus credenciales.
+                  </p>
+                  <form onSubmit={handleSaveDocProvider} className="space-y-4">
+                    <div className="flex gap-3">
+                      {['Native', 'Dataico'].map(p => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setDocProvider({ ...docProvider, documentProvider: p })}
+                          className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors ${
+                            docProvider.documentProvider === p ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                          }`}
+                        >
+                          {p === 'Native' ? 'Motor Propio' : 'Dataico'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {docProvider.documentProvider === 'Dataico' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ambiente</label>
+                          <select value={docProvider.dataicoEnvironment} onChange={e => setDocProvider({ ...docProvider, dataicoEnvironment: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                            <option value="PRUEBAS">Pruebas</option>
+                            <option value="PRODUCCION">Producción</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dataico Account ID</label>
+                          <input type="text" value={docProvider.dataicoAccountId} onChange={e => setDocProvider({ ...docProvider, dataicoAccountId: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Usuario API</label>
+                          <input type="text" value={docProvider.dataicoApiUser} onChange={e => setDocProvider({ ...docProvider, dataicoApiUser: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                            Contraseña API {docProvider.hasApiPassword && <span className="text-emerald-600 normal-case font-normal">(configurada)</span>}
+                          </label>
+                          <input type="password" placeholder={docProvider.hasApiPassword ? 'Dejar vacío para no cambiar' : ''} value={docProvider.dataicoApiPassword} onChange={e => setDocProvider({ ...docProvider, dataicoApiPassword: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                            Auth-token {docProvider.hasAuthToken && <span className="text-emerald-600 normal-case font-normal">(configurado)</span>}
+                          </label>
+                          <input type="password" placeholder={docProvider.hasAuthToken ? 'Dejar vacío para no cambiar' : ''} value={docProvider.dataicoAuthToken} onChange={e => setDocProvider({ ...docProvider, dataicoAuthToken: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end pt-2">
+                      <button type="submit" disabled={savingDocProvider} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
+                        {savingDocProvider ? 'Guardando...' : 'Guardar Proveedor'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <h2 className="text-xl font-bold text-slate-800 mb-1">MinSalud / RIPS (MUV-FEV-RIPS)</h2>
+                  <p className="text-slate-500 text-sm mb-6">
+                    Credenciales del prestador ante SISPRO para el envío de RIPS al Ministerio de Salud. Solo aplica a emisores del sector salud.
+                  </p>
+                  <form onSubmit={handleSaveMinSalud} className="space-y-5">
+                    {/* El ambiente decide contra cuál de los dos MUV emite este cliente. Las
+                        credenciales de uno no sirven en el otro, por eso se piden por separado. */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ambiente</label>
+                        <SearchableSelect
+                          options={minSaludCatalogs.environments.map(o => ({ value: o.code, label: o.name }))}
+                          value={minSaludConfig.minSaludEnvironment}
+                          onChange={v => setMinSaludConfig({ ...minSaludConfig, minSaludEnvironment: v })}
+                          inputClassName="w-full px-4 py-2.5 pr-8 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                        />
+                        <p className="text-xs text-slate-400 mt-1">
+                          {minSaludConfig.minSaludEnvironment === 'Production'
+                            ? 'Lo que se emita cuenta como reporte real ante el Ministerio.'
+                            : 'Emite contra el ambiente de pruebas del Ministerio.'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Usuario</label>
+                        <SearchableSelect
+                          options={minSaludCatalogs.userTypes.map(o => ({ value: o.code, label: `${o.code} - ${o.name}`, shortLabel: o.code }))}
+                          value={minSaludConfig.minSaludUserType}
+                          onChange={v => setMinSaludConfig({ ...minSaludConfig, minSaludUserType: v })}
+                          placeholder="(no informar)"
+                          inputClassName="w-full px-4 py-2.5 pr-8 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                        />
+                        <p className="text-xs text-slate-400 mt-1">Para PSS y PTS el manual exige RE.</p>
+                      </div>
+                    </div>
+
+                    <div className={`rounded-xl border p-4 ${minSaludConfig.minSaludEnvironment === 'Production' ? 'border-blue-200 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
+                      <h3 className="text-sm font-bold text-slate-700 mb-3">
+                        Credenciales de producción
+                        {minSaludConfig.minSaludEnvironment === 'Production' && <span className="ml-2 text-xs font-medium text-blue-600">(en uso)</span>}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Documento</label>
+                          <SearchableSelect
+                            options={minSaludCatalogs.documentTypes.map(o => ({ value: o.code, label: `${o.code} - ${o.name}`, shortLabel: o.code }))}
+                            value={minSaludConfig.minSaludIdentificationType}
+                            onChange={v => setMinSaludConfig({ ...minSaludConfig, minSaludIdentificationType: v })}
+                            inputClassName="w-full px-4 py-2.5 pr-8 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Número de Documento</label>
+                          <input type="text" value={minSaludConfig.minSaludIdentificationNumber} onChange={e => setMinSaludConfig({ ...minSaludConfig, minSaludIdentificationNumber: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                            Contraseña {minSaludConfig.hasPassword && <span className="text-emerald-600 normal-case font-normal">(configurada)</span>}
+                          </label>
+                          <input type="password" placeholder={minSaludConfig.hasPassword ? 'Dejar vacío para no cambiar' : ''} value={minSaludConfig.minSaludPassword} onChange={e => setMinSaludConfig({ ...minSaludConfig, minSaludPassword: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={`rounded-xl border p-4 ${minSaludConfig.minSaludEnvironment === 'Test' ? 'border-blue-200 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
+                      <h3 className="text-sm font-bold text-slate-700 mb-3">
+                        Credenciales de pruebas
+                        {minSaludConfig.minSaludEnvironment === 'Test' && <span className="ml-2 text-xs font-medium text-blue-600">(en uso)</span>}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Documento</label>
+                          <SearchableSelect
+                            options={minSaludCatalogs.documentTypes.map(o => ({ value: o.code, label: `${o.code} - ${o.name}`, shortLabel: o.code }))}
+                            value={minSaludConfig.minSaludTestIdentificationType}
+                            onChange={v => setMinSaludConfig({ ...minSaludConfig, minSaludTestIdentificationType: v })}
+                            inputClassName="w-full px-4 py-2.5 pr-8 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Número de Documento</label>
+                          <input type="text" value={minSaludConfig.minSaludTestIdentificationNumber} onChange={e => setMinSaludConfig({ ...minSaludConfig, minSaludTestIdentificationNumber: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                            Contraseña {minSaludConfig.hasTestPassword && <span className="text-emerald-600 normal-case font-normal">(configurada)</span>}
+                          </label>
+                          <input type="password" placeholder={minSaludConfig.hasTestPassword ? 'Dejar vacío para no cambiar' : ''} value={minSaludConfig.minSaludTestPassword} onChange={e => setMinSaludConfig({ ...minSaludConfig, minSaludTestPassword: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button type="submit" disabled={savingMinSalud} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
+                        {savingMinSalud ? 'Guardando...' : 'Guardar MinSalud'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <h2 className="text-xl font-bold text-slate-800 mb-1">Tarifa por Integrador</h2>
+                  <p className="text-slate-500 text-sm mb-6">
+                    Por defecto se cobra la tarifa plana del emisor (definida en Facturación). Actívalo aquí solo para el integrador que necesite una tarifa o modo distinto.
+                  </p>
+                  <div className="space-y-4">
+                    {clientIntegratorBilling.map((row: any) => (
+                      <div key={row.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-700">{row.name}</span>
+                            {row.hasOverride ? (
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Override activo</span>
+                            ) : (
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-500">Usando tarifa plana</span>
+                            )}
+                          </div>
+                          {row.hasOverride && (
+                            <button type="button" onClick={() => handleClearClientIntegratorBilling(row)} className="text-xs font-bold text-slate-400 hover:text-rose-500 transition-colors">
+                              Quitar override
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-end gap-3">
+                          <div className="flex gap-2">
+                            {(['PerDocument', 'PerUser'] as const).map(mode => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => updateClientIntegratorRow(row.id, { mode })}
+                                className={`px-4 py-2 rounded-lg font-bold text-xs transition-colors ${
+                                  row.mode === mode ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-100'
+                                }`}
+                              >
+                                {mode === 'PerDocument' ? 'Por Documento' : 'Por Usuario'}
+                              </button>
+                            ))}
+                          </div>
+
+                          {row.mode === 'PerDocument' ? (
+                            <div className="w-40">
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tarifa / documento</label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">$</span>
+                                <input type="number" min="0" step="0.01" value={row.pricePerDocument} onChange={e => updateClientIntegratorRow(row.id, { pricePerDocument: parseFloat(e.target.value) || 0 })} className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="w-40">
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tarifa / usuario-mes</label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">$</span>
+                                <input type="number" min="0" step="0.01" value={row.pricePerUser} onChange={e => updateClientIntegratorRow(row.id, { pricePerUser: parseFloat(e.target.value) || 0 })} className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                              </div>
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleSaveClientIntegratorBilling(row)}
+                            disabled={savingClientIntegratorId === row.id}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition-colors disabled:opacity-50"
+                          >
+                            {savingClientIntegratorId === row.id ? 'Guardando...' : 'Guardar override'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {clientIntegratorBilling.length === 0 && <p className="text-sm text-slate-400">Sin integradores activos en el catálogo.</p>}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <div className="flex items-start justify-between mb-1">
+                    <h2 className="text-xl font-bold text-slate-800">Acceso al Portal del Cliente</h2>
+                    {hasPortalUser && (
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${portalUserActive ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>
+                        {portalUserActive ? 'Activo' : 'Revocado'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-slate-500 text-sm mb-4">
+                    Con estas credenciales tu cliente ingresa a <span className="font-mono">clients.facil-factura.pro</span> usando el slug de tu empresa (configurado en Apariencia y Branding).
+                  </p>
+                  {hasPortalUser && (
+                    <div className="flex items-center gap-3 mb-6">
+                      {portalUserActive ? (
+                        <>
+                          <button type="button" onClick={handleResendPortalInvitation} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors">
+                            <Mail className="w-3.5 h-3.5" /> Reenviar invitación
+                          </button>
+                          <button type="button" onClick={handleRevokePortalUser} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" /> Revocar acceso
+                          </button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={handleReactivatePortalUser} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors">
+                          <RotateCcw className="w-3.5 h-3.5" /> Reactivar acceso
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <form onSubmit={handleSavePortalUser} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre</label>
+                      <input required type="text" value={portalUser.name} onChange={e => setPortalUser({ ...portalUser, name: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email de acceso</label>
+                      <input required type="email" value={portalUser.email} onChange={e => setPortalUser({ ...portalUser, email: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                        {hasPortalUser ? 'Nueva contraseña (opcional)' : 'Contraseña (opcional)'}
+                      </label>
+                      <input type="password" value={portalUser.password} onChange={e => setPortalUser({ ...portalUser, password: e.target.value })} placeholder={hasPortalUser ? 'Dejar vacío para no cambiar' : 'Dejar vacío para invitar por correo'} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                      {!hasPortalUser && <p className="text-xs text-slate-400 mt-1">Si la dejas vacía, le enviaremos un correo de invitación para que cree su propia contraseña.</p>}
+                    </div>
+                    <div className="md:col-span-3 flex justify-end">
+                      <button type="submit" disabled={savingPortalUser} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
+                        {savingPortalUser ? 'Guardando...' : hasPortalUser ? 'Actualizar acceso' : 'Crear acceso'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                 <h2 className="text-xl font-bold text-slate-800 mb-6">Credenciales de Integración B2B</h2>
                 <div className="space-y-6">
                   <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl">
@@ -690,12 +1563,368 @@ export default function ClientEdit() {
                   </div>
                 </div>
               </div>
+              </div>
+            )}
+
+            {activeTab === 'prepaid' && (
+              <div className="space-y-8">
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <div className="flex justify-between items-center mb-1">
+                    <h2 className="text-xl font-bold text-slate-800">Paquetes Prepago</h2>
+                    <button onClick={openNewPackageModal} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium shadow-md transition-colors flex items-center gap-2 text-sm">
+                      <Plus size={16} /> Nuevo Paquete
+                    </button>
+                  </div>
+                  <p className="text-slate-500 text-sm mb-6">
+                    Ofertas de documentos prepago para este Client: mientras tenga saldo, cada documento del integrador elegido se cobra a la tarifa preferencial en vez de la tarifa estándar.
+                  </p>
+
+                  {prepaidPackages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center text-center h-56 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                      <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-4">
+                        <Package size={32} />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-700">Sin paquetes definidos</h3>
+                      <p className="text-slate-500 max-w-sm mt-2">Crea un paquete para poder ofrecerle documentos prepago a este Client.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 text-sm border-y border-slate-200">
+                            <th className="font-semibold py-3 px-4 rounded-tl-xl">Paquete</th>
+                            <th className="font-semibold py-3 px-4">Integrador</th>
+                            <th className="font-semibold py-3 px-4">Precio total</th>
+                            <th className="font-semibold py-3 px-4">Tarifa / documento</th>
+                            <th className="font-semibold py-3 px-4">Estado</th>
+                            <th className="font-semibold py-3 px-4 text-center rounded-tr-xl">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {prepaidPackages.map((p: any) => (
+                            <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                              <td className="py-4 px-4 font-semibold text-slate-700">{p.name}</td>
+                              <td className="py-4 px-4 text-sm text-slate-600">{p.integratorName}</td>
+                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${p.totalPrice.toLocaleString('es-CO')}</td>
+                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${p.discountedPricePerDocument.toLocaleString('es-CO')}</td>
+                              <td className="py-4 px-4">
+                                <span className={`px-2 py-1 rounded-md text-xs font-bold ${p.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                  {p.isActive ? 'Activo' : 'Inactivo'}
+                                </span>
+                              </td>
+                              <td className="py-4 px-4">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    onClick={() => handleActivateBag(p.id)}
+                                    disabled={!p.isActive || activatingBagPackageId === p.id}
+                                    title="Activar bolsa para este Client"
+                                    className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                  >
+                                    {activatingBagPackageId === p.id ? 'Activando...' : 'Activar bolsa'}
+                                  </button>
+                                  <button onClick={() => openEditPackageModal(p)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="Editar">
+                                    <Pencil size={16} />
+                                  </button>
+                                  <button onClick={() => handleTogglePackageActive(p)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title={p.isActive ? 'Desactivar' : 'Reactivar'}>
+                                    {p.isActive ? <PowerOff size={16} /> : <Power size={16} />}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <h2 className="text-xl font-bold text-slate-800 mb-1">Bolsas del Client</h2>
+                  <p className="text-slate-500 text-sm mb-6">Bolsas activadas a partir de un paquete, con su saldo restante.</p>
+
+                  {prepaidBags.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center text-center h-40 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                      <p className="text-slate-500">Este Client todavía no tiene ninguna bolsa activada.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 text-sm border-y border-slate-200">
+                            <th className="font-semibold py-3 px-4 rounded-tl-xl">Paquete</th>
+                            <th className="font-semibold py-3 px-4">Integrador</th>
+                            <th className="font-semibold py-3 px-4">Saldo restante</th>
+                            <th className="font-semibold py-3 px-4">Tarifa preferencial</th>
+                            <th className="font-semibold py-3 px-4">Pagado</th>
+                            <th className="font-semibold py-3 px-4">Estado</th>
+                            <th className="font-semibold py-3 px-4 rounded-tr-xl">Activada</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {prepaidBags.map((b: any) => (
+                            <tr key={b.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                              <td className="py-4 px-4 font-semibold text-slate-700">{b.packageName}</td>
+                              <td className="py-4 px-4 text-sm text-slate-600">{b.integratorName}</td>
+                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${b.remainingBalance.toLocaleString('es-CO')}</td>
+                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${b.discountedPricePerDocument.toLocaleString('es-CO')}</td>
+                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${b.amountPaid.toLocaleString('es-CO')}</td>
+                              <td className="py-4 px-4">
+                                <span className={`px-2 py-1 rounded-md text-xs font-bold ${
+                                  b.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : b.status === 'Depleted' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                                }`}>
+                                  {b.status === 'Active' ? 'Activa' : b.status === 'Depleted' ? 'Agotada' : 'Cancelada'}
+                                </span>
+                              </td>
+                              <td className="py-4 px-4 text-sm text-slate-500">{new Date(b.purchasedAt).toLocaleDateString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'enablements' && (
+              <div className="space-y-8">
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <div className="flex justify-between items-center mb-1">
+                    <h2 className="text-xl font-bold text-slate-800">Tipos de Documento</h2>
+                    <button onClick={handleSaveDocTypes} disabled={savingDocTypes} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50">
+                      {savingDocTypes ? 'Guardando...' : 'Guardar'}
+                    </button>
+                  </div>
+                  <p className="text-slate-500 text-sm mb-6">Qué puede emitir este Client desde su formulario de facturación.</p>
+                  <div className="space-y-2">
+                    {enabledDocTypes.map((d: any) => (
+                      <label key={d.id} className="flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors">
+                        <input type="checkbox" checked={d.enabled} onChange={() => toggleDocType(d.id)} className="w-4 h-4 accent-blue-600" />
+                        <span className="text-sm font-mono text-slate-400 w-14">{d.code}</span>
+                        <span className="text-sm font-medium text-slate-700">{d.name}</span>
+                      </label>
+                    ))}
+                    {enabledDocTypes.length === 0 && <p className="text-sm text-slate-400">Cargando...</p>}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <div className="flex justify-between items-center mb-1">
+                    <h2 className="text-xl font-bold text-slate-800">Retenciones</h2>
+                    <button onClick={handleSaveRetentions} disabled={savingRetentions} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50">
+                      {savingRetentions ? 'Guardando...' : 'Guardar'}
+                    </button>
+                  </div>
+                  <p className="text-slate-500 text-sm mb-6">Qué conceptos de retención puede elegir este Client por línea de factura.</p>
+                  <div className="space-y-4">
+                    {Object.entries(
+                      enabledRetentions.reduce((groups: Record<string, any[]>, r: any) => {
+                        (groups[r.groupLabel] ||= []).push(r);
+                        return groups;
+                      }, {})
+                    ).map(([groupLabel, items]) => (
+                      <div key={groupLabel}>
+                        <h3 className="text-xs font-bold text-slate-500 uppercase mb-1.5">{groupLabel}</h3>
+                        <div className="space-y-1">
+                          {items.map((r: any) => (
+                            <label key={r.id} className="flex items-center gap-3 p-2.5 bg-slate-50 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors">
+                              <input type="checkbox" checked={r.enabled} onChange={() => toggleRetention(r.id)} className="w-4 h-4 accent-blue-600" />
+                              <span className="text-sm text-slate-700 flex-1">{r.name}</span>
+                              <span className="text-xs font-mono text-slate-400">{r.taxCategory} {r.rate}%</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    {enabledRetentions.length === 0 && <p className="text-sm text-slate-400">Cargando...</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'reception' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Mail className="text-blue-600" size={20} />
+                    <h2 className="text-xl font-bold text-slate-800">Correo de Facturación Electrónica</h2>
+                  </div>
+                  <p className="text-slate-500 mb-6 text-sm">
+                    Configura, en nombre de este cliente, el buzón donde le llegan las facturas de sus proveedores.
+                    Para Gmail u Outlook, usa una <strong>contraseña de aplicación</strong> (no la clave normal de la cuenta).
+                  </p>
+
+                  <label className="flex items-center gap-3 mb-5 cursor-pointer">
+                    <input type="checkbox" checked={receptionSettings.receptionEmailEnabled}
+                      onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailEnabled: e.target.checked })}
+                      className="w-5 h-5 rounded accent-blue-600" />
+                    <span className="font-semibold text-slate-700">Activar conexión de correo</span>
+                  </label>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor IMAP</label>
+                      <input type="text" placeholder="imap.gmail.com" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                        value={receptionSettings.receptionEmailHost} onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailHost: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
+                      <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                        value={receptionSettings.receptionEmailPort} onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailPort: parseInt(e.target.value) || 993 })} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario / Correo</label>
+                      <input type="email" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                        value={receptionSettings.receptionEmailUser} onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailUser: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                        Contraseña {receptionSettings.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada)</span>}
+                      </label>
+                      <input type="password" placeholder={receptionSettings.hasPassword ? '••••••••' : ''} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                        value={receptionPasswordDraft} onChange={e => setReceptionPasswordDraft(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 mt-4 cursor-pointer">
+                    <input type="checkbox" checked={receptionSettings.receptionEmailUseSsl}
+                      onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailUseSsl: e.target.checked })}
+                      className="w-4 h-4 rounded accent-blue-600" />
+                    <span className="text-sm text-slate-600">Usar SSL/TLS (recomendado)</span>
+                  </label>
+
+                  <div className="flex gap-3 mt-6">
+                    <button onClick={saveReceptionSettings} disabled={savingReception} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+                      {savingReception ? 'Guardando...' : 'Guardar configuración'}
+                    </button>
+                    <button onClick={testReceptionConnection} disabled={testingReceptionConn} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
+                      {testingReceptionConn ? 'Probando...' : 'Probar conexión'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                  <h2 className="text-xl font-bold text-slate-800 mb-2">Eventos automáticos</h2>
+                  <p className="text-slate-500 mb-6 text-sm">Cuáles eventos RADIAN se disparan solos al recibir un documento. Reclamo implica una disputa formal — solo actívalo si el cliente tiene una validación confiable antes.</p>
+
+                  <div className="space-y-3">
+                    {([
+                      ['autoSendAcuseRecibo', 'Acuse de Recibo'],
+                      ['autoSendReciboBien', 'Recibo del Bien o Servicio'],
+                      ['autoSendAceptacion', 'Aceptación Expresa'],
+                      ['autoSendReclamo', 'Reclamo'],
+                    ] as const).map(([field, label]) => (
+                      <label key={field} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer">
+                        <input type="checkbox" checked={receptionSettings[field]}
+                          onChange={e => setReceptionSettings({ ...receptionSettings, [field]: e.target.checked })}
+                          className="w-5 h-5 rounded accent-blue-600" />
+                        <span className="font-semibold text-slate-700 text-sm">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <button onClick={saveReceptionSettings} disabled={savingReception} className="mt-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+                    {savingReception ? 'Guardando...' : 'Guardar eventos automáticos'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'templates' && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="md:col-span-1 space-y-4">
+                  <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Tipos de Comprobante</h2>
+                  {templateSettings.map(setting => (
+                    <button
+                      key={setting.settingId}
+                      onClick={() => handleSelectTemplateType(setting)}
+                      className={`w-full text-left p-5 rounded-2xl border transition-all flex items-center justify-between group ${
+                        selectedTemplateSetting?.settingId === setting.settingId
+                          ? 'bg-blue-50 border-blue-500 shadow-sm shadow-blue-500/10'
+                          : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-2 font-bold text-slate-700">
+                          <LayoutTemplate className={`w-4 h-4 ${selectedTemplateSetting?.settingId === setting.settingId ? 'text-blue-600' : 'text-slate-400'}`} />
+                          {setting.documentTypeName}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1 font-medium truncate pr-4">
+                          Actual: {setting.selectedTemplateName || 'Por defecto'}
+                        </div>
+                      </div>
+                      <ChevronRight className={`w-5 h-5 ${selectedTemplateSetting?.settingId === setting.settingId ? 'text-blue-600' : 'text-slate-300 group-hover:text-blue-600 transition-colors'}`} />
+                    </button>
+                  ))}
+                  {templateSettings.length === 0 && (
+                    <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl text-center text-slate-500 text-sm">
+                      Este cliente aún no tiene comprobantes personalizables habilitados.
+                    </div>
+                  )}
+                </div>
+
+                <div className="md:col-span-2">
+                  {selectedTemplateSetting ? (
+                    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 animate-in fade-in duration-300 h-full">
+                      <h2 className="text-xl font-bold text-slate-800 mb-6">
+                        Plantillas para {selectedTemplateSetting.documentTypeName}
+                      </h2>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {availableTemplates.map(tpl => {
+                          const isActive = selectedTemplateSetting.selectedTemplateId === tpl.id;
+                          return (
+                            <div
+                              key={tpl.id}
+                              className={`relative p-6 rounded-2xl border-2 transition-all ${
+                                isActive ? 'border-blue-500 bg-blue-50/50 shadow-md shadow-blue-500/10' : 'border-slate-100 bg-white'
+                              }`}
+                            >
+                              {isActive && (
+                                <div className="absolute -top-3 -right-3 bg-blue-600 text-white rounded-full p-1 shadow-md">
+                                  <CheckCircle2 className="w-5 h-5" />
+                                </div>
+                              )}
+                              <h3 className="font-bold text-slate-800">{tpl.name}</h3>
+                              <p className="text-xs text-slate-500 mt-1">
+                                {tpl.isOwn ? 'Diseño propio del cliente' : tpl.isGlobal ? 'Diseño base del sistema' : 'Diseño personalizado del tenant'}
+                              </p>
+                              {!isActive && (
+                                <button
+                                  onClick={() => handleApplyTemplate(tpl.id)}
+                                  disabled={applyingTemplateId === tpl.id}
+                                  className="mt-4 w-full py-2 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors"
+                                >
+                                  {applyingTemplateId === tpl.id ? 'Aplicando...' : 'Aplicar'}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {availableTemplates.length === 0 && (
+                          <div className="col-span-2 p-12 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100 border-dashed">
+                            No hay plantillas disponibles para este tipo de documento. Clónalas o publícalas desde "Modelos de Documentos".
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-full min-h-[400px] rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center p-8 text-center">
+                      <div className="max-w-xs">
+                        <LayoutTemplate className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-bold text-slate-600 mb-2">Selecciona un Comprobante</h3>
+                        <p className="text-sm text-slate-400">Elige un tipo de comprobante en la lista de la izquierda para ver y aplicar sus diseños disponibles.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {activeTab === 'dian' && (
               <div className="relative">
                 {/* Splash Screen Overlay for DIAN Tab */}
-                {(isHabilitating || habilitationStatus?.status === 'Testing' || habilitationStatus?.status === 'Approved') && (
+                {(isHabilitating || habilitationStatus?.status === 'Approved') && (
                   <div className="absolute inset-0 bg-white/90 backdrop-blur-md z-20 flex items-center justify-center p-4 rounded-3xl min-h-[500px]">
                     <div className="bg-white rounded-3xl p-10 max-w-lg w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300 border border-slate-100">
                       {habilitationStatus?.status === 'Approved' ? (
@@ -750,6 +1979,73 @@ export default function ClientEdit() {
                   </div>
                 )}
 
+                {/* Panel de Set de Pruebas — visible una vez el software propio quedó registrado
+                    (status "Testing"), en vez del overlay de "en progreso" que antes se quedaba
+                    pegado ahí para siempre porque "Testing" es un estado real, no transitorio. */}
+                {habilitationStatus?.status === 'Testing' && (
+                  <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 mb-8">
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+                        <Loader2 size={24} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-800">Set de Pruebas DIAN</h2>
+                        <p className="text-sm text-slate-500">{habilitationStatus?.message}</p>
+                      </div>
+                    </div>
+
+                    {habilitationStatus?.testSet && (
+                      <div className="grid grid-cols-3 gap-4 mb-6 text-center">
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-2xl font-bold text-slate-800">{habilitationStatus.testSet.sentInvoices}/{habilitationStatus.testSet.requiredInvoices}</p>
+                          <p className="text-xs text-slate-500 mt-1">Facturas enviadas</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-2xl font-bold text-slate-800">{habilitationStatus.testSet.sentDebitNotes}/{habilitationStatus.testSet.requiredDebitNotes}</p>
+                          <p className="text-xs text-slate-500 mt-1">Notas débito enviadas</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4">
+                          <p className="text-2xl font-bold text-slate-800">{habilitationStatus.testSet.sentCreditNotes}/{habilitationStatus.testSet.requiredCreditNotes}</p>
+                          <p className="text-xs text-slate-500 mt-1">Notas crédito enviadas</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={handlePreviewTestDocument}
+                        disabled={loadingPreview}
+                        className="bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all flex items-center gap-2"
+                      >
+                        {loadingPreview ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                        Vista previa del próximo documento
+                      </button>
+                      <button
+                        onClick={handleSendTestDocument}
+                        disabled={sendingTestDoc}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all flex items-center gap-2"
+                      >
+                        {sendingTestDoc ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap size={18} />}
+                        Enviar a la DIAN
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2">
+                      La vista previa arma y firma el XML sin enviarlo — no gasta cupo. "Enviar a la DIAN" sí gasta un intento real y no se puede deshacer.
+                    </p>
+
+                    {testDocPreview && (
+                      <div className="mt-6 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                        <div className="flex flex-wrap gap-4 mb-3 text-sm">
+                          <span><strong>Tipo:</strong> {testDocPreview.documentKind}</span>
+                          <span><strong>Número:</strong> {testDocPreview.documentNumber}</span>
+                          <span><strong>CUFE:</strong> <span className="font-mono">{testDocPreview.cufe}</span></span>
+                        </div>
+                        <pre className="text-xs bg-slate-900 text-slate-100 rounded-xl p-4 overflow-auto max-h-96 whitespace-pre-wrap break-all">{testDocPreview.signedXml}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Panel de Habilitación DIAN Automática */}
                 <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 min-h-[400px]">
                   <div className="flex items-center gap-4 mb-8">
@@ -777,24 +2073,22 @@ export default function ClientEdit() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div>
                           <label className="block text-sm font-bold text-slate-700 mb-2">Software ID (MUISCA)</label>
-                          <input 
-                            type="text" 
-                            placeholder="Ej: 7a12b4c9-8f3e-4b... (Opcional)" 
-                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
-                            value={softwareId}
-                            onChange={e => setSoftwareId(e.target.value)}
-                            disabled={isHabilitating}
+                          <input
+                            type="text"
+                            readOnly
+                            placeholder="Se completa automáticamente al registrar"
+                            className="w-full px-4 py-3 bg-slate-100 border border-slate-300 rounded-xl outline-none font-mono text-sm text-slate-600 cursor-not-allowed"
+                            value={habilitationStatus?.softwareId || ''}
                           />
                         </div>
                         <div>
                           <label className="block text-sm font-bold text-slate-700 mb-2">PIN del Software</label>
-                          <input 
-                            type="text" 
-                            placeholder="Ej: 12345 (Opcional)" 
-                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
-                            value={softwarePin}
-                            onChange={e => setSoftwarePin(e.target.value)}
-                            disabled={isHabilitating}
+                          <input
+                            type="text"
+                            readOnly
+                            placeholder="Se completa automáticamente al registrar"
+                            className="w-full px-4 py-3 bg-slate-100 border border-slate-300 rounded-xl outline-none font-mono text-sm text-slate-600 cursor-not-allowed"
+                            value={habilitationStatus?.softwarePin || ''}
                           />
                         </div>
                       </div>
@@ -820,7 +2114,7 @@ export default function ClientEdit() {
                         </button>
                       </div>
                       <p className="text-sm text-slate-500 mt-4">
-                        Si dejas los campos de Software ID y PIN en blanco, el sistema registrará automáticamente el Software Propio en la DIAN por ti en el futuro. Al hacer clic, extraeremos tu TestSetId e iniciaremos las pruebas.
+                        El sistema registra el Software Propio en la DIAN por ti — el Software ID y el PIN los asigna la DIAN y se muestran arriba una vez completado el registro.
                       </p>
                     </form>
                   )}
@@ -868,49 +2162,127 @@ export default function ClientEdit() {
                     <option value="NC">Nota Crédito (NC)</option>
                     <option value="ND">Nota Débito (ND)</option>
                     <option value="POS">Documento Soporte / POS</option>
+                    <option value="NE">Nómina Electrónica (NE)</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Número de Resolución</label>
-                  <input required type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.resolutionNumber} onChange={e => setNewRes({...newRes, resolutionNumber: e.target.value})} />
-                </div>
+                {newRes.documentType !== 'NE' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Número de Resolución</label>
+                    <input required type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.resolutionNumber} onChange={e => setNewRes({...newRes, resolutionNumber: e.target.value})} />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              {newRes.documentType === 'NE' && (
+                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  La nómina electrónica no tiene una resolución de numeración autorizada por la DIAN — el consecutivo lo administra libremente el cliente. Solo indica desde qué número quiere empezar.
+                </p>
+              )}
+
+              <div className={`grid ${newRes.documentType === 'NE' ? 'grid-cols-2' : 'grid-cols-3'} gap-4`}>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Prefijo (Opcional)</label>
                   <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase" value={newRes.prefix} onChange={e => setNewRes({...newRes, prefix: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Rango Inicial</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">{newRes.documentType === 'NE' ? 'Número Inicial' : 'Rango Inicial'}</label>
                   <input required type="number" min="1" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.numberStart || ''} onChange={e => setNewRes({...newRes, numberStart: parseInt(e.target.value) || 0})} />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Rango Final</label>
-                  <input required type="number" min="1" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.numberEnd || ''} onChange={e => setNewRes({...newRes, numberEnd: parseInt(e.target.value) || 0})} />
-                </div>
+                {newRes.documentType !== 'NE' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Rango Final</label>
+                    <input required type="number" min="1" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.numberEnd || ''} onChange={e => setNewRes({...newRes, numberEnd: parseInt(e.target.value) || 0})} />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Válida Desde</label>
-                  <input required type="date" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.validFrom} onChange={e => setNewRes({...newRes, validFrom: e.target.value})} />
+              {newRes.documentType !== 'NE' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Válida Desde</label>
+                    <input required type="date" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.validFrom} onChange={e => setNewRes({...newRes, validFrom: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Válida Hasta</label>
+                    <input required type="date" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.validTo} onChange={e => setNewRes({...newRes, validTo: e.target.value})} />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Válida Hasta</label>
-                  <input required type="date" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.validTo} onChange={e => setNewRes({...newRes, validTo: e.target.value})} />
-                </div>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Clave Técnica (Solo FE)</label>
-                <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" value={newRes.technicalKey} onChange={e => setNewRes({...newRes, technicalKey: e.target.value})} />
-              </div>
+              {newRes.documentType !== 'NE' && (
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Clave Técnica (Solo FE)</label>
+                  <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" value={newRes.technicalKey} onChange={e => setNewRes({...newRes, technicalKey: e.target.value})} />
+                </div>
+              )}
 
               <div className="pt-4 flex justify-end gap-3">
                 <button type="button" onClick={() => setShowResModal(false)} className="px-5 py-2.5 text-slate-500 hover:bg-slate-100 rounded-xl font-medium transition-colors">Cancelar</button>
                 <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-semibold shadow-md transition-colors">
                   Guardar Resolución
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showPackageModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <Package className="text-blue-600" /> {editingPackage ? 'Editar Paquete' : 'Nuevo Paquete Prepago'}
+              </h3>
+              <button onClick={() => setShowPackageModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePackage} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre del paquete</label>
+                <input required type="text" placeholder="Ej: 1.000.000 documentos" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={packageForm.name} onChange={e => setPackageForm({ ...packageForm, name: e.target.value })} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Integrador</label>
+                <select
+                  required
+                  disabled={!!editingPackage}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-60"
+                  value={packageForm.integratorId}
+                  onChange={e => setPackageForm({ ...packageForm, integratorId: e.target.value })}
+                >
+                  <option value="" disabled>Selecciona un integrador</option>
+                  {integrators.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </select>
+                {editingPackage && <p className="text-xs text-slate-400 mt-1">El integrador no se puede cambiar una vez creado el paquete.</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Precio total</label>
+                  <input required type="number" min="1" step="1" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={packageForm.totalPrice || ''} onChange={e => setPackageForm({ ...packageForm, totalPrice: parseFloat(e.target.value) || 0 })} />
+                  <p className="text-xs text-slate-400 mt-1">Lo que el Client paga de una vez.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Tarifa por documento</label>
+                  <input required type="number" min="1" step="1" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={packageForm.discountedPricePerDocument || ''} onChange={e => setPackageForm({ ...packageForm, discountedPricePerDocument: parseFloat(e.target.value) || 0 })} />
+                  <p className="text-xs text-slate-400 mt-1">Tarifa preferencial mientras dure el saldo.</p>
+                </div>
+              </div>
+
+              {packageForm.totalPrice > 0 && packageForm.discountedPricePerDocument > 0 && (
+                <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                  Equivale a aproximadamente <span className="font-bold text-slate-700">{Math.floor(packageForm.totalPrice / packageForm.discountedPricePerDocument).toLocaleString('es-CO')}</span> documentos.
+                </p>
+              )}
+
+              <div className="pt-4 flex justify-end gap-3">
+                <button type="button" onClick={() => setShowPackageModal(false)} className="px-5 py-2.5 text-slate-500 hover:bg-slate-100 rounded-xl font-medium transition-colors">Cancelar</button>
+                <button type="submit" disabled={savingPackage} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-semibold shadow-md transition-colors disabled:opacity-50">
+                  {savingPackage ? 'Guardando...' : 'Guardar Paquete'}
                 </button>
               </div>
             </form>

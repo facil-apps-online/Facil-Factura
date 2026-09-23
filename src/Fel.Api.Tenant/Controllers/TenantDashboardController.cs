@@ -78,6 +78,57 @@ namespace Fel.Api.Tenant.Controllers
             }
         }
 
+        // Grupo empresarial: si este tenant es "padre" de otros (ver Tenant.ParentTenantId,
+        // asignado desde Superadmin), consolida lo emitido a él mismo + a cada tenant asociado.
+        // Se basa en TenantBilling (el corte mensual ya generado por MonthlyBillingCutService),
+        // no en métricas en vivo — es lo que realmente se le facturó, independiente del modo de
+        // facturación (PerDocument/PerUser) de cada tenant del grupo.
+        [HttpGet("group-billing")]
+        public async Task<IActionResult> GetGroupBilling([FromQuery] int? year)
+        {
+            try
+            {
+                var tenantId = GetCurrentTenantId();
+
+                var groupTenants = await _dbContext.Tenants
+                    .Where(t => t.Id == tenantId || t.ParentTenantId == tenantId)
+                    .Select(t => new { t.Id, t.Name, t.CommercialName })
+                    .ToListAsync();
+
+                var groupIds = groupTenants.Select(t => t.Id).ToList();
+
+                var billingsQuery = _dbContext.TenantBillings.Where(b => groupIds.Contains(b.TenantId));
+                if (year.HasValue) billingsQuery = billingsQuery.Where(b => b.Year == year.Value);
+
+                var billings = await billingsQuery
+                    .OrderByDescending(b => b.Year).ThenByDescending(b => b.Month)
+                    .ToListAsync();
+
+                var byTenant = groupTenants.Select(t => new
+                {
+                    tenantId = t.Id,
+                    tenantName = string.IsNullOrWhiteSpace(t.CommercialName) ? t.Name : t.CommercialName,
+                    isSelf = t.Id == tenantId,
+                    totalAmount = billings.Where(b => b.TenantId == t.Id).Sum(b => b.TotalAmount),
+                    billings = billings.Where(b => b.TenantId == t.Id)
+                        .Select(b => new { b.Year, b.Month, b.TotalAmount, b.Currency, b.Status, b.PaidAt })
+                        .ToList()
+                }).ToList();
+
+                return Ok(new
+                {
+                    isGroup = groupTenants.Count > 1,
+                    totalAmount = billings.Sum(b => b.TotalAmount),
+                    currency = "COP",
+                    byTenant
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
         [HttpGet("recent-documents")]
         public async Task<IActionResult> GetRecentDocuments()
         {

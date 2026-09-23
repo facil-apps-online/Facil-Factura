@@ -90,7 +90,7 @@ namespace Fel.Api.Tenant.Controllers
       {LogoHtml(tenant.LogoLightUrl, name)}
       <h1>{name}</h1>
       <p>{description}</p>
-      <a class=""btn"" href=""{BaseUrl}/"">Entrar al Portal de Facturación</a>
+      <a class=""btn"" href=""{BaseUrl}/login?tenant={slug}"">Entrar al Portal de Facturación</a>
     </main>
     <footer>Facturación electrónica DIAN · {name}</footer>
   </body>

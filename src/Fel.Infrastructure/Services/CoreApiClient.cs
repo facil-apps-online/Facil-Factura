@@ -438,6 +438,48 @@ namespace Fel.Infrastructure.Services
             };
         }
 
+        public async Task<CoreResult<bool>> QueuePlatformEmailAsync(string recipientEmail, string templateType, IReadOnlyDictionary<string, string> templateData, string? tenantCoreId = null, CancellationToken ct = default)
+        {
+            if (!IsConfigured)
+            {
+                _logger.LogWarning("Core not configured; skipping email queueing (template {TemplateType}).", templateType);
+                return CoreResult<bool>.NotConfigured();
+            }
+
+            var payload = new
+            {
+                p_platform_id = _platformId,
+                p_recipient_email = recipientEmail,
+                p_template_type = templateType,
+                p_template_data = templateData,
+                p_tenant_id = tenantCoreId
+            };
+
+            var url = $"{_supabaseUrl}/rest/v1/rpc/queue_platform_email";
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json")
+            };
+            AddAuth(req);
+
+            try
+            {
+                using var resp = await _http.SendAsync(req, ct);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var json = await resp.Content.ReadAsStringAsync(ct);
+                    _logger.LogError("Core queue_platform_email failed ({Code}): {Body}", (int)resp.StatusCode, json);
+                    return CoreResult<bool>.Fail(json, (int)resp.StatusCode);
+                }
+                return CoreResult<bool>.Ok(true);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Core queue_platform_email threw.");
+                return CoreResult<bool>.Fail(ex.Message);
+            }
+        }
+
         private async Task<IReadOnlyList<T>> FetchListAsync<T>(string url, CancellationToken ct)
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, url);

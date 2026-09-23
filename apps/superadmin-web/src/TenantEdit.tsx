@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
-import { ArrowLeft, Save, MapPin, Building2, Phone, Hash, FileText, Coins, ChevronDown, Check, Users, UserPlus, X } from 'lucide-react';
+import { ArrowLeft, Save, MapPin, Building2, Phone, Hash, FileText, Coins, ChevronDown, Check, Users, UserPlus, X, Mail, Trash2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
 
@@ -22,6 +22,24 @@ interface TenantEditForm {
   economicActivity: string;
   latitude: number | null;
   longitude: number | null;
+  parentTenantId: string | null;
+  legalName: string;
+  contactPerson: string;
+  contactEmail: string;
+  contactPhone: string;
+  whatsAppPhone: string;
+  einvoicingEmail: string;
+  commercialEmail: string;
+  website: string;
+  physicalAddressLine1: string;
+  physicalAddressLine2: string;
+  physicalCity: string;
+  physicalState: string;
+  physicalPostalCode: string;
+  billingAddress: string;
+  defaultLanguageCode: string;
+  defaultTimezone: string;
+  defaultCurrencyId: string;
 }
 
 interface DocType {
@@ -34,8 +52,15 @@ export const TenantEdit = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [formData, setFormData] = useState<TenantEditForm | null>(null);
+  const [allTenants, setAllTenants] = useState<any[]>([]);
   const [docTypes, setDocTypes] = useState<DocType[]>([]);
   const [pricings, setPricings] = useState<Record<string, number>>({});
+  const [billingMode, setBillingMode] = useState<'PerDocument' | 'PerUser'>('PerDocument');
+  const [pricePerUser, setPricePerUser] = useState(0);
+  const [packages, setPackages] = useState<any[]>([]);
+  const [newPackage, setNewPackage] = useState({ name: '', discountedPricePerUser: 0, totalPrice: 0 });
+  const [integratorBilling, setIntegratorBilling] = useState<any[]>([]);
+  const [savingIntegratorId, setSavingIntegratorId] = useState<string | null>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [showUserModal, setShowUserModal] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '' });
@@ -63,8 +88,30 @@ export const TenantEdit = () => {
         economicActivity: res.data.economicActivity || '',
         latitude: res.data.latitude || 4.6097, // Default: Bogotá
         longitude: res.data.longitude || -74.0817,
+        parentTenantId: res.data.parentTenantId || null,
+        legalName: res.data.legalName || '',
+        contactPerson: res.data.contactPerson || '',
+        contactEmail: res.data.contactEmail || '',
+        contactPhone: res.data.contactPhone || '',
+        whatsAppPhone: res.data.whatsAppPhone || '',
+        einvoicingEmail: res.data.einvoicingEmail || '',
+        commercialEmail: res.data.commercialEmail || '',
+        website: res.data.website || '',
+        physicalAddressLine1: res.data.physicalAddressLine1 || '',
+        physicalAddressLine2: res.data.physicalAddressLine2 || '',
+        physicalCity: res.data.physicalCity || '',
+        physicalState: res.data.physicalState || '',
+        physicalPostalCode: res.data.physicalPostalCode || '',
+        billingAddress: res.data.billingAddress || '',
+        defaultLanguageCode: res.data.defaultLanguageCode || 'es-CO',
+        defaultTimezone: res.data.defaultTimezone || 'America/Bogota',
+        defaultCurrencyId: res.data.defaultCurrencyId || '',
       }))
       .catch(err => toast.error("Error cargando el Tenant"));
+
+    api.get('/tenants')
+      .then(res => setAllTenants(res.data.filter((t: any) => t.id !== id)))
+      .catch(() => toast.error("Error cargando la lista de tenants"));
 
     api.get<DocType[]>('/billing/document-types')
       .then(res => setDocTypes(res.data))
@@ -80,8 +127,80 @@ export const TenantEdit = () => {
       })
       .catch(() => toast.error("Error cargando el tarifario"));
 
+    api.get(`/billing/tenant/${id}/user-pricing`)
+      .then(res => {
+        setBillingMode(res.data.billingMode);
+        setPricePerUser(res.data.pricePerUser);
+      })
+      .catch(() => toast.error("Error cargando el modo de facturación"));
+
+    loadPackages();
     loadUsers();
+    loadIntegratorBilling();
   }, [id]);
+
+  const loadPackages = () => {
+    api.get(`/billing/tenant/${id}/prepaid-packages`)
+      .then(res => setPackages(res.data))
+      .catch(() => toast.error("Error cargando los paquetes prepago"));
+  };
+
+  const loadIntegratorBilling = () => {
+    api.get(`/billing/tenant/${id}/integrator-billing`)
+      .then(res => setIntegratorBilling(res.data))
+      .catch(() => toast.error("Error cargando la tarifa por integrador"));
+  };
+
+  const updateIntegratorRow = (integratorId: string, patch: any) => {
+    setIntegratorBilling(prev => prev.map(row => row.id === integratorId ? { ...row, ...patch } : row));
+  };
+
+  const handleSaveIntegratorBilling = async (row: any) => {
+    setSavingIntegratorId(row.id);
+    try {
+      await api.put(`/billing/tenant/${id}/integrator-billing/${row.id}`, { mode: row.mode, pricePerUser: row.pricePerUser });
+      toast.success(`Tarifa de ${row.name} actualizada.`);
+      loadIntegratorBilling();
+    } catch {
+      toast.error('Error al guardar la tarifa.');
+    } finally {
+      setSavingIntegratorId(null);
+    }
+  };
+
+  const handleClearIntegratorBilling = async (row: any) => {
+    try {
+      await api.delete(`/billing/tenant/${id}/integrator-billing/${row.id}`);
+      toast.success(`${row.name} vuelve al modo por defecto del Tenant.`);
+      loadIntegratorBilling();
+    } catch {
+      toast.error('Error al quitar el override.');
+    }
+  };
+
+  const handleCreatePackage = async () => {
+    if (!newPackage.name || newPackage.totalPrice <= 0) {
+      toast.error("Completa nombre y precio del paquete.");
+      return;
+    }
+    try {
+      await api.post(`/billing/tenant/${id}/prepaid-packages`, newPackage);
+      toast.success("Paquete creado.");
+      setNewPackage({ name: '', discountedPricePerUser: 0, totalPrice: 0 });
+      loadPackages();
+    } catch {
+      toast.error("Error creando el paquete.");
+    }
+  };
+
+  const handleTogglePackage = async (pkg: any) => {
+    try {
+      await api.put(`/billing/prepaid-packages/${pkg.id}`, { ...pkg, isActive: !pkg.isActive });
+      loadPackages();
+    } catch {
+      toast.error("Error actualizando el paquete.");
+    }
+  };
 
   const loadUsers = () => {
     api.get(`/tenants/${id}/users`)
@@ -99,6 +218,36 @@ export const TenantEdit = () => {
       loadUsers();
     } catch (err: any) {
       toast.error(err.response?.data || "Error al crear usuario");
+    }
+  };
+
+  const handleResendUserInvitation = async (userId: string) => {
+    try {
+      await api.post(`/tenants/${id}/users/${userId}/resend-invitation`);
+      toast.success("Invitación reenviada");
+    } catch (err: any) {
+      toast.error(err.response?.data || "Error al reenviar la invitación");
+    }
+  };
+
+  const handleRevokeUser = async (userId: string) => {
+    if (!window.confirm("¿Revocar el acceso de este administrador al portal?")) return;
+    try {
+      await api.delete(`/tenants/${id}/users/${userId}`);
+      toast.success("Acceso revocado");
+      loadUsers();
+    } catch {
+      toast.error("Error al revocar el acceso");
+    }
+  };
+
+  const handleReactivateUser = async (userId: string) => {
+    try {
+      await api.post(`/tenants/${id}/users/${userId}/reactivate`);
+      toast.success("Acceso reactivado");
+      loadUsers();
+    } catch {
+      toast.error("Error al reactivar el acceso");
     }
   };
 
@@ -144,6 +293,9 @@ export const TenantEdit = () => {
       });
       await Promise.all(pricingPromises);
 
+      // 3. Guardar Modo de Facturación
+      await api.put(`/billing/tenant/${id}/user-pricing`, { billingMode, pricePerUser });
+
       toast.success("Configuración y Tarifario guardados exitosamente.");
       navigate('/tenants');
     } catch (err) {
@@ -180,7 +332,7 @@ export const TenantEdit = () => {
   if (!formData) return <div className="p-10 text-slate-500 animate-pulse">Cargando perfil del tenant...</div>;
 
   return (
-    <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto">
+    <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center space-x-4 mb-8">
         <button onClick={() => navigate('/tenants')} className="p-2 bg-slate-800/50 rounded-xl border border-slate-700 hover:bg-slate-700 transition">
           <ArrowLeft className="w-5 h-5 text-slate-300" />
@@ -219,6 +371,21 @@ export const TenantEdit = () => {
               <div>
                 <label className="block text-sm font-semibold text-slate-400 mb-1">Razón Social Jurídica</label>
                 <input required type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Nombre Comercial (visible en portal de tenant y cliente)</label>
+                <input required type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500" value={formData.commercialName} onChange={e => setFormData({...formData, commercialName: e.target.value})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Grupo empresarial (tenant padre)</label>
+                <p className="text-xs text-slate-500 mb-2">Si este tenant factura a través de otro (ej. DGS le paga a R&W, y R&W nos paga a nosotros), asigna aquí ese tenant padre. El padre podrá ver el consolidado de lo emitido a todo el grupo.</p>
+                <TenantPicker
+                  tenants={allTenants}
+                  value={formData.parentTenantId}
+                  onChange={(newId) => setFormData({ ...formData, parentTenantId: newId })}
+                />
               </div>
 
               <div>
@@ -298,6 +465,94 @@ export const TenantEdit = () => {
           </div>
         </div>
 
+        {/* Información Comercial y de Contacto — espejo de Core, capturada al crear el tenant
+            pero hasta ahora sin forma de editarla después. */}
+        <div className="glass-panel p-8 rounded-3xl border border-slate-700/50 mt-8">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="bg-purple-500/20 p-2 rounded-lg border border-purple-500/30"><Mail className="w-5 h-5 text-purple-400" /></div>
+            <h2 className="text-xl font-bold text-white">Información Comercial y de Contacto</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Razón Social Legal</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.legalName} onChange={e => setFormData({...formData, legalName: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Persona de Contacto</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.contactPerson} onChange={e => setFormData({...formData, contactPerson: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Correo de Contacto</label>
+              <input type="email" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.contactEmail} onChange={e => setFormData({...formData, contactEmail: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Teléfono de Contacto</label>
+              <input type="tel" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.contactPhone} onChange={e => setFormData({...formData, contactPhone: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">WhatsApp</label>
+              <input type="tel" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.whatsAppPhone} onChange={e => setFormData({...formData, whatsAppPhone: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Correo de Facturación Electrónica</label>
+              <input type="email" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.einvoicingEmail} onChange={e => setFormData({...formData, einvoicingEmail: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Correo Comercial</label>
+              <input type="email" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.commercialEmail} onChange={e => setFormData({...formData, commercialEmail: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Sitio Web</label>
+              <input type="text" placeholder="https://..." className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.website} onChange={e => setFormData({...formData, website: e.target.value})} />
+            </div>
+          </div>
+
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mt-8 mb-4">Dirección Física</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Dirección (línea 1)</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.physicalAddressLine1} onChange={e => setFormData({...formData, physicalAddressLine1: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Dirección (línea 2)</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.physicalAddressLine2} onChange={e => setFormData({...formData, physicalAddressLine2: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Ciudad</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.physicalCity} onChange={e => setFormData({...formData, physicalCity: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Departamento</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.physicalState} onChange={e => setFormData({...formData, physicalState: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Código Postal</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.physicalPostalCode} onChange={e => setFormData({...formData, physicalPostalCode: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Dirección de Facturación</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.billingAddress} onChange={e => setFormData({...formData, billingAddress: e.target.value})} />
+            </div>
+          </div>
+
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mt-8 mb-4">Regionalización</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Idioma por Defecto</label>
+              <input type="text" placeholder="es-CO" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.defaultLanguageCode} onChange={e => setFormData({...formData, defaultLanguageCode: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Zona Horaria por Defecto</label>
+              <input type="text" placeholder="America/Bogota" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.defaultTimezone} onChange={e => setFormData({...formData, defaultTimezone: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Moneda por Defecto (Id de Core)</label>
+              <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.defaultCurrencyId} onChange={e => setFormData({...formData, defaultCurrencyId: e.target.value})} />
+            </div>
+          </div>
+        </div>
+
         {/* Administradores del Tenant */}
         <div className="glass-panel p-8 rounded-3xl border border-slate-700/50 mt-8">
           <div className="flex items-center justify-between mb-6">
@@ -329,10 +584,27 @@ export const TenantEdit = () => {
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-slate-200">{u.name}</span>
                     <span className={`px-2 py-1 text-xs font-bold rounded-lg ${u.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                      {u.isActive ? 'Activo' : 'Inactivo'}
+                      {u.isActive ? 'Activo' : 'Revocado'}
                     </span>
                   </div>
-                  <span className="text-sm text-slate-400">{u.email}</span>
+                  <span className="text-sm text-slate-400 mb-3">{u.email}</span>
+                  <div className="flex items-center gap-2 mt-auto pt-2 border-t border-slate-800">
+                    {u.isActive ? (
+                      <>
+                        <button type="button" onClick={() => handleResendUserInvitation(u.id)} className="p-1.5 text-slate-500 hover:text-blue-400 transition-colors bg-slate-800 rounded-lg border border-slate-700" title="Reenviar invitación">
+                          <Mail className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => handleRevokeUser(u.id)} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors bg-slate-800 rounded-lg border border-slate-700" title="Revocar acceso">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={() => handleReactivateUser(u.id)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors bg-slate-800 rounded-lg border border-slate-700" title="Reactivar acceso">
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Reactivar
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -416,6 +688,173 @@ export const TenantEdit = () => {
           </div>
         </div>
 
+        {/* Modo de Facturación (marca blanca / por usuario) */}
+        <div className="glass-panel p-8 rounded-3xl border border-slate-700/50 mt-8">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="bg-emerald-500/20 p-2 rounded-lg border border-emerald-500/30"><Users className="w-5 h-5 text-emerald-400" /></div>
+            <div>
+              <h2 className="text-xl font-bold text-white">Modo de Facturación (Superadmin → Tenant)</h2>
+              <p className="text-sm text-slate-400 font-medium">Por defecto se cobra por documento (tarifario de arriba). Úsalo Por Usuario solo para tenants de marca blanca que no facturan con nuestro motor DIAN.</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 mb-6">
+            {(['PerDocument', 'PerUser'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setBillingMode(mode)}
+                className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors ${
+                  billingMode === mode ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                }`}
+              >
+                {mode === 'PerDocument' ? 'Por Documento' : 'Por Usuario'}
+              </button>
+            ))}
+          </div>
+
+          {billingMode === 'PerUser' && (
+            <div className="space-y-6">
+              <div className="max-w-xs">
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Tarifa mensual por usuario (COP)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-3 text-slate-400 font-bold">$</span>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={pricePerUser}
+                    onChange={e => setPricePerUser(parseFloat(e.target.value) || 0)}
+                    className="w-full pl-7 pr-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-emerald-500 font-semibold"
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Cada Client (emisor) activo del tenant cuenta como un usuario.</p>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold text-white mb-3">Paquetes Prepago</h3>
+                <div className="space-y-2 mb-4">
+                  {packages.map(pkg => (
+                    <div key={pkg.id} className="flex items-center justify-between p-3 bg-slate-800/60 rounded-xl border border-slate-700/50">
+                      <div>
+                        <span className="font-bold text-slate-200">{pkg.name}</span>
+                        <span className="text-xs text-slate-500 ml-2">${pkg.discountedPricePerUser.toLocaleString('es-CO')}/usuario con descuento · ${pkg.totalPrice.toLocaleString('es-CO')} bolsa</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePackage(pkg)}
+                        className={`text-xs font-bold px-3 py-1 rounded-full ${pkg.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'}`}
+                      >
+                        {pkg.isActive ? 'Activo' : 'Inactivo'}
+                      </button>
+                    </div>
+                  ))}
+                  {packages.length === 0 && <p className="text-xs text-slate-500">Sin paquetes registrados.</p>}
+                </div>
+
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Nombre</label>
+                    <input type="text" placeholder="Ej. Bolsa 50 usuarios" value={newPackage.name} onChange={e => setNewPackage({ ...newPackage, name: e.target.value })} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm" />
+                  </div>
+                  <div className="w-36">
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Tarifa c/descuento</label>
+                    <input type="number" min="0" step="0.01" value={newPackage.discountedPricePerUser} onChange={e => setNewPackage({ ...newPackage, discountedPricePerUser: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm" />
+                  </div>
+                  <div className="w-40">
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Precio Bolsa</label>
+                    <input type="number" min="0" step="0.01" value={newPackage.totalPrice} onChange={e => setNewPackage({ ...newPackage, totalPrice: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm" />
+                  </div>
+                  <button type="button" onClick={handleCreatePackage} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm">
+                    Agregar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Tarifa por Integrador (override) */}
+        <div className="glass-panel p-8 rounded-3xl border border-slate-700/50 mt-8">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="bg-emerald-500/20 p-2 rounded-lg border border-emerald-500/30"><Coins className="w-5 h-5 text-emerald-400" /></div>
+            <div>
+              <h2 className="text-xl font-bold text-white">Tarifa por Integrador</h2>
+              <p className="text-sm text-slate-400 font-medium">
+                Por defecto todos los integradores usan el modo de arriba. Actívalo aquí solo para el integrador que necesite un modo distinto (ej. Dataico por usuario mientras DIAN directa sigue por documento).
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {integratorBilling.map(row => (
+              <div key={row.id} className="p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white">{row.name}</span>
+                    {row.hasOverride ? (
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">Override activo</span>
+                    ) : (
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">Usando default del Tenant</span>
+                    )}
+                  </div>
+                  {row.hasOverride && (
+                    <button type="button" onClick={() => handleClearIntegratorBilling(row)} className="text-xs font-bold text-slate-400 hover:text-red-400 transition-colors">
+                      Quitar override
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex gap-2">
+                    {(['PerDocument', 'PerUser'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => updateIntegratorRow(row.id, { mode })}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs transition-colors ${
+                          row.mode === mode ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                        }`}
+                      >
+                        {mode === 'PerDocument' ? 'Por Documento' : 'Por Usuario'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {row.mode === 'PerUser' && (
+                    <div className="w-44">
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Tarifa mensual por usuario</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">$</span>
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={row.pricePerUser}
+                          onChange={e => updateIntegratorRow(row.id, { pricePerUser: parseFloat(e.target.value) || 0 })}
+                          className="w-full pl-7 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:ring-2 focus:ring-emerald-500 font-semibold"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleSaveIntegratorBilling(row)}
+                    disabled={savingIntegratorId === row.id}
+                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs transition-colors disabled:opacity-50"
+                  >
+                    {savingIntegratorId === row.id ? 'Guardando...' : 'Guardar override'}
+                  </button>
+                </div>
+
+                {row.mode === 'PerDocument' && (
+                  <p className="text-xs text-slate-500 mt-2">
+                    La tarifa por documento sale del Tarifario por Volumen — crea ahí un tier específico para este integrador si necesita un precio distinto al global.
+                  </p>
+                )}
+              </div>
+            ))}
+            {integratorBilling.length === 0 && <p className="text-sm text-slate-500">Sin integradores activos en el catálogo.</p>}
+          </div>
+        </div>
+
         <div className="flex justify-end pt-4">
           <button 
             type="submit" 
@@ -452,9 +891,9 @@ export const TenantEdit = () => {
                 <input required type="email" className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:ring-2 focus:ring-amber-500" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-400 mb-1">Contraseña Inicial</label>
-                <input required type="password" minLength={6} className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:ring-2 focus:ring-amber-500" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-                <p className="text-xs text-slate-500 mt-1">Comparte esta contraseña de forma segura con tu cliente.</p>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Contraseña Inicial (opcional)</label>
+                <input type="password" minLength={6} className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:ring-2 focus:ring-amber-500" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                <p className="text-xs text-slate-500 mt-1">Si la dejas vacía, le enviaremos un correo de invitación para que cree su propia contraseña.</p>
               </div>
 
               <button type="submit" className="w-full mt-6 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-amber-900/20">
@@ -467,3 +906,74 @@ export const TenantEdit = () => {
     </div>
   );
 };
+
+// Combobox buscable (no un <select> nativo) para elegir el tenant padre — la lista de tenants
+// puede crecer bastante y un <select> plano se vuelve incómodo de recorrer.
+function TenantPicker({ tenants, value, onChange }: { tenants: any[]; value: string | null; onChange: (id: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selected = tenants.find(t => t.id === value);
+  const filtered = tenants.filter(t =>
+    (t.commercialName || t.name || '').toLowerCase().includes(query.toLowerCase())
+  );
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white text-left focus:ring-2 focus:ring-blue-500"
+      >
+        <span className={selected ? 'text-white' : 'text-slate-500'}>
+          {selected ? (selected.commercialName || selected.name) : 'Sin grupo empresarial (independiente)'}
+        </span>
+        <ChevronDown className="w-4 h-4 text-slate-500" />
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden">
+          <input
+            autoFocus
+            type="text"
+            placeholder="Buscar tenant..."
+            className="w-full px-4 py-2 bg-slate-950 border-b border-slate-700 text-white text-sm focus:outline-none"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+          <div className="max-h-56 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => { onChange(null); setOpen(false); setQuery(''); }}
+              className="w-full text-left px-4 py-2 text-sm text-slate-400 hover:bg-slate-800 flex items-center justify-between"
+            >
+              Sin grupo empresarial (independiente)
+              {!value && <Check className="w-4 h-4 text-blue-400" />}
+            </button>
+            {filtered.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => { onChange(t.id); setOpen(false); setQuery(''); }}
+                className="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-800 flex items-center justify-between"
+              >
+                {t.commercialName || t.name}
+                {value === t.id && <Check className="w-4 h-4 text-blue-400" />}
+              </button>
+            ))}
+            {filtered.length === 0 && <p className="px-4 py-3 text-sm text-slate-500">Sin resultados.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

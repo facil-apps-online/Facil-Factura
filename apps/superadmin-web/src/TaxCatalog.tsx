@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Save, Trash2, Percent, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Save, Trash2, Percent, ToggleLeft, ToggleRight, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
 
 type TaxCatalogKind =
   | 'Retention' | 'OtherTax' | 'IvaRate' | 'PaymentTerm' | 'PaymentMeans'
-  | 'WorkerType' | 'ContractType' | 'PayrollPaymentMeans' | 'TaxLevelCode' | 'Regimen' | 'AccountType';
+  | 'WorkerType' | 'ContractType' | 'PayrollPaymentMeans' | 'TaxLevelCode' | 'Regimen' | 'AccountType' | 'FormaPago';
 
 interface TaxCatalogItem {
   id: string;
@@ -27,7 +27,8 @@ const KIND_LABELS: Record<string, string> = {
   PayrollPaymentMeans: 'Medio de pago (Nómina)',
   TaxLevelCode: 'Nivel tributario (tercero)',
   Regimen: 'Régimen (tercero)',
-  AccountType: 'Tipo de cuenta bancaria'
+  AccountType: 'Cuenta bancaria',
+  FormaPago: 'Forma de Pago (Facturas)'
 };
 
 // Ayuda a que el campo "Código" de la modal tenga sentido según el tipo elegido.
@@ -42,7 +43,8 @@ const CATEGORY_FIELD_LABEL: Record<string, string> = {
   PayrollPaymentMeans: 'Código (Dataico)',
   TaxLevelCode: 'Código (Dataico)',
   Regimen: 'Código (Dataico)',
-  AccountType: 'Código (Dataico)'
+  AccountType: 'Código (Dataico)',
+  FormaPago: 'Código interno'
 };
 
 const NUMERIC_KINDS: TaxCatalogKind[] = ['IvaRate', 'PaymentTerm'];
@@ -58,7 +60,8 @@ const KIND_BADGE_CLASSES: Record<string, string> = {
   PayrollPaymentMeans: 'bg-teal-500/20 text-teal-400 border border-teal-500/30',
   TaxLevelCode: 'bg-violet-500/20 text-violet-400 border border-violet-500/30',
   Regimen: 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30',
-  AccountType: 'bg-lime-500/20 text-lime-400 border border-lime-500/30'
+  AccountType: 'bg-lime-500/20 text-lime-400 border border-lime-500/30',
+  FormaPago: 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
 };
 
 // Para filtrar la tabla dado el volumen creciente de catálogos (ej. 53 medios de pago de nómina).
@@ -68,6 +71,7 @@ export const TaxCatalog = () => {
   const [items, setItems] = useState<TaxCatalogItem[]>([]);
   const [formData, setFormData] = useState({ category: '', name: '', kind: 'Retention', rate: '' });
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<string>('');
 
   const loadItems = () => {
@@ -80,16 +84,44 @@ export const TaxCatalog = () => {
     loadItems();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingId(null);
+    setFormData({ category: '', name: '', kind: 'Retention', rate: '' });
+  };
+
+  const openCreateModal = () => {
+    setEditingId(null);
+    setFormData({ category: '', name: '', kind: 'Retention', rate: '' });
+    setShowModal(true);
+  };
+
+  const startEdit = (item: TaxCatalogItem) => {
+    setEditingId(item.id);
+    setFormData({
+      category: item.category,
+      name: item.name,
+      kind: item.kind,
+      rate: item.rate != null ? String(item.rate) : ''
+    });
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const payload = { ...formData, rate: formData.kind === 'Retention' && formData.rate !== '' ? parseFloat(formData.rate) : null };
     try {
-      await api.post('/tax-catalog', { ...formData, rate: formData.kind === 'Retention' && formData.rate !== '' ? parseFloat(formData.rate) : null });
-      toast.success('Categoría creada exitosamente');
-      setFormData({ category: '', name: '', kind: 'Retention', rate: '' });
-      setShowModal(false);
+      if (editingId) {
+        await api.put(`/tax-catalog/${editingId}`, { ...payload, isActive: items.find(i => i.id === editingId)?.isActive ?? true });
+        toast.success('Categoría actualizada exitosamente');
+      } else {
+        await api.post('/tax-catalog', payload);
+        toast.success('Categoría creada exitosamente');
+      }
+      closeModal();
       loadItems();
     } catch (err: any) {
-      toast.error(err.response?.data || 'Error al crear la categoría');
+      toast.error(err.response?.data || (editingId ? 'Error al actualizar la categoría' : 'Error al crear la categoría'));
     }
   };
 
@@ -126,7 +158,7 @@ export const TaxCatalog = () => {
           </p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={openCreateModal}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-600/30 transition-all transform hover:-translate-y-1"
         >
           <Plus className="w-5 h-5 mr-2" />
@@ -184,9 +216,14 @@ export const TaxCatalog = () => {
                   </button>
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <button onClick={() => handleDelete(item.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all" title="Eliminar">
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button onClick={() => startEdit(item)} className="p-2 text-slate-300 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl" title="Editar">
+                      <Pencil className="w-5 h-5" />
+                    </button>
+                    <button onClick={() => handleDelete(item.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl" title="Eliminar">
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -204,8 +241,8 @@ export const TaxCatalog = () => {
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-md animate-in zoom-in-95 duration-200 border-slate-700">
-            <h2 className="text-2xl font-bold text-white mb-6">Nueva Categoría de Impuesto</h2>
-            <form onSubmit={handleCreate} className="space-y-5">
+            <h2 className="text-2xl font-bold text-white mb-6">{editingId ? 'Editar Categoría de Impuesto' : 'Nueva Categoría de Impuesto'}</h2>
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <label className="block text-sm font-bold text-slate-300 mb-2">Tipo</label>
                 <select
@@ -224,7 +261,8 @@ export const TaxCatalog = () => {
                   <option value="PayrollPaymentMeans">Medio de pago (Nómina)</option>
                   <option value="TaxLevelCode">Nivel tributario (tercero)</option>
                   <option value="Regimen">Régimen (tercero)</option>
-                  <option value="AccountType">Tipo de cuenta bancaria</option>
+                  <option value="AccountType">Cuenta bancaria</option>
+                  <option value="FormaPago">Forma de Pago (Facturas)</option>
                 </select>
               </div>
               <div>
@@ -248,7 +286,7 @@ export const TaxCatalog = () => {
                     onChange={e => setFormData({ ...formData, rate: e.target.value })}
                     placeholder="Ej. 0.966"
                   />
-                  <p className="text-xs text-slate-500 mt-1">La tarifa concreta de esta combinación categoría+tarifa (ej. RET_ICA al 0.966%).</p>
+                  <p className="text-xs text-slate-500 mt-1">Define la tarifa para esta categoría.</p>
                 </div>
               )}
               <div>
@@ -263,12 +301,12 @@ export const TaxCatalog = () => {
                 />
               </div>
               <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
+                <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
                   Cancelar
                 </button>
                 <button type="submit" className="flex-1 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex justify-center items-center">
                   <Save className="w-5 h-5 mr-2" />
-                  Guardar
+                  {editingId ? 'Guardar Cambios' : 'Guardar'}
                 </button>
               </div>
             </form>

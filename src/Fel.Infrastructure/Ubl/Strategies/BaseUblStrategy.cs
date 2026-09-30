@@ -37,22 +37,36 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 : "https://catalogo-vpfe-hab.dian.gov.co/document/searchqr?documentkey=";
             var issuerDv = NitValidation.CalculateCheckDigit(data.Issuer.TaxId).ToString();
 
+            // sts:InvoiceControl (autorización/rango de numeración) es exclusivo de Factura — Nota
+            // Crédito/Débito NO lo llevan (confirmado contra el ejemplo oficial CreditNote.xml de la
+            // Caja de Herramientas: no tiene ese grupo en absoluto, salta directo de InvoiceSource a
+            // SoftwareProvider) porque la DIAN no autoriza una resolución propia para notas — solo
+            // usan el Prefijo de la factura del emisor (ver CorporateRegistrationScheme más abajo).
+            var esNotaCreditoODebito = data.DianCode is "91" or "92";
+
+            var dianExtensionsChildren = new List<XElement>();
+            if (!esNotaCreditoODebito)
+            {
+                dianExtensionsChildren.Add(
+                    new XElement(sts + "InvoiceControl",
+                        new XElement(sts + "InvoiceAuthorization", data.ResolutionNumber),
+                        new XElement(sts + "AuthorizationPeriod",
+                            new XElement(cbc + "StartDate", data.ResolutionValidFrom.ToString("yyyy-MM-dd")),
+                            new XElement(cbc + "EndDate", data.ResolutionValidTo.ToString("yyyy-MM-dd"))
+                        ),
+                        new XElement(sts + "AuthorizedInvoices",
+                            new XElement(sts + "Prefix", data.Prefix),
+                            new XElement(sts + "From", data.ResolutionNumberStart.ToString()),
+                            new XElement(sts + "To", data.ResolutionNumberEnd.ToString())
+                        )
+                    ));
+            }
+
             var extensions = new XElement(ext + "UBLExtensions",
                 new XElement(ext + "UBLExtension",
                     new XElement(ext + "ExtensionContent",
                         new XElement(sts + "DianExtensions",
-                            new XElement(sts + "InvoiceControl",
-                                new XElement(sts + "InvoiceAuthorization", data.ResolutionNumber),
-                                new XElement(sts + "AuthorizationPeriod",
-                                    new XElement(cbc + "StartDate", data.ResolutionValidFrom.ToString("yyyy-MM-dd")),
-                                    new XElement(cbc + "EndDate", data.ResolutionValidTo.ToString("yyyy-MM-dd"))
-                                ),
-                                new XElement(sts + "AuthorizedInvoices",
-                                    new XElement(sts + "Prefix", data.Prefix),
-                                    new XElement(sts + "From", data.ResolutionNumberStart.ToString()),
-                                    new XElement(sts + "To", data.ResolutionNumberEnd.ToString())
-                                )
-                            ),
+                            dianExtensionsChildren.ToArray(),
                             // País de origen del documento (numeral 6.5.10) — confirmado contra una
                             // factura real aceptada por la DIAN (Comcel/Claro) y contra la propia
                             // ApplicationResponse que la DIAN nos devuelve: faltaba por completo, lo
@@ -171,7 +185,13 @@ namespace Fel.Infrastructure.Ubl.Strategies
                             new XElement(cbc + "ID", data.Prefix),
                             new XElement(cbc + "Name", "0000000")
                         )
-                    )
+                    ),
+                    // Correo de recepción de documentos electrónicos (numeral 6.5.10, FAJ71) —
+                    // faltaba por completo, la DIAN rechazaba con "No corresponde al correo
+                    // electrónico para la recepción de documentos e instrumentos electrónicos no
+                    // informado". Confirmado contra la factura real de Comcel: va al final de
+                    // cac:Party, después de PartyLegalEntity.
+                    new XElement(cac + "Contact", new XElement(cbc + "ElectronicMail", data.Issuer.Email))
                 )
             );
         }
@@ -221,7 +241,10 @@ namespace Fel.Infrastructure.Ubl.Strategies
                             new XAttribute("schemeID", "1"), new XAttribute("schemeName", "13"),
                             new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"),
                             data.Customer.TaxId)
-                    )
+                    ),
+                    // Igual que en el emisor (FAJ71) — confirmado contra la factura real de Comcel,
+                    // el adquirente también lleva su propio Contact/ElectronicMail al final de Party.
+                    new XElement(cac + "Contact", new XElement(cbc + "ElectronicMail", data.Customer.Email))
                 )
             );
         }
@@ -317,7 +340,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
 
             var lineElement = new XElement(cac + lineElementName,
                 idElement,
-                new XElement(cbc + quantityElementName, new XAttribute("unitCode", "94"), line.Quantity.ToString("0.00").Replace(",", ".")),
+                new XElement(cbc + quantityElementName, new XAttribute("unitCode", line.UnitCode), line.Quantity.ToString("0.00").Replace(",", ".")),
                 new XElement(cbc + "LineExtensionAmount", new XAttribute("currencyID", currency), line.LineExtensionAmount.ToString("0.00").Replace(",", ".")),
                 // Confirmado contra el ejemplo oficial Generica.xml y contra un firmador Python de
                 // referencia en producción activa — presente en cada línea de ambos. Faltaba por
@@ -356,7 +379,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 // el precio aplica").
                 new XElement(cac + "Price",
                     new XElement(cbc + "PriceAmount", new XAttribute("currencyID", currency), line.UnitPrice.ToString("0.00").Replace(",", ".")),
-                    new XElement(cbc + "BaseQuantity", new XAttribute("unitCode", "94"), "1.0")
+                    new XElement(cbc + "BaseQuantity", new XAttribute("unitCode", line.UnitCode), "1.0")
                 )
             );
 

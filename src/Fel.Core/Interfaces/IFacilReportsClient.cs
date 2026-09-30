@@ -21,5 +21,11 @@ namespace Fel.Core.Interfaces
         // que quede disponible antes de referenciarlo desde un DocumentTemplate. Devuelve false si
         // el servicio no está configurado o si Facil Reports rechazó la subida.
         Task<bool> UploadTemplateAsync(string templateKey, byte[] repxBytes, CancellationToken ct = default);
+
+        // Descarga los bytes .repx ya guardados bajo templateKey (GET /api/templates/{templateKey}).
+        // Se usa para clonar/versionar una plantilla: hay que copiar el contenido real a la nueva
+        // llave antes de dejar que el editor la abra, si no Facil Reports no encuentra nada ahí.
+        // Devuelve null si la plantilla no existe o el servicio no está configurado.
+        Task<byte[]?> DownloadTemplateAsync(string templateKey, CancellationToken ct = default);
     }
 }

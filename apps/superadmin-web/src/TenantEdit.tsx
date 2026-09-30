@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
-import { ArrowLeft, Save, MapPin, Building2, Phone, Hash, FileText, Coins, ChevronDown, Check, Users, UserPlus, X, Mail, Trash2, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Save, MapPin, Building2, Phone, Hash, FileText, Coins, ChevronDown, Check, Users, UserPlus, X, Mail, Trash2, RotateCcw, Cable, ToggleLeft, ToggleRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
 
@@ -61,9 +61,11 @@ export const TenantEdit = () => {
   const [newPackage, setNewPackage] = useState({ name: '', discountedPricePerUser: 0, totalPrice: 0 });
   const [integratorBilling, setIntegratorBilling] = useState<any[]>([]);
   const [savingIntegratorId, setSavingIntegratorId] = useState<string | null>(null);
+  const [tenantIntegrators, setTenantIntegrators] = useState<any[]>([]);
+  const [togglingIntegratorId, setTogglingIntegratorId] = useState<string | null>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [showUserModal, setShowUserModal] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '' });
+  const [newUser, setNewUser] = useState({ name: '', email: '' });
   const [saving, setSaving] = useState(false);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
@@ -137,6 +139,7 @@ export const TenantEdit = () => {
     loadPackages();
     loadUsers();
     loadIntegratorBilling();
+    loadTenantIntegrators();
   }, [id]);
 
   const loadPackages = () => {
@@ -149,6 +152,25 @@ export const TenantEdit = () => {
     api.get(`/billing/tenant/${id}/integrator-billing`)
       .then(res => setIntegratorBilling(res.data))
       .catch(() => toast.error("Error cargando la tarifa por integrador"));
+  };
+
+  const loadTenantIntegrators = () => {
+    api.get(`/tenants/${id}/integrators`)
+      .then(res => setTenantIntegrators(res.data))
+      .catch(() => toast.error("Error cargando los integradores habilitados"));
+  };
+
+  const handleToggleTenantIntegrator = async (integrator: any) => {
+    setTogglingIntegratorId(integrator.id);
+    try {
+      await api.put(`/tenants/${id}/integrators/${integrator.id}`, { enabled: !integrator.isEnabled });
+      setTenantIntegrators(prev => prev.map(i => i.id === integrator.id ? { ...i, isEnabled: !i.isEnabled } : i));
+      toast.success(!integrator.isEnabled ? `${integrator.name} habilitado para este tenant` : `${integrator.name} deshabilitado para este tenant`);
+    } catch {
+      toast.error('Error al actualizar el acceso al integrador');
+    } finally {
+      setTogglingIntegratorId(null);
+    }
   };
 
   const updateIntegratorRow = (integratorId: string, patch: any) => {
@@ -214,7 +236,7 @@ export const TenantEdit = () => {
       await api.post(`/tenants/${id}/users`, newUser);
       toast.success("Usuario administrador creado exitosamente");
       setShowUserModal(false);
-      setNewUser({ name: '', email: '', password: '' });
+      setNewUser({ name: '', email: '' });
       loadUsers();
     } catch (err: any) {
       toast.error(err.response?.data || "Error al crear usuario");
@@ -338,7 +360,7 @@ export const TenantEdit = () => {
           <ArrowLeft className="w-5 h-5 text-slate-300" />
         </button>
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Edición Fiscal y Facturación</h1>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight">Datos fiscales y facturación</h1>
           <p className="text-slate-400 font-medium">{formData.commercialName}</p>
         </div>
       </div>
@@ -350,7 +372,7 @@ export const TenantEdit = () => {
           <div className="glass-panel p-8 rounded-3xl border border-slate-700/50">
             <div className="flex items-center space-x-3 mb-6">
               <div className="bg-blue-500/20 p-2 rounded-lg border border-blue-500/30"><Building2 className="w-5 h-5 text-blue-400" /></div>
-              <h2 className="text-xl font-bold text-white">Perfil Fiscal (DIAN)</h2>
+              <h2 className="text-xl font-bold text-white">Información fiscal</h2>
             </div>
             
             <div className="space-y-5">
@@ -374,13 +396,13 @@ export const TenantEdit = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-400 mb-1">Nombre Comercial (visible en portal de tenant y cliente)</label>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Nombre comercial</label>
                 <input required type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500" value={formData.commercialName} onChange={e => setFormData({...formData, commercialName: e.target.value})} />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-400 mb-1">Grupo empresarial (tenant padre)</label>
-                <p className="text-xs text-slate-500 mb-2">Si este tenant factura a través de otro (ej. DGS le paga a R&W, y R&W nos paga a nosotros), asigna aquí ese tenant padre. El padre podrá ver el consolidado de lo emitido a todo el grupo.</p>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Grupo empresarial</label>
+                <p className="text-xs text-slate-500 mb-2">Si pertenece a un grupo, selecciona la cuenta principal para consolidar la facturación.</p>
                 <TenantPicker
                   tenants={allTenants}
                   value={formData.parentTenantId}
@@ -412,7 +434,7 @@ export const TenantEdit = () => {
           <div className="glass-panel p-8 rounded-3xl border border-slate-700/50">
             <div className="flex items-center space-x-3 mb-6">
               <div className="bg-emerald-500/20 p-2 rounded-lg border border-emerald-500/30"><MapPin className="w-5 h-5 text-emerald-400" /></div>
-              <h2 className="text-xl font-bold text-white">Ubicación (Google Maps)</h2>
+              <h2 className="text-xl font-bold text-white">Ubicación</h2>
             </div>
             
             <div className="space-y-5">
@@ -470,7 +492,7 @@ export const TenantEdit = () => {
         <div className="glass-panel p-8 rounded-3xl border border-slate-700/50 mt-8">
           <div className="flex items-center space-x-3 mb-6">
             <div className="bg-purple-500/20 p-2 rounded-lg border border-purple-500/30"><Mail className="w-5 h-5 text-purple-400" /></div>
-            <h2 className="text-xl font-bold text-white">Información Comercial y de Contacto</h2>
+            <h2 className="text-xl font-bold text-white">Datos de contacto</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -536,7 +558,7 @@ export const TenantEdit = () => {
             </div>
           </div>
 
-          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mt-8 mb-4">Regionalización</h3>
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mt-8 mb-4">Preferencias regionales</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div>
               <label className="block text-sm font-semibold text-slate-400 mb-1">Idioma por Defecto</label>
@@ -547,19 +569,19 @@ export const TenantEdit = () => {
               <input type="text" placeholder="America/Bogota" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.defaultTimezone} onChange={e => setFormData({...formData, defaultTimezone: e.target.value})} />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-400 mb-1">Moneda por Defecto (Id de Core)</label>
+              <label className="block text-sm font-semibold text-slate-400 mb-1">Moneda</label>
               <input type="text" className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-purple-500" value={formData.defaultCurrencyId} onChange={e => setFormData({...formData, defaultCurrencyId: e.target.value})} />
             </div>
           </div>
         </div>
 
-        {/* Administradores del Tenant */}
+        {/* Administradores de la cuenta */}
         <div className="glass-panel p-8 rounded-3xl border border-slate-700/50 mt-8">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
               <div className="bg-amber-500/20 p-2 rounded-lg border border-amber-500/30"><Users className="w-5 h-5 text-amber-400" /></div>
               <div>
-                <h2 className="text-xl font-bold text-white">Administradores del Tenant</h2>
+                <h2 className="text-xl font-bold text-white">Administradores de la cuenta</h2>
                 <p className="text-sm text-slate-400 font-medium">Credenciales de acceso para {formData.commercialName}</p>
               </div>
             </div>
@@ -616,8 +638,8 @@ export const TenantEdit = () => {
           <div className="flex items-center space-x-3 mb-6">
             <div className="bg-purple-500/20 p-2 rounded-lg border border-purple-500/30"><Coins className="w-5 h-5 text-purple-400" /></div>
             <div>
-              <h2 className="text-xl font-bold text-white">Tarifario Transaccional (Pricing)</h2>
-              <p className="text-sm text-slate-400 font-medium">Define el costo unitario de cada documento (en COP).</p>
+              <h2 className="text-xl font-bold text-white">Tarifas por documento</h2>
+              <p className="text-sm text-slate-400 font-medium">Define el valor por documento en COP.</p>
             </div>
           </div>
           
@@ -693,8 +715,8 @@ export const TenantEdit = () => {
           <div className="flex items-center space-x-3 mb-6">
             <div className="bg-emerald-500/20 p-2 rounded-lg border border-emerald-500/30"><Users className="w-5 h-5 text-emerald-400" /></div>
             <div>
-              <h2 className="text-xl font-bold text-white">Modo de Facturación (Superadmin → Tenant)</h2>
-              <p className="text-sm text-slate-400 font-medium">Por defecto se cobra por documento (tarifario de arriba). Úsalo Por Usuario solo para tenants de marca blanca que no facturan con nuestro motor DIAN.</p>
+              <h2 className="text-xl font-bold text-white">Modo de cobro</h2>
+              <p className="text-sm text-slate-400 font-medium">Elige si el cobro se calcula por documento o por usuario.</p>
             </div>
           </div>
 
@@ -726,7 +748,7 @@ export const TenantEdit = () => {
                     className="w-full pl-7 pr-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-emerald-500 font-semibold"
                   />
                 </div>
-                <p className="text-xs text-slate-500 mt-1">Cada Client (emisor) activo del tenant cuenta como un usuario.</p>
+                <p className="text-xs text-slate-500 mt-1">Cada emisor activo cuenta como un usuario.</p>
               </div>
 
               <div>
@@ -772,12 +794,49 @@ export const TenantEdit = () => {
           )}
         </div>
 
+        {/* Integradores Habilitados (acceso) */}
+        <div className="glass-panel p-8 rounded-3xl border border-slate-700/50 mt-8">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="bg-indigo-500/20 p-2 rounded-lg border border-indigo-500/30"><Cable className="w-5 h-5 text-indigo-400" /></div>
+            <div>
+              <h2 className="text-xl font-bold text-white">Integradores disponibles</h2>
+              <p className="text-sm text-slate-400 font-medium">
+                Qué proveedores de documentos electrónicos puede ver y usar este tenant. Uno deshabilitado no aparece en su portal — el tenant ni se entera de que existe.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {tenantIntegrators.map(i => (
+              <div key={i.id} className="flex items-center justify-between p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50">
+                <div>
+                  <span className="font-bold text-white">{i.name}</span>
+                  <span className="ml-2 text-xs font-mono text-slate-500">{i.code}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleTenantIntegrator(i)}
+                  disabled={togglingIntegratorId === i.id}
+                  className="flex items-center gap-1.5 text-xs font-bold disabled:opacity-50"
+                >
+                  {i.isEnabled ? (
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"><ToggleRight className="w-4 h-4" /> Habilitado</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-700 text-slate-400"><ToggleLeft className="w-4 h-4" /> Oculto</span>
+                  )}
+                </button>
+              </div>
+            ))}
+            {tenantIntegrators.length === 0 && <p className="text-sm text-slate-500">Sin integradores activos en el catálogo.</p>}
+          </div>
+        </div>
+
         {/* Tarifa por Integrador (override) */}
         <div className="glass-panel p-8 rounded-3xl border border-slate-700/50 mt-8">
           <div className="flex items-center space-x-3 mb-6">
             <div className="bg-emerald-500/20 p-2 rounded-lg border border-emerald-500/30"><Coins className="w-5 h-5 text-emerald-400" /></div>
             <div>
-              <h2 className="text-xl font-bold text-white">Tarifa por Integrador</h2>
+              <h2 className="text-xl font-bold text-white">Tarifa del integrador</h2>
               <p className="text-sm text-slate-400 font-medium">
                 Por defecto todos los integradores usan el modo de arriba. Actívalo aquí solo para el integrador que necesite un modo distinto (ej. Dataico por usuario mientras DIAN directa sigue por documento).
               </p>
@@ -793,7 +852,7 @@ export const TenantEdit = () => {
                     {row.hasOverride ? (
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">Override activo</span>
                     ) : (
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">Usando default del Tenant</span>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">Usando tarifa de la cuenta</span>
                     )}
                   </div>
                   {row.hasOverride && (
@@ -889,11 +948,7 @@ export const TenantEdit = () => {
               <div>
                 <label className="block text-sm font-semibold text-slate-400 mb-1">Correo Electrónico (Login)</label>
                 <input required type="email" className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:ring-2 focus:ring-amber-500" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-400 mb-1">Contraseña Inicial (opcional)</label>
-                <input type="password" minLength={6} className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:ring-2 focus:ring-amber-500" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-                <p className="text-xs text-slate-500 mt-1">Si la dejas vacía, le enviaremos un correo de invitación para que cree su propia contraseña.</p>
+                <p className="text-xs text-slate-500 mt-1">Enviaremos una invitación para crear la contraseña.</p>
               </div>
 
               <button type="submit" className="w-full mt-6 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-amber-900/20">

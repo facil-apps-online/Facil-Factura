@@ -71,6 +71,10 @@ namespace Fel.Api.Superadmin.Controllers
                 name = rut.LegalName,
                 legalName = rut.LegalName,
                 commercialName = rut.CommercialName,
+                firstName = rut.FirstName,
+                secondName = rut.SecondName,
+                firstLastName = rut.FirstLastName,
+                secondLastName = rut.SecondLastName,
                 address = rut.Address,
                 city = rut.City,
                 department = rut.Department,
@@ -179,6 +183,10 @@ namespace Fel.Api.Superadmin.Controllers
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 LegalName = request.LegalName,
+                FirstName = request.FirstName,
+                SecondName = request.SecondName,
+                FirstLastName = request.FirstLastName,
+                SecondLastName = request.SecondLastName,
                 // Columnas NOT NULL en Tenants: el DTO las expone como opcionales.
                 TaxId = request.TaxId ?? string.Empty,
                 VerificationDigit = request.VerificationDigit ?? string.Empty,
@@ -210,17 +218,46 @@ namespace Fel.Api.Superadmin.Controllers
             await using var tx = await _dbContext.Database.BeginTransactionAsync();
 
             _dbContext.Tenants.Add(tenant);
+
+            // Todo Tenant nuevo arranca con acceso a la emisión directa DIAN — cualquier otro
+            // integrador (Dataico, etc.) queda oculto hasta que Superadmin lo habilite
+            // explícitamente para este Tenant (ver SuperadminTenantIntegratorsController).
+            var nativeIntegrator = await _dbContext.Integrators.FirstOrDefaultAsync(i => i.Code == "NATIVE");
+            if (nativeIntegrator != null)
+            {
+                _dbContext.TenantEnabledIntegrators.Add(new TenantEnabledIntegrator
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenant.Id,
+                    IntegratorId = nativeIntegrator.Id
+                });
+            }
+
             await _dbContext.SaveChangesAsync();
 
-            // Crear (o reutilizar) el usuario administrador del tenant si se proporcionó
+            // Crear (o reutilizar) el usuario administrador del tenant si se proporcionó.
+            // Sin contraseña manual: igual que CreateTenantUser/UpsertPortalUser/InviteDeveloper,
+            // se crea con un hash aleatorio inutilizable y se invita por correo a que la persona
+            // establezca la suya. La invitación se manda después de confirmar la transacción (ver
+            // más abajo) — mandarla antes arriesgaría invitar a un tenant que termina
+            // descartándose si Core falla.
+            TenantUser? adminNuevo = null;
             if (!string.IsNullOrWhiteSpace(request.AdminEmail))
             {
                 TenantUser admin;
                 if (adminExistente != null)
                 {
                     // La identidad ya existe: no se toca su nombre ni su contraseña — son de la
-                    // persona, no de este tenant — solo se le agrega acceso al nuevo.
+                    // persona, no de este tenant — solo se le agrega acceso al nuevo. No aplica
+                    // invitación: ya tiene credenciales propias.
                     admin = adminExistente;
+
+                    // Si esta identidad quedó desactivada por una revocación de la época en que
+                    // "revocar" apagaba la cuenta completa (antes de TenantUserAssignments), se
+                    // reactiva acá: se le está otorgando acceso a un tenant nuevo a propósito, así
+                    // que no tiene sentido que la asignación quede activa y el login bloqueado por
+                    // un IsActive de identidad que nadie volvió a tocar.
+                    admin.IsActive = true;
                 }
                 else
                 {
@@ -232,12 +269,13 @@ namespace Fel.Api.Superadmin.Controllers
                         TenantId = tenant.Id,
                         Name = string.IsNullOrWhiteSpace(request.AdminName) ? request.AdminEmail : request.AdminName,
                         Email = request.AdminEmail,
-                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.AdminPassword ?? string.Empty),
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
                         IsActive = true,
                         CreatedAt = DateTime.UtcNow
                     };
                     _dbContext.TenantUsers.Add(admin);
                     await _dbContext.SaveChangesAsync();
+                    adminNuevo = admin;
                 }
 
                 _dbContext.TenantUserAssignments.Add(new TenantUserAssignment
@@ -309,6 +347,16 @@ namespace Fel.Api.Superadmin.Controllers
                     }
                 }
                 throw;
+            }
+
+            // Recién aquí, con la transacción ya confirmada, es seguro invitar: si el commit
+            // hubiera fallado arriba, este código nunca se alcanza y no se manda nada para un
+            // tenant que terminó descartado.
+            if (adminNuevo != null)
+            {
+                await _passwordResetService.RequestAsync(
+                    PortalUserType.Tenant, adminNuevo.Id, adminNuevo.Email, adminNuevo.Name, _tenantPortalUrl, "invitation",
+                    tenant.CoreTenantId, tenant.LogoLightUrl, tenant.CommercialName);
             }
 
             return Ok(new
@@ -620,11 +668,17 @@ namespace Fel.Api.Superadmin.Controllers
                     // sobre TenantUserId+TenantId lo impediría de todos modos).
                     asignacion.IsActive = true;
                     asignacion.RevokedAt = null;
+                    // Idem: si la identidad venía apagada de una revocación de antes de que
+                    // existieran las asignaciones, se reactiva — se le está devolviendo acceso
+                    // a propósito, no debe quedar bloqueada por un campo que nadie más toca.
+                    existente.IsActive = true;
                     await _dbContext.SaveChangesAsync();
                     return Ok(new { existente.Id, existente.Name, existente.Email, IsActive = true });
                 }
 
                 // Identidad ya registrada en otro tenant: se reutiliza, no se duplica el correo.
+                // Misma reactivación que arriba, por si esta identidad venía apagada.
+                existente.IsActive = true;
                 _dbContext.TenantUserAssignments.Add(new TenantUserAssignment
                 {
                     Id = Guid.NewGuid(),
@@ -639,17 +693,13 @@ namespace Fel.Api.Superadmin.Controllers
 
             // Sin contraseña manual: se crea con un hash aleatorio inutilizable (nadie la conoce)
             // y se invita al Tenant a que la establezca él mismo desde el enlace.
-            var passwordHash = string.IsNullOrWhiteSpace(request.Password)
-                ? BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString())
-                : BCrypt.Net.BCrypt.HashPassword(request.Password);
-
             var user = new TenantUser
             {
                 Id = Guid.NewGuid(),
                 TenantId = id,
                 Name = request.Name,
                 Email = request.Email,
-                PasswordHash = passwordHash,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -665,12 +715,9 @@ namespace Fel.Api.Superadmin.Controllers
             });
             await _dbContext.SaveChangesAsync();
 
-            if (string.IsNullOrWhiteSpace(request.Password))
-            {
-                await _passwordResetService.RequestAsync(
-                    PortalUserType.Tenant, user.Id, user.Email, user.Name, _tenantPortalUrl, "invitation", tenant.CoreTenantId,
-                    tenant.LogoLightUrl, tenant.CommercialName);
-            }
+            await _passwordResetService.RequestAsync(
+                PortalUserType.Tenant, user.Id, user.Email, user.Name, _tenantPortalUrl, "invitation", tenant.CoreTenantId,
+                tenant.LogoLightUrl, tenant.CommercialName);
 
             return Ok(new { user.Id, user.Name, user.Email, user.IsActive });
         }
@@ -724,11 +771,15 @@ namespace Fel.Api.Superadmin.Controllers
                 .FirstOrDefaultAsync(a => a.TenantUserId == userId && a.TenantId == id);
             if (asignacion == null) return NotFound();
 
+            var user = await _dbContext.TenantUsers.FirstAsync(u => u.Id == userId);
+
             asignacion.IsActive = true;
             asignacion.RevokedAt = null;
+            // Misma reactivación de la identidad que en CreateTenantUser: si venía apagada de
+            // una revocación de antes de las asignaciones, no debe seguir bloqueando el login.
+            user.IsActive = true;
             await _dbContext.SaveChangesAsync();
 
-            var user = await _dbContext.TenantUsers.FirstAsync(u => u.Id == userId);
             return Ok(new { user.Id, user.Name, user.Email, IsActive = true });
         }
     }
@@ -737,7 +788,6 @@ namespace Fel.Api.Superadmin.Controllers
     {
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
     }
 
     public class CreateTenantRequest
@@ -747,6 +797,10 @@ namespace Fel.Api.Superadmin.Controllers
         public string Email { get; set; } = string.Empty;
         public string Slug { get; set; } = string.Empty;
         public string? LegalName { get; set; }
+        public string? FirstName { get; set; }
+        public string? SecondName { get; set; }
+        public string? FirstLastName { get; set; }
+        public string? SecondLastName { get; set; }
         public string? TaxId { get; set; }
         public string? VerificationDigit { get; set; }
         public string? ContactPerson { get; set; }
@@ -770,7 +824,6 @@ namespace Fel.Api.Superadmin.Controllers
         public double? Longitude { get; set; }
         public string? AdminName { get; set; }
         public string? AdminEmail { get; set; }
-        public string? AdminPassword { get; set; }
     }
 
     public class UpdateTenantRequest

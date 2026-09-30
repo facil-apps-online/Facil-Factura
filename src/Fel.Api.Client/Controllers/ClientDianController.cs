@@ -234,7 +234,8 @@ namespace Fel.Api.Client.Controllers
                 {
                     documentNumber = result.DocumentNumber,
                     cufe = result.Cufe,
-                    dianResponse = result.DianResponse
+                    dianResponse = result.DianResponse,
+                    trackId = result.TrackId
                 });
             }
             catch (UnauthorizedAccessException ex)
@@ -257,7 +258,14 @@ namespace Fel.Api.Client.Controllers
                 if (!result.IsSuccess)
                     return BadRequest(new { message = result.ErrorMessage });
 
-                return Ok(new { dianResponse = result.DianResponse });
+                var outcome = Fel.Infrastructure.Services.DianStatusOutcome.FromGetStatusZipResponse(result.DianResponse);
+                return Ok(new
+                {
+                    resolved = outcome.Resolved,
+                    accepted = outcome.Accepted,
+                    statusDescription = outcome.StatusDescription,
+                    rules = outcome.Rules
+                });
             }
             catch (UnauthorizedAccessException ex)
             {

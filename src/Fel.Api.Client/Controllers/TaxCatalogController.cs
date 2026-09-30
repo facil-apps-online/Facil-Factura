@@ -25,7 +25,7 @@ namespace Fel.Api.Client.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll([FromQuery] string? kind)
         {
-            var query = _dbContext.DataicoTaxCatalogItems.Where(i => i.IsActive);
+            var query = _dbContext.TaxCatalogItems.Where(i => i.IsActive);
 
             if (!string.IsNullOrEmpty(kind) && System.Enum.TryParse<TaxCatalogKind>(kind, true, out var parsedKind))
             {

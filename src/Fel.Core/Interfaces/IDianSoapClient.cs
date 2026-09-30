@@ -62,5 +62,17 @@ namespace Fel.Core.Interfaces
         /// más de un documento.
         /// </summary>
         Task<string> GetStatusZipAsync(string trackId, X509Certificate2 certificate, string environment);
+
+        /// <summary>
+        /// Consulta los rangos de numeración autorizados por la DIAN para un NIT + software, con su
+        /// Clave Técnica real (numeral 7.15) — el anexo técnico aclara que este servicio solo existe
+        /// en producción en operación; en habilitación la clave técnica del rango de pruebas la
+        /// entrega el propio catálogo de participantes al registrar el software (ver
+        /// DianHabilitationScraperService), no este servicio.
+        /// </summary>
+        /// <param name="accountCode">NIT del obligado a facturar, sin puntos ni DV</param>
+        /// <param name="accountCodeT">NIT del dueño del software, sin puntos ni DV (igual a accountCode en modo Software Propio)</param>
+        /// <param name="softwareCode">Identificador del software (SoftwareId)</param>
+        Task<string> GetNumberingRangeAsync(string accountCode, string accountCodeT, string softwareCode, X509Certificate2 certificate);
     }
 }

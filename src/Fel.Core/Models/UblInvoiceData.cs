@@ -127,6 +127,7 @@ namespace Fel.Core.Models
         public string ItemCode { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public decimal Quantity { get; set; }
+        public string UnitCode { get; set; } = "94"; // Código DIAN de la unidad de medida (ver UnitOfMeasure)
         public decimal UnitPrice { get; set; }
         public decimal LineExtensionAmount { get; set; }
         public List<TaxSubtotal> Taxes { get; set; } = new List<TaxSubtotal>();

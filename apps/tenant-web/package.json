@@ -10,9 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@devexpress/analytics-core": "22.1.15",
+    "@radix-ui/react-alert-dialog": "^1.1.23",
     "@react-google-maps/api": "^2.20.8",
     "axios": "^1.18.1",
     "clsx": "^2.1.1",
+    "devexpress-reporting": "22.1.15",
+    "devextreme": "22.1.15",
     "lucide-react": "^1.21.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

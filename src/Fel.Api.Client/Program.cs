@@ -59,6 +59,9 @@ builder.Services.AddFluentValidationAutoValidation()
 builder.Services.AddValidatorsFromAssemblyContaining<InvoiceRequestValidator>();
 
 builder.Services.AddHttpClient(); // Necesario para DianSoapClient
+builder.Services.AddHttpClient<Fel.Core.Interfaces.ICertificateProvider, Fel.Infrastructure.Certificates.ViafirmaPkcs10Provider>();
+builder.Services.AddScoped<Fel.Core.Interfaces.ICertificateProviderContextFactory, Fel.Infrastructure.Certificates.CertificateProviderContextFactory>();
+builder.Services.AddScoped<Fel.Core.Interfaces.ICertificateCsrService, Fel.Infrastructure.Certificates.CertificateCsrService>();
 builder.Services.AddOpenApi(); // .NET 9 json endpoint
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -142,6 +145,8 @@ builder.Services.AddSingleton<Fel.Core.Interfaces.ICertificateStorageService, Fe
 builder.Services.AddSingleton<Fel.Core.Interfaces.IPublicFileStorageService, Fel.Infrastructure.Storage.PublicFileStorageService>();
 builder.Services.AddSingleton<Fel.Infrastructure.Dataico.IDataicoApiService, Fel.Infrastructure.Dataico.DataicoApiService>();
 builder.Services.AddScoped<Fel.Infrastructure.Dataico.DataicoCustomPdfService>();
+builder.Services.AddScoped<Fel.Core.Interfaces.IEmailSender, Fel.Infrastructure.Services.SmtpEmailSender>();
+builder.Services.AddTransient<Fel.Infrastructure.Services.DianRutParserService>();
 builder.Services.AddTransient<Fel.Core.Interfaces.IXmlSignerService, Fel.Infrastructure.Security.XadesSignerService>();
 
 // Dependency Injection for XML Builder
@@ -205,4 +210,3 @@ app.MapGet("/", () => "FEL API is running.");
 app.MapControllers();
 
 app.Run();
-

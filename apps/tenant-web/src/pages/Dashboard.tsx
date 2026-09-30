@@ -54,8 +54,8 @@ export default function Dashboard() {
   return (
     <div className="p-10 h-full overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-10">
-        <h1 className="text-3xl font-bold text-slate-800">Dashboard Analítico</h1>
-        <p className="text-slate-500 mt-2">Monitorea el estado de tus comprobantes electrónicos y cortes de facturación en tiempo real.</p>
+        <h1 className="text-3xl font-bold text-slate-800">Resumen</h1>
+        <p className="text-slate-500 mt-2">Consulta tus documentos y el estado de tu facturación.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
@@ -73,7 +73,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <h2 className="text-2xl font-bold text-slate-800 mb-4 mt-12 border-b pb-2">Resumen Financiero (Mes Actual)</h2>
+      <h2 className="text-2xl font-bold text-slate-800 mb-4 mt-12 border-b pb-2">Resumen financiero del mes</h2>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         <div className="bg-emerald-50 rounded-3xl p-8 border border-emerald-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
@@ -81,9 +81,9 @@ export default function Dashboard() {
             <TrendingUp size={120} />
           </div>
           <div className="relative z-10">
-            <h3 className="text-emerald-800 font-bold uppercase tracking-wider text-sm mb-2">Ingresos Esperados (Cuentas por Cobrar)</h3>
+            <h3 className="text-emerald-800 font-bold uppercase tracking-wider text-sm mb-2">Ingresos esperados</h3>
             <p className="text-4xl font-black text-emerald-600 mb-2">${billingMetrics.amountDueFromClients.toLocaleString('es-CO')}</p>
-            <p className="text-emerald-700 text-sm font-medium">Suma del consumo de tus clientes basado en sus tarifas individuales.</p>
+            <p className="text-emerald-700 text-sm font-medium">Total según el consumo de tus clientes.</p>
           </div>
         </div>
 
@@ -92,7 +92,7 @@ export default function Dashboard() {
             <TrendingDown size={120} />
           </div>
           <div className="relative z-10">
-            <h3 className="text-rose-800 font-bold uppercase tracking-wider text-sm mb-2">Deuda a Plataforma (Cuentas por Pagar)</h3>
+            <h3 className="text-rose-800 font-bold uppercase tracking-wider text-sm mb-2">Pago a la plataforma</h3>
             <p className="text-4xl font-black text-rose-600 mb-2">${billingMetrics.amountDueToSuperadmin.toLocaleString('es-CO')}</p>
             <p className="text-rose-700 text-sm font-medium">Volumen del mes: <span className="font-bold">{billingMetrics.totalDocuments}</span> docs x Tarifa Nivel Aplicada: <span className="font-bold">${billingMetrics.superadminTariffApplied.toLocaleString('es-CO')}</span></p>
           </div>
@@ -102,16 +102,16 @@ export default function Dashboard() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-12">
         <div className="p-6 border-b border-slate-100 flex items-center bg-slate-50">
           <Users className="w-5 h-5 text-slate-500 mr-2" />
-          <h2 className="text-lg font-bold text-slate-800">Desglose de Consumo por Cliente</h2>
+          <h2 className="text-lg font-bold text-slate-800">Consumo por cliente</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
                 <th className="p-4 font-bold">Cliente</th>
-                <th className="p-4 font-bold text-center">Docs. Emitidos</th>
-                <th className="p-4 font-bold text-right">Tarifa Configurada</th>
-                <th className="p-4 font-bold text-right">Subtotal Adeudado</th>
+                <th className="p-4 font-bold text-center">Documentos emitidos</th>
+                <th className="p-4 font-bold text-right">Tarifa</th>
+                <th className="p-4 font-bold text-right">Subtotal</th>
               </tr>
             </thead>
             <tbody className="text-sm">
@@ -141,7 +141,7 @@ export default function Dashboard() {
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-100 bg-slate-50">
-          <h2 className="text-lg font-bold text-slate-800">Últimos Documentos Enviados</h2>
+          <h2 className="text-lg font-bold text-slate-800">Últimos documentos enviados</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">

@@ -98,5 +98,39 @@ namespace Fel.Infrastructure.Services
                 return false;
             }
         }
+
+        public async Task<byte[]?> DownloadTemplateAsync(string templateKey, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(_apiKey))
+            {
+                _logger.LogWarning("Facil Reports no configurado (falta la API key); no se descarga la plantilla {TemplateKey}.", templateKey);
+                return null;
+            }
+
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{_apiUrl}/api/templates/lookup?templateKey={Uri.EscapeDataString(templateKey)}");
+            req.Headers.TryAddWithoutValidation("X-API-Key", _apiKey);
+
+            try
+            {
+                using var resp = await _http.SendAsync(req, ct);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    if (resp.StatusCode != System.Net.HttpStatusCode.NotFound)
+                    {
+                        var body = await resp.Content.ReadAsStringAsync(ct);
+                        _logger.LogError("Facil Reports templates/lookup falló ({Code}) para {TemplateKey}: {Body}", (int)resp.StatusCode, templateKey, body);
+                    }
+                    return null;
+                }
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+                if (!doc.RootElement.TryGetProperty("repxBase64", out var base64Prop)) return null;
+                return Convert.FromBase64String(base64Prop.GetString() ?? string.Empty);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Facil Reports templates/lookup threw para {TemplateKey}.", templateKey);
+                return null;
+            }
+        }
     }
 }

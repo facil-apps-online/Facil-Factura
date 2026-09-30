@@ -30,7 +30,7 @@ function App() {
         />
         <Route
           path="/register"
-          element={isAuthenticated ? <Navigate to="/" /> : <Register onAuthSuccess={() => setIsAuthenticated(true)} />}
+          element={isAuthenticated ? <Navigate to="/" /> : <Register />}
         />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />

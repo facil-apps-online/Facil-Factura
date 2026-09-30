@@ -26,6 +26,11 @@ namespace Fel.Core.Entities
         public Guid? ClientId { get; set; }
         public Client? Client { get; set; }
 
+        // Si el pie del documento impreso debe incluir el desglose de retenciones practicadas
+        // (en rojo, restando) junto con el IVA discriminado, y la línea informativa "Neto a
+        // pagar". El IVA discriminado se muestra siempre; esto solo controla las retenciones.
+        public bool MostrarRetenciones { get; set; } = true;
+
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }

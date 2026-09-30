@@ -101,6 +101,12 @@ namespace Fel.Api.Client.Controllers
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] ClientResetPasswordRequest request)
         {
+            // Se valida ANTES de consumir el token: si se consumiera primero y la contraseña no
+            // cumple la política, el enlace de un solo uso quedaría inutilizado sin que la persona
+            // haya logrado establecer nada — tendría que pedir uno nuevo por un simple typo.
+            var passwordError = Fel.Core.Security.PasswordPolicy.Validate(request.NewPassword);
+            if (passwordError != null) return BadRequest(passwordError);
+
             var consumed = await _passwordResetService.ConsumeAsync(request.Token, PortalUserType.Client);
             if (consumed == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 

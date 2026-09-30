@@ -172,14 +172,14 @@ export const TariffTiers = () => {
                 <input required type="text" className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Ej: Nivel 1" />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Integrador (vacío = tier global)</label>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Integrador (opcional)</label>
                 <select
                   disabled={!!editing}
                   className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                   value={formData.integratorId}
                   onChange={e => setFormData({ ...formData, integratorId: e.target.value })}
                 >
-                  <option value="">Global (todos los integradores sin tier propio)</option>
+                  <option value="">Global</option>
                   {integrators.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                 </select>
                 {editing && <p className="text-xs text-slate-500 mt-1">El integrador no se puede cambiar una vez creado.</p>}
@@ -190,7 +190,7 @@ export const TariffTiers = () => {
                   <input required type="number" min="0" className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={formData.minDocuments} onChange={e => setFormData({ ...formData, minDocuments: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-300 mb-2">Hasta (vacío = sin tope)</label>
+                  <label className="block text-sm font-bold text-slate-300 mb-2">Hasta (opcional)</label>
                   <input type="number" min="0" className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={formData.maxDocuments} onChange={e => setFormData({ ...formData, maxDocuments: e.target.value === '' ? '' : parseInt(e.target.value) || 0 })} />
                 </div>
               </div>

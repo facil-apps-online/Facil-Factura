@@ -19,14 +19,20 @@ namespace Fel.Infrastructure.Dataico
         Task<DataicoResult> SendPayrollDeletionAsync(DataicoPayrollDeletionRequest deletion, DataicoCredentials credentials);
         Task<DataicoResult> SendPayrollReplacementAsync(DataicoPayrollReplacementRequest replacement, DataicoCredentials credentials);
 
-        // Paso 2 de "documentos personalizados": reenvía el documento ya emitido (identificado por
-        // su CUFE/CUNE) con el PDF propio para que Dataico solo despache el correo
-        // (send_dian=false, send_email=true). documentTypeCode determina el recurso y la base URL
+        // Reenvía/actualiza el documento ya emitido para que Dataico despache el correo
+        // (send_dian=false, send_email=true), con PDF propio opcional. Usado tanto por el paso 2 de
+        // "documentos personalizados" (justo después de emitir) como por el reenvío manual desde el
+        // portal. documentId es el UID interno de Dataico (el campo "uuid" que devuelve al emitir,
+        // persistido en Document.DataicoDocumentId) — NO el CUFE/CUNE: así lo confirma el flujo real
+        // de reenvío del legacy FEL (FrmReenvio.cs, tabla RESPONSE con columnas CUFE y UID separadas,
+        // la URL de reenvío usa UID). documentTypeCode determina el recurso y la base URL
         // (facturación vs. nómina, que vive en un dominio de API distinto en Dataico) — el mismo
-        // patrón {recurso}/{cufe} usado para facturas, aplicado por analogía a documento soporte y
-        // nómina: no hay confirmación contra la API real de Dataico de que estos dos acepten este
-        // mismo verbo PUT, así que el primer envío de cada uno debe validarse en producción.
-        Task<DataicoResult> SendCustomDocumentPdfAsync(string cufe, string documentTypeCode, byte[] pdfBytes, string recipientEmail, DataicoCredentials credentials);
+        // patrón {recurso}/{documentId} usado para facturas, aplicado por analogía a documento
+        // soporte y nómina: no hay confirmación contra la API real de Dataico de que estos dos
+        // acepten este mismo verbo PUT, así que el primer envío de cada uno debe validarse en
+        // producción. pdfBytes es opcional: si es null, Dataico reenvía con su propio PDF ya
+        // generado en vez de uno personalizado.
+        Task<DataicoResult> SendCustomDocumentPdfAsync(string documentId, string documentTypeCode, byte[]? pdfBytes, string recipientEmail, DataicoCredentials credentials);
     }
 
     public class DataicoApiService : IDataicoApiService
@@ -96,7 +102,7 @@ namespace Fel.Infrastructure.Dataico
             return ExecuteAsync(HttpMethod.Post, $"{PayrollBaseUrl}/payroll-replacements", credentials, replacement);
         }
 
-        public Task<DataicoResult> SendCustomDocumentPdfAsync(string cufe, string documentTypeCode, byte[] pdfBytes, string recipientEmail, DataicoCredentials credentials)
+        public Task<DataicoResult> SendCustomDocumentPdfAsync(string documentId, string documentTypeCode, byte[]? pdfBytes, string recipientEmail, DataicoCredentials credentials)
         {
             var (baseUrl, resource) = documentTypeCode switch
             {
@@ -117,7 +123,7 @@ namespace Fel.Infrastructure.Dataico
                     send_dian = false,
                     send_email = true,
                     email = recipientEmail,
-                    pdf = Convert.ToBase64String(pdfBytes)
+                    pdf = pdfBytes == null ? null : Convert.ToBase64String(pdfBytes)
                 },
                 invoice = new DataicoCustomDocumentInvoiceRef
                 {
@@ -126,7 +132,7 @@ namespace Fel.Infrastructure.Dataico
                 }
             };
 
-            return ExecuteAsync(HttpMethod.Put, $"{baseUrl}/{resource}/{cufe}", credentials, envelope);
+            return ExecuteAsync(HttpMethod.Put, $"{baseUrl}/{resource}/{documentId}", credentials, envelope);
         }
 
         private async Task<DataicoResult> ExecuteAsync(HttpMethod method, string url, DataicoCredentials credentials, object body)

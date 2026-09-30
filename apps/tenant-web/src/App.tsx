@@ -15,6 +15,7 @@ import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import DocumentTemplates from './pages/DocumentTemplates';
+import TemplateEditor from './pages/TemplateEditor';
 import Developers from './pages/Developers';
 import GroupBilling from './pages/GroupBilling';
 
@@ -100,10 +101,10 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
     { to: "/", icon: <Home size={20} />, label: "Dashboard" },
     { to: "/clients", icon: <Users size={20} />, label: "Clientes" },
     { to: "/associates", icon: <Briefcase size={20} />, label: "Asociados" },
-    { to: "/group-billing", icon: <Layers size={20} />, label: "Facturación de mi grupo" },
+    { to: "/group-billing", icon: <Layers size={20} />, label: "Facturación del grupo" },
     { to: "/branding", icon: <Palette size={20} />, label: "Apariencia (Branding)" },
     { to: "/templates", icon: <FileText size={20} />, label: "Modelos de Documentos" },
-    { to: "/developers", icon: <Code2 size={20} />, label: "Developers" },
+    { to: "/developers", icon: <Code2 size={20} />, label: "Desarrolladores" },
   ];
 
   const selfBillingLinks = [
@@ -122,7 +123,7 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
           {!collapsed && (
             <button
               onClick={onToggleCollapsed}
-              title="Colapsar menú"
+              title="Contraer menú"
               className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors shrink-0"
             >
               <ChevronLeft size={18} />
@@ -174,7 +175,7 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
 
         {!collapsed && (
           <div className="pt-6 pb-2 px-4">
-            <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Facturación Propia (Opcional)</p>
+            <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Facturación propia</p>
           </div>
         )}
         {collapsed && <div className="pt-4 border-t border-slate-800/60 mx-2" />}
@@ -207,11 +208,11 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
             localStorage.removeItem('fel_tenant_list');
             window.location.href = '/login';
           }}
-          title={collapsed ? 'Cerrar Sesión' : undefined}
+          title={collapsed ? 'Cerrar sesión' : undefined}
           className={`flex items-center gap-3 px-4 py-3 w-full rounded-xl hover:bg-rose-500/10 hover:text-rose-400 transition-colors text-left ${collapsed ? 'justify-center px-0' : ''}`}
         >
           <LogOut size={20} />
-          {!collapsed && <span>Cerrar Sesión</span>}
+          {!collapsed && <span>Cerrar sesión</span>}
         </button>
       </div>
     </aside>
@@ -309,6 +310,7 @@ function App() {
                   <Route path="/resolutions" element={<Resolutions />} />
                   <Route path="/branding" element={<Branding />} />
                   <Route path="/templates" element={<DocumentTemplates />} />
+                  <Route path="/templates/editor" element={<TemplateEditor />} />
                   <Route path="/developers" element={<Developers />} />
                 </Routes>
               </ProtectedLayout>

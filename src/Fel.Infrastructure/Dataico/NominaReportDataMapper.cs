@@ -79,6 +79,7 @@ namespace Fel.Infrastructure.Dataico
                 ["FechaPago"] = paymentDate.ToString("dd/MM/yyyy"),
                 ["MedioPago"] = medioPago,
                 ["Cune"] = document.Cufe,
+                ["QrCode"] = document.QrCode ?? document.Cufe,
 
                 ["TotalDevengado"] = Money(totalDevengado),
                 ["TotalDeduccion"] = Money(totalDeduccion),

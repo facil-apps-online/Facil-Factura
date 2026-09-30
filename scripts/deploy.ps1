@@ -14,6 +14,52 @@ $ProjectRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $RemoteDir = "/opt/FacilFactura"
 $TempTar = Join-Path $env:TEMP "facilfactura.tar.gz"
 
+# Espera a que el droplet tenga suficiente RAM libre antes de arrancar un build de Docker —
+# un `dotnet publish` o `npm run build` bajo poca memoria es lo que llevó al OOM killer a matar
+# sqlservr en producción (ver historial). No aborta el deploy si sigue bajo tras los reintentos,
+# solo avisa: en la práctica el build igual puede completar usando swap, más lento pero sin OOM.
+function Wait-ForFreeMemory {
+    param([string]$Server, [string]$Key, [int]$MinMB = 500, [int]$MaxAttempts = 4)
+    for ($i = 1; $i -le $MaxAttempts; $i++) {
+        $available = & ssh -o BatchMode=yes -i $Key "root@${Server}" "free -m | awk '/^Mem:/{print `$7}'"
+        $availableInt = 0
+        [void][int]::TryParse(($available -join '').Trim(), [ref]$availableInt)
+        if ($availableInt -ge $MinMB) { return }
+        Write-Host "  Memoria disponible baja (${availableInt}MB) - esperando 15s antes de construir..."
+        Start-Sleep 15
+    }
+    Write-Host "  Advertencia: memoria disponible sigue baja tras $MaxAttempts intentos; se continua de todas formas."
+}
+
+# Confirma que el contenedor efectivamente quedó corriendo tras `docker compose up -d` — si un
+# build se completó pero el contenedor se cayó al arrancar (crash-loop, puerto ocupado, etc.),
+# es mejor frenar el deploy ahí mismo que seguir con el resto y descubrirlo al final.
+function Assert-ContainerRunning {
+    param([string]$Server, [string]$Key, [string]$ContainerName)
+    $status = & ssh -o BatchMode=yes -i $Key "root@${Server}" "docker ps --filter name=^/${ContainerName}`$ --filter status=running --format '{{.Names}}'"
+    if (-not ($status -join '').Trim()) {
+        throw "El contenedor '$ContainerName' no quedo corriendo despues del deploy."
+    }
+}
+
+# Nombre del servicio de docker-compose -> nombre real del contenedor (container_name en
+# docker-compose.yml) — no siempre coinciden (ej. servicio "client-web" -> contenedor
+# "fel-client-web"). fel-migrator es un job de un solo uso (corre las migraciones y termina),
+# nunca queda "Up", así que se excluye del chequeo de salud, no de la lista de build.
+$ServiceToContainer = @{
+    "fel-migrator"        = "fel-migrator"
+    "fel-api-tenant"      = "fel-api-tenant"
+    "fel-api-integration" = "fel-api-integration"
+    "fel-api-superadmin"  = "fel-api-superadmin"
+    "fel-api-client"      = "fel-api-client"
+    "fel-worker"          = "fel-worker"
+    "landing-web"         = "fel-landing-web"
+    "tenant-web"          = "fel-tenant-web"
+    "superadmin-web"      = "fel-superadmin-web"
+    "client-web"          = "fel-client-web"
+    "developers-web"      = "fel-developers-web"
+}
+
 Write-Host "=========================================="
 Write-Host "  Facil Factura - Deploy (SCP)"
 Write-Host "=========================================="
@@ -22,11 +68,20 @@ if (-not (Test-Path $Key)) {
     throw "SSH key not found: $Key"
 }
 
-# 1. Verify SSH connection
+# 1. Verify SSH connection (con reintentos: el droplet a veces tarda en responder el
+# handshake bajo carga puntual — un solo intento fallido no debe abortar el deploy entero).
 Write-Host "[1/5] Verifying SSH connection..."
-& ssh -o BatchMode=yes -o ConnectTimeout=10 -i $Key "root@${Server}" "echo SSH-OK"
-if ($LASTEXITCODE -ne 0) {
-    throw "SSH connection failed"
+$sshOk = $false
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+    & ssh -o BatchMode=yes -o ConnectTimeout=10 -i $Key "root@${Server}" "echo SSH-OK"
+    if ($LASTEXITCODE -eq 0) { $sshOk = $true; break }
+    if ($attempt -lt 3) {
+        Write-Host "  Intento $attempt fallido, reintentando en 5s..."
+        Start-Sleep 5
+    }
+}
+if (-not $sshOk) {
+    throw "SSH connection failed after 3 attempts"
 }
 
 # 2. Create tarball excluding git, bin, obj, .env, node_modules
@@ -63,14 +118,35 @@ if ($SkipBuild) {
     Write-Host "[4/5] Skipping Docker build (SkipBuild)."
 } elseif ($Service) {
     Write-Host "[4/5] Building and starting only '$Service'..."
+    Wait-ForFreeMemory -Server $Server -Key $Key
     # 2>&1 en el shell remoto: docker compose escribe el progreso por stderr y
     # PowerShell 5.1 lo convierte en error terminante con ErrorActionPreference=Stop.
     & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $Service 2>&1 && docker compose up -d $Service 2>&1"
     if ($LASTEXITCODE -ne 0) { throw "docker build/up failed" }
+    if ($Service -ne "fel-migrator" -and $ServiceToContainer.ContainsKey($Service)) {
+        Assert-ContainerRunning -Server $Server -Key $Key -ContainerName $ServiceToContainer[$Service]
+    }
 } else {
-    Write-Host "[4/5] Building Docker images and starting containers..."
-    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build 2>&1 && docker compose up -d 2>&1"
-    if ($LASTEXITCODE -ne 0) { throw "docker build/up failed" }
+    # Uno a la vez, nunca "docker compose build" a secas: ese build en paralelo de los ~10
+    # servicios (5 publish de .NET + 5 build de Vite concurrentes) agotó la RAM del droplet
+    # (3.8GB) y el OOM killer del sistema mató el proceso de sqlservr dos veces en producción
+    # (ver incidente documentado). Reconstruir cada servicio por separado mantiene el pico de
+    # memoria acotado al de un solo build, igual que -Service, pero recorriendo todos.
+    $BuildableServices = @(
+        "fel-migrator", "fel-api-tenant", "fel-api-integration", "fel-api-superadmin",
+        "fel-api-client", "fel-worker", "landing-web", "tenant-web", "superadmin-web",
+        "client-web", "developers-web"
+    )
+    Write-Host "[4/5] Building and starting containers one at a time ($($BuildableServices.Count) services)..."
+    foreach ($svc in $BuildableServices) {
+        Write-Host "  -> $svc"
+        Wait-ForFreeMemory -Server $Server -Key $Key
+        & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $svc 2>&1 && docker compose up -d $svc 2>&1"
+        if ($LASTEXITCODE -ne 0) { throw "docker build/up failed for service '$svc'" }
+        if ($svc -ne "fel-migrator") {
+            Assert-ContainerRunning -Server $Server -Key $Key -ContainerName $ServiceToContainer[$svc]
+        }
+    }
 }
 
 # 4b. Aplicar configuracion de nginx

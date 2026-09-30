@@ -38,6 +38,7 @@ namespace Fel.Infrastructure.Ubl
             {
                 "20" => CalculateEquivalentDocumentCufe(data),
                 "05" or "95" => CalculateCuds(data),
+                "91" or "92" => CalculateCude(data),
                 _ => CalculateCufe(data)
             };
 
@@ -102,6 +103,63 @@ namespace Fel.Infrastructure.Ubl
             string cufeString = $"{data.Prefix}{data.DocumentNumber}{issueDate}{issueTime}{valFac}{codImp1}{valImp1}{codImp2}{valImp2}{codImp3}{valImp3}{valTol}{data.Issuer.TaxId}{data.Customer.TaxId}{data.TechnicalKey}{data.Environment}";
 
             return _cryptoService.GenerateCufeSha384(cufeString);
+        }
+
+        // CUDE de Nota Crédito/Débito — Anexo Técnico numeral 11.4.3/11.4.4 (NC) y 11.4.5/11.4.6
+        // (ND): misma fórmula que CalculateCufe, pero usa el Software-PIN del Client en vez de la
+        // Clave Técnica de la resolución (mismo patrón que CalculateEquivalentDocumentCufe/
+        // CalculateCuds para Documento Equivalente/Documento Soporte) — las notas no tienen
+        // resolución propia, así que no hay Clave Técnica que usar.
+        public string CalculateCude(UblInvoiceData data)
+        {
+            var valFac = data.LineExtensionAmount.ToString("0.00").Replace(",", ".");
+            var valTol = data.TaxInclusiveAmount.ToString("0.00").Replace(",", ".");
+
+            var iva = data.Taxes.FirstOrDefault(t => t.TaxId == "01");
+            var inc = data.Taxes.FirstOrDefault(t => t.TaxId == "04");
+            var ica = data.Taxes.FirstOrDefault(t => t.TaxId == "03");
+
+            var valImp1 = iva?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp2 = inc?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp3 = ica?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+
+            var issueDate = DianTimeFormat.IssueDate(data.IssueDate);
+            var issueTime = DianTimeFormat.IssueTime(data.IssueTime);
+
+            string cudeString = $"{data.Prefix}{data.DocumentNumber}{issueDate}{issueTime}{valFac}01{valImp1}04{valImp2}03{valImp3}{valTol}{data.Issuer.TaxId}{data.Customer.TaxId}{data.SoftwarePin}{data.Environment}";
+            return _cryptoService.GenerateCufeSha384(cudeString);
+        }
+
+        // Contenido del código QR de la representación gráfica impresa — Anexo Técnico v1.9,
+        // numeral 11.7, formato confirmado contra una respuesta real de un proveedor tecnológico
+        // ya certificado (Dataico) en producción: NumFac/FecFac/HorFac/NitFac/DocAdq/ValFac/ValIva/
+        // ValOtroIm/ValTolFac/CUFE/QRCode=<url>. Antes la plantilla de impresión solo tenía el CUFE
+        // disponible y codificaba únicamente eso en el QR, sin el resto de los datos que exige el
+        // anexo.
+        public string BuildGraphicQrContent(UblInvoiceData data, string cufe)
+        {
+            var qrBaseUrl = data.Environment == "1"
+                ? "https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey="
+                : "https://catalogo-vpfe-hab.dian.gov.co/document/searchqr?documentkey=";
+
+            var valIva = data.Taxes.Where(t => t.TaxId == "01").Sum(t => t.TaxAmount);
+            var valOtroIm = data.Taxes.Where(t => t.TaxId != "01").Sum(t => t.TaxAmount);
+
+            var lines = new[]
+            {
+                $"NumFac={data.Prefix}{data.DocumentNumber}",
+                $"FecFac={DianTimeFormat.IssueDate(data.IssueDate)}",
+                $"HorFac={DianTimeFormat.IssueTime(data.IssueTime)}",
+                $"NitFac={data.Issuer.TaxId}",
+                $"DocAdq={data.Customer.TaxId}",
+                $"ValFac={data.LineExtensionAmount.ToString("0.00").Replace(",", ".")}",
+                $"ValIva={valIva.ToString("0.00").Replace(",", ".")}",
+                $"ValOtroIm={valOtroIm.ToString("0.00").Replace(",", ".")}",
+                $"ValTolFac={data.TaxInclusiveAmount.ToString("0.00").Replace(",", ".")}",
+                $"CUFE={cufe}",
+                $"QRCode={qrBaseUrl}{cufe}"
+            };
+            return string.Join("\n", lines);
         }
 
         // CUFE/CUDE de Documento Equivalente Electrónico — Anexo Técnico v1.0 (Resolución 000165 de

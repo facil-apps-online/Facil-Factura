@@ -29,8 +29,25 @@ namespace Fel.Core.Entities
         public string PrimaryColorLight { get; set; } = "#0f172a"; // Tailwind Slate-900 default
         public string PrimaryColorDark { get; set; } = "#f8fafc";  // Tailwind Slate-50 default
 
+        // --- SMTP propio (opcional, fallback para los Clients de este Tenant que no configuraron
+        // el suyo; ver Client.SmtpHost para la prioridad Client > Tenant > Brevo de la plataforma) ---
+        public string? SmtpHost { get; set; }
+        public int? SmtpPort { get; set; }
+        public string? SmtpUser { get; set; }
+        public string? SmtpPasswordEncrypted { get; set; }
+        public bool SmtpUseSsl { get; set; } = true;
+        public string? SmtpFromEmail { get; set; }
+        public string? SmtpFromName { get; set; }
+
         // --- Comercial / Contacto (espejo de tabla tenants de Core) ---
         public string? LegalName { get; set; }              // Razón social jurídica
+        // Persona jurídica (NIT): solo se diligencia LegalName (razón social). Persona natural: se
+        // diligencian los 4 campos de abajo y LegalName queda como la concatenación de los 4 (mismo
+        // patrón que Customer, para no duplicar convenciones distintas en el mismo proyecto).
+        public string? FirstName { get; set; }  // Nombre 1
+        public string? SecondName { get; set; } // Nombre 2 (opcional)
+        public string? FirstLastName { get; set; }  // Apellido 1
+        public string? SecondLastName { get; set; } // Apellido 2 (opcional)
         public string? ContactPerson { get; set; }          // Persona de contacto
         public string? ContactEmail { get; set; }
         public string? ContactPhone { get; set; }

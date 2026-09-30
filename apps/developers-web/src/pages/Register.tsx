@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { User, Mail, Lock, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { User, Mail, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 
-export default function Register({ onAuthSuccess }: { onAuthSuccess: () => void }) {
+export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const navigate = useNavigate();
+  const [done, setDone] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,12 +16,11 @@ export default function Register({ onAuthSuccess }: { onAuthSuccess: () => void 
     setError('');
 
     try {
-      const res = await api.post('/developer/auth/register', { name, email, password });
-      localStorage.setItem('fel_developer_auth', res.data.token);
-      localStorage.setItem('fel_developer_id', res.data.id);
-      localStorage.setItem('fel_developer_name', res.data.name);
-      onAuthSuccess();
-      navigate('/');
+      // Sin contraseña: se establece desde el enlace que llega al correo, igual que en el
+      // resto de la plataforma. Eso también verifica que el correo sea realmente suyo, cosa
+      // que el registro instantáneo de antes no hacía.
+      await api.post('/developer/auth/register', { name, email });
+      setDone(true);
     } catch (err: any) {
       setError(err.response?.data || 'No se pudo completar el registro.');
     } finally {
@@ -40,68 +38,67 @@ export default function Register({ onAuthSuccess }: { onAuthSuccess: () => void 
           <img src="/brand/isotipo-color.png" alt="Facil Factura" className="w-20 h-20 object-contain" />
         </div>
 
-        <h1 className="text-3xl font-extrabold text-slate-800 text-center tracking-tight mb-2">
-          Crea tu cuenta
-        </h1>
-        <p className="text-slate-500 text-center text-sm mb-8 px-2">
-          Regístrate sin depender de ningún Tenant — te damos credenciales de prueba propias al instante.
-        </p>
+        {done ? (
+          <>
+            <h1 className="text-2xl font-extrabold text-slate-800 text-center tracking-tight mb-2">
+              Revisa tu correo
+            </h1>
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm text-center py-4 rounded-xl font-medium mt-4">
+              Te enviamos un enlace a {email} para que establezcas tu contraseña y actives tu cuenta de prueba.
+            </div>
+          </>
+        ) : (
+          <>
+            <h1 className="text-3xl font-extrabold text-slate-800 text-center tracking-tight mb-2">
+              Crea tu cuenta
+            </h1>
+            <p className="text-slate-500 text-center text-sm mb-8 px-2">
+              Regístrate sin depender de ningún Tenant — te damos credenciales de prueba propias en cuanto confirmes tu correo.
+            </p>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <User className="h-5 w-5 text-slate-400" />
-            </div>
-            <input
-              type="text"
-              required
-              placeholder="Nombre completo"
-              className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Mail className="h-5 w-5 text-slate-400" />
-            </div>
-            <input
-              type="email"
-              required
-              placeholder="Correo"
-              className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Lock className="h-5 w-5 text-slate-400" />
-            </div>
-            <input
-              type="password"
-              required
-              minLength={8}
-              placeholder="Contraseña"
-              className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <User className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nombre completo"
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  type="email"
+                  required
+                  placeholder="Correo"
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
 
-          {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-3 rounded-xl font-medium">
-              {error}
-            </div>
-          )}
+              {error && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-3 rounded-xl font-medium">
+                  {error}
+                </div>
+              )}
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/25 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none flex justify-center items-center">
-            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Crear cuenta'}
-          </button>
-        </form>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/25 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none flex justify-center items-center">
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Crear cuenta'}
+              </button>
+            </form>
+          </>
+        )}
 
         <p className="mt-6 text-center text-sm text-slate-500">
           ¿Ya tienes cuenta?{' '}

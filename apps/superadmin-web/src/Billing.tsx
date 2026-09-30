@@ -48,22 +48,22 @@ export const Billing = () => {
     <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-10">
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Análisis de Facturación - Plataforma</h1>
-          <p className="text-slate-400 mt-2 text-lg font-medium">Desglose en tiempo real de consumo por Tenant (Mes Actual)</p>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight">Resumen de facturación</h1>
+          <p className="text-slate-400 mt-2 text-lg font-medium">Consumo por cuenta durante el mes actual</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="glass-panel p-6 rounded-2xl border border-blue-500/20 bg-blue-500/5">
           <div className="flex items-center justify-between">
-            <p className="text-blue-400 text-sm font-bold uppercase tracking-wider">Total Documentos Emitidos</p>
+            <p className="text-blue-400 text-sm font-bold uppercase tracking-wider">Documentos emitidos</p>
             <FileText className="w-6 h-6 text-blue-400" />
           </div>
           <p className="text-5xl font-black text-white mt-4">{metrics.totalDocuments}</p>
         </div>
         <div className="glass-panel p-6 rounded-2xl border border-indigo-500/20 bg-indigo-500/5">
           <div className="flex items-center justify-between">
-            <p className="text-indigo-400 text-sm font-bold uppercase tracking-wider">Cuentas por Cobrar Estimadas</p>
+            <p className="text-indigo-400 text-sm font-bold uppercase tracking-wider">Cuentas por cobrar</p>
             <TrendingUp className="w-6 h-6 text-indigo-400" />
           </div>
           <p className="text-5xl font-black text-indigo-400 mt-4">
@@ -81,9 +81,9 @@ export const Billing = () => {
           <thead className="bg-slate-900/50 border-b border-slate-700/50">
             <tr>
               <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tenant</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Volumen Docs</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tarifa de Nivel Aplicada</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Subtotal Adeudado</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Documentos</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tarifa aplicada</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Subtotal</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/50">

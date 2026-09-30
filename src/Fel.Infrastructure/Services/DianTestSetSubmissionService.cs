@@ -426,18 +426,18 @@ namespace Fel.Infrastructure.Services
 
         // La DIAN valida el ZIP de forma asincrona: primero responde "en proceso de validación" y
         // solo despues entrega el veredicto. Se consulta con pausas hasta que resuelva.
-        private async Task<DianTestSetOutcome> WaitForOutcomeAsync(Guid clientId, string trackId, CancellationToken ct)
+        private async Task<DianStatusOutcome> WaitForOutcomeAsync(Guid clientId, string trackId, CancellationToken ct)
         {
             const int maxIntentos = 12;
             for (int intento = 1; intento <= maxIntentos; intento++)
             {
                 if (ct.IsCancellationRequested)
-                    return DianTestSetOutcome.Pending();
+                    return DianStatusOutcome.Pending();
 
                 var status = await GetTestDocumentStatusAsync(clientId, trackId);
                 if (status.IsSuccess)
                 {
-                    var outcome = DianTestSetOutcome.FromGetStatusZipResponse(status.DianResponse);
+                    var outcome = DianStatusOutcome.FromGetStatusZipResponse(status.DianResponse);
                     if (outcome.Resolved) return outcome;
                 }
 
@@ -446,7 +446,7 @@ namespace Fel.Infrastructure.Services
             }
 
             _logger.LogWarning("La DIAN no resolvió el trackId {TrackId} del cliente {ClientId} tras {Max} consultas.", trackId, clientId, maxIntentos);
-            return DianTestSetOutcome.Pending();
+            return DianStatusOutcome.Pending();
         }
 
         private static void RegisterAcceptedDocument(Client client, DocumentKind kind, string cufe, string documentNumber)
@@ -596,7 +596,7 @@ namespace Fel.Infrastructure.Services
     {
         // OJO: IsSuccess significa que la DIAN RECIBIO el documento (devolvio un ZipKey), no que lo
         // haya aceptado. La aceptacion se consulta despues con TrackId y se interpreta con
-        // DianTestSetOutcome — durante la habilitacion de SoFactory hubo seis documentos recibidos
+        // DianStatusOutcome — durante la habilitacion de SoFactory hubo seis documentos recibidos
         // correctamente y rechazados todos con la regla ZE02.
         public bool IsSuccess { get; set; }
         public string ErrorMessage { get; set; } = string.Empty;

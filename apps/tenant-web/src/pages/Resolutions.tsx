@@ -8,7 +8,7 @@ export default function Resolutions() {
     <div className="p-10 h-full overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Mis Resoluciones DIAN</h1>
+          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Resoluciones DIAN</h1>
           <p className="text-slate-500 mt-2 text-sm max-w-2xl">
             <strong className="text-slate-600">Opcional:</strong> Si deseas automatizar el cobro a tus clientes emisores y facturar directamente desde la plataforma bajo tu propia Razón Social, registra aquí tus prefijos, numeración y vigencia otorgada por la DIAN.
           </p>
@@ -24,7 +24,7 @@ export default function Resolutions() {
           <div className="w-20 h-20 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mb-6 shadow-inner">
             <FileSignature size={40} className="opacity-80" />
           </div>
-          <h3 className="text-xl font-bold text-slate-800 mb-2">Aún no facturas desde la plataforma</h3>
+          <h3 className="text-xl font-bold text-slate-800 mb-2">Aún no has emitido documentos desde la plataforma.</h3>
           <p className="text-slate-500 text-sm max-w-md mb-8">
             Para habilitar la generación de tus propias facturas de cobro a través del portal, debes registrar tu primera resolución DIAN y el ambiente de habilitación.
           </p>

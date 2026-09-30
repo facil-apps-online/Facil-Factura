@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Content;
 
 namespace Fel.Infrastructure.Services
 {
@@ -16,104 +18,148 @@ namespace Fel.Infrastructure.Services
             public long NumberEnd { get; set; }
             public DateTime? ValidFrom { get; set; }
             public DateTime? ValidTo { get; set; }
+            public string? DocumentType { get; set; }
+            public string? Modality { get; set; }
             public bool IsSuccess { get; set; }
             public string ErrorMessage { get; set; } = string.Empty;
         }
 
-        public async Task<ParsedResolutionData> ParsePdfAsync(Stream pdfStream)
+        // Catálogo cerrado de "30. Modalidad" del formulario 1876 — texto fijo de la DIAN, no un
+        // catálogo de negocio variable. Solo se mapean las modalidades que este sistema realmente
+        // maneja con Resolution.DocumentType; una modalidad no reconocida se deja sin
+        // DocumentType (el formulario del frontend obliga a elegirlo antes de guardar).
+        private static readonly (string Match, string DocumentType)[] ModalityMap =
         {
-            var result = new ParsedResolutionData { IsSuccess = false };
-            
+            ("FACTURA ELECTR", "FE"),
+            ("DOCUMENTO SOPORTE", "POS"),
+            ("N[OÓ]MINA", "NE"),
+            ("NOTA CR[EÉ]DITO", "NC"),
+            ("NOTA D[EÉ]BITO", "ND")
+        };
+
+        private static readonly Regex RowPattern = new Regex(
+            @"^(?<modalidad>[A-Za-zÁÉÍÓÚÑáéíóúñ\s]+?)\s*(?<modcod>\d+)\s+(?<prefijo>[A-Za-z0-9]*)\s*(?<desde>[\d,\.]+)\s+(?<hasta>[\d,\.]+)\s+(?<vigencia>\d+)\s+(?<tipo>AUTORIZACI[OÓ]N|HABILITACI[OÓ]N|INHABILITACI[OÓ]N)\s+(?<tipocod>\d+)$",
+            RegexOptions.IgnoreCase);
+
+        // Devuelve una entrada por cada rango de numeración que trae el PDF — el formulario 1876
+        // permite varias filas en la misma hoja (ej. Factura Electrónica + Documento Soporte), y
+        // antes esto solo intentaba sacar una con un regex sobre el texto plano concatenado de
+        // todo el PDF, que además de no soportar varias filas se rompía apenas había una segunda
+        // fila: PdfPig concatena page.Text por ORDEN DE COLUMNA cuando hay varias filas (todas las
+        // Modalidades, luego todos los Prefijos, luego...), así que ninguna fila calzaba con el
+        // patrón que esperaba una sola fila completa y corrida.
+        //
+        // La solución real: reconstruir cada fila por posición (coordenadas Top/Left de cada
+        // palabra vía page.GetWords()), agrupando por Top (misma fila) y ordenando por Left
+        // (orden de lectura real de esa fila) — verificado contra un PDF real de dos filas
+        // (WORLD PASS RED S.A.S., FE + Documento Soporte) antes de esta implementación.
+        public async Task<List<ParsedResolutionData>> ParsePdfAsync(Stream pdfStream)
+        {
+            var results = new List<ParsedResolutionData>();
+            string fullText;
+
             try
             {
-                string fullText = string.Empty;
+                fullText = string.Empty;
+                var rowTexts = new List<string>();
 
                 using (var document = PdfDocument.Open(pdfStream))
                 {
                     foreach (var page in document.GetPages())
                     {
                         fullText += page.Text + " ";
+
+                        var words = page.GetWords().OrderByDescending(w => w.BoundingBox.Top).ToList();
+                        var rows = new List<List<Word>>();
+                        foreach (var w in words)
+                        {
+                            var lastRow = rows.Count > 0 ? rows[^1] : null;
+                            if (lastRow != null && Math.Abs(lastRow[0].BoundingBox.Top - w.BoundingBox.Top) <= 4)
+                            {
+                                lastRow.Add(w);
+                            }
+                            else
+                            {
+                                rows.Add(new List<Word> { w });
+                            }
+                        }
+
+                        foreach (var row in rows)
+                        {
+                            rowTexts.Add(string.Join(" ", row.OrderBy(w => w.BoundingBox.Left).Select(w => w.Text)));
+                        }
                     }
                 }
 
                 if (string.IsNullOrWhiteSpace(fullText))
                 {
-                    result.ErrorMessage = "El documento PDF está vacío o no contiene texto legible (posiblemente sea una imagen escaneada).";
-                    return result;
+                    results.Add(new ParsedResolutionData
+                    {
+                        IsSuccess = false,
+                        ErrorMessage = "El documento PDF está vacío o no contiene texto legible (posiblemente sea una imagen escaneada)."
+                    });
+                    return results;
                 }
 
-                // Normalizar texto para facilitar regex (quitar dobles espacios y saltos de línea raros)
                 fullText = Regex.Replace(fullText, @"\s+", " ");
 
-                // 1. Extraer Número de Formulario / Resolución (Típicamente Formulario 1876 o Número de Autorización largo)
+                // Compartidos por todas las filas del mismo formulario.
                 var numMatch = Regex.Match(fullText, @"1876\d{10,14}");
-                if (numMatch.Success)
+                var resolutionNumber = numMatch.Success ? numMatch.Value : string.Empty;
+
+                DateTime? validFrom = null;
+                var dateMatch = Regex.Match(fullText, @"\d{4}\s*-\d{2}\s*-\d{2}");
+                if (dateMatch.Success && DateTime.TryParse(dateMatch.Value.Replace(" ", ""), out DateTime parsedDate))
                 {
-                    result.ResolutionNumber = numMatch.Value;
+                    validFrom = parsedDate;
                 }
 
-                // 2. Extraer Prefijo, Rango y Vigencia usando el patrón final del documento
-                // Ej: "FACTURA ELECTRÓNICA DE VENTA4 SFRY1,000 2,000 AUTORIZACIÓN 1 24"
-                var finalPatternMatch = Regex.Match(fullText, @"([A-Za-z]+)?\s*([\d,\.]+)\s+([\d,\.]+)\s+(AUTORIZACI[OÓ]N|HABILITACI[OÓ]N)\s+\d+\s+(\d+)", RegexOptions.IgnoreCase);
-                if (finalPatternMatch.Success)
+                foreach (var rowText in rowTexts)
                 {
-                    result.Prefix = finalPatternMatch.Groups[1].Value.ToUpper();
-                    
-                    var startStr = finalPatternMatch.Groups[2].Value.Replace(",", "").Replace(".", "");
-                    var endStr = finalPatternMatch.Groups[3].Value.Replace(",", "").Replace(".", "");
-                    
-                    if (long.TryParse(startStr, out long start)) result.NumberStart = start;
-                    if (long.TryParse(endStr, out long end)) result.NumberEnd = end;
+                    var m = RowPattern.Match(rowText.Trim());
+                    if (!m.Success) continue;
 
-                    var monthsStr = finalPatternMatch.Groups[5].Value;
-                    int months = 0;
-                    int.TryParse(monthsStr, out months);
+                    var modalidad = m.Groups["modalidad"].Value.Trim();
+                    var startStr = m.Groups["desde"].Value.Replace(",", "").Replace(".", "");
+                    var endStr = m.Groups["hasta"].Value.Replace(",", "").Replace(".", "");
+                    int.TryParse(m.Groups["vigencia"].Value, out int months);
 
-                    // Buscar fecha de formalización (AAA-MM-DD)
-                    var dateMatch = Regex.Match(fullText, @"\d{4}\s*-\d{2}\s*-\d{2}");
-                    if (dateMatch.Success)
+                    var documentType = ModalityMap
+                        .Where(mm => Regex.IsMatch(modalidad, mm.Match, RegexOptions.IgnoreCase))
+                        .Select(mm => mm.DocumentType)
+                        .FirstOrDefault();
+
+                    var parsed = new ParsedResolutionData
                     {
-                        if (DateTime.TryParse(dateMatch.Value.Replace(" ", ""), out DateTime validFrom))
-                        {
-                            result.ValidFrom = validFrom;
-                            if (months > 0)
-                            {
-                                result.ValidTo = validFrom.AddMonths(months);
-                            }
-                        }
-                    }
+                        IsSuccess = true,
+                        ResolutionNumber = resolutionNumber,
+                        Modality = modalidad,
+                        DocumentType = documentType,
+                        Prefix = m.Groups["prefijo"].Value.ToUpper(),
+                        ValidFrom = validFrom,
+                        ValidTo = validFrom.HasValue && months > 0 ? validFrom.Value.AddMonths(months) : null
+                    };
+                    if (long.TryParse(startStr, out long start)) parsed.NumberStart = start;
+                    if (long.TryParse(endStr, out long end)) parsed.NumberEnd = end;
+
+                    results.Add(parsed);
                 }
-                else 
+
+                if (results.Count == 0)
                 {
-                    // Fallback a los patrones genéricos (por si el diseño del PDF cambia en otra versión de la DIAN)
-                    var prefixMatch = Regex.Match(fullText, @"Prefijo[\s:]*([A-Za-z0-9]+)?", RegexOptions.IgnoreCase);
-                    if (prefixMatch.Success && prefixMatch.Groups[1].Success) result.Prefix = prefixMatch.Groups[1].Value;
-
-                    var startMatch = Regex.Match(fullText, @"(?:Desde|Rango Inicial)[\s:]*(\d+)", RegexOptions.IgnoreCase);
-                    if (startMatch.Success && long.TryParse(startMatch.Groups[1].Value, out long start)) result.NumberStart = start;
-
-                    var endMatch = Regex.Match(fullText, @"(?:Hasta|Rango Final)[\s:]*(\d+)", RegexOptions.IgnoreCase);
-                    if (endMatch.Success && long.TryParse(endMatch.Groups[1].Value, out long end)) result.NumberEnd = end;
-
-                    var dateMatches = Regex.Matches(fullText, @"\d{4}-\d{2}-\d{2}");
-                    if (dateMatches.Count >= 2)
+                    results.Add(new ParsedResolutionData
                     {
-                        if (DateTime.TryParse(dateMatches[0].Value, out DateTime d1) && DateTime.TryParse(dateMatches[1].Value, out DateTime d2))
-                        {
-                            result.ValidFrom = d1 < d2 ? d1 : d2;
-                            result.ValidTo = d1 < d2 ? d2 : d1;
-                        }
-                    }
+                        IsSuccess = false,
+                        ErrorMessage = "No se pudo reconocer ningún rango de numeración en el PDF. Verifica los datos manualmente."
+                    });
                 }
-
-                result.IsSuccess = true;
             }
             catch (Exception ex)
             {
-                result.ErrorMessage = $"Error procesando el PDF: {ex.Message}";
+                results.Add(new ParsedResolutionData { IsSuccess = false, ErrorMessage = $"Error procesando el PDF: {ex.Message}" });
             }
 
-            return result;
+            return results;
         }
     }
 }

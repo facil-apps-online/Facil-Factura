@@ -14,7 +14,10 @@ namespace Fel.Core.Entities
         public string Name { get; set; } = string.Empty;
 
         public decimal UnitPrice { get; set; }
-        public string UnitOfMeasure { get; set; } = "94"; // Unidad por defecto según DIAN (94 = Unidad)
+
+        // FK al catálogo global (ver UnitOfMeasure.cs) — default = fila semilla "Unidad" (94/EA).
+        public Guid UnitOfMeasureId { get; set; } = Fel.Core.Entities.UnitOfMeasure.DefaultUnidadId;
+        public UnitOfMeasure? UnitOfMeasure { get; set; }
 
         public IvaTreatment IvaTreatment { get; set; } = IvaTreatment.Gravado;
         public decimal IvaRate { get; set; } = 19; // Solo aplica cuando IvaTreatment = Gravado

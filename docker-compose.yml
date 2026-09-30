@@ -38,6 +38,8 @@
     build:
       context: .
       dockerfile: deploy/Dockerfile.migrator
+      args:
+        FEL_DESIGNTIME_CONNECTION: "Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
     container_name: fel-migrator
     restart: "no"
     depends_on:
@@ -45,6 +47,7 @@
         condition: service_healthy
     environment:
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
+      - FEL_DESIGNTIME_CONNECTION=Server=sqlserver,1433;Database=FelDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;
 
   # ---------- APIs .NET ----------
   fel-api-tenant:
@@ -73,6 +76,8 @@
       # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
       - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
       - CertificateStoragePath=/app/secure-storage
+      - Certificates__KeyAlgorithm=${CERTIFICATES_KEY_ALGORITHM}
+      - Certificates__RsaKeySize=${CERTIFICATES_RSA_KEY_SIZE}
       - PublicFileStoragePath=/app/public-storage
       # MUV de FEV-RIPS del MinSalud. Corre en el VPS de Bogota (el Ministerio bloquea por
       # geolocalizacion todo acceso desde fuera de Colombia) y se alcanza por el tunel WireGuard.
@@ -82,6 +87,7 @@
       # operacion de infraestructura, no un dato que un usuario deba poder editar.
       - MinSalud__MuvProductionUrl=https://10.10.0.2:9443
       - MinSalud__MuvTestUrl=https://10.10.0.2:9444
+      - FacilReports__ApiKey=${FACIL_REPORTS_API_KEY}
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates
@@ -111,6 +117,8 @@
       - Security__MasterKey=${FEL_MASTER_KEY}
       - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
+      - Certificates__KeyAlgorithm=${CERTIFICATES_KEY_ALGORITHM}
+      - Certificates__RsaKeySize=${CERTIFICATES_RSA_KEY_SIZE}
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates
@@ -141,6 +149,8 @@
       # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
       - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
       - CertificateStoragePath=/app/secure-storage
+      - Certificates__KeyAlgorithm=${CERTIFICATES_KEY_ALGORITHM}
+      - Certificates__RsaKeySize=${CERTIFICATES_RSA_KEY_SIZE}
       - FacilReports__ApiKey=${FACIL_REPORTS_API_KEY}
     volumes:
       - fel_certs:/app/secure-storage
@@ -170,6 +180,8 @@
       - Security__MasterKey=${FEL_MASTER_KEY}
       - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
+      - Certificates__KeyAlgorithm=${CERTIFICATES_KEY_ALGORITHM}
+      - Certificates__RsaKeySize=${CERTIFICATES_RSA_KEY_SIZE}
       - PublicFileStoragePath=/app/public-storage
       # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
       - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
@@ -203,6 +215,10 @@
       - Security__MasterKey=${FEL_MASTER_KEY}
       - MasterKey=${FEL_MASTER_KEY}
       - CertificateStoragePath=/app/secure-storage
+      - Certificates__KeyAlgorithm=${CERTIFICATES_KEY_ALGORITHM}
+      - Certificates__RsaKeySize=${CERTIFICATES_RSA_KEY_SIZE}
+      # Salta el RLS de Core: nunca en appsettings.json, que va a un repo publico.
+      - Core__ServiceRoleKey=${CORE_SERVICE_ROLE_KEY}
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates
@@ -240,6 +256,8 @@
         APP: tenant-web
         VITE_API_URL: https://api.facil-factura.pro/api
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
+        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.online
+        VITE_FACIL_REPORTS_API_KEY: ${FACIL_REPORTS_API_KEY}
     container_name: fel-tenant-web
     restart: unless-stopped
 
@@ -264,6 +282,8 @@
         APP: client-web
         VITE_API_URL: https://api.facil-factura.pro/api
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
+        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.online
+        VITE_FACIL_REPORTS_API_KEY: ${FACIL_REPORTS_API_KEY}
     container_name: fel-client-web
     restart: unless-stopped
 
@@ -321,4 +341,3 @@ volumes:
   certbot_www:
   certbot_conf:
   certbot_lib:
-

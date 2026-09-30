@@ -37,27 +37,20 @@ namespace Fel.Infrastructure.Dataico
 
         public async Task TrySendCustomPdfAsync(
             Document document, string? recipientEmail, Client client,
-            Func<Dictionary<string, object?>> buildReportData, DataicoCredentials credentials)
+            Func<DocumentTemplate, Dictionary<string, object?>> buildReportData, DataicoCredentials credentials)
         {
-            if (string.IsNullOrEmpty(document.Cufe) || !document.DocumentTypeId.HasValue) return;
+            if (string.IsNullOrEmpty(document.DataicoDocumentId) || !document.DocumentTypeId.HasValue) return;
             if (string.IsNullOrEmpty(recipientEmail)) return;
 
             try
             {
-                var setting = await _dbContext.ClientDocumentSettings
-                    .Include(s => s.SelectedTemplate)
-                    .FirstOrDefaultAsync(s => s.ClientId == client.Id && s.DocumentTypeId == document.DocumentTypeId);
+                var (pdfBytes, template) = await ResolveCustomPdfAsync(document, client, buildReportData);
+                if (pdfBytes == null || template == null) return;
 
-                if (setting?.SelectedTemplate == null || setting.SelectedTemplate.Status != TemplateStatus.Published) return;
-
-                var data = buildReportData();
-                var pdfBytes = await _facilReportsClient.GenerateReportAsync(setting.SelectedTemplate.RepxTemplateKey, data);
-                if (pdfBytes == null) return;
-
-                var pdfResult = await _dataicoApiService.SendCustomDocumentPdfAsync(document.Cufe, document.TypeCode, pdfBytes, recipientEmail!, credentials);
+                var pdfResult = await _dataicoApiService.SendCustomDocumentPdfAsync(document.DataicoDocumentId!, document.TypeCode, pdfBytes, recipientEmail!, credentials);
                 if (pdfResult.Success)
                 {
-                    document.UsedTemplateId = setting.SelectedTemplate.Id;
+                    document.UsedTemplateId = template.Id;
                 }
                 else
                 {
@@ -68,6 +61,26 @@ namespace Fel.Infrastructure.Dataico
             {
                 _logger.LogError(ex, "Error generando/enviando el PDF personalizado del documento {DocumentId}.", document.Id);
             }
+        }
+
+        // Extraído para que el reenvío manual (InvoiceController.Resend) pueda decidir si manda un
+        // PDF propio o deja que Dataico reenvíe con el suyo, con el mismo criterio que el paso 2
+        // automático: solo si el Client tiene una plantilla explícitamente seleccionada y publicada
+        // para este tipo de documento (no la resolución "más específica disponible" que usa /preview).
+        public async Task<(byte[]? PdfBytes, DocumentTemplate? Template)> ResolveCustomPdfAsync(
+            Document document, Client client, Func<DocumentTemplate, Dictionary<string, object?>> buildReportData)
+        {
+            if (!document.DocumentTypeId.HasValue) return (null, null);
+
+            var setting = await _dbContext.ClientDocumentSettings
+                .Include(s => s.SelectedTemplate)
+                .FirstOrDefaultAsync(s => s.ClientId == client.Id && s.DocumentTypeId == document.DocumentTypeId);
+
+            if (setting?.SelectedTemplate == null || setting.SelectedTemplate.Status != TemplateStatus.Published) return (null, null);
+
+            var data = buildReportData(setting.SelectedTemplate);
+            var pdfBytes = await _facilReportsClient.GenerateReportAsync(setting.SelectedTemplate.RepxTemplateKey, data);
+            return (pdfBytes, setting.SelectedTemplate);
         }
     }
 }

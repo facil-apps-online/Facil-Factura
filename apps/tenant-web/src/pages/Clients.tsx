@@ -1,8 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Search, RefreshCw, Send } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, RefreshCw, Send, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
+import ClientFormFields from '../components/ClientFormFields';
+
+const initialNewClient = {
+  companyName: '', personType: 'PJ', commercialName: '', taxId: '', verificationDigit: '',
+  email: '', phone: '', address: '', city: '', cityCode: '' as string | null,
+  organizationDepartment: '', organizationType: 'RM',
+  legalRepresentativeFirstName: '', legalRepresentativeOtherNames: '', legalRepresentativeFirstLastName: '', legalRepresentativeSecondLastName: '',
+  legalRepresentativeDocumentType: '', legalRepresentativeDocumentNumber: '', legalRepresentativeDocumentCountryCode: 'CO', legalRepresentativeEmail: '',
+  legalRepresentativeRepresentationCode: '', legalRepresentativeStartDate: null as string | null,
+  taxRegime: '', economicActivity: '', associateId: '' as string | null,
+  isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false,
+  latitude: null as number | null, longitude: null as number | null
+};
 
 interface Client {
   id: string;
@@ -55,7 +68,9 @@ export default function Clients() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [newClient, setNewClient] = useState({ companyName: '', taxId: '', email: '' });
+  const [newClient, setNewClient] = useState(initialNewClient);
+  const [associates, setAssociates] = useState<{ id: string, name: string, isActive: boolean }[]>([]);
+  const [creating, setCreating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkInviting, setBulkInviting] = useState(false);
   const navigate = useNavigate();
@@ -70,17 +85,26 @@ export default function Clients() {
 
   useEffect(() => {
     loadClients();
+    api.get('/tenant/associates').then(res => setAssociates(res.data)).catch(() => {});
   }, []);
+
+  const openCreateModal = () => {
+    setNewClient(initialNewClient);
+    setShowModal(true);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreating(true);
     try {
-      const res = await api.post('/tenant/clients', newClient);
+      const res = await api.post('/tenant/clients', { ...newClient, associateId: newClient.associateId || null });
       toast.success("Cliente creado exitosamente. Completa su información.");
       setShowModal(false);
       navigate(`/clients/edit/${res.data.id}`);
     } catch (err: any) {
-      toast.error(err.response?.data || "Error al crear cliente");
+      toast.error(getErrorMessage(err, "Error al crear cliente"));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -132,15 +156,15 @@ export default function Clients() {
     <div className="p-10 h-full overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Gestión de Clientes (Emisores)</h1>
-          <p className="text-slate-500 mt-2">Administra los negocios que emitirán facturas bajo tu cuenta.</p>
+          <h1 className="text-3xl font-bold text-slate-800">Clientes emisores</h1>
+          <p className="text-slate-500 mt-2">Administra los negocios que emiten documentos desde tu cuenta.</p>
         </div>
-        <button 
-          onClick={() => setShowModal(true)}
+        <button
+          onClick={openCreateModal}
           className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-medium shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-all"
         >
           <Plus size={20} />
-          <span>Nuevo Cliente</span>
+          <span>Nuevo cliente</span>
         </button>
       </div>
 
@@ -203,10 +227,10 @@ export default function Clients() {
               </th>
               <th className="px-6 py-4">Razón Social</th>
               <th className="px-6 py-4">NIT</th>
-              <th className="px-6 py-4">Correo Recepción</th>
+              <th className="px-6 py-4">Correo de recepción</th>
               <th className="px-6 py-4">Asociado</th>
               <th className="px-6 py-4">Registrado</th>
-              <th className="px-6 py-4">Próx. Vencimiento Resolución</th>
+              <th className="px-6 py-4">Vencimiento de resolución</th>
               <th className="px-6 py-4">Estado</th>
               <th className="px-6 py-4">Portal</th>
               <th className="px-6 py-4 text-right">Acciones</th>
@@ -214,7 +238,7 @@ export default function Clients() {
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
             {clients.length === 0 && !loading && (
-              <tr><td colSpan={10} className="text-center py-8 text-slate-500">No hay clientes registrados aún.</td></tr>
+              <tr><td colSpan={10} className="text-center py-8 text-slate-500">Aún no hay clientes registrados.</td></tr>
             )}
             {clients.map(client => (
               <tr key={client.id} className="hover:bg-slate-50/80 transition-colors">
@@ -273,25 +297,19 @@ export default function Clients() {
       </div>
       {/* Modal Nuevo Cliente */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Crear Nuevo Emisor</h2>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">NIT</label>
-                <input required type="text" className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={newClient.taxId} onChange={e => setNewClient({...newClient, taxId: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Razón Social</label>
-                <input required type="text" className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={newClient.companyName} onChange={e => setNewClient({...newClient, companyName: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Correo Electrónico</label>
-                <input required type="email" className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={newClient.email} onChange={e => setNewClient({...newClient, email: e.target.value})} />
-              </div>
-              <div className="flex gap-3 justify-end pt-4">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
+              <h2 className="text-xl font-bold text-slate-800">Crear Nuevo Emisor</h2>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleCreate} className="p-6 overflow-y-auto">
+              <ClientFormFields client={newClient} setClient={setNewClient} associates={associates} />
+              <div className="flex gap-3 justify-end pt-6 border-t border-slate-100 mt-6">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-medium transition-colors">Cancelar</button>
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-medium shadow-md transition-colors flex items-center gap-2">Crear y Continuar <Edit2 size={16}/></button>
+                <button type="submit" disabled={creating} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-medium shadow-md transition-colors flex items-center gap-2 disabled:opacity-50">
+                  {creating ? 'Creando...' : 'Crear y Continuar'} <Edit2 size={16}/>
+                </button>
               </div>
             </form>
           </div>

@@ -26,8 +26,8 @@ export default function ForgotPassword() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="bg-white border border-slate-200 p-10 rounded-[2rem] shadow-xl w-full max-w-[420px]">
-        <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-2">Recuperar Contraseña</h1>
-        <p className="text-slate-500 text-center text-sm mb-8">Te enviaremos un enlace para restablecerla.</p>
+        <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-2">Recuperar contraseña</h1>
+        <p className="text-slate-500 text-center text-sm mb-8">Te enviaremos un enlace para crear una nueva contraseña.</p>
 
         {sent ? (
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm text-center py-4 rounded-xl font-medium">

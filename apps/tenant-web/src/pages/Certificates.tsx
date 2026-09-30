@@ -60,8 +60,8 @@ export default function Certificates() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-800">Certificados Digitales (.p12)</h1>
-        <p className="text-slate-500 mt-2">Vista consolidada de los certificados de firma electrónica (XAdES-EPES) de todos tus clientes, ordenados por fecha de vencimiento.</p>
+        <h1 className="text-3xl font-bold text-slate-800">Certificados digitales</h1>
+        <p className="text-slate-500 mt-2">Consulta los certificados de tus clientes y sus fechas de vencimiento.</p>
       </div>
 
       {!loading && certificates.length > 0 && (

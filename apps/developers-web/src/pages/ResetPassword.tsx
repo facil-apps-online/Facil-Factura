@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Lock, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import PasswordStrength, { evaluatePassword } from '@shared/components/PasswordStrength';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -16,6 +17,11 @@ export default function ResetPassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const strength = evaluatePassword(newPassword);
+    if (!strength.meetsPolicy) {
+      setError(strength.reason || 'La contraseña no cumple la política mínima.');
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setError('Las contraseñas no coinciden.');
       return;
@@ -67,6 +73,7 @@ export default function ResetPassword() {
                 onChange={e => setNewPassword(e.target.value)}
               />
             </div>
+            <PasswordStrength password={newPassword} />
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-slate-400" />
@@ -88,7 +95,7 @@ export default function ResetPassword() {
             )}
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !evaluatePassword(newPassword).meetsPolicy}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/25 disabled:opacity-50 flex justify-center items-center"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Guardar Contraseña'}

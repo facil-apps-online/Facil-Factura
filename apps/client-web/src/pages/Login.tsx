@@ -90,7 +90,7 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
             <input
               type="email"
               required
-              placeholder="Correo de acceso"
+              placeholder="Correo electrónico"
               className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

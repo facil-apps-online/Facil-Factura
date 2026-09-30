@@ -50,7 +50,7 @@ export function Certificates() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/superadmin/certificates')
+    api.get('/certificates')
       .then(res => setCertificates(res.data))
       .catch(() => setCertificates([]))
       .finally(() => setLoading(false));
@@ -62,8 +62,8 @@ export function Certificates() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-800">Certificados Digitales — Todos los Tenants</h1>
-        <p className="text-slate-500 mt-2">Vista consolidada de los certificados de firma electrónica de todos los clientes, en todos los tenants, ordenados por fecha de vencimiento — para saber qué hay que provisionar.</p>
+        <h1 className="text-3xl font-bold text-slate-800">Certificados digitales</h1>
+        <p className="text-slate-500 mt-2">Consulta el estado y vencimiento de los certificados de tus cuentas.</p>
       </div>
 
       {!loading && certificates.length > 0 && (
@@ -82,7 +82,7 @@ export function Certificates() {
       )}
 
       {loading ? (
-        <div className="text-slate-400">Cargando...</div>
+        <div className="text-slate-400">Cargando certificados...</div>
       ) : certificates.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-slate-400">
           <FileKey className="mx-auto mb-3 text-slate-300" size={40} />

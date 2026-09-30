@@ -19,14 +19,84 @@ namespace Fel.Api.Tenant.Controllers
         private readonly FelDbContext _dbContext;
         private readonly ICryptoService _cryptoService;
         private readonly PasswordResetService _passwordResetService;
+        private readonly DianRutParserService _rutParser;
         private readonly string _clientPortalUrl;
 
-        public TenantClientsController(FelDbContext dbContext, ICryptoService cryptoService, PasswordResetService passwordResetService, IConfiguration config)
+        public TenantClientsController(
+            FelDbContext dbContext, ICryptoService cryptoService, PasswordResetService passwordResetService,
+            DianRutParserService rutParser, IConfiguration config)
         {
             _dbContext = dbContext;
             _cryptoService = cryptoService;
             _passwordResetService = passwordResetService;
+            _rutParser = rutParser;
             _clientPortalUrl = config["ClientPortalUrl"] ?? "https://clients.facil-factura.pro";
+        }
+
+        // Mismo servicio/contrato que api/client/customers/parse-rut — lee el RUT (Formulario 001)
+        // para prellenar el alta/edición de un Client desde el portal del tenant. No crea nada.
+        [HttpPost("parse-rut")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ParseRut([FromForm] IFormFile file, [FromQuery] Guid? clientId = null)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { message = "No se adjuntó ningún archivo." });
+
+            if (!string.Equals(file.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "El RUT debe ser el PDF que descarga el portal de la DIAN." });
+
+            Client? existingClient = null;
+            if (clientId.HasValue)
+            {
+                var tenantId = GetCurrentTenantId();
+                existingClient = await _dbContext.Clients
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.Id == clientId.Value && c.TenantId == tenantId);
+                if (existingClient == null) return NotFound(new { message = "El cliente no existe en este tenant." });
+            }
+
+            using var stream = file.OpenReadStream();
+            var rut = await _rutParser.ParsePdfAsync(stream);
+
+            if (!rut.IsSuccess)
+                return BadRequest(new { message = rut.ErrorMessage });
+
+            if (existingClient != null && !string.IsNullOrWhiteSpace(existingClient.TaxId) && !string.IsNullOrWhiteSpace(rut.TaxId))
+            {
+                var existingTaxId = new string(existingClient.TaxId.Where(char.IsDigit).ToArray());
+                var parsedTaxId = new string(rut.TaxId.Where(char.IsDigit).ToArray());
+                if (!string.Equals(existingTaxId, parsedTaxId, StringComparison.Ordinal))
+                    return Conflict(new { code = "rut_client_mismatch", message = $"El RUT corresponde al NIT {rut.TaxId}, no al cliente seleccionado." });
+            }
+
+            return Ok(new
+            {
+                companyName = rut.LegalName,
+                personType = string.IsNullOrWhiteSpace(rut.FirstName) && string.IsNullOrWhiteSpace(rut.FirstLastName) ? "PJ" : "PN",
+                commercialName = rut.CommercialName,
+                taxId = rut.TaxId,
+                verificationDigit = rut.VerificationDigit,
+                address = rut.Address,
+                city = rut.City,
+                cityCode = rut.CityCode,
+                department = rut.Department,
+                email = rut.Email,
+                phone = rut.Phone,
+                economicActivity = rut.EconomicActivity,
+                legalRepresentativeFirstName = rut.RepresentativeFirstName,
+                legalRepresentativeOtherNames = rut.RepresentativeOtherNames,
+                legalRepresentativeFirstLastName = rut.RepresentativeFirstLastName,
+                legalRepresentativeSecondLastName = rut.RepresentativeSecondLastName,
+                legalRepresentativeDocumentType = rut.RepresentativeDocumentType,
+                legalRepresentativeDocumentNumber = rut.RepresentativeDocumentNumber,
+                legalRepresentativeRepresentationCode = rut.RepresentativeRepresentationCode,
+                legalRepresentativeStartDate = rut.RepresentativeStartDate,
+                taxRegime = rut.ResponsibilityCodes.Contains("48") ? "48" : "49",
+                isElectronicInvoicer = rut.IsElectronicInvoicer,
+                isGranContribuyente = rut.IsGranContribuyente,
+                isAgenteRetenedorIva = rut.IsAgenteRetenedorIva,
+                isAutorretenedorRenta = rut.IsAutorretenedorRenta
+            });
         }
 
         // Simulación: en producción, esto vendría del JWT o Claims.
@@ -51,8 +121,9 @@ namespace Fel.Api.Tenant.Controllers
                     .Where(c => c.TenantId == tenantId && !c.IsDeveloperSandbox)
                     .Select(c => new
                     {
-                        c.Id,
-                        c.CompanyName,
+                         c.Id,
+                         c.CompanyName,
+                         c.PersonType,
                         c.TaxId,
                         c.Email,
                         c.IsActive,
@@ -90,17 +161,35 @@ namespace Fel.Api.Tenant.Controllers
                 
             if (client == null) return NotFound();
             return Ok(new {
-                client.Id,
-                client.CompanyName,
+                 client.Id,
+                 client.CompanyName,
+                 client.PersonType,
                 client.CommercialName,
                 client.TaxId,
                 client.VerificationDigit,
                 client.Email,
                 client.Phone,
                 client.Address,
-                client.City,
-                client.TaxRegime,
+                 client.City,
+                 client.CityCode,
+                 client.OrganizationDepartment,
+                 client.OrganizationType,
+                 client.LegalRepresentativeFirstName,
+                 client.LegalRepresentativeOtherNames,
+                 client.LegalRepresentativeFirstLastName,
+                 client.LegalRepresentativeSecondLastName,
+                 client.LegalRepresentativeDocumentType,
+                 client.LegalRepresentativeDocumentNumber,
+                 client.LegalRepresentativeDocumentCountryCode,
+                 client.LegalRepresentativeEmail,
+                 client.LegalRepresentativeRepresentationCode,
+                 client.LegalRepresentativeOrganizationalArea,
+                 client.LegalRepresentativeStartDate,
+                 client.TaxRegime,
                 client.EconomicActivity,
+                client.IsGranContribuyente,
+                client.IsAgenteRetenedorIva,
+                client.IsAutorretenedorRenta,
                 client.AppliesRetentions,
                 client.AssociateId,
                 client.Latitude,
@@ -130,6 +219,7 @@ namespace Fel.Api.Tenant.Controllers
                 Id = Guid.NewGuid(),
                 TenantId = tenantId,
                 CompanyName = request.CompanyName,
+                PersonType = request.PersonType == "PN" ? "PN" : "PJ",
                 CommercialName = request.CommercialName,
                 TaxId = request.TaxId,
                 VerificationDigit = request.VerificationDigit,
@@ -137,9 +227,28 @@ namespace Fel.Api.Tenant.Controllers
                 Phone = request.Phone,
                 Address = request.Address,
                 City = request.City,
+                CityCode = request.CityCode,
+                OrganizationDepartment = request.OrganizationDepartment,
+                OrganizationType = request.OrganizationType,
+                LegalRepresentativeFirstName = request.LegalRepresentativeFirstName,
+                LegalRepresentativeOtherNames = request.LegalRepresentativeOtherNames,
+                LegalRepresentativeFirstLastName = request.LegalRepresentativeFirstLastName,
+                LegalRepresentativeSecondLastName = request.LegalRepresentativeSecondLastName,
+                LegalRepresentativeDocumentType = request.LegalRepresentativeDocumentType,
+                LegalRepresentativeDocumentNumber = request.LegalRepresentativeDocumentNumber,
+                LegalRepresentativeDocumentCountryCode = request.LegalRepresentativeDocumentCountryCode,
+                LegalRepresentativeEmail = request.LegalRepresentativeEmail,
+                LegalRepresentativeRepresentationCode = request.LegalRepresentativeRepresentationCode,
+                LegalRepresentativeOrganizationalArea = request.LegalRepresentativeOrganizationalArea,
+                LegalRepresentativeStartDate = request.LegalRepresentativeStartDate,
                 TaxRegime = request.TaxRegime,
                 EconomicActivity = request.EconomicActivity,
+                IsGranContribuyente = request.IsGranContribuyente,
+                IsAgenteRetenedorIva = request.IsAgenteRetenedorIva,
+                IsAutorretenedorRenta = request.IsAutorretenedorRenta,
                 AssociateId = request.AssociateId,
+                Latitude = request.Latitude,
+                Longitude = request.Longitude,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 // Por defecto factura directo con la DIAN; se cambia a un integrador desde
@@ -192,6 +301,7 @@ namespace Fel.Api.Tenant.Controllers
             if (client == null) return NotFound();
 
             client.CompanyName = request.CompanyName;
+            client.PersonType = request.PersonType == "PN" ? "PN" : "PJ";
             client.CommercialName = request.CommercialName;
             client.Email = request.Email;
             client.Phone = request.Phone;
@@ -199,8 +309,25 @@ namespace Fel.Api.Tenant.Controllers
             client.VerificationDigit = request.VerificationDigit;
             client.Address = request.Address;
             client.City = request.City;
+            client.CityCode = request.CityCode;
+            client.OrganizationDepartment = request.OrganizationDepartment;
+            client.OrganizationType = request.OrganizationType;
+            client.LegalRepresentativeFirstName = request.LegalRepresentativeFirstName;
+            client.LegalRepresentativeOtherNames = request.LegalRepresentativeOtherNames;
+            client.LegalRepresentativeFirstLastName = request.LegalRepresentativeFirstLastName;
+            client.LegalRepresentativeSecondLastName = request.LegalRepresentativeSecondLastName;
+            client.LegalRepresentativeDocumentType = request.LegalRepresentativeDocumentType;
+            client.LegalRepresentativeDocumentNumber = request.LegalRepresentativeDocumentNumber;
+            client.LegalRepresentativeDocumentCountryCode = request.LegalRepresentativeDocumentCountryCode;
+            client.LegalRepresentativeEmail = request.LegalRepresentativeEmail;
+            client.LegalRepresentativeRepresentationCode = request.LegalRepresentativeRepresentationCode;
+            client.LegalRepresentativeOrganizationalArea = request.LegalRepresentativeOrganizationalArea;
+            client.LegalRepresentativeStartDate = request.LegalRepresentativeStartDate;
             client.TaxRegime = request.TaxRegime;
             client.EconomicActivity = request.EconomicActivity;
+            client.IsGranContribuyente = request.IsGranContribuyente;
+            client.IsAgenteRetenedorIva = request.IsAgenteRetenedorIva;
+            client.IsAutorretenedorRenta = request.IsAutorretenedorRenta;
             client.AppliesRetentions = request.AppliesRetentions;
             client.AssociateId = request.AssociateId;
             client.Latitude = request.Latitude;
@@ -262,17 +389,13 @@ namespace Fel.Api.Tenant.Controllers
             {
                 // Sin contraseña manual: se crea con un hash aleatorio inutilizable (nadie la
                 // conoce) y se invita al cliente a que la establezca él mismo desde el enlace.
-                var initialHash = string.IsNullOrWhiteSpace(request.Password)
-                    ? BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString())
-                    : BCrypt.Net.BCrypt.HashPassword(request.Password);
-
                 user = new ClientUser
                 {
                     Id = Guid.NewGuid(),
                     ClientId = id,
                     Name = request.Name,
                     Email = request.Email,
-                    PasswordHash = initialHash,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -280,24 +403,31 @@ namespace Fel.Api.Tenant.Controllers
             }
             else
             {
+                // La contraseña no se toca acá: solo se cambia desde "Olvidé mi contraseña" o
+                // reenviando la invitación, nunca escribiéndola en este formulario.
                 user.Name = request.Name;
                 user.Email = request.Email;
-                if (!string.IsNullOrWhiteSpace(request.Password))
-                {
-                    user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-                }
             }
 
             await _dbContext.SaveChangesAsync();
 
-            if (isNew && string.IsNullOrWhiteSpace(request.Password))
+            bool? invitationSent = null;
+            string? invitationError = null;
+            if (isNew)
             {
-                await _passwordResetService.RequestAsync(
+                var coreResult = await _passwordResetService.RequestAsync(
                     PortalUserType.Client, user.Id, user.Email, user.Name, _clientPortalUrl, "invitation", client.Tenant?.CoreTenantId,
                     client.Tenant?.LogoLightUrl, client.Tenant?.CommercialName);
+                invitationSent = coreResult.IsSuccess;
+                if (!coreResult.IsSuccess)
+                {
+                    invitationError = coreResult.IsNotConfigured
+                        ? "El servicio de correo no está configurado."
+                        : (coreResult.Error ?? "No se pudo enviar la invitación.");
+                }
             }
 
-            return Ok(new { user.Id, user.Name, user.Email, user.IsActive });
+            return Ok(new { user.Id, user.Name, user.Email, user.IsActive, invitationSent, invitationError });
         }
 
         // Mismo patrón que TenantDevelopersController y SuperadminTenantsController: reenviar,
@@ -319,11 +449,19 @@ namespace Fel.Api.Tenant.Controllers
                 return BadRequest("Este acceso fue revocado; reactívalo antes de reenviar la invitación.");
             }
 
-            await _passwordResetService.RequestAsync(
+            var coreResult = await _passwordResetService.RequestAsync(
                 PortalUserType.Client, user.Id, user.Email, user.Name, _clientPortalUrl, "invitation", client.Tenant?.CoreTenantId,
                 client.Tenant?.LogoLightUrl, client.Tenant?.CommercialName);
 
-            return Ok(new { message = "Invitación reenviada." });
+            if (!coreResult.IsSuccess)
+            {
+                var detail = coreResult.IsNotConfigured
+                    ? "El servicio de correo no está configurado."
+                    : (coreResult.Error ?? "No se pudo enviar la invitación.");
+                return Ok(new { message = "No se pudo enviar el correo de invitación.", sent = false, detail });
+            }
+
+            return Ok(new { message = "Invitación reenviada.", sent = true, sentAt = DateTime.UtcNow });
         }
 
         [HttpPost("{id}/portal-user/revoke")]
@@ -500,6 +638,51 @@ namespace Fel.Api.Tenant.Controllers
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { Message = "Configuración de proveedor de documentos actualizada." });
+        }
+
+        // Consecutivo interno de Notas Crédito/Débito — separado del NextNumber de cualquier
+        // Resolution porque las notas no tienen rango autorizado propio ante la DIAN (ver
+        // ResolutionNumbering.ClaimNextCreditNoteNumberAsync/ClaimNextDebitNoteNumberAsync). Antes
+        // no había forma de verlo ni ajustarlo salvo por SQL directo.
+        [HttpGet("{id}/note-counters")]
+        public async Task<IActionResult> GetNoteCounters(Guid id)
+        {
+            var tenantId = GetCurrentTenantId();
+            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+            if (client == null) return NotFound();
+
+            return Ok(new
+            {
+                nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
+                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1
+            });
+        }
+
+        [HttpPut("{id}/note-counters")]
+        public async Task<IActionResult> UpdateNoteCounters(Guid id, [FromBody] UpdateNoteCountersRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+            if (client == null) return NotFound();
+
+            if (request.NextCreditNoteNumber.HasValue)
+            {
+                if (request.NextCreditNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Crédito debe ser mayor a 0.");
+                client.NextCreditNoteNumber = request.NextCreditNoteNumber.Value;
+            }
+            if (request.NextDebitNoteNumber.HasValue)
+            {
+                if (request.NextDebitNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Débito debe ser mayor a 0.");
+                client.NextDebitNoteNumber = request.NextDebitNoteNumber.Value;
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
+                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1
+            });
         }
 
         /// <summary>
@@ -715,6 +898,7 @@ namespace Fel.Api.Tenant.Controllers
     public class CreateClientRequest
     {
         public string CompanyName { get; set; } = string.Empty;
+        public string PersonType { get; set; } = "PJ";
         public string CommercialName { get; set; } = string.Empty;
         public string TaxId { get; set; } = string.Empty;
         public string VerificationDigit { get; set; } = string.Empty;
@@ -722,9 +906,28 @@ namespace Fel.Api.Tenant.Controllers
         public string Phone { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
         public string City { get; set; } = string.Empty;
+        public string? CityCode { get; set; }
+        public string? OrganizationDepartment { get; set; }
+        public string? OrganizationType { get; set; }
+        public string? LegalRepresentativeFirstName { get; set; }
+        public string? LegalRepresentativeOtherNames { get; set; }
+        public string? LegalRepresentativeFirstLastName { get; set; }
+        public string? LegalRepresentativeSecondLastName { get; set; }
+        public string? LegalRepresentativeDocumentType { get; set; }
+        public string? LegalRepresentativeDocumentNumber { get; set; }
+        public string? LegalRepresentativeDocumentCountryCode { get; set; }
+        public string? LegalRepresentativeEmail { get; set; }
+        public string? LegalRepresentativeRepresentationCode { get; set; }
+        public string? LegalRepresentativeOrganizationalArea { get; set; }
+        public DateTime? LegalRepresentativeStartDate { get; set; }
         public string TaxRegime { get; set; } = string.Empty;
         public string EconomicActivity { get; set; } = string.Empty;
+        public bool IsGranContribuyente { get; set; }
+        public bool IsAgenteRetenedorIva { get; set; }
+        public bool IsAutorretenedorRenta { get; set; }
         public Guid? AssociateId { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
     }
 
     public class UpdateDocumentProviderRequest
@@ -735,6 +938,12 @@ namespace Fel.Api.Tenant.Controllers
         public string? DataicoAuthToken { get; set; }
         public string? DataicoAccountId { get; set; }
         public string? DataicoEnvironment { get; set; }
+    }
+
+    public class UpdateNoteCountersRequest
+    {
+        public long? NextCreditNoteNumber { get; set; }
+        public long? NextDebitNoteNumber { get; set; }
     }
 
     public class UpdateMinSaludConfigRequest
@@ -761,7 +970,6 @@ namespace Fel.Api.Tenant.Controllers
     {
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
-        public string? Password { get; set; }
     }
 
     public class BulkInviteClientsRequest
@@ -773,6 +981,7 @@ namespace Fel.Api.Tenant.Controllers
     public class UpdateClientRequest
     {
         public string CompanyName { get; set; } = string.Empty;
+        public string PersonType { get; set; } = "PJ";
         public string CommercialName { get; set; } = string.Empty;
         public string TaxId { get; set; } = string.Empty;
         public string VerificationDigit { get; set; } = string.Empty;
@@ -780,8 +989,25 @@ namespace Fel.Api.Tenant.Controllers
         public string Phone { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
         public string City { get; set; } = string.Empty;
+        public string? CityCode { get; set; }
+        public string? OrganizationDepartment { get; set; }
+        public string? OrganizationType { get; set; }
+        public string? LegalRepresentativeFirstName { get; set; }
+        public string? LegalRepresentativeOtherNames { get; set; }
+        public string? LegalRepresentativeFirstLastName { get; set; }
+        public string? LegalRepresentativeSecondLastName { get; set; }
+        public string? LegalRepresentativeDocumentType { get; set; }
+        public string? LegalRepresentativeDocumentNumber { get; set; }
+        public string? LegalRepresentativeDocumentCountryCode { get; set; }
+        public string? LegalRepresentativeEmail { get; set; }
+        public string? LegalRepresentativeRepresentationCode { get; set; }
+        public string? LegalRepresentativeOrganizationalArea { get; set; }
+        public DateTime? LegalRepresentativeStartDate { get; set; }
         public string TaxRegime { get; set; } = string.Empty;
         public string EconomicActivity { get; set; } = string.Empty;
+        public bool IsGranContribuyente { get; set; }
+        public bool IsAgenteRetenedorIva { get; set; }
+        public bool IsAutorretenedorRenta { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
         public decimal SubscriptionRate { get; set; }

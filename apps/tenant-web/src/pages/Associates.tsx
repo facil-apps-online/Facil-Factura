@@ -78,14 +78,14 @@ export default function Associates() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-800">Asociados</h1>
-          <p className="text-slate-500 mt-2">Tus comerciales — asígnales los clientes que gestionan cada uno.</p>
+          <p className="text-slate-500 mt-2">Asigna clientes a las personas de tu equipo.</p>
         </div>
         <button
           onClick={() => handleOpenModal()}
           className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-medium shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-all"
         >
           <Plus size={20} />
-          <span>Nuevo Asociado</span>
+          <span>Nuevo miembro del equipo</span>
         </button>
       </div>
 
@@ -137,7 +137,7 @@ export default function Associates() {
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">{editingId ? 'Editar Asociado' : 'Nuevo Asociado'}</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">{editingId ? 'Editar miembro del equipo' : 'Nuevo miembro del equipo'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1">Nombre</label>

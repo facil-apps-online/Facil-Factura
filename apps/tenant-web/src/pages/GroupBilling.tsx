@@ -56,11 +56,11 @@ export default function GroupBilling() {
   if (!data.isGroup) {
     return (
       <div className="p-8">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Facturación de mi grupo</h1>
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">Facturación del grupo</h1>
         <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center mt-6">
           <Layers className="mx-auto mb-3 text-slate-300" size={40} />
-          <p className="text-slate-600 font-medium">Este tenant no tiene otros tenants asociados todavía.</p>
-          <p className="text-slate-400 text-sm mt-1">Cuando otro tenant se registre bajo tu grupo empresarial, aquí verás el consolidado de lo que se les ha emitido.</p>
+          <p className="text-slate-600 font-medium">Aún no hay otras cuentas asociadas.</p>
+          <p className="text-slate-400 text-sm mt-1">Cuando haya cuentas asociadas, aquí verás su facturación consolidada.</p>
         </div>
       </div>
     );
@@ -70,7 +70,7 @@ export default function GroupBilling() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Facturación de mi grupo</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Facturación del grupo</h1>
           <p className="text-slate-500 text-sm mt-1">Total emitido a tu tenant y a los tenants asociados a tu grupo empresarial.</p>
         </div>
         <select

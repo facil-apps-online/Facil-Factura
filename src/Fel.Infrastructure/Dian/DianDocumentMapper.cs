@@ -13,13 +13,22 @@ namespace Fel.Infrastructure.Dian
     // DIAN, pero el resto del mapeo (líneas, impuestos, resolución, terceros) es correcto ya.
     public static class DianDocumentMapper
     {
+        // Código DIAN (tabla 13.3.4.2 Medios de Pago) para pago a crédito sin instrumento fijo
+        // todavía definido — "ZZZ: Acuerdo mutuo". Fijo y no de catálogo: se usa siempre que la
+        // venta es a crédito, sin importar qué Medio de Pago quedó seleccionado en el documento
+        // (que solo aplica al de contado). Es el mismo criterio que ya usa Dataico
+        // (DataicoDocumentMapper.CreditoDefaultPaymentMeans = "MUTUAL_AGREEMENT").
+        private const string CreditoPaymentMeansCode = "ZZZ";
+
         public static UblInvoiceData BuildInvoiceData(
             Document document,
             Customer customer,
             IEnumerable<DocumentItem> items,
             Resolution resolution,
             Client client,
-            IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
+            IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
+            IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null,
+            DocumentType? documentType = null)
         {
             var itemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();
 
@@ -38,8 +47,15 @@ namespace Fel.Infrastructure.Dian
                 // "Production" es el único estado de habilitación que autoriza a facturar en el
                 // ambiente real de la DIAN; cualquier otro (incluida habilitación en curso) va a pruebas.
                 Environment = client.DianHabilitationStatus == "Production" ? "1" : "2",
-                DianCode = string.IsNullOrWhiteSpace(document.TypeCode) ? "01" : document.TypeCode,
-                OperationType = "10",
+                // DianCode/OperationType reales salen de DocumentType (Code="FE-STD"→DianCode="01",
+                // "NC"→"91", "ND"→"92", etc. — ya seedeados completos en FelDbContext). document.TypeCode
+                // NO es el código DIAN: es la plantilla de impresión (FE-STD, FE-QR-ARRIBA...) o el tipo
+                // de nota, nada más. Antes se mandaba "01" fijo aquí, así que una nota crédito/débito
+                // salía literalmente como factura — confirmado contra un envío real que la DIAN aceptó
+                // como factura en vez de nota. "01"/"10" quedan solo como último respaldo si el caller
+                // no tiene el DocumentType a mano.
+                DianCode = documentType?.DianCode ?? "01",
+                OperationType = documentType?.OperationType ?? "10",
                 ResolutionNumber = resolution.ResolutionNumber,
                 ResolutionValidFrom = resolution.ValidFrom,
                 ResolutionValidTo = resolution.ValidTo,
@@ -72,10 +88,47 @@ namespace Fel.Infrastructure.Dian
                 }
             };
 
+            // Grupo obligatorio (numeral 6.5.10, FAN01-05): antes no se llenaba en este mapper (el
+            // que arma el XML de facturas reales ya guardadas), a diferencia de BuildInvoiceDataFromRequest
+            // (B2B/set de pruebas), que sí lo poblaba desde el request. Sin esto la DIAN rechazaba con
+            // "Regla: ZB01, Rechazo: Fallo en el esquema XML del archivo" por faltar el grupo completo.
+            // El ID "1"/"2" es un código fijo del estándar UBL/DIAN (Contado/Crédito, siempre esos dos
+            // valores), no un dato de catálogo — igual que DianCode/OperationType/IdentificationCode
+            // más arriba en este mismo método.
+            //
+            // PaymentMeansCode: a crédito siempre "ZZZ" (fijo, ver comentario en la constante) — el
+            // Medio de Pago capturado en el documento no aplica ahí. De contado, el código real de
+            // la DIAN sale de paymentMeansDianCodes (catálogo Medio de Pago, columna DianCode),
+            // nunca del "Category" interno (ese es el vocabulario propio de Dataico, no un código
+            // DIAN válido — causaba el mismo ZB01 con un valor igual de inválido).
+            var paymentMeansCode = document.PaymentMeansType == "CREDITO"
+                ? CreditoPaymentMeansCode
+                : (paymentMeansDianCodes != null && document.PaymentMeans != null && paymentMeansDianCodes.TryGetValue(document.PaymentMeans, out var dianCode)
+                    ? dianCode
+                    : document.PaymentMeans ?? string.Empty);
+
+            data.PaymentMeans.Add(new PaymentMeansData
+            {
+                Id = document.PaymentMeansType == "CREDITO" ? "2" : "1",
+                PaymentMeansCode = paymentMeansCode,
+                PaymentDueDate = document.PaymentMeansType == "CREDITO" && document.PaymentTermDays.HasValue
+                    ? document.IssueDate.AddDays(document.PaymentTermDays.Value)
+                    : null
+            });
+
             // Agrupa las líneas por tarifa de IVA (mismo criterio que el desglose del resumen de
             // factura en el portal) para armar el TaxTotal del documento. Las retenciones no se
             // incluyen todavía: BaseUblStrategy no tiene un bloque WithholdingTaxTotal, así que por
             // ahora solo viajan con Dataico.
+            //
+            // Antes esto solo corría para Gravado con tarifa > 0, así que Exento/Excluido (tarifa 0)
+            // no generaban NINGÚN TaxSubtotal, ni a nivel de cabecera ni de línea. La DIAN rechazaba
+            // con "Regla: FAS01b, ... Debe existir un TaxTotal a nivel de la cabecera por cada tipo
+            // de impuesto que se informa a nivel de línea" y "Regla: FAU04, Base Imponible es
+            // distinto a la suma de los valores de las bases imponibles de todas líneas de detalle"
+            // — la base imponible (TaxableAmount) debe reportarse para toda línea, tenga o no IVA
+            // efectivo. Ahora se agrupa siempre, y cada línea también lleva su propio TaxSubtotal
+            // (ver BaseUblStrategy.BuildLine), con Percent=0 para Exento/Excluido.
             var taxGroups = new Dictionary<decimal, (decimal Base, decimal Amount)>();
             decimal lineExtension = 0;
 
@@ -89,15 +142,14 @@ namespace Fel.Infrastructure.Dian
                     ItemCode = item.Code,
                     Description = item.Name,
                     Quantity = item.Quantity,
+                    UnitCode = item.UnitOfMeasureCode,
                     UnitPrice = item.UnitPrice,
-                    LineExtensionAmount = lineBase
+                    LineExtensionAmount = lineBase,
+                    Taxes = { new TaxSubtotal { TaxId = "01", TaxableAmount = lineBase, TaxAmount = item.TaxAmount, Percent = item.TaxRate } }
                 });
 
-                if (item.IvaTreatment == IvaTreatment.Gravado && item.TaxRate > 0)
-                {
-                    var prev = taxGroups.TryGetValue(item.TaxRate, out var v) ? v : (Base: 0m, Amount: 0m);
-                    taxGroups[item.TaxRate] = (prev.Base + lineBase, prev.Amount + item.TaxAmount);
-                }
+                var prev = taxGroups.TryGetValue(item.TaxRate, out var v) ? v : (Base: 0m, Amount: 0m);
+                taxGroups[item.TaxRate] = (prev.Base + lineBase, prev.Amount + item.TaxAmount);
             }
 
             foreach (var (rate, (baseAmount, amount)) in taxGroups)
@@ -112,6 +164,52 @@ namespace Fel.Infrastructure.Dian
             data.PayableAmount = lineExtension + totalTax;
 
             return data;
+        }
+
+        // Nota Crédito/Débito reales del portal de cliente (a diferencia de BuildCreditNoteDataFromRequest,
+        // que arma todo desde un CreditNoteRequest del API B2B) — parte de un Document/DocumentItem ya
+        // persistidos más su documento original (ReferenceDocumentId ya resuelto por el caller, mismo
+        // patrón que InvoiceController.Resend). Reusa BuildInvoiceData para todo el cuerpo común (líneas,
+        // impuestos, terceros, medio de pago) y solo agrega lo propio de la nota: DiscrepancyResponse y
+        // la referencia a la factura original.
+        //
+        // discrepancyResponseCode/discrepancyDescription salen tal cual de Document — el frontend ya
+        // los captura de un catálogo real (TaxCatalogKind.CreditNoteReason/DebitNoteReason), no hace
+        // falta resolverlos de nuevo acá.
+        public static UblInvoiceData BuildCreditNoteData(
+            Document document,
+            Document originalDocument,
+            Customer customer,
+            IEnumerable<DocumentItem> items,
+            Resolution resolution,
+            Client client,
+            IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
+            DocumentType documentType,
+            IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null)
+        {
+            var data = BuildInvoiceData(document, customer, items, resolution, client, municipalitiesByCode, paymentMeansDianCodes, documentType);
+            data.DiscrepancyResponseCode = document.DiscrepancyResponseCode ?? string.Empty;
+            data.DiscrepancyDescription = document.ReferenceConcept;
+            data.BillingReferenceCufe = originalDocument.Cufe ?? string.Empty;
+            data.BillingReferenceDocumentNumber = originalDocument.Number;
+            data.BillingReferenceDate = originalDocument.IssueDate;
+            return data;
+        }
+
+        // Nota Débito real del portal de cliente — mismo mapeo que BuildCreditNoteData, DianCode/
+        // OperationType distintos ya vienen del DocumentType ("ND"→"92"/"30").
+        public static UblInvoiceData BuildDebitNoteData(
+            Document document,
+            Document originalDocument,
+            Customer customer,
+            IEnumerable<DocumentItem> items,
+            Resolution resolution,
+            Client client,
+            IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
+            DocumentType documentType,
+            IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null)
+        {
+            return BuildCreditNoteData(document, originalDocument, customer, items, resolution, client, municipalitiesByCode, documentType, paymentMeansDianCodes);
         }
 
         // Equivalente de BuildInvoiceData para el API B2B (Fel.Api.Integration): el caller externo ya

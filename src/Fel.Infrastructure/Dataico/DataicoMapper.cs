@@ -11,22 +11,34 @@ namespace Fel.Infrastructure.Dataico
     // porque Dataico no documenta un catálogo cerrado y equivocarlos afecta un documento legal.
     public static class DataicoMapper
     {
+        // Códigos cortos reales que acepta la API de Dataico para party_identification_type
+        // (confirmados contra el error 'Tiene que ser uno de estos valores: [CC CE IE NIT
+        // NIT_OTRO_PAIS NUIP PASAPORTE PEP PPT RC TE TI]' — los nombres largos tipo
+        // "CEDULA_DE_CIUDADANIA" que había antes no existen en el catálogo real de Dataico).
         private static readonly Dictionary<string, string> IdentificationTypeMap = new()
         {
-            ["11"] = "REGISTRO_CIVIL",
-            ["12"] = "TARJETA_DE_IDENTIDAD",
-            ["13"] = "CEDULA_DE_CIUDADANIA",
-            ["21"] = "TARJETA_DE_EXTRANJERIA",
-            ["22"] = "CEDULA_DE_EXTRANJERIA",
+            ["11"] = "RC",
+            ["12"] = "TI",
+            ["13"] = "CC",
+            ["21"] = "TE",
+            ["22"] = "CE",
             ["31"] = "NIT",
             ["41"] = "PASAPORTE",
-            ["42"] = "DOCUMENTO_DE_IDENTIFICACION_EXTRANJERO",
+            ["42"] = "IE",
             ["50"] = "NIT_OTRO_PAIS",
             ["91"] = "NUIP"
         };
 
-        public static string MapIdentificationType(string dianCode) =>
-            IdentificationTypeMap.TryGetValue(dianCode ?? string.Empty, out var mapped) ? mapped : (dianCode ?? string.Empty);
+        // overrides permite que el llamador use la equivalencia administrable desde el catálogo de
+        // Tipos de Identificación (IdentificationType.DataicoCode) en vez de esta tabla fija — por
+        // ejemplo si Dataico agrega PEP/PPT y el admin los captura ahí sin necesitar un despliegue.
+        public static string MapIdentificationType(string dianCode, IReadOnlyDictionary<string, string>? overrides = null)
+        {
+            if (overrides != null && overrides.TryGetValue(dianCode ?? string.Empty, out var overridden) && !string.IsNullOrWhiteSpace(overridden))
+                return overridden;
+
+            return IdentificationTypeMap.TryGetValue(dianCode ?? string.Empty, out var mapped) ? mapped : (dianCode ?? string.Empty);
+        }
 
         public static string MapPartyType(string dianIdentificationTypeCode) =>
             dianIdentificationTypeCode == "31" ? "PERSONA_JURIDICA" : "PERSONA_NATURAL";
@@ -43,7 +55,7 @@ namespace Fel.Infrastructure.Dataico
             return (cityCode.Substring(0, 2), cityCode.Substring(2));
         }
 
-        public static DataicoParty ToDataicoParty(Customer customer)
+        public static DataicoParty ToDataicoParty(Customer customer, IReadOnlyDictionary<string, string>? identificationTypeOverrides = null)
         {
             var (department, city) = SplitCityCode(customer.CityCode);
             var isJuridica = customer.IdentificationType == "31";
@@ -63,7 +75,7 @@ namespace Fel.Infrastructure.Dataico
             {
                 email = customer.Email,
                 phone = customer.Phone,
-                party_identification_type = MapIdentificationType(customer.IdentificationType),
+                party_identification_type = MapIdentificationType(customer.IdentificationType, identificationTypeOverrides),
                 party_identification = customer.IdentificationNumber,
                 party_type = MapPartyType(customer.IdentificationType),
                 tax_level_code = customer.DataicoTaxLevelCode,

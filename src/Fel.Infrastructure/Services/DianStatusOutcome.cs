@@ -13,7 +13,7 @@ namespace Fel.Infrastructure.Services
     // documentos fueron recibidos correctamente por la DIAN y rechazados todos con la regla ZE02.
     // Contarlos como "enviados exitosamente" habria agotado el presupuesto de intentos sin que
     // ninguno contara para el set de pruebas.
-    public class DianTestSetOutcome
+    public class DianStatusOutcome
     {
         // true solo si la DIAN acepto el documento (<b:IsValid>true</b:IsValid>).
         public bool Accepted { get; init; }
@@ -32,13 +32,13 @@ namespace Fel.Infrastructure.Services
                 ? StatusDescription
                 : string.Join(" | ", Rules.Where(r => r.Contains("Rechazo", StringComparison.OrdinalIgnoreCase)));
 
-        public static DianTestSetOutcome Pending() =>
+        public static DianStatusOutcome Pending() =>
             new() { Accepted = false, Resolved = false, StatusDescription = "La DIAN aún está validando el documento." };
 
         // Parsea la respuesta SOAP cruda de GetStatusZip. Se hace con XDocument y no con string
         // matching porque la respuesta trae namespaces y anidamiento reales, y un cambio menor de
         // formato del lado de la DIAN no deberia darnos un falso "aceptado".
-        public static DianTestSetOutcome FromGetStatusZipResponse(string soapResponse)
+        public static DianStatusOutcome FromGetStatusZipResponse(string soapResponse)
         {
             if (string.IsNullOrWhiteSpace(soapResponse))
                 return Pending();
@@ -50,7 +50,7 @@ namespace Fel.Infrastructure.Services
             }
             catch (System.Xml.XmlException)
             {
-                return new DianTestSetOutcome
+                return new DianStatusOutcome
                 {
                     Accepted = false,
                     StatusDescription = "La respuesta de la DIAN no es XML válido."
@@ -75,7 +75,7 @@ namespace Fel.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(isValidRaw))
                 return Pending();
 
-            return new DianTestSetOutcome
+            return new DianStatusOutcome
             {
                 Accepted = bool.TryParse(isValidRaw, out var ok) && ok,
                 Resolved = true,

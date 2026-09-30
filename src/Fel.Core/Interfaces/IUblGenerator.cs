@@ -9,6 +9,14 @@ namespace Fel.Core.Interfaces
         // el XML generado.
         string CalculateCufe(Models.UblInvoiceData data);
 
+        // Contenido completo del código QR de la representación gráfica impresa (Anexo Técnico
+        // v1.9, numeral 11: NumFac/FecFac/HorFac/NitFac/DocAdq/ValFac/ValIva/ValOtroIm/ValTolFac/
+        // CUFE/QRCode=<url>) — NO es lo mismo que el <sts:QRCode> del XML (solo la URL, numeral
+        // 11.7.1, ver BaseUblStrategy). Cuando se emite vía Dataico, ellos ya lo devuelven armado;
+        // esto es para cuando se emite directo a la DIAN con certificado propio, donde nadie más lo
+        // arma.
+        string BuildGraphicQrContent(Models.UblInvoiceData data, string cufe);
+
         // Documento Equivalente Electrónico (Resolución 000165 de 2023, Anexo Técnico v1.0 — ver
         // docs/dian-doc-equivalente/) reusa el mismo XML de Invoice pero con una fórmula de CUFE/CUDE
         // propia (sin el término de total de impuestos, y con el Software-PIN en vez de la Clave

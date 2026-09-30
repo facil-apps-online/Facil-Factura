@@ -46,15 +46,26 @@ namespace Fel.Api.Client.Controllers
                 if (client == null)
                     return NotFound(new { Message = "Client not found" });
 
-                // Branding efectivo: lo del cliente, con fallback al tenant que lo provee
+                // La interfaz del portal de clientes es marca blanca del Tenant, no del cliente: el
+                // cliente no tiene esquema de colores propio ni logo de portal — logo/nombre/color
+                // de acá vienen siempre del Tenant, sin fallback al cliente (antes sí se le daba
+                // prioridad al logo/color del cliente si los había cargado, lo cual pisaba la marca
+                // del Tenant en su propio portal blanco). El logo que el cliente carga en "Tu
+                // Identidad Visual" sigue existiendo, pero solo para InvoiceLogoUrl (la factura),
+                // nunca para esta interfaz.
                 var branding = new
                 {
-                    CompanyName = client.CommercialName,
-                    LogoLightUrl = !string.IsNullOrWhiteSpace(client.LogoLightUrl) ? client.LogoLightUrl : client.Tenant.LogoLightUrl,
-                    LogoDarkUrl = !string.IsNullOrWhiteSpace(client.LogoDarkUrl) ? client.LogoDarkUrl : client.Tenant.LogoDarkUrl,
-                    PrimaryColorLight = !string.IsNullOrWhiteSpace(client.PrimaryColorLight) ? client.PrimaryColorLight : client.Tenant.PrimaryColorLight,
-                    PrimaryColorDark = !string.IsNullOrWhiteSpace(client.PrimaryColorDark) ? client.PrimaryColorDark : client.Tenant.PrimaryColorDark,
-                    HasCustomLogo = !string.IsNullOrWhiteSpace(client.LogoLightUrl)
+                    CompanyName = client.Tenant.CommercialName,
+                    LogoLightUrl = client.Tenant.LogoLightUrl,
+                    LogoDarkUrl = client.Tenant.LogoDarkUrl,
+                    PrimaryColorLight = client.Tenant.PrimaryColorLight,
+                    PrimaryColorDark = client.Tenant.PrimaryColorDark,
+                    InvoiceLogoUrl = client.LogoLightUrl,
+                    HasCustomLogo = !string.IsNullOrWhiteSpace(client.LogoLightUrl),
+                    // Para el header del portal: identifica al Client (no al Tenant, que ya
+                    // aparece en el sidebar) cuando no tiene logo propio cargado.
+                    ClientName = string.IsNullOrWhiteSpace(client.CommercialName) ? client.CompanyName : client.CommercialName,
+                    UnitOfMeasureDisplayOverride = client.UnitOfMeasureDisplayOverride
                 };
 
                 return Ok(branding);
@@ -102,6 +113,8 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // El cliente ya no tiene esquema de colores propio (ver comentario en GetMyBranding) — este
+        // endpoint solo actualiza el logo que usan sus facturas, no hay campo de color que aceptar.
         [HttpPut("my-branding")]
         public async Task<IActionResult> UpdateMyBranding([FromBody] UpdateClientBrandingRequest request)
         {
@@ -115,8 +128,10 @@ namespace Fel.Api.Client.Controllers
 
                 client.LogoLightUrl = request.LogoLightUrl ?? client.LogoLightUrl;
                 client.LogoDarkUrl = request.LogoDarkUrl ?? client.LogoDarkUrl;
-                client.PrimaryColorLight = request.PrimaryColorLight ?? client.PrimaryColorLight;
-                client.PrimaryColorDark = request.PrimaryColorDark ?? client.PrimaryColorDark;
+                // "" = usar el default del catálogo (limpia el override); con valor, lo fuerza.
+                client.UnitOfMeasureDisplayOverride = string.IsNullOrEmpty(request.UnitOfMeasureDisplayOverride)
+                    ? null
+                    : request.UnitOfMeasureDisplayOverride;
 
                 await _dbContext.SaveChangesAsync();
                 return Ok(new { Message = "Branding actualizado correctamente." });
@@ -132,7 +147,6 @@ namespace Fel.Api.Client.Controllers
     {
         public string? LogoLightUrl { get; set; }
         public string? LogoDarkUrl { get; set; }
-        public string? PrimaryColorLight { get; set; }
-        public string? PrimaryColorDark { get; set; }
+        public string? UnitOfMeasureDisplayOverride { get; set; }
     }
 }

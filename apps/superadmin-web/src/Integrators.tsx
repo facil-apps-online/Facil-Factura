@@ -167,7 +167,7 @@ export const Integrators = () => {
             <h2 className="text-2xl font-bold text-white mb-6">{editing ? 'Editar Integrador' : 'Nuevo Integrador'}</h2>
             <form onSubmit={handleSave} className="space-y-5">
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Código (único, sin espacios)</label>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Código</label>
                 <input
                   type="text"
                   required
@@ -177,7 +177,7 @@ export const Integrators = () => {
                   onChange={e => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
                   placeholder="Ej: FACTUS"
                 />
-                {editing && <p className="text-xs text-slate-500 mt-1">El código no se puede cambiar una vez creado.</p>}
+                {editing && <p className="text-xs text-slate-500 mt-1">El código no se puede cambiar después de crear el integrador.</p>}
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-300 mb-2">Nombre</label>
@@ -208,8 +208,8 @@ export const Integrators = () => {
                   value={formData.kind}
                   onChange={e => setFormData({ ...formData, kind: parseInt(e.target.value) })}
                 >
-                  <option value={0}>Directo DIAN (el Client factura con su propio SoftwareId)</option>
-                  <option value={1}>Integrador Externo (tramita en nombre del Client, ej. Dataico)</option>
+                  <option value={0}>Directo a la DIAN</option>
+                  <option value={1}>Proveedor externo</option>
                 </select>
               </div>
               <div className="flex gap-4 pt-4">

@@ -25,6 +25,12 @@ COPY src/ src/
 RUN dotnet tool install --global dotnet-ef --version 9.*
 ENV PATH="${PATH}:/root/.dotnet/tools"
 
+# FelDbContextDesignTimeFactory exige esta variable para poder construir el DbContext
+# en tiempo de diseño (no se usa para conectarse de verdad, solo para configurar el
+# proveedor SQL Server al armar el bundle de migraciones).
+ARG FEL_DESIGNTIME_CONNECTION
+ENV FEL_DESIGNTIME_CONNECTION=$FEL_DESIGNTIME_CONNECTION
+
 RUN dotnet ef migrations bundle \
       --project src/Fel.Infrastructure/Fel.Infrastructure.csproj \
       --startup-project src/Fel.Api.Superadmin/Fel.Api.Superadmin.csproj \

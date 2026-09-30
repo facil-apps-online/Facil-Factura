@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, Save, FileText, Upload, Globe, User, GitBranch } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Copy, Save, FileText, Upload, Globe, User, GitBranch, Pencil, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 
@@ -20,6 +21,25 @@ export default function DocumentTemplates() {
   const [cloneData, setCloneData] = useState({ newName: '', newRepxTemplateKey: '' });
   const [showVersionModal, setShowVersionModal] = useState<string | null>(null);
   const [versionKey, setVersionKey] = useState('');
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+
+  const handlePreview = async (id: string) => {
+    setPreviewingId(id);
+    try {
+      const res = await api.post(`/tenant/templates/${id}/preview`, {}, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      window.open(url, '_blank');
+    } catch (err: any) {
+      if (err.response?.data instanceof Blob) {
+        const text = await err.response.data.text();
+        toast.error(text || 'Error al generar la vista previa');
+      } else {
+        toast.error(err.response?.data || 'Error al generar la vista previa');
+      }
+    } finally {
+      setPreviewingId(null);
+    }
+  };
 
   const loadTemplates = () => {
     api.get<DocumentTemplate[]>('/tenant/templates')
@@ -87,7 +107,7 @@ export default function DocumentTemplates() {
             <FileText className="w-8 h-8 text-primary" />
             Diseños y Plantillas
           </h1>
-          <p className="text-slate-500 mt-2 text-base font-medium">Visualiza los diseños globales o clónalos para personalizarlos para tus clientes.</p>
+          <p className="text-slate-500 mt-2 text-base font-medium">Elige un diseño o crea una copia para personalizarla.</p>
         </div>
       </div>
 
@@ -134,6 +154,14 @@ export default function DocumentTemplates() {
                   {getStatusBadge(tpl.status)}
                 </td>
                 <td className="px-6 py-4 text-right space-x-2">
+                  <button
+                    onClick={() => handlePreview(tpl.id)}
+                    disabled={previewingId === tpl.id}
+                    className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all shadow-sm inline-flex items-center disabled:opacity-50"
+                  >
+                    {previewingId === tpl.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Eye className="w-4 h-4 mr-2" />}
+                    Vista Previa
+                  </button>
                   {tpl.isGlobal && tpl.status === 'Published' && (
                     <button 
                       onClick={() => {
@@ -147,6 +175,15 @@ export default function DocumentTemplates() {
                     </button>
                   )}
                   
+                  {!tpl.isGlobal && tpl.status === 'Draft' && (
+                    <Link
+                      to={`/templates/editor?key=${encodeURIComponent(tpl.repxTemplateKey)}`}
+                      className="px-4 py-2 text-sm font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all shadow-sm inline-flex items-center"
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Editar
+                    </Link>
+                  )}
                   {!tpl.isGlobal && tpl.status === 'Draft' && (
                     <button
                       onClick={() => handlePublish(tpl.id)}
@@ -197,7 +234,7 @@ export default function DocumentTemplates() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Llave REPX (Motor DevExpress)</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Identificador de plantilla</label>
                 <input 
                   type="text" 
                   required 
@@ -227,10 +264,10 @@ export default function DocumentTemplates() {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200">
             <h2 className="text-2xl font-bold text-slate-800 mb-2">Nueva Versión</h2>
-            <p className="text-slate-500 mb-6 text-sm">Se creará un borrador de la siguiente versión. Tu plantilla publicada actual no se ve afectada hasta que publiques esta nueva versión.</p>
+            <p className="text-slate-500 mb-6 text-sm">Se creará un borrador; la versión publicada seguirá activa hasta que publiques la nueva.</p>
             <form onSubmit={handleNewVersion} className="space-y-5">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Nueva Llave REPX (Motor DevExpress)</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nuevo identificador de plantilla</label>
                 <input
                   type="text"
                   required

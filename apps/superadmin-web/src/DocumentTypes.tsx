@@ -59,7 +59,7 @@ export const DocumentTypes = () => {
             <Server className="w-8 h-8 text-indigo-400" />
             Configuración del Core
           </h1>
-          <p className="text-slate-400 mt-2 text-lg font-medium">Gestiona los tipos de documentos DIAN permitidos en el sistema.</p>
+          <p className="text-slate-400 mt-2 text-lg font-medium">Administra los tipos de documento disponibles.</p>
         </div>
         <button 
           onClick={() => setShowModal(true)}
@@ -133,7 +133,7 @@ export const DocumentTypes = () => {
             <h2 className="text-2xl font-bold text-white mb-6">Nuevo Tipo de Documento</h2>
             <form onSubmit={handleCreate} className="space-y-5">
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Código (Ej. FE, NC, DS)</label>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Código (ej. FE, NC, DS)</label>
                 <input 
                   type="text" 
                   required 
@@ -144,7 +144,7 @@ export const DocumentTypes = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Nombre Descriptivo</label>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Nombre del documento</label>
                 <input 
                   type="text" 
                   required 

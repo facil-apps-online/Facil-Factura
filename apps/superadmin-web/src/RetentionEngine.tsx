@@ -240,7 +240,7 @@ export const RetentionEngine = () => {
             <form onSubmit={handleCreateConcept} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-slate-300 mb-2">GroupKey (código interno)</label>
+                  <label className="block text-sm font-bold text-slate-300 mb-2">Código interno</label>
                   <input type="text" required className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono placeholder:text-slate-500" value={conceptForm.groupKey} onChange={e => setConceptForm({ ...conceptForm, groupKey: e.target.value.toUpperCase() })} placeholder="COMPRAS_GENERALES" />
                 </div>
                 <div>
@@ -253,7 +253,7 @@ export const RetentionEngine = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Rótulo genérico (selector del producto)</label>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Nombre visible</label>
                 <input type="text" required className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500" value={conceptForm.groupLabel} onChange={e => setConceptForm({ ...conceptForm, groupLabel: e.target.value })} placeholder="Compras generales" />
               </div>
               <div>
@@ -262,14 +262,14 @@ export const RetentionEngine = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-slate-300 mb-2">Categoría (Dataico)</label>
+                  <label className="block text-sm font-bold text-slate-300 mb-2">Categoría</label>
                   <select className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={conceptForm.taxCategory} onChange={e => setConceptForm({ ...conceptForm, taxCategory: e.target.value })}>
                     <option value="RET_FUENTE">RET_FUENTE</option>
                     <option value="RET_IVA">RET_IVA</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-300 mb-2">Se calcula sobre</label>
+                  <label className="block text-sm font-bold text-slate-300 mb-2">Base de cálculo</label>
                   <select className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={conceptForm.baseType} onChange={e => setConceptForm({ ...conceptForm, baseType: e.target.value })}>
                     <option value="Subtotal">{BASE_TYPE_LABELS.Subtotal}</option>
                     <option value="IvaGenerado">{BASE_TYPE_LABELS.IvaGenerado}</option>
@@ -305,7 +305,7 @@ export const RetentionEngine = () => {
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-md animate-in zoom-in-95 duration-200 border-slate-700">
             <h2 className="text-2xl font-bold text-white mb-6">Nueva Vigencia de Parámetro</h2>
-            <p className="text-sm text-slate-400 mb-4">Ej. cuando el gobierno actualiza el UVT: agrega una fila nueva con el valor y la fecha desde la que aplica, en vez de editar la anterior — así las facturas ya emitidas siguen calculando con el valor que tenían vigente.</p>
+            <p className="text-sm text-slate-400 mb-4">Crea una nueva vigencia cuando cambie el valor. Así se conservan los cálculos de documentos anteriores.</p>
             <form onSubmit={handleCreateParameter} className="space-y-5">
               <div>
                 <label className="block text-sm font-bold text-slate-300 mb-2">Código</label>

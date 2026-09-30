@@ -25,9 +25,12 @@
     /* Shadcn Paths */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      /* Codigo compartido entre portales: vive en apps/_shared y se resuelve igual que en
+         vite.config.ts, para que tsc y el bundler vean la misma ruta. */
+      "@shared/*": ["./_shared/*", "../_shared/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "./_shared", "../_shared"]
 }
 

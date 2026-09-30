@@ -22,7 +22,37 @@ namespace Fel.Infrastructure.Dataico
         private static string Qty(decimal value) => value.ToString("0.##", Co);
         private static string Pct(decimal value) => value.ToString("0.##", Co) + "%";
 
-        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items)
+        // Ver el comentario equivalente en InvoiceReportDataMapper: client.TaxRegime guarda el
+        // código crudo (48/49), la representación gráfica necesita la etiqueta legible.
+        private static readonly Dictionary<string, string> CalidadTributariaLabels = new()
+        {
+            ["48"] = "Responsable de IVA",
+            ["49"] = "No responsable de IVA"
+        };
+
+        private static string CalidadTributaria(string? code) =>
+            code != null && CalidadTributariaLabels.TryGetValue(code, out var label) ? label : code ?? string.Empty;
+
+        // Ver el comentario equivalente en InvoiceReportDataMapper: ambos catálogos (Kind=FormaPago
+        // y Kind=PaymentMeans) los resuelve el llamador desde TaxCatalogItem, no se duplican acá.
+        private static string CatalogLabel(string? category, IReadOnlyDictionary<string, string>? catalog) =>
+            !string.IsNullOrEmpty(category) && catalog != null && catalog.TryGetValue(category, out var label) ? label : category ?? string.Empty;
+
+        // Ver el comentario equivalente en InvoiceReportDataMapper.
+        private static string FormatUnidad(DocumentItem item, Client client)
+        {
+            var format = client.UnitOfMeasureDisplayOverride ?? item.UnitOfMeasureDisplayFormat;
+            return format switch
+            {
+                "CodeOnly" => item.UnitOfMeasureCode,
+                "AbbreviationOnly" => item.UnitOfMeasureAbbreviation,
+                _ => item.UnitOfMeasureCode == item.UnitOfMeasureAbbreviation
+                    ? item.UnitOfMeasureCode
+                    : $"{item.UnitOfMeasureCode} - {item.UnitOfMeasureAbbreviation}"
+            };
+        }
+
+        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null)
         {
             var esIntegradorExterno = client.Integrator.Kind == IntegratorKind.ThirdPartyIntegrator;
             var esAjuste = document.TypeCode == "DS-AJUSTE";
@@ -38,7 +68,7 @@ namespace Fel.Infrastructure.Dataico
                 ["EmisorCiudad"] = client.City,
                 ["EmisorTelefono"] = client.Phone,
                 ["EmisorEmail"] = client.Email,
-                ["EmisorCalidadTributaria"] = client.TaxRegime,
+                ["EmisorCalidadTributaria"] = CalidadTributaria(client.TaxRegime),
 
                 ["ProveedorNombre"] = proveedor?.Name,
                 ["ProveedorTipoIdentificacion"] = proveedor?.IdentificationType,
@@ -55,8 +85,9 @@ namespace Fel.Infrastructure.Dataico
                     $" · Vigente hasta {resolution.ValidTo:dd/MM/yyyy}",
                 ["FechaGeneracion"] = document.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
                 ["Cufe"] = document.Cufe,
-                ["MedioPago"] = document.PaymentMeans,
-                ["FormaPago"] = document.PaymentMeansType,
+                ["QrCode"] = document.QrCode ?? document.Cufe,
+                ["MedioPago"] = CatalogLabel(document.PaymentMeans, paymentMeansCatalog),
+                ["FormaPago"] = CatalogLabel(document.PaymentMeansType, formaPagoCatalog),
                 ["OrdenCompra"] = document.PurchaseOrderReference,
                 ["ReferenciaAjuste"] = esAjuste ? document.ReferenceConcept : null,
                 ["Notas"] = document.Notes,
@@ -78,7 +109,7 @@ namespace Fel.Infrastructure.Dataico
                     ["Codigo"] = i.Code,
                     ["Nombre"] = i.Name,
                     ["Cantidad"] = Qty(i.Quantity),
-                    ["Unidad"] = "Unidad",
+                    ["Unidad"] = FormatUnidad(i, client),
                     ["ValorUnitario"] = Money(i.UnitPrice),
                     ["PorcentajeIva"] = Pct(i.TaxRate),
                     ["ValorIva"] = Money(i.TaxAmount),

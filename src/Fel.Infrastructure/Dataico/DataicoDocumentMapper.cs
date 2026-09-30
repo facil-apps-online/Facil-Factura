@@ -8,6 +8,17 @@ namespace Fel.Infrastructure.Dataico
 {
     public static class DataicoDocumentMapper
     {
+        // Dataico exige payment_means incluso en CREDITO, aunque el formulario nunca lo captura ahí
+        // (solo pide plazo de pago). "MUTUAL_AGREEMENT" ("Acuerdo Mutuo") es la categoría que el
+        // cliente definió en el catálogo de medios de pago para representar ese caso. Se fuerza
+        // siempre (no solo cuando viene vacío): un documento que empezó como Contado y se cambió a
+        // Crédito puede traer pegado un medio de pago viejo (ej. "EFECTIVO") que Dataico rechaza
+        // como inválido para una transacción a crédito.
+        private const string CreditoDefaultPaymentMeans = "MUTUAL_AGREEMENT";
+
+        private static string ResolvePaymentMeans(string paymentMeans, string paymentMeansType) =>
+            paymentMeansType == "CREDITO" ? CreditoDefaultPaymentMeans : paymentMeans;
+
         // Gravado: se envía el IVA con su tarifa. Exento: se envía el IVA en tarifa 0.
         // Excluido: no se envía impuesto de IVA para el ítem (confirmado contra ejemplos reales de Dataico).
         private static DataicoTax? BuildIvaTax(IvaTreatment treatment, decimal rate) => treatment switch
@@ -26,12 +37,10 @@ namespace Fel.Infrastructure.Dataico
 
         // Retenciones definidas una sola vez para todo el documento (ReteICA, ReteIVA, u otras —
         // lista libre de agregar/quitar, no solo esas dos) en vez de por línea, pero Dataico exige
-        // las retenciones por ítem en su API. Se reparte (prorratea) cada monto global entre los
-        // ítems según su peso en la base correspondiente — RET_IVA se prorratea sobre el IVA
-        // generado de cada línea (es una retención sobre el impuesto, no sobre la venta); cualquier
-        // otra categoría se prorratea sobre la base gravable (subtotal) de cada línea — y el último
-        // ítem con peso > 0 absorbe el ajuste de redondeo para que la suma prorrateada cuadre exacto
-        // con el monto global calculado sobre el documento completo.
+        // las retenciones por ítem en su API. Se reparte cada una entre los ítems según su peso en
+        // la base correspondiente — RET_IVA sobre el IVA generado de cada línea (es una retención
+        // sobre el impuesto, no sobre la venta); cualquier otra categoría sobre la base gravable
+        // (subtotal) de cada línea.
         private static Dictionary<Guid, List<DataicoTax>> BuildGeneralRetentionsPerItem(Document document, IReadOnlyList<DocumentItem> items)
         {
             var result = items.ToDictionary(i => i.Id, i => new List<DataicoTax>());
@@ -43,52 +52,52 @@ namespace Fel.Infrastructure.Dataico
             {
                 if (generalRetention.TaxCategory == "RET_IVA")
                 {
-                    AddProrated(result, items, generalRetention.TaxCategory, generalRetention.Rate, i => i.TaxAmount, document.TaxAmount);
+                    AddProrated(result, items, generalRetention.TaxCategory, generalRetention.Rate, i => i.TaxAmount);
                 }
                 else
                 {
-                    AddProrated(result, items, generalRetention.TaxCategory, generalRetention.Rate, LineBase, document.Subtotal);
+                    AddProrated(result, items, generalRetention.TaxCategory, generalRetention.Rate, LineBase);
                 }
             }
 
             return result;
         }
 
+        // Trunca (no redondea) a 2 decimales — confirmado contra un rechazo real de la DIAN: 116250
+        // * 0.414% da exactamente 481.275 (punto medio exacto entre 481.27 y 481.28), y Math.Round
+        // sin modo explícito usa redondeo bancario ("al par más cercano"), que ahí da 481.28. La
+        // DIAN exige 481.27 — trunca, no redondea al par. Usar rate <= 0 || truncado <= 0 evita que
+        // una tarifa/base positiva pero menor a un centavo caiga en 0 silenciosamente sin más razón
+        // que el truncado.
+        private static decimal Truncate2(decimal value) => Math.Truncate(value * 100) / 100;
+
+        // Cada ítem calcula su propio tax_amount directamente sobre su propio base_amount, ambos ya
+        // truncados a 2 decimales antes de multiplicar — no se reparte un monto global prorrateado
+        // (eso hacía que tax_rate * base_amount no cuadrara exacto con el tax_amount enviado, y
+        // Dataico rechaza el documento por esa inconsistencia). La pequeña diferencia de centavos
+        // que esto puede dejar entre la suma por ítem y el monto global calculado sobre el
+        // documento completo es aceptada por Dataico porque valida cada línea de retención por
+        // separado, no el total.
         private static void AddProrated(
             Dictionary<Guid, List<DataicoTax>> result,
             IReadOnlyList<DocumentItem> items,
             string category,
             decimal rate,
-            Func<DocumentItem, decimal> weightOf,
-            decimal totalWeight)
+            Func<DocumentItem, decimal> weightOf)
         {
-            if (string.IsNullOrWhiteSpace(category) || rate <= 0 || totalWeight <= 0) return;
+            if (string.IsNullOrWhiteSpace(category) || rate <= 0) return;
 
-            var totalAmount = Math.Round(totalWeight * rate / 100, 2);
-            var weights = items.Select(weightOf).ToList();
-            var lastIndexWithWeight = -1;
-            for (var i = 0; i < items.Count; i++)
+            foreach (var item in items)
             {
-                if (weights[i] > 0) lastIndexWithWeight = i;
-            }
-            if (lastIndexWithWeight < 0) return;
+                var baseAmount = Truncate2(weightOf(item));
+                if (baseAmount <= 0) continue;
 
-            decimal assigned = 0;
-            for (var i = 0; i < items.Count; i++)
-            {
-                if (weights[i] <= 0) continue;
-
-                var itemAmount = i == lastIndexWithWeight
-                    ? totalAmount - assigned
-                    : Math.Round(totalAmount * weights[i] / totalWeight, 2);
-                if (i != lastIndexWithWeight) assigned += itemAmount;
-
-                result[items[i].Id].Add(new DataicoTax
+                result[item.Id].Add(new DataicoTax
                 {
                     tax_category = category,
                     tax_rate = rate,
-                    base_amount = weights[i],
-                    tax_amount = itemAmount
+                    base_amount = baseAmount,
+                    tax_amount = Truncate2(baseAmount * rate / 100)
                 });
             }
         }
@@ -143,7 +152,8 @@ namespace Fel.Infrastructure.Dataico
             Resolution resolution,
             Client client,
             string paymentMeans,
-            string paymentMeansType)
+            string paymentMeansType,
+            IReadOnlyDictionary<string, string>? identificationTypeOverrides = null)
         {
             var request = new DataicoInvoiceRequest
             {
@@ -153,7 +163,7 @@ namespace Fel.Infrastructure.Dataico
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
                 payment_date = BuildPaymentDate(document),
                 order_reference = document.PurchaseOrderReference,
-                payment_means = paymentMeans,
+                payment_means = ResolvePaymentMeans(paymentMeans, paymentMeansType),
                 payment_means_type = paymentMeansType,
                 numbering = new DataicoNumbering
                 {
@@ -161,7 +171,7 @@ namespace Fel.Infrastructure.Dataico
                     resolution_number = resolution.ResolutionNumber,
                     flexible = true
                 },
-                customer = DataicoMapper.ToDataicoParty(customer),
+                customer = DataicoMapper.ToDataicoParty(customer, identificationTypeOverrides),
                 charges = BuildCharges(document)
             };
 
@@ -192,19 +202,23 @@ namespace Fel.Infrastructure.Dataico
             return request;
         }
 
-        // Catálogo cerrado de Dataico confirmado con ejemplos reales (DEVOLUCION, ANULACION,
-        // OTROS); el motivo que captura el portal es texto libre, así que se mapea por
-        // coincidencia de palabra clave y cualquier caso no reconocido cae en OTROS.
-        private static string MapReasonToDataico(string? referenceConcept)
+        // Catálogo de Dataico (DEVOLUCION/ANULACION/OTROS para nota crédito; para nota débito nunca
+        // se confirmó contra un ejemplo real) mapeado desde el código DIAN real de la nota
+        // (TaxCatalogKind.CreditNoteReason/DebitNoteReason, columna DianCode) — antes se adivinaba
+        // buscando "DEVOLU"/"ANULA" como substring del texto libre del portal, lo que fallaba para
+        // cualquier motivo redactado distinto (ej. "Rebaja" o "Ajuste de precio" caían siempre en
+        // OTROS aunque el usuario hubiera elegido otro motivo).
+        private static string MapReasonToDataico(string? discrepancyResponseCode, IReadOnlyDictionary<string, string>? reasonDianCodes)
         {
-            var text = (referenceConcept ?? string.Empty).ToUpperInvariant();
-            if (text.Contains("DEVOLU")) return "DEVOLUCION";
-            if (text.Contains("ANULA")) return "ANULACION";
+            if (!string.IsNullOrWhiteSpace(discrepancyResponseCode) && reasonDianCodes != null
+                && reasonDianCodes.TryGetValue(discrepancyResponseCode, out var reason))
+                return reason;
             return "OTROS";
         }
 
         public static DataicoCreditNoteRequest BuildCreditNoteRequest(
-            Document document, Resolution resolution, Client client, string originalInvoiceDataicoId, IEnumerable<DocumentItem> items)
+            Document document, Resolution resolution, Client client, string originalInvoiceDataicoId, IEnumerable<DocumentItem> items,
+            IReadOnlyDictionary<string, string>? reasonDianCodes = null)
         {
             var request = new DataicoCreditNoteRequest
             {
@@ -212,9 +226,12 @@ namespace Fel.Infrastructure.Dataico
                 dataico_account_id = string.IsNullOrEmpty(client.DataicoAccountId) ? null : client.DataicoAccountId,
                 invoice_id = originalInvoiceDataicoId,
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
-                reason = MapReasonToDataico(document.ReferenceConcept),
+                reason = MapReasonToDataico(document.DiscrepancyResponseCode, reasonDianCodes),
                 number = document.Number,
-                numbering = new DataicoNumbering { prefix = resolution.Prefix, resolution_number = resolution.ResolutionNumber, flexible = true },
+                // Dataico no maneja numeración registrada para notas: a diferencia de las facturas,
+                // acá solo se envía el prefijo (confirmado contra la integración de escritorio ya en
+                // producción, que nunca incluye resolution_number para notas).
+                numbering = new DataicoNumbering { prefix = resolution.Prefix, flexible = true },
                 charges = BuildCharges(document)
             };
 
@@ -243,7 +260,8 @@ namespace Fel.Infrastructure.Dataico
         }
 
         public static DataicoDebitNoteRequest BuildDebitNoteRequest(
-            Document document, Resolution resolution, Client client, string originalInvoiceDataicoId, IEnumerable<DocumentItem> items)
+            Document document, Resolution resolution, Client client, string originalInvoiceDataicoId, IEnumerable<DocumentItem> items,
+            IReadOnlyDictionary<string, string>? reasonDianCodes = null)
         {
             var request = new DataicoDebitNoteRequest
             {
@@ -251,9 +269,11 @@ namespace Fel.Infrastructure.Dataico
                 dataico_account_id = string.IsNullOrEmpty(client.DataicoAccountId) ? null : client.DataicoAccountId,
                 invoice_id = originalInvoiceDataicoId,
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
-                reason = MapReasonToDataico(document.ReferenceConcept),
+                reason = MapReasonToDataico(document.DiscrepancyResponseCode, reasonDianCodes),
                 number = document.Number,
-                numbering = new DataicoNumbering { prefix = resolution.Prefix, resolution_number = resolution.ResolutionNumber, flexible = true },
+                // Ver comentario equivalente en BuildCreditNoteRequest: las notas no llevan
+                // resolution_number en Dataico.
+                numbering = new DataicoNumbering { prefix = resolution.Prefix, flexible = true },
                 charges = BuildCharges(document)
             };
 
@@ -285,7 +305,8 @@ namespace Fel.Infrastructure.Dataico
         // CUDS (guardado en Document.Cufe), no por un id interno de Dataico como la Nota Crédito.
         public static DataicoSupportDocAdjustmentRequest BuildSupportDocAdjustmentRequest(
             Document document, Document originalDocument, Customer provider, Resolution resolution,
-            Client client, string paymentMeans, string paymentMeansType, IEnumerable<DocumentItem> items)
+            Client client, string paymentMeans, string paymentMeansType, IEnumerable<DocumentItem> items,
+            IReadOnlyDictionary<string, string>? identificationTypeOverrides = null)
         {
             var request = new DataicoSupportDocAdjustmentRequest
             {
@@ -293,14 +314,14 @@ namespace Fel.Infrastructure.Dataico
                 number = document.Number,
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
                 payment_date = BuildPaymentDate(document),
-                payment_means = paymentMeans,
+                payment_means = ResolvePaymentMeans(paymentMeans, paymentMeansType),
                 payment_means_type = paymentMeansType,
                 numbering = new DataicoNumbering { prefix = resolution.Prefix, resolution_number = resolution.ResolutionNumber, flexible = true },
                 discrepancy_description = string.IsNullOrWhiteSpace(document.ReferenceConcept) ? "Ajuste de precio" : document.ReferenceConcept,
                 source_document_cuds = originalDocument.Cufe ?? string.Empty,
                 source_document_issue_date = originalDocument.IssueDate.ToString("dd/MM/yyyy"),
                 source_document_number = originalDocument.Number,
-                customer = DataicoMapper.ToDataicoParty(provider)
+                customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides)
             };
 
             foreach (var item in items)
@@ -325,7 +346,8 @@ namespace Fel.Infrastructure.Dataico
             Resolution resolution,
             Client client,
             string paymentMeans,
-            string paymentMeansType)
+            string paymentMeansType,
+            IReadOnlyDictionary<string, string>? identificationTypeOverrides = null)
         {
             var request = new DataicoSupportDocumentRequest
             {
@@ -334,7 +356,7 @@ namespace Fel.Infrastructure.Dataico
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
                 payment_date = BuildPaymentDate(document),
                 order_reference = document.PurchaseOrderReference,
-                payment_means = paymentMeans,
+                payment_means = ResolvePaymentMeans(paymentMeans, paymentMeansType),
                 payment_means_type = paymentMeansType,
                 numbering = new DataicoNumbering
                 {
@@ -342,7 +364,7 @@ namespace Fel.Infrastructure.Dataico
                     resolution_number = resolution.ResolutionNumber,
                     flexible = true
                 },
-                customer = DataicoMapper.ToDataicoParty(provider),
+                customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides),
                 charges = BuildCharges(document)
             };
 

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Palette, Copy, Upload, GitBranch } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Copy, Upload, GitBranch, Pencil, Eye, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import { useConfirm } from '@shared/components/ConfirmDialog';
 
 interface ClientSetting {
   settingId: string;
@@ -27,14 +29,16 @@ interface MyTemplate {
   documentTypeId: string;
   documentType: string;
   scope: 'Global' | 'Tenant' | 'Propio';
+  mostrarRetenciones: boolean;
 }
 
 interface BrandingData {
-  logoLightUrl: string;
-  primaryColorLight: string;
+  invoiceLogoUrl: string;
+  unitOfMeasureDisplayOverride: string;
 }
 
 export default function TemplateSettings() {
+  const confirm = useConfirm();
   const [settings, setSettings] = useState<ClientSetting[]>([]);
   const [selectedSetting, setSelectedSetting] = useState<ClientSetting | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<AvailableTemplate[]>([]);
@@ -43,17 +47,69 @@ export default function TemplateSettings() {
   const [cloneData, setCloneData] = useState({ newName: '', newRepxTemplateKey: '' });
   const [showVersionModal, setShowVersionModal] = useState<string | null>(null);
   const [versionKey, setVersionKey] = useState('');
-  const [branding, setBranding] = useState<BrandingData>({ logoLightUrl: '', primaryColorLight: '#2563eb' });
-  const [savingBranding, setSavingBranding] = useState(false);
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [branding, setBranding] = useState<BrandingData>({ invoiceLogoUrl: '', unitOfMeasureDisplayOverride: '' });
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [savingUnitFormat, setSavingUnitFormat] = useState(false);
+
+  const [smtp, setSmtp] = useState<any>({
+    smtpHost: '', smtpPort: 587, smtpUseSsl: true, smtpUser: '',
+    smtpFromEmail: '', smtpFromName: '', hasPassword: false
+  });
+  const [smtpPasswordDraft, setSmtpPasswordDraft] = useState('');
+  const [savingSmtp, setSavingSmtp] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
+
+  const loadSmtp = () => {
+    api.get('/client/smtp-settings')
+      .then(res => setSmtp(res.data))
+      .catch(() => toast.error('No se pudo cargar la configuración SMTP'));
+  };
+
+  const saveSmtp = async () => {
+    setSavingSmtp(true);
+    try {
+      await api.put('/client/smtp-settings', { ...smtp, smtpPassword: smtpPasswordDraft || undefined });
+      toast.success('Configuración SMTP guardada');
+      setSmtpPasswordDraft('');
+      loadSmtp();
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Error al guardar la configuración SMTP'));
+    } finally {
+      setSavingSmtp(false);
+    }
+  };
+
+  const testSmtp = async () => {
+    setTestingSmtp(true);
+    try {
+      const res = await api.post('/client/smtp-settings/test-connection');
+      if (res.data.success) toast.success(res.data.message);
+      else toast.error(res.data.message);
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Error al probar la conexión'));
+    } finally {
+      setTestingSmtp(false);
+    }
+  };
 
   const loadBranding = () => {
-    api.get<BrandingData & { hasCustomLogo?: boolean }>('/v1/branding/my-branding')
-      .then(res => setBranding({
-        logoLightUrl: res.data.logoLightUrl || '',
-        primaryColorLight: res.data.primaryColorLight || '#2563eb'
-      }))
+    api.get<{ invoiceLogoUrl?: string, unitOfMeasureDisplayOverride?: string }>('/v1/branding/my-branding')
+      .then(res => setBranding({ invoiceLogoUrl: res.data.invoiceLogoUrl || '', unitOfMeasureDisplayOverride: res.data.unitOfMeasureDisplayOverride || '' }))
       .catch(() => toast.error("No se pudo cargar el branding"));
+  };
+
+  const handleSaveUnitFormat = async (value: string) => {
+    setBranding(prev => ({ ...prev, unitOfMeasureDisplayOverride: value }));
+    setSavingUnitFormat(true);
+    try {
+      await api.put('/v1/branding/my-branding', { unitOfMeasureDisplayOverride: value });
+      toast.success('Formato de unidad de medida actualizado');
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Error al guardar el formato de unidad de medida'));
+    } finally {
+      setSavingUnitFormat(false);
+    }
   };
 
   const loadSettings = () => {
@@ -72,6 +128,7 @@ export default function TemplateSettings() {
     loadSettings();
     loadBranding();
     loadMyTemplates();
+    loadSmtp();
   }, []);
 
   const handleSelectType = async (setting: ClientSetting) => {
@@ -99,7 +156,7 @@ export default function TemplateSettings() {
   };
 
   const handlePublishOwn = async (id: string) => {
-    if (!window.confirm("¿Publicar esta plantilla? Quedará disponible para aplicarla a tus comprobantes.")) return;
+    if (!(await confirm("¿Publicar esta plantilla? Quedará disponible para aplicarla a tus comprobantes.", { destructive: false, confirmText: 'Publicar' }))) return;
     try {
       await api.put(`/client/templates/${id}/publish`);
       toast.success("Plantilla publicada.");
@@ -121,6 +178,35 @@ export default function TemplateSettings() {
       loadMyTemplates();
     } catch (err: any) {
       toast.error(getErrorMessage(err, "Error al crear la versión"));
+    }
+  };
+
+  const handleToggleMostrarRetenciones = async (template: MyTemplate) => {
+    const next = !template.mostrarRetenciones;
+    setMyTemplates(prev => prev.map(t => t.id === template.id ? { ...t, mostrarRetenciones: next } : t));
+    try {
+      await api.put(`/client/templates/${template.id}/mostrar-retenciones`, { mostrarRetenciones: next });
+    } catch (err: any) {
+      setMyTemplates(prev => prev.map(t => t.id === template.id ? { ...t, mostrarRetenciones: !next } : t));
+      toast.error(getErrorMessage(err, "Error al actualizar la preferencia de retenciones"));
+    }
+  };
+
+  const handlePreview = async (id: string) => {
+    setPreviewingId(id);
+    try {
+      const res = await api.post(`/client/templates/${id}/preview`, {}, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      window.open(url, '_blank');
+    } catch (err: any) {
+      if (err.response?.data instanceof Blob) {
+        const text = await err.response.data.text();
+        toast.error(text || 'Error al generar la vista previa');
+      } else {
+        toast.error(getErrorMessage(err, 'Error al generar la vista previa'));
+      }
+    } finally {
+      setPreviewingId(null);
     }
   };
 
@@ -150,25 +236,13 @@ export default function TemplateSettings() {
       const res = await api.post<{ logoLightUrl: string }>('/v1/branding/logo', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      setBranding(prev => ({ ...prev, logoLightUrl: res.data.logoLightUrl }));
+      setBranding(prev => ({ ...prev, invoiceLogoUrl: res.data.logoLightUrl }));
       toast.success('Logo actualizado correctamente');
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Error al subir el logo'));
     } finally {
       setUploadingLogo(false);
       e.target.value = '';
-    }
-  };
-
-  const handleSaveBranding = async () => {
-    setSavingBranding(true);
-    try {
-      await api.put('/v1/branding/my-branding', branding);
-      toast.success("Tu identidad visual fue actualizada correctamente");
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, "Error al guardar tu identidad"));
-    } finally {
-      setSavingBranding(false);
     }
   };
 
@@ -184,61 +258,110 @@ export default function TemplateSettings() {
         </p>
       </div>
 
-      {/* Identidad Visual del Cliente */}
+      {/* Logo del Cliente (solo para sus comprobantes — el portal usa la marca de tu proveedor) */}
       <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
         <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
-          <Palette className="w-5 h-5 text-primary" /> Tu Identidad Visual
+          <Image className="w-5 h-5 text-primary" /> Logo de tus documentos
         </h2>
         <p className="text-sm text-slate-500 mb-6">
-          Este logo y color identifican tu empresa en tu portal y en los comprobantes que emites.
+          Este logo aparece en las facturas y demás comprobantes electrónicos que emites. Se guarda automáticamente al seleccionarlo.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="max-w-sm">
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            disabled={uploadingLogo}
+            onChange={handleLogoUpload}
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-slate-800 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white file:font-semibold disabled:opacity-50"
+          />
+          {uploadingLogo && <p className="text-xs text-slate-400 mt-2">Subiendo...</p>}
+          {branding.invoiceLogoUrl && (
+            <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-center">
+              <img src={branding.invoiceLogoUrl} alt="Vista previa" className="max-h-16 max-w-full object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Formato de la Unidad de Medida en el detalle de la factura */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
+        <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
+          <LayoutTemplate className="w-5 h-5 text-primary" /> Unidad de medida en tus facturas
+        </h2>
+        <p className="text-sm text-slate-500 mb-6">
+          Cómo se imprime la unidad de cada producto en el detalle (ej. "94 - EA"). Por defecto usa lo que trae cada unidad en el catálogo; puedes forzar el mismo formato para todas.
+        </p>
+        <div className="max-w-sm">
+          <select
+            disabled={savingUnitFormat}
+            value={branding.unitOfMeasureDisplayOverride}
+            onChange={e => handleSaveUnitFormat(e.target.value)}
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-slate-800 appearance-none disabled:opacity-50"
+          >
+            <option value="">Automático (según el catálogo)</option>
+            <option value="Combined">Código y sigla ("94 - EA")</option>
+            <option value="CodeOnly">Solo código DIAN ("94")</option>
+            <option value="AbbreviationOnly">Solo sigla ("EA")</option>
+          </select>
+        </div>
+      </div>
+
+      {/* SMTP propio para reenvío de documentos del flujo nativo DIAN */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
+        <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
+          <Mail className="w-5 h-5 text-primary" /> Correo para reenvío de documentos
+        </h2>
+        <p className="text-sm text-slate-500 mb-6">
+          Si emites directo a la DIAN, este SMTP es el que se usa para reenviarle un documento ya aprobado a tu cliente.
+          Si lo dejas vacío, se usa el SMTP de tu proveedor (si lo tiene configurado).
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1">
-              <Image className="w-4 h-4" /> Logo
-            </label>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
-              disabled={uploadingLogo}
-              onChange={handleLogoUpload}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-slate-800 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white file:font-semibold disabled:opacity-50"
-            />
-            {uploadingLogo && <p className="text-xs text-slate-400 mt-2">Subiendo...</p>}
-            {branding.logoLightUrl && (
-              <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-center">
-                <img src={branding.logoLightUrl} alt="Vista previa" className="max-h-16 max-w-full object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              </div>
-            )}
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor SMTP</label>
+            <input type="text" placeholder="smtp.gmail.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpHost || ''} onChange={e => setSmtp({ ...smtp, smtpHost: e.target.value })} />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1">
-              <Palette className="w-4 h-4" /> Color Principal
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
+            <input type="number" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpPort || 587} onChange={e => setSmtp({ ...smtp, smtpPort: parseInt(e.target.value) || 587 })} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
+            <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpUser || ''} onChange={e => setSmtp({ ...smtp, smtpUser: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">
+              Contraseña {smtp.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada — deja en blanco para no cambiarla)</span>}
             </label>
-            <div className="flex items-center gap-3">
-              <input
-                type="color"
-                value={branding.primaryColorLight}
-                onChange={e => setBranding({ ...branding, primaryColorLight: e.target.value })}
-                className="w-14 h-14 rounded-xl border border-slate-200 cursor-pointer bg-slate-50 p-1"
-              />
-              <input
-                type="text"
-                value={branding.primaryColorLight}
-                onChange={e => setBranding({ ...branding, primaryColorLight: e.target.value })}
-                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-slate-800 font-mono"
-              />
-            </div>
-            <p className="text-xs text-slate-400 mt-2">Este color se usa en los botones y enlaces de tu portal.</p>
+            <input type="password" placeholder={smtp.hasPassword ? '••••••••' : ''} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtpPasswordDraft} onChange={e => setSmtpPasswordDraft(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo remitente</label>
+            <input type="email" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpFromEmail || ''} onChange={e => setSmtp({ ...smtp, smtpFromEmail: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre remitente</label>
+            <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpFromName || ''} onChange={e => setSmtp({ ...smtp, smtpFromName: e.target.value })} />
           </div>
         </div>
-        <div className="mt-6">
-          <button
-            onClick={handleSaveBranding}
-            disabled={savingBranding}
-            className="px-6 py-3 bg-primary text-white font-bold rounded-xl hover:opacity-90 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50"
-          >
-            {savingBranding ? 'Guardando...' : 'Guardar Identidad Visual'}
+
+        <label className="flex items-center gap-2 mt-4 cursor-pointer">
+          <input type="checkbox" checked={!!smtp.smtpUseSsl} onChange={e => setSmtp({ ...smtp, smtpUseSsl: e.target.checked })} className="w-4 h-4 rounded accent-primary" />
+          <span className="text-sm text-slate-600">Usar conexión segura (SSL/TLS)</span>
+        </label>
+
+        <div className="flex gap-3 mt-6">
+          <button onClick={saveSmtp} disabled={savingSmtp} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+            {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
+          </button>
+          <button onClick={testSmtp} disabled={testingSmtp} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
+            {testingSmtp ? 'Probando...' : 'Probar conexión'}
           </button>
         </div>
       </div>
@@ -322,6 +445,14 @@ export default function TemplateSettings() {
                       </p>
 
                       <div className="mt-4 flex gap-2">
+                        <button
+                          onClick={() => handlePreview(tpl.id)}
+                          disabled={previewingId === tpl.id}
+                          title="Vista previa"
+                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold rounded-xl transition-colors flex items-center justify-center disabled:opacity-50"
+                        >
+                          {previewingId === tpl.id ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+                        </button>
                         {!isActive && (
                           <button onClick={() => handleChooseTemplate(tpl.id)} className="flex-1 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold rounded-xl transition-colors">
                             Aplicar
@@ -332,7 +463,7 @@ export default function TemplateSettings() {
                           title="Clonar y personalizar"
                           className={`py-2 ${isActive ? 'flex-1' : 'px-3'} bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-1`}
                         >
-                          <Copy size={14} /> {isActive ? 'Clonar y Personalizar' : ''}
+                          <Copy size={14} /> {isActive ? 'Copiar y personalizar' : ''}
                         </button>
                       </div>
                     </div>
@@ -348,7 +479,7 @@ export default function TemplateSettings() {
 
               {myTemplates.filter(t => t.documentTypeId === selectedSetting.documentTypeId && t.scope === 'Propio').length > 0 && (
                 <div className="mt-8 pt-8 border-t border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Mis Diseños Propios (todos los estados)</h3>
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Mis diseños</h3>
                   <div className="space-y-3">
                     {myTemplates.filter(t => t.documentTypeId === selectedSetting.documentTypeId && t.scope === 'Propio').map(t => (
                       <div key={t.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
@@ -365,8 +496,25 @@ export default function TemplateSettings() {
                             </span>
                           </div>
                           <p className="text-xs text-slate-400 font-mono mt-1">Key: {t.repxTemplateKey || 'N/A'}</p>
+                          <label className="flex items-center gap-2 mt-2 text-xs font-medium text-slate-600 cursor-pointer w-fit">
+                            <input
+                              type="checkbox"
+                              checked={t.mostrarRetenciones}
+                              onChange={() => handleToggleMostrarRetenciones(t)}
+                              className="rounded border-slate-300"
+                            />
+                            Mostrar retenciones en el pie del documento
+                          </label>
                         </div>
                         <div className="flex gap-2">
+                          <button onClick={() => handlePreview(t.id)} disabled={previewingId === t.id} className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1 disabled:opacity-50">
+                            {previewingId === t.id ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />} Vista Previa
+                          </button>
+                          {t.status === 'Draft' && (
+                            <Link to={`/templates/editor?key=${encodeURIComponent(t.repxTemplateKey)}`} className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg flex items-center gap-1">
+                              <Pencil size={14} /> Editar
+                            </Link>
+                          )}
                           {t.status === 'Draft' && (
                             <button onClick={() => handlePublishOwn(t.id)} className="px-3 py-1.5 text-xs font-bold text-white bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-1">
                               <Upload size={14} /> Publicar
@@ -388,8 +536,8 @@ export default function TemplateSettings() {
             <div className="h-full min-h-[400px] rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center p-8 text-center">
               <div className="max-w-xs">
                 <Settings className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <h3 className="text-lg font-bold text-slate-600 mb-2">Selecciona un Comprobante</h3>
-                <p className="text-sm text-slate-400">Selecciona un tipo de comprobante en la lista de la izquierda para ver los diseños disponibles.</p>
+                <h3 className="text-lg font-bold text-slate-600 mb-2">Selecciona un documento</h3>
+                <p className="text-sm text-slate-400">Selecciona un documento para ver sus diseños.</p>
               </div>
             </div>
           )}
@@ -399,7 +547,7 @@ export default function TemplateSettings() {
       {showCloneModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Clonar y Personalizar</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">Copiar y personalizar</h2>
             <p className="text-slate-500 mb-6 text-sm">Crea tu propia copia de "{showCloneModal.name}" para personalizarla. Quedará en borrador hasta que la publiques.</p>
             <form onSubmit={handleClone} className="space-y-5">
               <div>
@@ -413,7 +561,7 @@ export default function TemplateSettings() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Llave REPX (Motor DevExpress)</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Identificador de plantilla</label>
                 <input
                   type="text"
                   required
@@ -441,10 +589,10 @@ export default function TemplateSettings() {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200">
             <h2 className="text-2xl font-bold text-slate-800 mb-2">Nueva Versión</h2>
-            <p className="text-slate-500 mb-6 text-sm">Se creará un borrador de la siguiente versión. Tu plantilla publicada actual no se ve afectada hasta que publiques esta nueva versión.</p>
+            <p className="text-slate-500 mb-6 text-sm">Se creará un borrador; la versión publicada seguirá activa hasta que publiques la nueva.</p>
             <form onSubmit={handleNewVersion} className="space-y-5">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Nueva Llave REPX (Motor DevExpress)</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nuevo identificador de plantilla</label>
                 <input
                   type="text"
                   required

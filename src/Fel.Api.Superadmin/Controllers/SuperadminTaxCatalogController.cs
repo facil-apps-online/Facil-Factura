@@ -25,7 +25,7 @@ namespace Fel.Api.Superadmin.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var items = await _dbContext.DataicoTaxCatalogItems
+            var items = await _dbContext.TaxCatalogItems
                 .OrderBy(i => i.Kind).ThenBy(i => i.Category).ThenBy(i => i.Rate)
                 .Select(i => new { i.Id, i.Category, i.Name, Kind = i.Kind.ToString(), i.Rate, i.IsActive })
                 .ToListAsync();
@@ -42,14 +42,14 @@ namespace Fel.Api.Superadmin.Controllers
             }
 
             var category = request.Category.Trim().ToUpperInvariant();
-            if (await _dbContext.DataicoTaxCatalogItems.AnyAsync(i => i.Category == category && i.Kind == kind && i.Rate == request.Rate))
+            if (await _dbContext.TaxCatalogItems.AnyAsync(i => i.Category == category && i.Kind == kind && i.Rate == request.Rate))
             {
                 return BadRequest(kind == TaxCatalogKind.Retention
                     ? "Ya existe esa categoría con esa misma tarifa."
                     : "Ya existe una categoría con ese código para ese tipo.");
             }
 
-            var item = new DataicoTaxCatalogItem
+            var item = new TaxCatalogItem
             {
                 Id = Guid.NewGuid(),
                 Category = category,
@@ -60,7 +60,7 @@ namespace Fel.Api.Superadmin.Controllers
                 CreatedAt = DateTime.UtcNow
             };
 
-            _dbContext.DataicoTaxCatalogItems.Add(item);
+            _dbContext.TaxCatalogItems.Add(item);
             await _dbContext.SaveChangesAsync();
 
             return Ok(item);
@@ -69,7 +69,7 @@ namespace Fel.Api.Superadmin.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] TaxCatalogItemRequest request)
         {
-            var item = await _dbContext.DataicoTaxCatalogItems.FindAsync(id);
+            var item = await _dbContext.TaxCatalogItems.FindAsync(id);
             if (item == null) return NotFound();
 
             if (!Enum.TryParse<TaxCatalogKind>(request.Kind, out var kind))
@@ -90,10 +90,10 @@ namespace Fel.Api.Superadmin.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            var item = await _dbContext.DataicoTaxCatalogItems.FindAsync(id);
+            var item = await _dbContext.TaxCatalogItems.FindAsync(id);
             if (item == null) return NotFound();
 
-            _dbContext.DataicoTaxCatalogItems.Remove(item);
+            _dbContext.TaxCatalogItems.Remove(item);
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { message = "Categoría eliminada." });

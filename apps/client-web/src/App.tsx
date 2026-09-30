@@ -1,10 +1,12 @@
-import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Home, FileText, Settings, CreditCard, LogOut, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import { Home, FileText, Settings, CreditCard, LogOut, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight, CheckCircle2, Clock, AlertTriangle, DollarSign, ArrowRight, Wallet } from 'lucide-react';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
+import { ConfirmDialogProvider } from '@shared/components/ConfirmDialog';
 import { api } from './lib/api';
 
 import TemplateSettings from './pages/TemplateSettings';
+import TemplateEditor from './pages/TemplateEditor';
 import ResolutionsSettings from './pages/ResolutionsSettings';
 import CustomersPage from './pages/CustomersPage';
 import ProductsPage from './pages/ProductsPage';
@@ -23,6 +25,8 @@ interface ClientBranding {
   primaryColorLight: string;
   primaryColorDark: string;
   hasCustomLogo: boolean;
+  invoiceLogoUrl: string;
+  clientName: string;
 }
 
 const BrandingContext = createContext<ClientBranding | null>(null);
@@ -63,10 +67,10 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed }: { onLogout: () => v
     { to: "/", icon: <Home size={20} />, label: "Inicio" },
     { to: "/invoices", icon: <FileText size={20} />, label: "Mis Facturas" },
     { to: "/support-documents", icon: <Receipt size={20} />, label: "Documentos Soporte" },
-    { to: "/payroll", icon: <Banknote size={20} />, label: "Nómina Electrónica" },
-    { to: "/received-documents", icon: <Inbox size={20} />, label: "Eventos de Recepción" },
-    { to: "/customers", icon: <Users size={20} />, label: "Mis Terceros" },
-    { to: "/products", icon: <Package size={20} />, label: "Mis Productos" },
+    { to: "/payroll", icon: <Banknote size={20} />, label: "Nómina electrónica" },
+    { to: "/received-documents", icon: <Inbox size={20} />, label: "Documentos recibidos" },
+    { to: "/customers", icon: <Users size={20} />, label: "Terceros" },
+    { to: "/products", icon: <Package size={20} />, label: "Productos y servicios" },
     { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos" },
     { to: "/resolutions", icon: <FileSignature size={20} />, label: "Resoluciones DIAN" },
     { to: "/settings", icon: <Settings size={20} />, label: "Diseño y Ajustes" },
@@ -86,14 +90,14 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed }: { onLogout: () => v
         {!collapsed && (
           <button
             onClick={onToggleCollapsed}
-            title="Colapsar menú"
+            title="Contraer menú"
             className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors shrink-0"
           >
             <ChevronLeft size={18} />
           </button>
         )}
       </div>
-      {!collapsed && <p className="text-xs text-slate-500 -mt-4 mb-2 px-6 uppercase tracking-wider">Portal de Facturación</p>}
+      {!collapsed && <p className="text-xs text-slate-500 -mt-4 mb-2 px-6 uppercase tracking-wider">Facturación</p>}
       {collapsed && (
         <button
           onClick={onToggleCollapsed}
@@ -126,9 +130,9 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed }: { onLogout: () => v
       </nav>
 
       <div className="p-4 border-t border-slate-800">
-        <button onClick={onLogout} title={collapsed ? 'Cerrar Sesión' : undefined} className={`flex items-center gap-3 px-4 py-3 w-full rounded-xl hover:bg-rose-500/10 hover:text-rose-400 transition-colors text-left ${collapsed ? 'justify-center px-0' : ''}`}>
+        <button onClick={onLogout} title={collapsed ? 'Cerrar sesión' : undefined} className={`flex items-center gap-3 px-4 py-3 w-full rounded-xl hover:bg-rose-500/10 hover:text-rose-400 transition-colors text-left ${collapsed ? 'justify-center px-0' : ''}`}>
           <LogOut size={20} />
-          {!collapsed && <span>Cerrar Sesión</span>}
+          {!collapsed && <span>Cerrar sesión</span>}
         </button>
       </div>
     </aside>
@@ -153,9 +157,14 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
       <Sidebar onLogout={onLogout} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
       <main className="flex-1 flex flex-col min-w-0 relative z-10">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shadow-sm">
-          <h1 className="text-lg font-semibold text-slate-700">
-            Portal
-          </h1>
+          {/* El logo/nombre de acá es el del Client (el tercero facturador), no el del Tenant (que
+              ya se muestra en el sidebar) — es lo que le deja claro al usuario en qué cliente está
+              ubicado cuando el Tenant administra varios. */}
+          {branding?.invoiceLogoUrl ? (
+            <img src={branding.invoiceLogoUrl} alt={branding.clientName} className="h-9 object-contain" />
+          ) : (
+            <h1 className="text-lg font-semibold text-slate-700">{branding?.clientName}</h1>
+          )}
           <div className="flex items-center gap-4">
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm shadow-md">
               {name.substring(0, 2).toUpperCase()}
@@ -171,43 +180,183 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
   );
 }
 
-// Dashboard with actual metrics
+interface DashboardSummary {
+  period: { start: string; end: string };
+  totalIssued: number;
+  totalAccepted: number;
+  totalPending: number;
+  totalRejected: number;
+  totalBilled: number;
+  recentDocuments: Array<{
+    id: string;
+    typeCode: string;
+    number: string;
+    processedAt: string;
+    customerName: string | null;
+    totalAmount: number;
+  }>;
+  consumption:
+    | { mode: 'PrepaidBag'; bagStartDate: string; amountPaid: number; remainingBalance: number; discountedPricePerDocument: number }
+    | { mode: 'Standard'; pricePerDocument: number };
+  pendingSetupItems: string[];
+}
+
+const money = (value: number) => `$${Math.round(value).toLocaleString('es-CO')}`;
+
+const SETUP_MESSAGES: Record<string, { text: string; actionLabel?: string; actionTo?: string }> = {
+  'no-resolution': { text: 'Configura una resolución para empezar a facturar.', actionLabel: 'Configurar resolución', actionTo: '/resolutions' },
+  'no-certificate': { text: 'Tu certificado digital no está vigente. Contacta a tu proveedor para renovarlo.' },
+};
+
 const Dashboard = () => {
-  const [metrics, setMetrics] = React.useState<any>(null);
+  const navigate = useNavigate();
+  const branding = useContext(BrandingContext);
+  const [summary, setSummary] = React.useState<DashboardSummary | null>(null);
 
   React.useEffect(() => {
-    // Para simplificar la demo, asumo que tenemos el x-client-id configurado o un interceptor que lo añade
-    const fetchMetrics = async () => {
-      try {
-        const res = await import('./lib/api').then(m => m.api.get('/v1/dashboard/metrics'));
-        setMetrics(res.data);
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    fetchMetrics();
+    import('./lib/api').then(m => m.api.get('/v1/dashboard/summary'))
+      .then(res => setSummary(res.data))
+      .catch(e => console.error(e));
   }, []);
 
+  const quickActions = [
+    { label: 'Emitir factura', to: '/invoices' },
+    { label: 'Crear documento soporte', to: '/support-documents' },
+    { label: 'Agregar cliente', to: '/customers' },
+    { label: 'Agregar producto', to: '/products' },
+  ];
+
   return (
-    <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight mb-2">Bienvenido a tu Portal de Facturación</h1>
-      <p className="text-slate-500 text-lg mb-10">Resumen de tu actividad en el mes actual.</p>
-      
-      {metrics ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100 flex flex-col hover:shadow-xl transition-shadow">
-            <h3 className="text-slate-400 font-bold uppercase tracking-wider text-sm mb-4">Total Documentos (Mes)</h3>
-            <p className="text-5xl font-black text-slate-800">{metrics.totalDocuments}</p>
-          </div>
-          <div className="bg-blue-600 rounded-[2rem] p-8 shadow-lg shadow-blue-600/30 flex flex-col hover:shadow-2xl hover:shadow-blue-600/40 transition-all transform hover:-translate-y-1">
-            <h3 className="text-blue-200 font-bold uppercase tracking-wider text-sm mb-4">Cuentas por Pagar (Servicio FEL)</h3>
-            <p className="text-5xl font-black text-white">${metrics.amountDueToTenant.toLocaleString('es-CO')}</p>
-          </div>
+    <div className="p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center justify-between mb-10">
+        <div className="flex items-center gap-4 min-w-0">
+          {branding?.invoiceLogoUrl ? (
+            <img src={branding.invoiceLogoUrl} alt={branding.clientName} className="h-12 object-contain shrink-0" />
+          ) : (
+            <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight truncate">{branding?.clientName || 'Tu empresa'}</h1>
+          )}
+          <p className="text-slate-500 hidden sm:block">Consulta la actividad de tu empresa este mes.</p>
+        </div>
+        <button onClick={() => navigate('/invoices')} className="shrink-0 px-5 py-3 bg-primary text-white font-bold rounded-xl shadow-primary hover:opacity-90 transition-opacity flex items-center gap-2">
+          Emitir documento <ArrowRight size={18} />
+        </button>
+      </div>
+
+      {!summary ? (
+        <div className="flex justify-center items-center h-48 bg-white rounded-3xl border border-slate-100">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
         </div>
       ) : (
-        <div className="flex justify-center items-center h-48 bg-white rounded-3xl border border-slate-100">
-           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
-        </div>
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+              <h3 className="text-slate-400 font-bold uppercase tracking-wider text-xs mb-2">Emitidos</h3>
+              <p className="text-3xl font-black text-slate-800">{summary.totalIssued}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+              <h3 className="text-emerald-600 font-bold uppercase tracking-wider text-xs mb-2 flex items-center gap-1"><CheckCircle2 size={14} /> Aceptados</h3>
+              <p className="text-3xl font-black text-slate-800">{summary.totalAccepted}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+              <h3 className="text-amber-600 font-bold uppercase tracking-wider text-xs mb-2 flex items-center gap-1"><Clock size={14} /> En validación</h3>
+              <p className="text-3xl font-black text-slate-800">{summary.totalPending}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+              <h3 className="text-rose-600 font-bold uppercase tracking-wider text-xs mb-2 flex items-center gap-1"><AlertTriangle size={14} /> Requieren atención</h3>
+              <p className="text-3xl font-black text-slate-800">{summary.totalRejected}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-slate-500 mb-8">
+            <DollarSign size={16} />
+            <span className="text-sm">Total facturado este mes: <span className="font-bold text-slate-700">{money(summary.totalBilled)}</span></span>
+          </div>
+
+          <div
+            className={`rounded-2xl p-6 mb-8 flex items-center justify-between gap-4 flex-wrap ${
+              summary.pendingSetupItems.length === 0 ? 'bg-emerald-50 border border-emerald-100' : 'bg-amber-50 border border-amber-100'
+            }`}
+          >
+            {summary.pendingSetupItems.length === 0 ? (
+              <p className="text-emerald-700 font-medium flex items-center gap-2"><CheckCircle2 size={18} /> Tu cuenta está lista para facturar.</p>
+            ) : (
+              <div className="space-y-2">
+                {summary.pendingSetupItems.map(item => {
+                  const setup = SETUP_MESSAGES[item];
+                  if (!setup) return null;
+                  return (
+                    <div key={item} className="flex items-center gap-3 flex-wrap">
+                      <p className="text-amber-700 font-medium flex items-center gap-2"><AlertTriangle size={18} /> {setup.text}</p>
+                      {setup.actionTo && (
+                        <button onClick={() => navigate(setup.actionTo!)} className="text-sm font-bold text-amber-700 underline hover:text-amber-900">
+                          {setup.actionLabel}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+              <h3 className="text-lg font-bold text-slate-800 px-6 pt-6 pb-4">Actividad reciente</h3>
+              {summary.recentDocuments.length === 0 ? (
+                <p className="text-slate-400 px-6 pb-6">Aún no tienes documentos aceptados por la DIAN.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <tbody>
+                    {summary.recentDocuments.map(doc => (
+                      <tr key={doc.id} className="border-t border-slate-50">
+                        <td className="px-6 py-3 text-slate-400 whitespace-nowrap">{new Date(doc.processedAt).toLocaleDateString('es-CO')}</td>
+                        <td className="px-3 py-3 font-medium text-slate-700 whitespace-nowrap">{doc.typeCode}-{doc.number}</td>
+                        <td className="px-3 py-3 text-slate-600 truncate max-w-[200px]">{doc.customerName || '-'}</td>
+                        <td className="px-3 py-3 text-right font-bold text-slate-700 whitespace-nowrap">{money(doc.totalAmount)}</td>
+                        <td className="px-6 py-3 text-right whitespace-nowrap">
+                          <button onClick={() => navigate('/invoices')} className="text-primary font-bold hover:underline">Ver</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="px-6 py-4 border-t border-slate-50">
+                <button onClick={() => navigate('/invoices')} className="text-primary font-bold hover:underline text-sm">Ver todos los documentos</button>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-4">Acciones rápidas</h3>
+                <div className="space-y-2">
+                  {quickActions.map(action => (
+                    <button
+                      key={action.to}
+                      onClick={() => navigate(action.to)}
+                      className="w-full text-left px-4 py-3 rounded-xl border-2 border-slate-100 hover:border-primary/40 hover:bg-primary/5 transition-all font-medium text-slate-700"
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Wallet size={18} /> Consumo del período</h3>
+                {summary.consumption.mode === 'PrepaidBag' ? (
+                  <div className="space-y-2 text-sm">
+                    <p className="text-slate-500">Bolsa activa desde el {new Date(summary.consumption.bagStartDate).toLocaleDateString('es-CO')}</p>
+                    <p className="text-slate-700">Saldo disponible: <span className="font-bold">{money(summary.consumption.remainingBalance)}</span></p>
+                    <p className="text-slate-400">de {money(summary.consumption.amountPaid)} pagados</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">Tarifa estándar: <span className="font-bold text-slate-700">{money(summary.consumption.pricePerDocument)}</span> por documento.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -226,41 +375,44 @@ function App() {
 
   return (
     <Router>
-      <Toaster position="top-right" richColors />
-      <Routes>
-        <Route
-          path="/login"
-          element={isAuthenticated ? <Navigate to="/" /> : <Login onAuthSuccess={() => setIsAuthenticated(true)} />}
-        />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route
-          path="/*"
-          element={
-            isAuthenticated ? (
-              <BrandingProvider>
-                <Layout onLogout={handleLogout}>
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/settings" element={<TemplateSettings />} />
-                    <Route path="/resolutions" element={<ResolutionsSettings />} />
-                    <Route path="/customers" element={<CustomersPage />} />
-                    <Route path="/products" element={<ProductsPage />} />
-                    <Route path="/invoices" element={<InvoicesPage />} />
-                    <Route path="/support-documents" element={<SupportDocumentsPage />} />
-                    <Route path="/payroll" element={<PayrollPage />} />
-                    <Route path="/received-documents" element={<ReceivedDocumentsPage />} />
-                    {/* Rutas ficticias para completar el sidebar */}
-                    <Route path="/payments" element={<div className="p-8">Módulo en construcción...</div>} />
-                  </Routes>
-                </Layout>
-              </BrandingProvider>
-            ) : (
-              <Navigate to={`/login${localStorage.getItem('fel_client_tenant') ? `?tenant=${localStorage.getItem('fel_client_tenant')}` : ''}`} />
-            )
-          }
-        />
-      </Routes>
+      <ConfirmDialogProvider>
+        <Toaster position="top-right" richColors />
+        <Routes>
+          <Route
+            path="/login"
+            element={isAuthenticated ? <Navigate to="/" /> : <Login onAuthSuccess={() => setIsAuthenticated(true)} />}
+          />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route
+            path="/*"
+            element={
+              isAuthenticated ? (
+                <BrandingProvider>
+                  <Layout onLogout={handleLogout}>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/settings" element={<TemplateSettings />} />
+                      <Route path="/templates/editor" element={<TemplateEditor />} />
+                      <Route path="/resolutions" element={<ResolutionsSettings />} />
+                      <Route path="/customers" element={<CustomersPage />} />
+                      <Route path="/products" element={<ProductsPage />} />
+                      <Route path="/invoices" element={<InvoicesPage />} />
+                      <Route path="/support-documents" element={<SupportDocumentsPage />} />
+                      <Route path="/payroll" element={<PayrollPage />} />
+                      <Route path="/received-documents" element={<ReceivedDocumentsPage />} />
+                      {/* Rutas ficticias para completar el sidebar */}
+                      <Route path="/payments" element={<div className="p-8">Esta sección estará disponible próximamente.</div>} />
+                    </Routes>
+                  </Layout>
+                </BrandingProvider>
+              ) : (
+                <Navigate to={`/login${localStorage.getItem('fel_client_tenant') ? `?tenant=${localStorage.getItem('fel_client_tenant')}` : ''}`} />
+              )
+            }
+          />
+        </Routes>
+      </ConfirmDialogProvider>
     </Router>
   );
 }

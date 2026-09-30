@@ -42,15 +42,19 @@ namespace Fel.Api.Client.Controllers
         private string IssueToken(Guid developerId) =>
             _sessionTokenService.GenerateToken(new[] { ("DeveloperId", developerId.ToString()) }, TimeSpan.FromHours(24));
 
-        // Registro independiente: no requiere invitación ni Tenant. Se le auto-provisiona un
-        // Client de prueba propio bajo el Tenant Sandbox para que tenga credenciales de prueba
-        // (TestApiKey/TestApiSecret) de inmediato, sin depender de ningún Tenant real.
+        // Registro independiente: no requiere invitación de ningún Tenant, pero sigue el mismo
+        // patrón que el resto de la plataforma — nadie escribe su propia contraseña en este
+        // formulario, solo nombre y correo; la persona la establece desde el enlace que le
+        // llega por correo (eso además verifica que el correo es suyo, cosa que el registro
+        // instantáneo de antes no hacía). Se le auto-provisiona un Client de prueba propio bajo
+        // el Tenant Sandbox para que tenga credenciales de prueba (TestApiKey/TestApiSecret) listas
+        // para cuando entre por primera vez.
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] DeveloperRegisterRequest request)
         {
-            if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+            if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Email))
             {
-                return BadRequest("Nombre, correo y contraseña son obligatorios.");
+                return BadRequest("Nombre y correo son obligatorios.");
             }
 
             if (await _dbContext.DeveloperUsers.AnyAsync(u => u.Email == request.Email))
@@ -105,7 +109,9 @@ namespace Fel.Api.Client.Controllers
                 Id = Guid.NewGuid(),
                 Name = request.Name,
                 Email = request.Email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+                // Hash aleatorio inutilizable: nadie lo conoce, ni siquiera esta persona todavía.
+                // Lo establece ella misma desde el enlace de invitación.
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
                 TenantId = null,
                 ClientId = sandboxClient.Id,
                 CreatedAt = DateTime.UtcNow,
@@ -115,7 +121,12 @@ namespace Fel.Api.Client.Controllers
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(new { token = IssueToken(developer.Id), developer.Id, developer.Name, developer.Email });
+            await _passwordResetService.RequestAsync(
+                PortalUserType.Developer, developer.Id, developer.Email, developer.Name, _portalUrl, "invitation");
+
+            // Sin token: a diferencia del registro anterior, no queda logueada todavía — entra
+            // recién cuando establece su contraseña desde el correo.
+            return Ok(new { developer.Id, developer.Name, developer.Email });
         }
 
         [HttpPost("login")]
@@ -161,6 +172,9 @@ namespace Fel.Api.Client.Controllers
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] DeveloperResetPasswordRequest request)
         {
+            var passwordError = Fel.Core.Security.PasswordPolicy.Validate(request.NewPassword);
+            if (passwordError != null) return BadRequest(passwordError);
+
             var consumed = await _passwordResetService.ConsumeAsync(request.Token, PortalUserType.Developer);
             if (consumed == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 
@@ -178,7 +192,6 @@ namespace Fel.Api.Client.Controllers
     {
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
     }
 
     public class DeveloperLoginRequest

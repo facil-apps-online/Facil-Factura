@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Palette, Image as ImageIcon, Save, CheckCircle2, XCircle, Loader2, Copy } from 'lucide-react';
+import { Palette, Image as ImageIcon, Save, CheckCircle2, XCircle, Loader2, Copy, Mail } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function Branding() {
@@ -19,6 +19,47 @@ export default function Branding() {
   const [packageCatalog, setPackageCatalog] = useState<any[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [purchasingBag, setPurchasingBag] = useState(false);
+
+  const [smtp, setSmtp] = useState<any>({
+    smtpHost: '', smtpPort: 587, smtpUseSsl: true, smtpUser: '',
+    smtpFromEmail: '', smtpFromName: '', hasPassword: false
+  });
+  const [smtpPasswordDraft, setSmtpPasswordDraft] = useState('');
+  const [savingSmtp, setSavingSmtp] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
+
+  const loadSmtp = () => {
+    api.get('/tenant/smtp-settings')
+      .then(res => setSmtp(res.data))
+      .catch(() => toast.error('No se pudo cargar la configuración SMTP'));
+  };
+
+  const saveSmtp = async () => {
+    setSavingSmtp(true);
+    try {
+      await api.put('/tenant/smtp-settings', { ...smtp, smtpPassword: smtpPasswordDraft || undefined });
+      toast.success('Configuración SMTP guardada');
+      setSmtpPasswordDraft('');
+      loadSmtp();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.response?.data || 'Error al guardar la configuración SMTP');
+    } finally {
+      setSavingSmtp(false);
+    }
+  };
+
+  const testSmtp = async () => {
+    setTestingSmtp(true);
+    try {
+      const res = await api.post('/tenant/smtp-settings/test-connection');
+      if (res.data.success) toast.success(res.data.message);
+      else toast.error(res.data.message);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.response?.data || 'Error al probar la conexión');
+    } finally {
+      setTestingSmtp(false);
+    }
+  };
 
   const loadPrepaidInfo = () => {
     api.get('/tenant/prepaid/bags').then(res => setBags(res.data)).catch(() => {});
@@ -58,6 +99,7 @@ export default function Branding() {
       })
       .catch(() => toast.error('No se pudo cargar la configuración de apariencia'))
       .finally(() => setLoading(false));
+    loadSmtp();
   }, []);
 
   useEffect(() => {
@@ -132,7 +174,7 @@ export default function Branding() {
           <Palette className="w-8 h-8 text-primary" />
           Apariencia y Branding
         </h1>
-        <p className="text-slate-500 mt-2 text-lg">Personaliza los colores y el logotipo para la vista de tus clientes.</p>
+        <p className="text-slate-500 mt-2 text-lg">Personaliza el logo y los colores que verán tus clientes.</p>
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
@@ -140,7 +182,7 @@ export default function Branding() {
           
           {/* Identidad / Slug */}
           <div className="space-y-4 pb-8 border-b border-slate-100">
-            <label className="block text-sm font-bold text-slate-700">Identificador del Micrositio (Slug)</label>
+            <label className="block text-sm font-bold text-slate-700">Identificador del sitio</label>
             <div className="flex items-center w-full max-w-2xl shadow-sm rounded-xl">
               <span className="px-4 py-3.5 bg-slate-100 border border-slate-200 border-r-0 rounded-l-xl text-slate-500 font-mono text-sm shrink-0">
                 https://clients.facil-factura.pro/
@@ -175,7 +217,7 @@ export default function Branding() {
             {slugStatus === 'unavailable' ? (
               <p className="text-sm text-rose-500 font-medium">❌ Este identificador ya está en uso por otra empresa. Por favor elige otro.</p>
             ) : (
-              <p className="text-xs text-slate-500">Este será el enlace público donde tus clientes ingresarán. Solo usa minúsculas y guiones.</p>
+              <p className="text-xs text-slate-500">Será el enlace público para tus clientes. Usa minúsculas y guiones.</p>
             )}
           </div>
 
@@ -203,7 +245,7 @@ export default function Branding() {
                   Vista previa
                 </button>
               </div>
-              <p className="text-xs text-slate-500">Este color se usa en el portal de tus clientes (clients.facil-factura.pro), no en este panel.</p>
+              <p className="text-xs text-slate-500">Este color se usará en el portal de tus clientes.</p>
             </div>
 
             <div className="space-y-4">
@@ -237,7 +279,7 @@ export default function Branding() {
               />
               <span>
                 <span className="block text-sm font-bold text-slate-700">Mostrar consumo a mis clientes</span>
-                <span className="block text-xs text-slate-500">Controla si tus clientes pueden ver su información de consumo/facturación en su propio portal.</span>
+                <span className="block text-xs text-slate-500">Define si tus clientes pueden consultar su consumo y facturación.</span>
               </span>
             </label>
           </div>
@@ -252,6 +294,66 @@ export default function Branding() {
             </button>
           </div>
         </form>
+      </div>
+
+      {/* SMTP propio del tenant: fallback para los Clients que no configuraron el suyo, al
+          reenviar documentos del flujo nativo DIAN (sin Dataico). */}
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden mt-8 p-8">
+        <h2 className="text-xl font-bold text-slate-800 mb-1 flex items-center gap-2">
+          <Mail className="w-5 h-5 text-primary" /> Correo para Reenvío de Documentos
+        </h2>
+        <p className="text-slate-500 text-sm mb-6">
+          SMTP por defecto para tus clientes que emiten directo a la DIAN (sin Dataico) y no configuraron su propio SMTP.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor SMTP</label>
+            <input type="text" placeholder="smtp.gmail.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpHost || ''} onChange={e => setSmtp({ ...smtp, smtpHost: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
+            <input type="number" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpPort || 587} onChange={e => setSmtp({ ...smtp, smtpPort: parseInt(e.target.value) || 587 })} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
+            <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpUser || ''} onChange={e => setSmtp({ ...smtp, smtpUser: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">
+              Contraseña {smtp.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada — deja en blanco para no cambiarla)</span>}
+            </label>
+            <input type="password" placeholder={smtp.hasPassword ? '••••••••' : ''} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtpPasswordDraft} onChange={e => setSmtpPasswordDraft(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo remitente</label>
+            <input type="email" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpFromEmail || ''} onChange={e => setSmtp({ ...smtp, smtpFromEmail: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre remitente</label>
+            <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              value={smtp.smtpFromName || ''} onChange={e => setSmtp({ ...smtp, smtpFromName: e.target.value })} />
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 mt-4 cursor-pointer">
+          <input type="checkbox" checked={!!smtp.smtpUseSsl} onChange={e => setSmtp({ ...smtp, smtpUseSsl: e.target.checked })} className="w-4 h-4 rounded accent-primary" />
+          <span className="text-sm text-slate-600">Usar conexión segura (SSL/TLS)</span>
+        </label>
+
+        <div className="flex gap-3 mt-6">
+          <button onClick={saveSmtp} disabled={savingSmtp} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+            {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
+          </button>
+          <button onClick={testSmtp} disabled={testingSmtp} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
+            {testingSmtp ? 'Probando...' : 'Probar conexión'}
+          </button>
+        </div>
       </div>
 
       {billingMode === 'PerUser' && (
@@ -273,7 +375,7 @@ export default function Branding() {
                 </span>
               </div>
             ))}
-            {bags.length === 0 && <p className="text-sm text-slate-400">No tienes bolsas prepago compradas todavía.</p>}
+            {bags.length === 0 && <p className="text-sm text-slate-400">Aún no tienes paquetes prepago.</p>}
           </div>
 
           <div className="flex gap-2 items-end max-w-lg">

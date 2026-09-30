@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import { useConfirm } from '@shared/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
 import SearchableSelect from '@shared/components/SearchableSelect';
 
@@ -17,6 +18,7 @@ interface ProductTax {
 }
 
 export default function ProductsPage() {
+  const confirm = useConfirm();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -24,10 +26,12 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('');
   const [otherTaxCatalog, setOtherTaxCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [ivaRateCatalog, setIvaRateCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  const [unitOfMeasureCatalog, setUnitOfMeasureCatalog] = useState<{ id: string, dianCode: string, abbreviation: string, name: string }[]>([]);
+  const DEFAULT_UNIT_OF_MEASURE_ID = '30000000-0000-0000-0000-000000000001';
 
   const initialForm = {
     code: '', name: '', unitPrice: 0, ivaTreatment: 'Gravado', ivaRate: 19.00,
-    taxes: [] as ProductTax[], unitOfMeasure: '94', standardCode: ''
+    taxes: [] as ProductTax[], unitOfMeasureId: DEFAULT_UNIT_OF_MEASURE_ID, standardCode: ''
   };
   const [formData, setFormData] = useState(initialForm);
 
@@ -38,6 +42,9 @@ export default function ProductsPage() {
       .catch(() => {});
     api.get('/client/tax-catalog?kind=IvaRate')
       .then(res => setIvaRateCatalog(res.data))
+      .catch(() => {});
+    api.get('/client/units-of-measure')
+      .then(res => setUnitOfMeasureCatalog(res.data))
       .catch(() => {});
   }, []);
 
@@ -82,7 +89,7 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Estás seguro de eliminar este producto?')) return;
+    if (!(await confirm('¿Estás seguro de eliminar este producto?'))) return;
     try {
       await api.delete(`/client/products/${id}`);
       toast.success('Producto eliminado');
@@ -103,8 +110,8 @@ export default function ProductsPage() {
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800">Mis Productos</h1>
-          <p className="text-slate-500 mt-1">Catálogo de bienes y servicios</p>
+          <h1 className="text-3xl font-extrabold text-slate-800">Productos y servicios</h1>
+          <p className="text-slate-500 mt-1">Catálogo de productos y servicios</p>
         </div>
         <div className="flex gap-3">
           <ImportExcelButton endpoint="/client/products/import" templateEndpoint="/client/products/template" label="Importar Excel" onDone={loadProducts} />
@@ -133,7 +140,7 @@ export default function ProductsPage() {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-sm font-bold text-slate-500 uppercase tracking-wider">
               <th className="p-4">Código (SKU)</th>
-              <th className="p-4">Nombre / Descripción</th>
+              <th className="p-4">Nombre o descripción</th>
               <th className="p-4 text-right">Precio Base</th>
               <th className="p-4 text-right">IVA</th>
               <th className="p-4 text-right">Otros Impuestos</th>
@@ -191,7 +198,13 @@ export default function ProductsPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Unidad de Medida (DIAN)</label>
-                    <input type="text" required value={formData.unitOfMeasure} onChange={e => setFormData({...formData, unitOfMeasure: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none text-slate-500" />
+                    <SearchableSelect
+                      inputClassName="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                      value={formData.unitOfMeasureId}
+                      onChange={v => setFormData({ ...formData, unitOfMeasureId: v })}
+                      placeholder="Unidad..."
+                      options={unitOfMeasureCatalog.map(u => ({ value: u.id, label: `${u.name} (${u.dianCode})`, shortLabel: u.abbreviation }))}
+                    />
                   </div>
                 </div>
                 
@@ -201,7 +214,7 @@ export default function ProductsPage() {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Precio Base (Sin impuestos)</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Precio base</label>
                   <input type="number" step="0.01" required value={formData.unitPrice} onChange={e => setFormData({...formData, unitPrice: parseFloat(e.target.value)})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
                 </div>
 
@@ -246,7 +259,7 @@ export default function ProductsPage() {
                     </button>
                   </div>
                   {otherTaxCatalog.length === 0 && (
-                    <p className="text-xs text-amber-600 mb-2">Superadmin no ha configurado impuestos adicionales en el catálogo todavía.</p>
+                    <p className="text-xs text-amber-600 mb-2">No hay impuestos adicionales configurados.</p>
                   )}
                   <div className="space-y-2">
                     {formData.taxes.map((tax, idx) => (

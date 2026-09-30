@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, RotateCcw, X, UserPlus, Percent, Eye, Search, Download, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
+import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, RotateCcw, X, UserPlus, Percent, Eye, Search, Download, ChevronLeft, ChevronRight, Printer, Link2, Info, AlertCircle, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import { useConfirm } from '@shared/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
+import CustomerFormModal from '../components/CustomerFormModal';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
@@ -15,25 +17,77 @@ const IVA_TREATMENTS = [
   { value: 'Excluido', label: 'Excluido' }
 ];
 
-const IDENTIFICATION_TYPES = [
-  { value: '13', label: 'Cédula de Ciudadanía' },
-  { value: '22', label: 'Cédula de Extranjería' },
-  { value: '42', label: 'Documento de Identificación Extranjero' },
-  { value: '31', label: 'NIT' },
-  { value: '50', label: 'NIT de Otro País' },
-  { value: '91', label: 'NUIP' },
-  { value: '41', label: 'Pasaporte' },
-  { value: '11', label: 'Registro Civil' },
-  { value: '21', label: 'Tarjeta de Extranjería' },
-  { value: '12', label: 'Tarjeta de Identidad' }
-];
+// Separadores de decimal/miles según la configuración regional del equipo — no se asume es-CO
+// quemado, así el punto o coma del teclado numérico funciona sin importar el sistema operativo.
+const { decimal: DECIMAL_SEP, group: GROUP_SEP } = (() => {
+  const parts = new Intl.NumberFormat().formatToParts(1234.5);
+  return {
+    decimal: parts.find(p => p.type === 'decimal')?.value || ',',
+    group: parts.find(p => p.type === 'group')?.value || '.',
+  };
+})();
 
-const initialQuickCustomer = {
-  personType: 'Natural' as 'Natural' | 'Juridica',
-  name: '', firstName: '', secondName: '', firstLastName: '', secondLastName: '',
-  identificationType: '13', identificationNumber: '', verificationDigit: '',
-  partyType: 'Cliente', email: '', phone: '', address: '', cityCode: '',
-  dataicoTaxLevelCode: 'COMUN', dataicoRegimen: 'ORDINARIO'
+function parseLocaleNumberTyping(raw: string, decimalSep: string, groupSep: string): { display: string; value: number } {
+  let cleaned = raw.split('').filter(ch => /\d/.test(ch) || ch === decimalSep).join('');
+  const firstIdx = cleaned.indexOf(decimalSep);
+  if (firstIdx !== -1) cleaned = cleaned.slice(0, firstIdx + 1) + cleaned.slice(firstIdx + 1).split(decimalSep).join('');
+  let [intPart, decPart] = cleaned.split(decimalSep);
+  intPart = (intPart || '').replace(/^0+(?=\d)/, '');
+  if (decPart !== undefined) decPart = decPart.slice(0, 2);
+  const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
+  const display = decPart !== undefined ? `${intFormatted || '0'}${decimalSep}${decPart}` : intFormatted;
+  const value = parseFloat((intPart || '0') + (decPart !== undefined ? '.' + decPart : '')) || 0;
+  return { display, value };
+}
+
+// Rótulo del resumen de retenciones: el tipo de impuesto, no el nombre del concepto específico
+// del catálogo (ej. "Compras generales (declarantes)") — para que RET_FUENTE al 2.5% y al 3.5%
+// aparezcan como "RETE FUENTE 2.5%" / "RETE FUENTE 3.5%" sin importar qué concepto se usó.
+const RETENTION_CATEGORY_LABELS: Record<string, string> = {
+  RET_FUENTE: 'RETE FUENTE',
+  RET_ICA: 'RETE ICA',
+  RET_IVA: 'RETE IVA'
+};
+const retentionCategoryLabel = (taxCategory: string) => RETENTION_CATEGORY_LABELS[taxCategory] || taxCategory;
+
+// Total de retenciones de un documento ya guardado: las de ítem usan el monto que quedó
+// calculado y persistido al guardar (item.retentions[].amount), no se recalculan a partir de la
+// tarifa — las generales sí, porque DocumentGeneralRetentions solo guarda categoría+tarifa, no un
+// monto (se prorratean entre ítems recién al enviar al integrador).
+const invoiceRetentionsTotal = (inv: any) =>
+  (inv.items || []).reduce((sum: number, item: any) => sum + (item.retentions || []).reduce((s: number, r: any) => s + (r.amount || 0), 0), 0) +
+  (inv.generalRetentions || []).reduce((sum: number, r: any) => sum + (r.taxCategory === 'RET_IVA' ? inv.taxAmount * r.rate / 100 : inv.subtotal * r.rate / 100), 0);
+
+// Total neto de un documento: el bruto (subtotal + IVA) menos retenciones y descuento general,
+// más cargo general — misma fórmula que el "Total:" del formulario de creación/edición.
+const invoiceNetTotal = (inv: any) =>
+  (inv.totalAmount || 0) - invoiceRetentionsTotal(inv) - (inv.generalDiscountAmount || 0) + (inv.generalChargeAmount || 0);
+
+// dianResponseMessage guarda la respuesta cruda del integrador (Dataico o DIAN nativo) como texto: en rechazo, un JSON
+// {"errors":[{"path":[...], "error":"..."}]}; en aprobación, un JSON con los datos del documento
+// ya emitido (incluye "dian_status", el estado propio de la DIAN dentro de esa misma respuesta —
+// no hay un campo separado nuestro para eso). Se parsea acá solo para mostrarlo legible en un
+// modal en vez de como texto crudo; si no es JSON válido, se muestra tal cual.
+//
+// La respuesta del integrador trae mucho más de lo que vale la pena mostrarle al cliente (customer e
+// items como objetos/arreglos completos, el SOAP de la DIAN en base64 dentro de "xml", uuid,
+// numbering, etc.) — por eso esto es una lista blanca explícita, no un volcado de todas las
+// claves; lo que no está acá simplemente no se muestra.
+const DIAN_RESPONSE_DISPLAY_FIELDS: { key: string; label: string }[] = [
+  { key: 'number', label: 'Número' },
+  { key: 'issue_date', label: 'Fecha de emisión' },
+  { key: 'dian_status', label: 'Estado DIAN' },
+  { key: 'payment_means_type', label: 'Forma de pago' },
+];
+const parseDianResponse = (raw: string): { errors?: { path?: string[]; error: string }[] } | { fields: Record<string, any> } | null => {
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed?.errors)) return { errors: parsed.errors };
+    if (parsed && typeof parsed === 'object') return { fields: parsed };
+    return null;
+  } catch {
+    return null;
+  }
 };
 
 // Solo la etiqueta visible cambia a español; el valor (DRAFT/PROCESSING/APPROVED/REJECTED) sigue
@@ -45,11 +99,17 @@ const STATUS_LABELS: Record<string, string> = {
   REJECTED: 'Rechazada'
 };
 
+// Orden de la lista: primero lo que falta por enviar (Borrador), luego lo rechazado (necesita
+// atención), y de último lo ya tramitado (Procesando/Emitida) — dentro de cada grupo, de mayor a
+// menor número.
+const STATUS_SORT_RANK: Record<string, number> = { DRAFT: 0, REJECTED: 1, PROCESSING: 2, APPROVED: 2 };
+
 const initialQuickProduct = {
   code: '', name: '', unitPrice: 0, unitOfMeasure: '94', ivaTreatment: 'Gravado', ivaRate: 19, taxes: [] as any[]
 };
 
 export default function InvoicesPage() {
+  const confirm = useConfirm();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>('this-month');
   const [customFrom, setCustomFrom] = useState(() => getDateRangeForPreset('this-month')!.from);
@@ -58,14 +118,22 @@ export default function InvoicesPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [documentTypes, setDocumentTypes] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [relatedOpenId, setRelatedOpenId] = useState<string | null>(null);
+  const [responseModalInv, setResponseModalInv] = useState<any>(null);
+  const [resendModalInv, setResendModalInv] = useState<any>(null);
+  const [resendEmailDraft, setResendEmailDraft] = useState('');
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resolutionFilter, setResolutionFilter] = useState('');
   const [page, setPage] = useState(1);
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [retentionCatalog, setRetentionCatalog] = useState<{ id: string, category: string, name: string, rate: number }[]>([]);
   const [ivaRateCatalog, setIvaRateCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [paymentTermCatalog, setPaymentTermCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [paymentMeansCatalog, setPaymentMeansCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
-  const [taxLevelCatalog, setTaxLevelCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
-  const [regimenCatalog, setRegimenCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  const [formaPagoCatalog, setFormaPagoCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  const [creditNoteReasonCatalog, setCreditNoteReasonCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  const [debitNoteReasonCatalog, setDebitNoteReasonCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   // Catálogo de conceptos de retención (RetefUENTE/ReteIVA) administrado en Superadmin — se ofrece
   // como opción para elegir manualmente por línea (máximo una por línea), sin ninguna resolución
   // automática.
@@ -78,9 +146,18 @@ export default function InvoicesPage() {
   const [viewingRelated, setViewingRelated] = useState<any[]>([]);
   const [viewingOriginal, setViewingOriginal] = useState<any>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [publishPayment, setPublishPayment] = useState({ paymentMeans: '', paymentMeansType: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedRetentions, setExpandedRetentions] = useState<Record<number, boolean>>({});
+  // Precio Unitario con separador de miles y decimal mientras se escribe. Se guarda como texto
+  // aparte (no derivado de item.unitPrice) solo para la fila que está en edición, porque si se
+  // derivara del número en cada tecla se perdería la coma decimal a medio escribir (ej. "1234,"
+  // se reformatea de inmediato a "1.234" y nunca se puede terminar de escribir el decimal).
+  const [priceDraftIndex, setPriceDraftIndex] = useState<number | null>(null);
+  const [priceDraft, setPriceDraft] = useState('');
+  const [qtyDraftIndex, setQtyDraftIndex] = useState<number | null>(null);
+  const [qtyDraft, setQtyDraft] = useState('');
+  const formatMoneyEs = (n: number) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  const formatMoneyTyping = (raw: string) => parseLocaleNumberTyping(raw, DECIMAL_SEP, GROUP_SEP);
   const [paymentTermCustom, setPaymentTermCustom] = useState(false);
   // Una retención (por ítem o general) queda "bloqueada" (solo texto) apenas se elige su valor,
   // para que el scroll del mouse u otra interacción accidental sobre el select no la cambie sin
@@ -113,13 +190,12 @@ export default function InvoicesPage() {
     taxAmount: 0,
     totalAmount: 0,
     referenceDocumentId: null as string | null,
-    referenceConcept: ''
+    referenceConcept: '',
+    discrepancyResponseCode: ''
   };
   const [formData, setFormData] = useState(initialForm);
 
   const [showCustomerModal, setShowCustomerModal] = useState(false);
-  const [quickCustomer, setQuickCustomer] = useState(initialQuickCustomer);
-  const [savingCustomer, setSavingCustomer] = useState(false);
 
   const [productModalForItemIndex, setProductModalForItemIndex] = useState<number | null>(null);
   const [quickProduct, setQuickProduct] = useState(initialQuickProduct);
@@ -131,11 +207,20 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, datePreset, customFrom, customTo]);
+  }, [searchTerm, statusFilter, resolutionFilter, datePreset, customFrom, customTo]);
+
+  useEffect(() => {
+    if (!relatedOpenId) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-related-popover]')) setRelatedOpenId(null);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [relatedOpenId]);
 
   useEffect(() => {
     api.get('/client/resolutions')
-      .then(res => setResolutions(res.data.filter((r: any) => r.documentType !== 'POS')))
+      .then(res => setResolutions(res.data.filter((r: any) => r.documentType !== 'POS' && r.documentType !== 'FE-TEST')))
       .catch(() => {});
     api.get('/client/tax-catalog?kind=Retention')
       .then(res => setRetentionCatalog(res.data))
@@ -149,11 +234,14 @@ export default function InvoicesPage() {
     api.get('/client/tax-catalog?kind=PaymentMeans')
       .then(res => setPaymentMeansCatalog(res.data))
       .catch(() => {});
-    api.get('/client/tax-catalog?kind=TaxLevelCode')
-      .then(res => setTaxLevelCatalog(res.data))
+    api.get('/client/tax-catalog?kind=FormaPago')
+      .then(res => setFormaPagoCatalog(res.data))
       .catch(() => {});
-    api.get('/client/tax-catalog?kind=Regimen')
-      .then(res => setRegimenCatalog(res.data))
+    api.get('/client/tax-catalog?kind=CreditNoteReason')
+      .then(res => setCreditNoteReasonCatalog(res.data))
+      .catch(() => {});
+    api.get('/client/tax-catalog?kind=DebitNoteReason')
+      .then(res => setDebitNoteReasonCatalog(res.data))
       .catch(() => {});
     api.get('/client/retention-concepts/catalog')
       .then(res => setAutoRetentionCatalog(res.data.concepts))
@@ -185,7 +273,11 @@ export default function InvoicesPage() {
     setPaymentTermCustom(false);
     setFormData({
       ...initialForm,
-      documentTypeId: documentTypes.find(d => d.code === '01')?.id || ''
+      documentTypeId: documentTypes.find(d => d.code === '01')?.id || '',
+      // Preselecciona la resolución marcada como default para Factura (FE); antes siempre
+      // arrancaba vacía aunque el cliente ya tuviera una definida, y quedaba editable por si
+      // hay que emitir con otra.
+      resolutionId: resolutions.find(r => r.documentType === 'FE' && r.isDefault)?.id || ''
     });
     setView('create');
   };
@@ -211,6 +303,29 @@ export default function InvoicesPage() {
       }
     } finally {
       setPreviewingId(null);
+    }
+  };
+
+  const openResendModal = (invoice: any) => {
+    setResendModalInv(invoice);
+    setResendEmailDraft(invoice.customer?.email || '');
+  };
+
+  const handleResend = async () => {
+    if (!resendModalInv) return;
+    if (!resendEmailDraft.trim()) {
+      toast.error('Indica un correo de destino.');
+      return;
+    }
+    setResendingId(resendModalInv.id);
+    try {
+      await api.post(`/client/invoices/${resendModalInv.id}/resend`, { email: resendEmailDraft.trim() });
+      toast.success('Documento reenviado correctamente.');
+      setResendModalInv(null);
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Error al reenviar el documento'));
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -252,6 +367,9 @@ export default function InvoicesPage() {
           name: i.name,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
+          unitOfMeasureCode: i.unitOfMeasureCode || '94',
+          unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA',
+          unitOfMeasureDisplayFormat: i.unitOfMeasureDisplayFormat || 'Combined',
           ivaTreatment: i.ivaTreatment || 'Gravado',
           taxRate: i.taxRate,
           discountRate: i.discountRate || 0,
@@ -285,7 +403,8 @@ export default function InvoicesPage() {
         taxAmount: full.taxAmount,
         totalAmount: full.totalAmount,
         referenceDocumentId: full.referenceDocumentId,
-        referenceConcept: full.referenceConcept || ''
+        referenceConcept: full.referenceConcept || '',
+        discrepancyResponseCode: full.discrepancyResponseCode || ''
       });
       setView('create');
     } catch (err) {
@@ -294,7 +413,7 @@ export default function InvoicesPage() {
   };
 
   const handleDeleteDraft = async (id: string) => {
-    if (!confirm('¿Eliminar este documento?')) return;
+    if (!(await confirm('¿Eliminar este documento?'))) return;
     try {
       await api.delete(`/client/invoices/${id}`);
       toast.success('Documento eliminado');
@@ -318,13 +437,23 @@ export default function InvoicesPage() {
         documentTypeId: documentTypes.find(d => d.code === '91')?.id || '',
         customerId: fullInvoice.customerId,
         referenceDocumentId: fullInvoice.id,
-        referenceConcept: 'Devolución de mercancía', // Valor por defecto
+        referenceConcept: 'Devolución parcial de los bienes y/o no aceptación parcial del servicio', // Valor por defecto — código 1
+        discrepancyResponseCode: '1',
+        // La nota es un espejo de la factura que afecta: mismas condiciones comerciales, no las
+        // que traiga initialForm por defecto.
+        paymentMeans: fullInvoice.paymentMeans || '',
+        paymentMeansType: fullInvoice.paymentMeansType || '',
+        paymentTermDays: fullInvoice.paymentTermDays ?? '',
+        purchaseOrderReference: fullInvoice.purchaseOrderReference || '',
         items: fullInvoice.items.map((i: any) => ({
           productId: i.productId || '',
           code: i.code,
           name: i.name,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
+          unitOfMeasureCode: i.unitOfMeasureCode || '94',
+          unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA',
+          unitOfMeasureDisplayFormat: i.unitOfMeasureDisplayFormat || 'Combined',
           ivaTreatment: i.ivaTreatment || 'Gravado',
           taxRate: i.taxRate,
           discountRate: i.discountRate || 0,
@@ -340,6 +469,11 @@ export default function InvoicesPage() {
               name: concept?.name || `${r.taxCategory} ${r.rate}%`
             };
           })
+        })),
+        generalRetentions: (fullInvoice.generalRetentions || []).map((r: any) => ({
+          catalogId: retentionCatalog.find(c => c.category === r.taxCategory && c.rate === r.rate)?.id || '',
+          taxCategory: r.taxCategory,
+          rate: r.rate
         })),
         subtotal: fullInvoice.subtotal,
         taxAmount: fullInvoice.taxAmount,
@@ -364,13 +498,23 @@ export default function InvoicesPage() {
         documentTypeId: documentTypes.find(d => d.code === '92')?.id || '',
         customerId: fullInvoice.customerId,
         referenceDocumentId: fullInvoice.id,
-        referenceConcept: 'Intereses u otros cargos', // Valor por defecto
+        referenceConcept: 'Intereses', // Valor por defecto — código 1
+        discrepancyResponseCode: '1',
+        // La nota es un espejo de la factura que afecta: mismas condiciones comerciales, no las
+        // que traiga initialForm por defecto.
+        paymentMeans: fullInvoice.paymentMeans || '',
+        paymentMeansType: fullInvoice.paymentMeansType || '',
+        paymentTermDays: fullInvoice.paymentTermDays ?? '',
+        purchaseOrderReference: fullInvoice.purchaseOrderReference || '',
         items: fullInvoice.items.map((i: any) => ({
           productId: i.productId || '',
           code: i.code,
           name: i.name,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
+          unitOfMeasureCode: i.unitOfMeasureCode || '94',
+          unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA',
+          unitOfMeasureDisplayFormat: i.unitOfMeasureDisplayFormat || 'Combined',
           ivaTreatment: i.ivaTreatment || 'Gravado',
           taxRate: i.taxRate,
           discountRate: i.discountRate || 0,
@@ -387,6 +531,11 @@ export default function InvoicesPage() {
             };
           })
         })),
+        generalRetentions: (fullInvoice.generalRetentions || []).map((r: any) => ({
+          catalogId: retentionCatalog.find(c => c.category === r.taxCategory && c.rate === r.rate)?.id || '',
+          taxCategory: r.taxCategory,
+          rate: r.rate
+        })),
         subtotal: fullInvoice.subtotal,
         taxAmount: fullInvoice.taxAmount,
         totalAmount: fullInvoice.totalAmount
@@ -400,7 +549,7 @@ export default function InvoicesPage() {
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { productId: '', code: '', name: '', quantity: 1, unitPrice: 0, ivaTreatment: 'Gravado', taxRate: 19, discountRate: 0, taxAmount: 0, totalAmount: 0, retentions: [] }]
+      items: [...formData.items, { productId: '', code: '', name: '', quantity: 1, unitPrice: 0, unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined', ivaTreatment: 'Gravado', taxRate: 19, discountRate: 0, taxAmount: 0, totalAmount: 0, retentions: [] }]
     });
   };
 
@@ -421,6 +570,9 @@ export default function InvoicesPage() {
         item.code = p.code;
         item.name = p.name;
         item.unitPrice = p.unitPrice;
+        item.unitOfMeasureCode = p.unitOfMeasure?.dianCode || '94';
+        item.unitOfMeasureAbbreviation = p.unitOfMeasure?.abbreviation || 'EA';
+        item.unitOfMeasureDisplayFormat = p.unitOfMeasure?.displayFormat || 'Combined';
         item.ivaTreatment = p.ivaTreatment || 'Gravado';
         item.taxRate = p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0;
       }
@@ -522,7 +674,7 @@ export default function InvoicesPage() {
   };
   // RET_IVA se calcula sobre el IVA generado (es una retención sobre el impuesto); cualquier otra
   // categoría (ReteICA, etc.) se calcula sobre el subtotal. El backend prorratea el monto entre
-  // los ítems al armar el envío a Dataico; acá solo se muestra el total para que cuadre con lo
+  // los ítems al armar el envío al integrador; acá solo se muestra el total para que cuadre con lo
   // que se emitirá.
   const generalRetentionAmount = (r: { taxCategory: string, rate: number }) =>
     r.taxCategory === 'RET_IVA' ? formData.taxAmount * r.rate / 100 : formData.subtotal * r.rate / 100;
@@ -531,20 +683,23 @@ export default function InvoicesPage() {
 
   // Desglose del totalizador de retenciones por cada categoría+tarifa (las por ítem se agrupan
   // entre todos los ítems que la usan, y se suman con la general si coincide categoría+tarifa).
+  // El rótulo es el tipo de impuesto (Rete Fuente/ICA/IVA), no el nombre específico del concepto
+  // del catálogo (ej. "Compras generales (declarantes)") — así varios conceptos con la misma
+  // categoría+tarifa quedan agrupados bajo un solo rótulo reconocible.
   const discriminatedRetentions = () => {
     const map = new Map<string, { label: string, amount: number }>();
     formData.items.forEach(item => {
       (item.retentions || []).forEach((r: any) => {
         const key = `${r.taxCategory}|${r.rate}`;
         const prev = map.get(key)?.amount || 0;
-        const label = `${r.name || r.taxCategory} ${r.rate}%`;
+        const label = `${retentionCategoryLabel(r.taxCategory)} ${r.rate}%`;
         map.set(key, { label, amount: prev + itemRetentionEntryAmount(item, r) });
       });
     });
     formData.generalRetentions.forEach(r => {
       const key = `${r.taxCategory}|${r.rate}`;
       const prev = map.get(key)?.amount || 0;
-      const label = `${retentionCatalog.find(c => c.id === r.catalogId)?.name || r.taxCategory} ${r.rate}%`;
+      const label = `${retentionCategoryLabel(r.taxCategory)} ${r.rate}%`;
       map.set(key, { label, amount: prev + generalRetentionAmount(r) });
     });
     return Array.from(map.values());
@@ -575,21 +730,10 @@ export default function InvoicesPage() {
     return Array.from(map.values()).sort((a, b) => a.order - b.order);
   };
 
-  const handleSaveQuickCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingCustomer(true);
-    try {
-      const res = await api.post('/client/customers', quickCustomer);
-      toast.success('Tercero creado');
-      setCustomers(prev => [...prev, res.data]);
-      setFormData(f => ({ ...f, customerId: res.data.id }));
-      setShowCustomerModal(false);
-      setQuickCustomer(initialQuickCustomer);
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Error creando el tercero'));
-    } finally {
-      setSavingCustomer(false);
-    }
+  const handleCustomerSaved = (customer: any) => {
+    setCustomers(prev => [...prev, customer]);
+    setFormData(f => ({ ...f, customerId: customer.id }));
+    setShowCustomerModal(false);
   };
 
   const handleSaveQuickProduct = async (e: React.FormEvent) => {
@@ -628,7 +772,9 @@ export default function InvoicesPage() {
       toast.error('Agrega al menos un ítem');
       return;
     }
-    if (!formData.resolutionId) {
+    // Las notas no tienen resolución propia — el backend siempre usa la de Factura del emisor,
+    // así que no hay nada que el usuario deba elegir acá.
+    if (!formData.referenceDocumentId && !formData.resolutionId) {
       toast.error('Debes seleccionar la resolución de facturación a usar');
       return;
     }
@@ -638,6 +784,9 @@ export default function InvoicesPage() {
       const payload = {
         ...formData,
         paymentTermDays: formData.paymentTermDays === '' ? null : formData.paymentTermDays,
+        // Las notas no traen resolutionId (el selector queda oculto) — "" no es un Guid? válido
+        // para el backend, hay que mandar null.
+        resolutionId: formData.resolutionId || null,
         generalRetentions: formData.generalRetentions.map(r => ({ taxCategory: r.taxCategory, rate: r.rate })),
         items: formData.items.map(i => {
           const lineBase = i.quantity * i.unitPrice * (1 - (i.discountRate || 0) / 100);
@@ -668,24 +817,38 @@ export default function InvoicesPage() {
     }
   };
 
-  const confirmPublish = async () => {
-    if (!publishingId) return;
-    if (!publishPayment.paymentMeans || !publishPayment.paymentMeansType) {
-      toast.error('Indica el medio de pago.');
+  // Forma y medio de pago ya se piden en el formulario de la factura, así que emitir es una sola
+  // acción sin pasos intermedios. Si al borrador le falta alguno (uno guardado antes de este
+  // cambio, por ejemplo), se manda de vuelta a completarlo en el formulario en vez de fallar en
+  // la DIAN sin explicación.
+  const handlePublishInvoice = async (inv: any) => {
+    if (!inv.paymentMeansType) {
+      toast.error('Esta factura no tiene definida la forma de pago (Contado/Crédito). Edítala para completarla.');
       return;
     }
+    if (!inv.paymentMeans) {
+      toast.error('Esta factura no tiene definido el medio de pago. Edítala para completarla.');
+      return;
+    }
+    setPublishingId(inv.id);
+    const wasViewingId = viewingInvoice?.id;
     try {
-      const wasViewingId = viewingInvoice?.id;
-      await api.post(`/client/invoices/${publishingId}/publish`, publishPayment);
+      await api.post(`/client/invoices/${inv.id}/publish`, {});
       toast.success('Factura emitida correctamente');
-      setPublishingId(null);
+    } catch (err: any) {
+      // El backend guarda el estado "RECHAZADA" y el motivo aunque la respuesta sea un error
+      // (el rechazo del integrador no es una falla nuestra) — hay que refrescar igual, si no la
+      // lista se queda mostrando el estado anterior hasta que el usuario recargue la página.
+      toast.error(getErrorMessage(err, 'Error al publicar'));
+    } finally {
       loadData();
       // Si se publicó desde la vista de detalle, refrescarla en vez de dejarla con el estado viejo.
-      if (wasViewingId === publishingId) handleViewDetail({ id: publishingId });
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Error al publicar'));
+      if (wasViewingId === inv.id) handleViewDetail({ id: inv.id });
+      setPublishingId(null);
     }
   };
+
+  const isNote = !!formData.referenceDocumentId;
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
@@ -699,11 +862,11 @@ export default function InvoicesPage() {
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
           <div className="p-8 border-b border-slate-100 bg-slate-50/50">
             <h2 className="text-2xl font-extrabold text-slate-800">{editingId ? 'Editar Factura' : 'Nueva Factura'}</h2>
-            <p className="text-slate-500 mt-1">Ingresa los datos para emitir un nuevo documento</p>
+            <p className="text-slate-500 mt-1">Completa los datos del documento</p>
           </div>
           
           <div className="p-8">
-            <div className="grid grid-cols-2 gap-6 mb-8">
+            <div className={`grid ${isNote ? 'grid-cols-1' : 'grid-cols-2'} gap-6 mb-8`}>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Tipo de Documento</label>
                 <SearchableSelect
@@ -713,8 +876,12 @@ export default function InvoicesPage() {
                   options={documentTypes.map(d => ({ value: d.id, label: d.name }))}
                 />
               </div>
+              {/* Las Notas Crédito/Débito no tienen resolución autorizada propia ante la DIAN —
+                  siempre reutilizan automáticamente la de Factura del emisor (ver
+                  InvoiceController.Publish), así que este selector no aplica ni hace falta. */}
+              {!isNote && (
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Resolución de Facturación</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Resolución</label>
                 <SearchableSelect
                   value={formData.resolutionId}
                   onChange={v => setFormData({ ...formData, resolutionId: v })}
@@ -725,11 +892,12 @@ export default function InvoicesPage() {
                   }))}
                 />
                 {resolutions.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-1">No hay resoluciones activas registradas. Configúralas en Ajustes → Resoluciones.</p>
+                  <p className="text-xs text-amber-600 mt-1">No hay resoluciones activas. Configúralas en Ajustes &gt; Resoluciones.</p>
                 )}
               </div>
+              )}
               <div className="col-span-2">
-                <label className="block text-sm font-bold text-slate-700 mb-2">Cliente / Adquirente</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Cliente</label>
                 <div className="flex gap-2">
                   <SearchableSelect
                     className="flex-1"
@@ -747,62 +915,81 @@ export default function InvoicesPage() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Fecha de Factura</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Fecha de emisión</label>
                 <input
                   type="date"
                   value={formData.issueDate}
                   onChange={e => setFormData({ ...formData, issueDate: e.target.value })}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                  className="w-full px-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Tipo de Pago</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Condiciones de pago</label>
                 <SearchableSelect
                   value={formData.paymentMeansType}
                   onChange={v => {
-                    setFormData({ ...formData, paymentMeansType: v, paymentTermDays: v === 'CREDITO' ? formData.paymentTermDays : '' });
+                    setFormData({
+                      ...formData,
+                      paymentMeansType: v,
+                      paymentTermDays: v === 'CREDITO' ? formData.paymentTermDays : '',
+                    });
                     if (v !== 'CREDITO') setPaymentTermCustom(false);
                   }}
                   placeholder="Contado o crédito..."
-                  options={[{ value: 'DEBITO', label: 'Contado' }, { value: 'CREDITO', label: 'Crédito' }]}
+                  options={formaPagoCatalog.map(c => ({ value: c.category, label: c.name }))}
                 />
               </div>
               {formData.paymentMeansType === 'CREDITO' && (
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Plazo de Pago</label>
-                  <SearchableSelect
-                    value={paymentTermCustom ? 'OTHER' : (formData.paymentTermDays === '' ? '' : String(formData.paymentTermDays))}
-                    onChange={v => {
-                      if (v === 'OTHER') {
-                        setPaymentTermCustom(true);
-                      } else {
-                        setPaymentTermCustom(false);
-                        setFormData({ ...formData, paymentTermDays: v === '' ? '' : parseInt(v) });
-                      }
-                    }}
-                    placeholder="Buscar plazo..."
-                    options={[...paymentTermCatalog.map(c => ({ value: c.category, label: c.name })), { value: 'OTHER', label: 'Otro (personalizado)' }]}
-                  />
-                  {paymentTermCustom && (
-                    <input
-                      type="number" min="0" placeholder="Días"
-                      value={formData.paymentTermDays === '' ? '' : formData.paymentTermDays}
-                      onChange={e => setFormData({ ...formData, paymentTermDays: e.target.value === '' ? '' : parseInt(e.target.value) })}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none mt-2"
-                    />
-                  )}
-                  {formData.paymentTermDays !== '' && formData.issueDate && (
-                    <p className="text-xs text-slate-500 mt-2">
-                      Vence: <span className="font-bold text-slate-700">
-                        {new Date(new Date(formData.issueDate + 'T00:00:00').getTime() + Number(formData.paymentTermDays) * 86400000).toLocaleDateString('es-CO')}
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-bold text-slate-700">Plazo de Pago</label>
+                    {formData.paymentTermDays !== '' && formData.issueDate && (
+                      <span className="text-xs text-slate-500">
+                        Vence: <span className="font-bold text-slate-700">
+                          {new Date(new Date(formData.issueDate + 'T00:00:00').getTime() + Number(formData.paymentTermDays) * 86400000).toLocaleDateString('es-CO')}
+                        </span>
                       </span>
-                    </p>
-                  )}
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <div className={paymentTermCustom ? 'flex-1' : 'w-full'}>
+                      <SearchableSelect
+                        value={paymentTermCustom ? 'OTHER' : (formData.paymentTermDays === '' ? '' : String(formData.paymentTermDays))}
+                        onChange={v => {
+                          if (v === 'OTHER') {
+                            setPaymentTermCustom(true);
+                          } else {
+                            setPaymentTermCustom(false);
+                            setFormData({ ...formData, paymentTermDays: v === '' ? '' : parseInt(v) });
+                          }
+                        }}
+                        placeholder="Buscar plazo..."
+                        options={[...paymentTermCatalog.map(c => ({ value: c.category, label: c.name })), { value: 'OTHER', label: 'Otro (personalizado)' }]}
+                      />
+                    </div>
+                    {paymentTermCustom && (
+                      <input
+                        type="number" min="0" placeholder="Días"
+                        value={formData.paymentTermDays === '' ? '' : formData.paymentTermDays}
+                        onChange={e => setFormData({ ...formData, paymentTermDays: e.target.value === '' ? '' : parseInt(e.target.value) })}
+                        className="w-32 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                      />
+                    )}
+                  </div>
                 </div>
               )}
               <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Medio de Pago</label>
+                <SearchableSelect
+                  value={formData.paymentMeans}
+                  onChange={v => setFormData({ ...formData, paymentMeans: v })}
+                  placeholder="Buscar medio de pago..."
+                  options={[...paymentMeansCatalog].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(c => ({ value: c.category, label: c.name }))}
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Orden de Compra</label>
-                <input type="text" placeholder="Opcional" value={formData.purchaseOrderReference} onChange={e => setFormData({ ...formData, purchaseOrderReference: e.target.value })} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none" />
+                <input type="text" placeholder="Opcional" value={formData.purchaseOrderReference} onChange={e => setFormData({ ...formData, purchaseOrderReference: e.target.value })} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none" />
               </div>
             </div>
 
@@ -820,22 +1007,17 @@ export default function InvoicesPage() {
                       : 'Esta nota afectará a la factura seleccionada. Puedes emitirla por el valor total (sin tocar nada) o ajustar las líneas/cantidades para una devolución parcial.'}
                   </p>
                   <div>
-                    <label className="block text-sm font-bold text-amber-800 mb-2">Concepto de la Nota</label>
+                    <label className="block text-sm font-bold text-amber-800 mb-2">Motivo de la Nota</label>
                     <SearchableSelect
-                      value={formData.referenceConcept}
-                      onChange={v => setFormData({...formData, referenceConcept: v})}
-                      placeholder="Buscar concepto..."
+                      value={formData.discrepancyResponseCode}
+                      onChange={v => {
+                        const catalog = isDebitNote ? debitNoteReasonCatalog : creditNoteReasonCatalog;
+                        const selected = catalog.find(c => c.category === v);
+                        setFormData({...formData, discrepancyResponseCode: v, referenceConcept: selected?.name || formData.referenceConcept});
+                      }}
+                      placeholder="Buscar motivo..."
                       inputClassName="w-full px-4 py-2 pr-8 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none"
-                      options={isDebitNote ? [
-                        { value: 'Intereses u otros cargos', label: 'Intereses u otros cargos' },
-                        { value: 'Cambio en el valor', label: 'Cambio en el valor' },
-                        { value: 'Otros', label: 'Otros' }
-                      ] : [
-                        { value: 'Devolución de mercancía', label: 'Devolución de mercancía' },
-                        { value: 'Anulación de factura', label: 'Anulación de factura' },
-                        { value: 'Rebaja o descuento parcial o total', label: 'Rebaja o descuento parcial o total' },
-                        { value: 'Otros', label: 'Otros' }
-                      ]}
+                      options={(isDebitNote ? debitNoteReasonCatalog : creditNoteReasonCatalog).map(c => ({ value: c.category, label: c.name }))}
                     />
                   </div>
                 </div>
@@ -844,20 +1026,17 @@ export default function InvoicesPage() {
 
             <div className="mb-8">
               <div className="flex justify-between items-end mb-4">
-                <h3 className="text-lg font-bold text-slate-800">Líneas de Factura</h3>
-                <button onClick={addItem} className="text-primary font-bold flex items-center gap-2 hover:text-blue-700 transition-colors">
-                  <PlusCircle size={18} /> Agregar Ítem
-                </button>
+                <h3 className="text-lg font-bold text-slate-800">Productos o servicios</h3>
               </div>
-              
+
               <div className="border border-slate-200 rounded-2xl overflow-hidden">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
                       <th className="p-2 pl-3 w-1/3">Producto</th>
                       <th className="p-2">Cant.</th>
-                      <th className="p-2">Precio Und.</th>
-                      <th className="p-2">Desc. %</th>
+                      <th className="p-2">Precio unitario</th>
+                      <th className="p-2">Descuento %</th>
                       <th className="p-2">IVA</th>
                       <th className="p-2">Retención</th>
                       <th className="p-2 text-right">Total</th>
@@ -876,7 +1055,7 @@ export default function InvoicesPage() {
                                 value={item.productId}
                                 onChange={v => updateItem(index, 'productId', v)}
                                 placeholder="Buscar por código o nombre..."
-                                options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}`, displayLabel: p.code }))}
+                                options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}`, shortLabel: p.code }))}
                                 createOptions={q => [
                                   { label: `Crear "${q}" como código`, onSelect: () => { setProductModalForItemIndex(index); setQuickProduct({ ...initialQuickProduct, code: q }); } },
                                   { label: `Crear "${q}" como nombre`, onSelect: () => { setProductModalForItemIndex(index); setQuickProduct({ ...initialQuickProduct, name: q }); } },
@@ -893,10 +1072,34 @@ export default function InvoicesPage() {
                             </div>
                           </td>
                           <td className="p-2">
-                            <input type="number" min="1" value={item.quantity} onChange={e => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)} className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none text-center" />
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={qtyDraftIndex === index ? qtyDraft : formatMoneyEs(item.quantity)}
+                              onFocus={() => { setQtyDraftIndex(index); setQtyDraft(item.quantity ? formatMoneyEs(item.quantity) : ''); }}
+                              onChange={e => {
+                                const { display, value } = formatMoneyTyping(e.target.value);
+                                setQtyDraft(display);
+                                updateItem(index, 'quantity', value);
+                              }}
+                              onBlur={() => setQtyDraftIndex(null)}
+                              className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none text-center"
+                            />
                           </td>
                           <td className="p-2">
-                            <input type="number" value={item.unitPrice} onChange={e => updateItem(index, 'unitPrice', parseFloat(e.target.value) || 0)} className="w-32 p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono" />
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={priceDraftIndex === index ? priceDraft : formatMoneyEs(item.unitPrice)}
+                              onFocus={() => { setPriceDraftIndex(index); setPriceDraft(item.unitPrice ? formatMoneyEs(item.unitPrice) : ''); }}
+                              onChange={e => {
+                                const { display, value } = formatMoneyTyping(e.target.value);
+                                setPriceDraft(display);
+                                updateItem(index, 'unitPrice', value);
+                              }}
+                              onBlur={() => setPriceDraftIndex(null)}
+                              className="w-32 p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right"
+                            />
                           </td>
                           <td className="p-2">
                             <input type="number" min="0" max="100" step="0.01" value={item.discountRate || 0} onChange={e => updateItem(index, 'discountRate', parseFloat(e.target.value) || 0)} className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono" />
@@ -954,7 +1157,7 @@ export default function InvoicesPage() {
                             )}
                           </td>
                           <td className="p-2 pr-3 text-right font-mono font-bold text-slate-700">
-                            ${item.totalAmount.toLocaleString('es-CO')}
+                            ${item.totalAmount.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="p-1 text-right whitespace-nowrap">
                             <button onClick={() => removeItem(index)} className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
@@ -972,12 +1175,15 @@ export default function InvoicesPage() {
                   </tbody>
                 </table>
               </div>
+              <button onClick={addItem} className="mt-3 px-4 py-2 text-primary font-bold flex items-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all">
+                <PlusCircle size={18} /> Agregar Ítem
+              </button>
             </div>
 
             <div className="mb-8">
               <div className="flex justify-between items-end mb-4">
-                <h3 className="text-lg font-bold text-slate-800">Retenciones Generales (opcional)</h3>
-                <button type="button" disabled={availableRetentionOptions(formData.generalRetentions.map(r => r.catalogId)).length === 0} onClick={addGeneralRetention} className="text-primary font-bold flex items-center gap-2 hover:text-blue-700 transition-colors disabled:opacity-50 disabled:hover:text-primary">
+                <h3 className="text-lg font-bold text-slate-800">Retenciones (opcional)</h3>
+                <button type="button" disabled={availableRetentionOptions(formData.generalRetentions.map(r => r.catalogId)).length === 0} onClick={addGeneralRetention} className="px-4 py-2 text-primary font-bold flex items-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-primary/30">
                   <PlusCircle size={18} /> Agregar Retención
                 </button>
               </div>
@@ -1027,20 +1233,20 @@ export default function InvoicesPage() {
                     })}
                     {formData.generalRetentions.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="p-8 text-center text-slate-400">Sin retenciones generales (ej. ReteICA, ReteIVA) en este documento.</td>
+                        <td colSpan={3} className="p-8 text-center text-slate-400">No hay retenciones agregadas.</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
-              {retentionCatalog.length === 0 && <p className="text-xs text-amber-600 mt-2">Superadmin no ha configurado retenciones en el catálogo todavía.</p>}
+              {retentionCatalog.length === 0 && <p className="text-xs text-amber-600 mt-2">No hay retenciones configuradas.</p>}
             </div>
 
             <div className="flex flex-col lg:flex-row gap-8 border-t border-slate-100 pt-8">
-              <div className="flex flex-col gap-8 w-full lg:max-w-lg">
+              <div className="flex flex-col gap-8 w-full lg:flex-1">
                 <div>
                   <div className="flex justify-between items-end mb-4">
-                    <h3 className="text-lg font-bold text-slate-800">Descuento General (opcional)</h3>
+                    <h3 className="text-lg font-bold text-slate-800">Descuento general (opcional)</h3>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -1056,7 +1262,7 @@ export default function InvoicesPage() {
 
                 <div>
                   <div className="flex justify-between items-end mb-4">
-                    <h3 className="text-lg font-bold text-slate-800">Cargos Generales (opcional)</h3>
+                    <h3 className="text-lg font-bold text-slate-800">Cargo general (opcional)</h3>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -1071,52 +1277,63 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
+              <div className="w-full lg:flex-1">
+                <h3 className="text-lg font-bold text-slate-800 mb-4">Observaciones (opcional)</h3>
+                <textarea
+                  placeholder="Notas adicionales para esta factura..."
+                  value={formData.notes}
+                  onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                  rows={5}
+                  className="w-full p-3 border border-slate-200 rounded-lg text-sm outline-none resize-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
               <div className="flex-1 bg-slate-50 p-6 rounded-2xl border border-slate-200 h-fit">
                 <div className="flex justify-between text-slate-500 mb-2">
                   <span>Subtotal:</span>
-                  <span className="font-mono">${formData.subtotal.toLocaleString('es-CO')}</span>
+                  <span className="font-mono">${formData.subtotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 {ivaBreakdown().map(g => (
                   g.isGravado ? (
                     <React.Fragment key={g.label}>
                       <div className="flex justify-between text-slate-500 mb-2">
                         <span>Base {g.label}:</span>
-                        <span className="font-mono">${g.base.toLocaleString('es-CO')}</span>
+                        <span className="font-mono">${g.base.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                       <div className="flex justify-between text-slate-500 mb-2">
                         <span>{g.label}:</span>
-                        <span className="font-mono">${g.tax.toLocaleString('es-CO')}</span>
+                        <span className="font-mono">${g.tax.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     </React.Fragment>
                   ) : (
                     <div key={g.label} className="flex justify-between text-slate-500 mb-2">
                       <span>{g.label}:</span>
-                      <span className="font-mono">${g.base.toLocaleString('es-CO')}</span>
+                      <span className="font-mono">${g.base.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   )
                 ))}
                 {discriminatedRetentions().map(r => (
                   <div key={r.label} className="flex justify-between text-rose-600 mb-2">
                     <span>{r.label}:</span>
-                    <span className="font-mono">-${r.amount.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                    <span className="font-mono">-${r.amount.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 ))}
                 {formData.generalDiscountAmount > 0 && (
                   <div className="flex justify-between text-rose-600 mb-2">
-                    <span>Desc. general:</span>
-                    <span className="font-mono">-${formData.generalDiscountAmount.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                    <span>{formData.generalDiscountReason || 'Descuento general'}:</span>
+                    <span className="font-mono">-${formData.generalDiscountAmount.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 )}
                 {formData.generalChargeAmount > 0 && (
                   <div className="flex justify-between text-emerald-600 mb-2">
-                    <span>Cargo general:</span>
-                    <span className="font-mono">+${formData.generalChargeAmount.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                    <span>{formData.generalChargeReason || 'Cargo general'}:</span>
+                    <span className="font-mono">+${formData.generalChargeAmount.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 )}
                 <div className="mb-4 pb-4 border-b border-slate-200" />
                 <div className="flex justify-between font-extrabold text-xl text-slate-800">
                   <span>Total:</span>
-                  <span className="font-mono">${(formData.totalAmount - totalRetentions - formData.generalDiscountAmount + formData.generalChargeAmount).toLocaleString('es-CO')}</span>
+                  <span className="font-mono">${(formData.totalAmount - totalRetentions - formData.generalDiscountAmount + formData.generalChargeAmount).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
             </div>
@@ -1131,118 +1348,19 @@ export default function InvoicesPage() {
           </div>
         </div>
 
-        {showCustomerModal && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <h3 className="text-xl font-bold text-slate-800">Nuevo Tercero</h3>
-                <button onClick={() => setShowCustomerModal(false)} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
-              </div>
-              <form onSubmit={handleSaveQuickCustomer} className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Tipo de Persona</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['Natural', 'Juridica'] as const).map(pt => (
-                      <button
-                        key={pt}
-                        type="button"
-                        onClick={() => setQuickCustomer({ ...quickCustomer, personType: pt, identificationType: pt === 'Juridica' ? '31' : '13' })}
-                        className={`px-3 py-2.5 rounded-xl font-bold text-sm transition-colors ${
-                          quickCustomer.personType === pt ? 'bg-primary text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                        }`}
-                      >
-                        {pt === 'Natural' ? 'Persona Natural' : 'Persona Jurídica'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {quickCustomer.personType === 'Juridica' ? (
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Razón Social</label>
-                    <input type="text" required value={quickCustomer.name} onChange={e => setQuickCustomer({ ...quickCustomer, name: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    {(['firstName', 'secondName', 'firstLastName', 'secondLastName'] as const).map((field, i) => (
-                      <div key={field}>
-                        <label className="block text-sm font-bold text-slate-700 mb-1">{['Nombre 1', 'Nombre 2', 'Apellido 1', 'Apellido 2'][i]}</label>
-                        <input
-                          type="text" required={i === 0 || i === 2} value={quickCustomer[field]}
-                          onChange={e => {
-                            const next = { ...quickCustomer, [field]: e.target.value };
-                            next.name = [next.firstName, next.secondName, next.firstLastName, next.secondLastName].filter(Boolean).join(' ');
-                            setQuickCustomer(next);
-                          }}
-                          className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Tipo de Identificación</label>
-                    <SearchableSelect
-                      value={quickCustomer.identificationType}
-                      onChange={v => setQuickCustomer({ ...quickCustomer, identificationType: v })}
-                      placeholder="Buscar tipo de identificación..."
-                      options={IDENTIFICATION_TYPES}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Número</label>
-                    <input type="text" required value={quickCustomer.identificationNumber} onChange={e => setQuickCustomer({ ...quickCustomer, identificationNumber: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Email</label>
-                    <input type="email" required value={quickCustomer.email} onChange={e => setQuickCustomer({ ...quickCustomer, email: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Teléfono</label>
-                    <input type="text" value={quickCustomer.phone} onChange={e => setQuickCustomer({ ...quickCustomer, phone: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Régimen Fiscal</label>
-                    <SearchableSelect
-                      required
-                      value={quickCustomer.dataicoRegimen}
-                      onChange={v => setQuickCustomer({ ...quickCustomer, dataicoRegimen: v })}
-                      placeholder="Buscar régimen..."
-                      options={regimenCatalog.map(c => ({ value: c.category, label: c.name }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Nivel Tributario</label>
-                    <SearchableSelect
-                      required
-                      value={quickCustomer.dataicoTaxLevelCode}
-                      onChange={v => setQuickCustomer({ ...quickCustomer, dataicoTaxLevelCode: v })}
-                      placeholder="Buscar nivel tributario..."
-                      options={taxLevelCatalog.map(c => ({ value: c.category, label: c.name }))}
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-slate-400">Podrás completar dirección y demás datos después, desde "Mis Terceros".</p>
-                <div className="flex justify-end gap-3 pt-2">
-                  <button type="button" onClick={() => setShowCustomerModal(false)} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-                  <button type="submit" disabled={savingCustomer} className="px-5 py-2 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50">
-                    {savingCustomer ? 'Creando...' : 'Crear Tercero'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        <CustomerFormModal
+          open={showCustomerModal}
+          editingCustomer={null}
+          defaultPartyType="Cliente"
+          onClose={() => setShowCustomerModal(false)}
+          onSaved={handleCustomerSaved}
+        />
 
         {productModalForItemIndex !== null && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <h3 className="text-xl font-bold text-slate-800">Nuevo Producto</h3>
+                <h3 className="text-xl font-bold text-slate-800">Nuevo producto</h3>
                 <button onClick={() => setProductModalForItemIndex(null)} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
               </div>
               <form onSubmit={handleSaveQuickProduct} className="p-6 space-y-4">
@@ -1262,7 +1380,7 @@ export default function InvoicesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Tratamiento de IVA</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Tratamiento del IVA</label>
                     <SearchableSelect
                       value={quickProduct.ivaTreatment}
                       onChange={v => setQuickProduct({ ...quickProduct, ivaTreatment: v, ivaRate: v === 'Gravado' ? 19 : 0 })}
@@ -1312,12 +1430,7 @@ export default function InvoicesPage() {
       else taxGroups.set(key, { label: item.ivaTreatment === 'Gravado' ? `IVA ${item.taxRate}%` : item.ivaTreatment, base, tax: item.taxAmount });
     });
 
-    const retentionsTotal =
-      (inv.items || []).reduce((sum: number, item: any) => sum + (item.retentions || []).reduce((s: number, r: any) => {
-        const base = r.baseType === 'IvaGenerado' ? item.taxAmount : lineBaseOf(item);
-        return s + base * r.rate / 100;
-      }, 0), 0) +
-      (inv.generalRetentions || []).reduce((sum: number, r: any) => sum + (r.taxCategory === 'RET_IVA' ? inv.taxAmount * r.rate / 100 : inv.subtotal * r.rate / 100), 0);
+    const retentionsTotal = invoiceRetentionsTotal(inv);
 
     return (
       <div className="p-8">
@@ -1332,7 +1445,7 @@ export default function InvoicesPage() {
                 {isNote && (
                   <span className={`px-2 py-0.5 rounded text-xs font-bold ${inv.typeCode === 'NC' ? 'bg-amber-100 text-amber-700' : 'bg-orange-100 text-orange-700'}`}>{inv.typeCode}</span>
                 )}
-                <h2 className="text-2xl font-extrabold text-slate-800">{inv.number || 'Borrador'}</h2>
+                <h2 className="text-2xl font-extrabold text-slate-800">{inv.resolution?.prefix ? `${inv.resolution.prefix} ` : ''}{inv.number || 'Borrador'}</h2>
                 <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                   inv.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
                   inv.status === 'PROCESSING' ? 'bg-blue-100 text-blue-600' :
@@ -1343,20 +1456,31 @@ export default function InvoicesPage() {
                 </span>
               </div>
               <p className="text-slate-500">{new Date(inv.issueDate).toLocaleDateString('es-CO')} · {inv.customer?.name || 'Consumidor Final'}</p>
-              {inv.status === 'REJECTED' && inv.dianResponseMessage && (
-                <p className="text-sm text-rose-500 mt-2">{inv.dianResponseMessage}</p>
-              )}
             </div>
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => handlePreviewPdf(inv)} disabled={previewingId === inv.id} className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 disabled:opacity-50">
                 {previewingId === inv.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />} Vista Previa
               </button>
+              {(inv.status === 'REJECTED' || inv.status === 'APPROVED') && inv.dianResponseMessage && (
+                <button
+                  onClick={() => setResponseModalInv(inv)}
+                  className={`px-4 py-2 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 ${inv.status === 'REJECTED' ? 'text-rose-700 bg-rose-50 hover:bg-rose-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
+                >
+                  {inv.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
+                  {inv.status === 'REJECTED' ? 'Motivo del rechazo' : 'Respuesta de la DIAN'}
+                </button>
+              )}
+              {inv.status === 'APPROVED' && (
+                <button onClick={() => openResendModal(inv)} className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
+                  <Mail size={16} /> Reenviar
+                </button>
+              )}
               {(inv.status === 'DRAFT' || inv.status === 'REJECTED') && (
                 <>
                   <button onClick={() => handleEditDraft(inv)} className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
                     <Edit2 size={16} /> Editar
                   </button>
-                  <button onClick={() => { setPublishingId(inv.id); setPublishPayment({ paymentMeans: inv.paymentMeans || '', paymentMeansType: inv.paymentMeansType || '' }); }} className="px-4 py-2 text-white bg-primary hover:bg-primary/90 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2">
+                  <button onClick={() => handlePublishInvoice(inv)} disabled={publishingId === inv.id} className="px-4 py-2 text-white bg-primary hover:bg-primary/90 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2 disabled:opacity-50">
                     <Send size={16} /> Emitir
                   </button>
                   <button onClick={() => handleDeleteDraft(inv.id)} className="px-4 py-2 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
@@ -1378,12 +1502,25 @@ export default function InvoicesPage() {
           </div>
 
           <div className="p-8 space-y-8">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Resolución</p><p className="text-slate-700 font-medium">{inv.resolution?.prefix || '-'}</p></div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Identificación</p><p className="text-slate-700 font-medium">{inv.customer?.identificationNumber || '-'}</p></div>
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Forma de Pago</p><p className="text-slate-700 font-medium">{inv.paymentMeansType === 'CREDITO' ? 'Crédito' : inv.paymentMeansType === 'DEBITO' ? 'Contado' : '-'}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Forma de Pago</p><p className="text-slate-700 font-medium">{formaPagoCatalog.find(c => c.category === inv.paymentMeansType)?.name || '-'}</p></div>
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Orden de Compra</p><p className="text-slate-700 font-medium">{inv.purchaseOrderReference || '-'}</p></div>
             </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Subtotal</p><p className="text-slate-700 font-medium font-mono">${(inv.subtotal || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Impuestos</p><p className="text-slate-700 font-medium font-mono">${(inv.taxAmount || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Retenciones</p><p className="text-rose-600 font-medium font-mono">-${retentionsTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Total</p><p className="text-slate-800 font-bold font-mono">${invoiceNetTotal(inv).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+            </div>
+
+            {inv.notes && (
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <p className="text-xs font-bold text-slate-500 uppercase mb-1">Observaciones</p>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{inv.notes}</p>
+              </div>
+            )}
 
             {(viewingOriginal || viewingRelated.length > 0) && (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
@@ -1410,8 +1547,8 @@ export default function InvoicesPage() {
                   <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
                     <th className="p-3">Producto</th>
                     <th className="p-3">Cant.</th>
-                    <th className="p-3">Precio Und.</th>
-                    <th className="p-3">Desc. %</th>
+                    <th className="p-3">Precio unitario</th>
+                    <th className="p-3">Descuento %</th>
                     <th className="p-3">IVA</th>
                     <th className="p-3 text-right">Total</th>
                   </tr>
@@ -1439,64 +1576,62 @@ export default function InvoicesPage() {
                     {g.tax > 0 && <div className="flex justify-between text-slate-700"><span>{g.label}</span><span className="font-mono">${g.tax.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>}
                   </React.Fragment>
                 ))}
+                {inv.generalDiscountAmount > 0 && (
+                  <div className="flex justify-between text-rose-600"><span>{inv.generalDiscountReason || 'Descuento'}</span><span className="font-mono">-${inv.generalDiscountAmount.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>
+                )}
+                {inv.generalChargeAmount > 0 && (
+                  <div className="flex justify-between text-slate-700"><span>{inv.generalChargeReason || 'Cargo'}</span><span className="font-mono">${inv.generalChargeAmount.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>
+                )}
                 {retentionsTotal > 0 && (
                   <div className="flex justify-between text-rose-600"><span>Retenciones</span><span className="font-mono">-${retentionsTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>
                 )}
                 <div className="flex justify-between text-lg font-bold text-slate-800 pt-2 border-t border-slate-200">
-                  <span>Total</span><span className="font-mono">${inv.totalAmount?.toLocaleString('es-CO')}</span>
+                  <span>Total</span><span className="font-mono">${invoiceNetTotal(inv).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {publishingId && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6">
-              <h3 className="text-xl font-bold text-slate-800 mb-1">Emitir Factura</h3>
-              <p className="text-slate-500 text-sm mb-4">Indica el medio de pago para emitirla.</p>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Medio de Pago</label>
-                  <SearchableSelect
-                    value={publishPayment.paymentMeans}
-                    onChange={v => setPublishPayment({ ...publishPayment, paymentMeans: v })}
-                    placeholder="Buscar medio de pago..."
-                    options={paymentMeansCatalog.map(c => ({ value: c.category, label: c.name }))}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Forma de Pago</label>
-                  <SearchableSelect
-                    value={publishPayment.paymentMeansType}
-                    onChange={v => setPublishPayment({ ...publishPayment, paymentMeansType: v })}
-                    placeholder="Contado o crédito..."
-                    options={[{ value: 'DEBITO', label: 'Contado' }, { value: 'CREDITO', label: 'Crédito' }]}
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end gap-3">
-                <button onClick={() => setPublishingId(null)} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-                <button onClick={confirmPublish} className="px-5 py-2 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-md">Emitir</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
 
-  const filteredInvoices = invoices.filter(inv => {
-    if (!searchTerm.trim()) return true;
-    const q = searchTerm.trim().toLowerCase();
-    return (inv.number || '').toLowerCase().includes(q) ||
-      (inv.customer?.name || '').toLowerCase().includes(q) ||
-      (inv.customer?.identificationNumber || '').toLowerCase().includes(q);
-  });
+  const filteredInvoices = invoices
+    .filter(inv => {
+      if (statusFilter && inv.status !== statusFilter) return false;
+      if (resolutionFilter && inv.resolution?.id !== resolutionFilter) return false;
+      if (!searchTerm.trim()) return true;
+      const q = searchTerm.trim().toLowerCase();
+      return (inv.number || '').toLowerCase().includes(q) ||
+        (inv.customer?.name || '').toLowerCase().includes(q) ||
+        (inv.customer?.identificationNumber || '').toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      const rankDiff = (STATUS_SORT_RANK[a.status] ?? 3) - (STATUS_SORT_RANK[b.status] ?? 3);
+      if (rankDiff !== 0) return rankDiff;
+      return (parseInt(b.number) || 0) - (parseInt(a.number) || 0);
+    });
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const filteredTotal = filteredInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+  // Nota Crédito resta del saldo (es una devolución/anulación parcial), Nota Débito suma igual
+  // que una Factura (aumenta lo adeudado) — antes las dos sumaban en el mismo sentido que las
+  // facturas, así que el total del pie de página quedaba doblado en vez de neteado.
+  const invoiceSign = (inv: any) => inv.typeCode === 'NC' ? -1 : 1;
+  const filteredTotal = filteredInvoices.reduce((sum, inv) => sum + invoiceSign(inv) * (inv.subtotal || 0), 0);
+  const filteredTaxTotal = filteredInvoices.reduce((sum, inv) => sum + invoiceSign(inv) * (inv.taxAmount || 0), 0);
+  const filteredRetentionsTotal = filteredInvoices.reduce((sum, inv) => sum + invoiceRetentionsTotal(inv), 0);
+  const filteredNetTotal = filteredInvoices.reduce((sum, inv) => sum + invoiceSign(inv) * invoiceNetTotal(inv), 0);
+
+  // Factura original (si esta fila es una nota) + notas que referencian esta fila — para el ícono
+  // de documentos relacionados en la lista.
+  const getRelatedDocs = (inv: any) => {
+    const docs: any[] = [];
+    if (inv.referenceDocument) docs.push({ ...inv.referenceDocument, relation: 'Factura original' });
+    (inv.relatedNotes || []).forEach((r: any) => docs.push({ ...r, relation: r.typeCode === 'NC' ? 'Nota Crédito' : r.typeCode === 'ND' ? 'Nota Débito' : r.typeCode }));
+    return docs;
+  };
 
   const handleExport = () => exportToCsv(
     `facturas_${customFrom}_a_${customTo}.csv`,
@@ -1540,6 +1675,18 @@ export default function InvoicesPage() {
 
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <div className="w-52">
+          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Resolución</label>
+          <SearchableSelect
+            value={resolutionFilter}
+            onChange={setResolutionFilter}
+            placeholder="Todas..."
+            options={[
+              { value: '', label: 'Todas' },
+              ...resolutions.map(r => ({ value: r.id, label: `${r.prefix} - ${r.documentType}` }))
+            ]}
+          />
+        </div>
+        <div className="w-52">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Periodo</label>
           <SearchableSelect
             value={datePreset}
@@ -1560,6 +1707,21 @@ export default function InvoicesPage() {
             </div>
           </>
         )}
+        <div className="w-48">
+          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
+          <SearchableSelect
+            value={statusFilter}
+            onChange={setStatusFilter}
+            placeholder="Todos..."
+            options={[
+              { value: '', label: 'Todos' },
+              { value: 'DRAFT', label: 'Borrador' },
+              { value: 'REJECTED', label: 'Rechazada' },
+              { value: 'PROCESSING', label: 'Procesando' },
+              { value: 'APPROVED', label: 'Emitida' }
+            ]}
+          />
+        </div>
         <div className="flex-1 min-w-[220px]">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Buscar</label>
           <div className="relative">
@@ -1567,20 +1729,22 @@ export default function InvoicesPage() {
             <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Número, cliente o identificación..." className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
         </div>
-        <button onClick={handleExport} disabled={filteredInvoices.length === 0} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition-colors disabled:opacity-50">
-          <Download size={16} /> Exportar CSV
+        <button onClick={handleExport} disabled={filteredInvoices.length === 0} title="Exportar CSV" className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors disabled:opacity-50">
+          <Download size={16} />
         </button>
-        <p className="text-xs text-slate-400 pb-2.5">{filteredInvoices.length} documento{filteredInvoices.length === 1 ? '' : 's'} en el periodo</p>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-sm font-bold text-slate-500 uppercase tracking-wider">
               <th className="p-4">Fecha</th>
               <th className="p-4">Número</th>
-              <th className="p-4">Resolución</th>
-              <th className="p-4">Cliente</th>
+              <th className="p-4 min-w-[220px]">Cliente</th>
+              <th className="p-4 text-right">Subtotal</th>
+              <th className="p-4 text-right">Impuestos</th>
+              <th className="p-4 text-right">Retenciones</th>
               <th className="p-4 text-right">Total</th>
               <th className="p-4 text-center">Estado</th>
               <th className="p-4 text-right">Acciones</th>
@@ -1597,12 +1761,40 @@ export default function InvoicesPage() {
                         {inv.typeCode}
                       </span>
                     )}
-                    {inv.number || '---'}
+                    {inv.resolution?.prefix ? `${inv.resolution.prefix} ` : ''}{inv.number || '---'}
+                    {getRelatedDocs(inv).length > 0 && (
+                      <div className="relative" data-related-popover>
+                        <button
+                          onClick={() => setRelatedOpenId(relatedOpenId === inv.id ? null : inv.id)}
+                          title="Documentos relacionados"
+                          className="p-1 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-md transition-colors"
+                        >
+                          <Link2 size={14} />
+                        </button>
+                        {relatedOpenId === inv.id && (
+                          <div className="absolute z-20 top-full left-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                            <p className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100">Documentos relacionados</p>
+                            {getRelatedDocs(inv).map(doc => (
+                              <button
+                                key={doc.id}
+                                onClick={() => { setRelatedOpenId(null); handleViewDetail(doc); }}
+                                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 transition-colors"
+                              >
+                                <span className="text-slate-600 font-normal">{doc.relation} · {doc.number || '---'}</span>
+                                <span className="text-xs font-bold text-primary">Ver</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </td>
-                <td className="p-4 text-slate-500 text-sm font-mono">{inv.resolution?.prefix || '-'}</td>
-                <td className="p-4 text-slate-900">{inv.customer?.name || 'Consumidor Final'}</td>
-                <td className="p-4 text-right font-mono font-medium">${inv.totalAmount?.toLocaleString('es-CO') || '0'}</td>
+                <td className="p-4 text-slate-900 min-w-[220px]">{inv.customer?.name || 'Consumidor Final'}</td>
+                <td className="p-4 text-right font-mono text-slate-500">${(inv.subtotal || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="p-4 text-right font-mono text-slate-500">${(inv.taxAmount || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="p-4 text-right font-mono text-rose-600">-${invoiceRetentionsTotal(inv).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="p-4 text-right font-mono font-medium">${invoiceNetTotal(inv).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="p-4 text-center">
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                     inv.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
@@ -1612,9 +1804,6 @@ export default function InvoicesPage() {
                   }`}>
                     {STATUS_LABELS[inv.status] || inv.status}
                   </span>
-                  {inv.status === 'REJECTED' && inv.dianResponseMessage && (
-                    <p className="text-xs text-rose-500 mt-1 max-w-[220px] mx-auto">{inv.dianResponseMessage}</p>
-                  )}
                 </td>
                 <td className="p-4 flex items-center justify-end gap-2">
                   {(inv.status === 'DRAFT' || inv.status === 'REJECTED') && (
@@ -1622,13 +1811,27 @@ export default function InvoicesPage() {
                       <button onClick={() => handleEditDraft(inv)} title="Editar" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                         <Edit2 size={16} />
                       </button>
-                      <button onClick={() => { setPublishingId(inv.id); setPublishPayment({ paymentMeans: inv.paymentMeans || '', paymentMeansType: inv.paymentMeansType || '' }); }} title="Emitir a la DIAN" className="p-2 text-white bg-primary hover:bg-primary/90 rounded-lg shadow-sm transition-all flex items-center gap-1 text-sm font-bold">
+                      <button onClick={() => handlePublishInvoice(inv)} disabled={publishingId === inv.id} title="Emitir a la DIAN" className="p-2 text-white bg-primary hover:bg-primary/90 rounded-lg shadow-sm transition-all flex items-center gap-1 text-sm font-bold disabled:opacity-50">
                         <Send size={16} /> Emitir
                       </button>
                       <button onClick={() => handleDeleteDraft(inv.id)} title="Eliminar" className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
                         <Trash2 size={16} />
                       </button>
                     </>
+                  )}
+                  {(inv.status === 'REJECTED' || inv.status === 'APPROVED') && inv.dianResponseMessage && (
+                    <button
+                      onClick={() => setResponseModalInv(inv)}
+                      title={inv.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
+                      className={`p-2 rounded-lg transition-colors ${inv.status === 'REJECTED' ? 'text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-primary hover:bg-slate-100'}`}
+                    >
+                      {inv.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
+                    </button>
+                  )}
+                  {inv.status === 'APPROVED' && (
+                    <button onClick={() => openResendModal(inv)} title="Reenviar documento" className="p-2 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors">
+                      <Mail size={16} />
+                    </button>
                   )}
                   <button onClick={() => handleViewDetail(inv)} title="Ver detalle" className="p-2 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors">
                     <Eye size={16} />
@@ -1641,68 +1844,163 @@ export default function InvoicesPage() {
             ))}
             {filteredInvoices.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-slate-500">No hay facturas que coincidan con el filtro.</td>
+                <td colSpan={9} className="p-8 text-center text-slate-500">No hay documentos que coincidan con el filtro.</td>
               </tr>
             )}
           </tbody>
           {filteredInvoices.length > 0 && (
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-700">
-                <td colSpan={4} className="p-4 text-right">Total del periodo:</td>
-                <td className="p-4 text-right font-mono">${filteredTotal.toLocaleString('es-CO')}</td>
+                <td colSpan={3} className="p-4 text-right">Total del período:</td>
+                <td className="p-4 text-right font-mono text-slate-500">${filteredTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="p-4 text-right font-mono text-slate-500">${filteredTaxTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="p-4 text-right font-mono text-rose-600">-${filteredRetentionsTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="p-4 text-right font-mono">${filteredNetTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td colSpan={2}></td>
               </tr>
             </tfoot>
           )}
         </table>
+        </div>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex justify-between items-center mt-4">
-          <p className="text-sm text-slate-500">Página {currentPage} de {totalPages}</p>
-          <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors">
-              <ChevronLeft size={18} />
-            </button>
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors">
-              <ChevronRight size={18} />
-            </button>
+      <div className="flex justify-between items-center mt-4">
+        <p className="text-sm text-slate-400">{filteredInvoices.length} documento{filteredInvoices.length === 1 ? '' : 's'} en el periodo</p>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-slate-500">Página {currentPage} de {totalPages}</p>
+            <div className="flex gap-2">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors">
+                <ChevronLeft size={18} />
+              </button>
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors">
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {responseModalInv && (() => {
+        const parsed = parseDianResponse(responseModalInv.dianResponseMessage);
+        const isRejected = responseModalInv.status === 'REJECTED';
+        return (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setResponseModalInv(null)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    {isRejected ? <AlertCircle size={18} className="text-rose-600" /> : <Info size={18} className="text-primary" />}
+                    {isRejected ? 'Motivo del rechazo' : 'Respuesta de la DIAN'}
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1">Factura {responseModalInv.number || 'Borrador'}</p>
+                </div>
+                <button onClick={() => setResponseModalInv(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-6 space-y-3">
+                {parsed && 'errors' in parsed && parsed.errors ? (
+                  parsed.errors.map((e, idx) => (
+                    <div key={idx} className="p-3 bg-rose-50 border border-rose-100 rounded-xl">
+                      {e.path && e.path.length > 0 && (
+                        <p className="text-[10px] font-bold text-rose-400 uppercase mb-1">{e.path.join(' → ')}</p>
+                      )}
+                      <p className="text-sm text-rose-700">{e.error}</p>
+                    </div>
+                  ))
+                ) : parsed && 'fields' in parsed ? (
+                  <>
+                    <div className="divide-y divide-slate-100">
+                      {DIAN_RESPONSE_DISPLAY_FIELDS.filter(f => parsed.fields[f.key] != null && parsed.fields[f.key] !== '').map(f => (
+                        <div key={f.key} className="flex justify-between items-start gap-4 py-2 text-sm">
+                          <span className="text-slate-400 font-medium">{f.label}</span>
+                          <span className="text-slate-700 font-medium text-right break-all">
+                            {f.key === 'payment_means_type'
+                              ? (parsed.fields[f.key] === 'CREDITO' ? 'Crédito' : 'Contado')
+                              : String(parsed.fields[f.key])}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {parsed.fields.cufe && (
+                      <div className="py-2 border-t border-slate-100">
+                        <p className="text-slate-400 font-medium text-sm mb-1">CUFE</p>
+                        <p className="text-xs font-mono text-slate-600 break-all">{parsed.fields.cufe}</p>
+                      </div>
+                    )}
+                    {(parsed.fields.pdf_url || parsed.fields.xml_url) && (
+                      <div className="flex gap-2 pt-3 border-t border-slate-100">
+                        {parsed.fields.pdf_url && (
+                          <a href={parsed.fields.pdf_url} target="_blank" rel="noreferrer" className="flex-1 text-center px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors">
+                            Ver PDF
+                          </a>
+                        )}
+                        {parsed.fields.xml_url && (
+                          <a href={parsed.fields.xml_url} target="_blank" rel="noreferrer" className="flex-1 text-center px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors">
+                            Descargar XML
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {parsed.fields.qrcode && (
+                      <div className="pt-3 border-t border-slate-100">
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Código QR (contenido)</p>
+                        <pre className="text-[11px] bg-slate-50 border border-slate-200 rounded-xl p-3 whitespace-pre-wrap break-all font-mono text-slate-600 max-h-32 overflow-y-auto">{parsed.fields.qrcode}</pre>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-600 whitespace-pre-wrap">{responseModalInv.dianResponseMessage}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {resendModalInv && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setResendModalInv(null)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Mail size={18} className="text-primary" /> Reenviar documento
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">{resendModalInv.resolution?.prefix ? `${resendModalInv.resolution.prefix} ` : ''}{resendModalInv.number || 'Borrador'}</p>
+              </div>
+              <button onClick={() => setResendModalInv(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo de destino</label>
+                <input
+                  type="email"
+                  autoFocus
+                  value={resendEmailDraft}
+                  onChange={e => setResendEmailDraft(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="correo@ejemplo.com"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setResendModalInv(null)} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
+                <button
+                  onClick={handleResend}
+                  disabled={resendingId === resendModalInv.id}
+                  className="px-5 py-2 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50 flex items-center gap-2"
+                >
+                  {resendingId === resendModalInv.id ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  {resendingId === resendModalInv.id ? 'Enviando...' : 'Reenviar'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {publishingId && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6">
-            <h3 className="text-xl font-bold text-slate-800 mb-1">Emitir Factura</h3>
-            <p className="text-slate-500 text-sm mb-4">Indica el medio de pago para emitirla.</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Medio de Pago</label>
-                <SearchableSelect
-                  value={publishPayment.paymentMeans}
-                  onChange={v => setPublishPayment({ ...publishPayment, paymentMeans: v })}
-                  placeholder="Buscar medio de pago..."
-                  options={paymentMeansCatalog.map(c => ({ value: c.category, label: c.name }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Forma de Pago</label>
-                <SearchableSelect
-                  value={publishPayment.paymentMeansType}
-                  onChange={v => setPublishPayment({ ...publishPayment, paymentMeansType: v })}
-                  placeholder="Contado o crédito..."
-                  options={[{ value: 'DEBITO', label: 'Contado' }, { value: 'CREDITO', label: 'Crédito' }]}
-                />
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setPublishingId(null)} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-              <button onClick={confirmPublish} className="px-5 py-2 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-md">Emitir</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

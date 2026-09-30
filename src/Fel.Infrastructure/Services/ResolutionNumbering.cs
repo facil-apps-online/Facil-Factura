@@ -39,5 +39,59 @@ namespace Fel.Infrastructure.Services
                 if (affected > 0) return current;
             }
         }
+
+        // Mismo patrón optimista que ClaimNextNumberAsync, pero sobre el consecutivo interno de
+        // Client (NextCreditNoteNumber/NextDebitNoteNumber) en vez del de una Resolución — las
+        // Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que este
+        // consecutivo no compite con el de Factura.
+        public static async Task<long> ClaimNextCreditNoteNumberAsync(FelDbContext dbContext, Guid clientId)
+        {
+            while (true)
+            {
+                var client = await dbContext.Clients.AsNoTracking()
+                    .Where(c => c.Id == clientId)
+                    .Select(c => new { c.NextCreditNoteNumber })
+                    .FirstOrDefaultAsync();
+
+                if (client == null)
+                {
+                    throw new InvalidOperationException("No se encontró el Client al asignar el consecutivo de la nota crédito.");
+                }
+
+                var current = client.NextCreditNoteNumber ?? 1;
+                var next = current + 1;
+
+                var affected = await dbContext.Clients
+                    .Where(c => c.Id == clientId && c.NextCreditNoteNumber == client.NextCreditNoteNumber)
+                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.NextCreditNoteNumber, next));
+
+                if (affected > 0) return current;
+            }
+        }
+
+        public static async Task<long> ClaimNextDebitNoteNumberAsync(FelDbContext dbContext, Guid clientId)
+        {
+            while (true)
+            {
+                var client = await dbContext.Clients.AsNoTracking()
+                    .Where(c => c.Id == clientId)
+                    .Select(c => new { c.NextDebitNoteNumber })
+                    .FirstOrDefaultAsync();
+
+                if (client == null)
+                {
+                    throw new InvalidOperationException("No se encontró el Client al asignar el consecutivo de la nota débito.");
+                }
+
+                var current = client.NextDebitNoteNumber ?? 1;
+                var next = current + 1;
+
+                var affected = await dbContext.Clients
+                    .Where(c => c.Id == clientId && c.NextDebitNoteNumber == client.NextDebitNoteNumber)
+                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.NextDebitNoteNumber, next));
+
+                if (affected > 0) return current;
+            }
+        }
     }
 }

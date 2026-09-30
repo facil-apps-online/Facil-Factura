@@ -47,7 +47,12 @@ namespace Fel.Api.Security
                 path.StartsWithSegments("/api/client/templates") ||
                 path.StartsWithSegments("/api/client/dian") ||
                 path.StartsWithSegments("/api/client/tax-catalog") ||
+                path.StartsWithSegments("/api/client/units-of-measure") ||
+                path.StartsWithSegments("/api/client/identification-types") ||
                 path.StartsWithSegments("/api/client/retention-concepts") ||
+                path.StartsWithSegments("/api/client/reception-settings") ||
+                path.StartsWithSegments("/api/client/received-documents") ||
+                path.StartsWithSegments("/api/client/smtp-settings") ||
                 path.StartsWithSegments("/api/client/me");
 
             // El portal de developers se autentica con su propia sesión x-developer-id, igual

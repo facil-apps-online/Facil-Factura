@@ -139,8 +139,8 @@ export default function ReceivedDocumentsPage() {
   return (
     <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Eventos de Recepción</h1>
-        <p className="text-slate-500 mt-2">Facturas y notas de tus proveedores, y los eventos RADIAN que le informas a la DIAN sobre ellas.</p>
+        <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Documentos recibidos</h1>
+        <p className="text-slate-500 mt-2">Consulta documentos de tus proveedores y gestiona sus eventos.</p>
       </div>
 
       {/* Conexión de correo */}
@@ -207,7 +207,7 @@ export default function ReceivedDocumentsPage() {
       {/* Eventos automáticos */}
       <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
         <h2 className="text-xl font-bold text-slate-800 mb-2">Eventos automáticos</h2>
-        <p className="text-slate-500 mb-6 text-sm">Cuáles eventos se disparan solos al recibir un documento (por correo o carga manual). Los que no actives quedan disponibles para disparar a mano.</p>
+        <p className="text-slate-500 mb-6 text-sm">Elige qué eventos se crearán automáticamente al recibir documentos.</p>
 
         <div className="space-y-4">
           {([
@@ -248,7 +248,7 @@ export default function ReceivedDocumentsPage() {
         {documents.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center h-48 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
             <Inbox className="text-slate-300 mb-3" size={32} />
-            <p className="text-slate-500">Aún no has recibido ni cargado ningún documento.</p>
+            <p className="text-slate-500">Aún no tienes documentos recibidos.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

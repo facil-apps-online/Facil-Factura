@@ -11,6 +11,13 @@ namespace Fel.Infrastructure.Data
         public DbSet<Client> Clients => Set<Client>();
         public DbSet<Resolution> Resolutions => Set<Resolution>();
         public DbSet<Certificate> Certificates => Set<Certificate>();
+        public DbSet<CertificateProvider> CertificateProviders => Set<CertificateProvider>();
+        public DbSet<CertificateProfile> CertificateProfiles => Set<CertificateProfile>();
+        public DbSet<CertificateProfileField> CertificateProfileFields => Set<CertificateProfileField>();
+        public DbSet<CertificateRequest> CertificateRequests => Set<CertificateRequest>();
+        public DbSet<CertificatePrice> CertificatePrices => Set<CertificatePrice>();
+        public DbSet<CertificateCharge> CertificateCharges => Set<CertificateCharge>();
+        public DbSet<CertificateEvent> CertificateEvents => Set<CertificateEvent>();
         public DbSet<Document> Documents => Set<Document>();
         public DbSet<ReceivedDocument> ReceivedDocuments => Set<ReceivedDocument>();
         public DbSet<ReceivedDocumentEvent> ReceivedDocumentEvents => Set<ReceivedDocumentEvent>();
@@ -27,13 +34,15 @@ namespace Fel.Infrastructure.Data
         public DbSet<Customer> Customers => Set<Customer>();
         public DbSet<Product> Products => Set<Product>();
         public DbSet<ProductTax> ProductTaxes => Set<ProductTax>();
+        public DbSet<UnitOfMeasure> UnitsOfMeasure => Set<UnitOfMeasure>();
         public DbSet<DocumentItem> DocumentItems { get; set; }
         public DbSet<DocumentRetention> DocumentRetentions => Set<DocumentRetention>();
         public DbSet<DocumentGeneralRetention> DocumentGeneralRetentions => Set<DocumentGeneralRetention>();
         public DbSet<TenantUserPricing> TenantUserPricings => Set<TenantUserPricing>();
         public DbSet<PrepaidPackage> PrepaidPackages => Set<PrepaidPackage>();
         public DbSet<TenantPrepaidBag> TenantPrepaidBags => Set<TenantPrepaidBag>();
-        public DbSet<DataicoTaxCatalogItem> DataicoTaxCatalogItems => Set<DataicoTaxCatalogItem>();
+        public DbSet<TaxCatalogItem> TaxCatalogItems => Set<TaxCatalogItem>();
+        public DbSet<IdentificationType> IdentificationTypes => Set<IdentificationType>();
         public DbSet<RetentionConcept> RetentionConcepts => Set<RetentionConcept>();
         public DbSet<TaxParameter> TaxParameters => Set<TaxParameter>();
         public DbSet<Associate> Associates => Set<Associate>();
@@ -41,6 +50,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<Integrator> Integrators => Set<Integrator>();
         public DbSet<ClientIntegratorAssignment> ClientIntegratorAssignments => Set<ClientIntegratorAssignment>();
         public DbSet<TenantIntegratorBilling> TenantIntegratorBillings => Set<TenantIntegratorBilling>();
+        public DbSet<TenantEnabledIntegrator> TenantEnabledIntegrators => Set<TenantEnabledIntegrator>();
         public DbSet<ClientIntegratorBilling> ClientIntegratorBillings => Set<ClientIntegratorBilling>();
         public DbSet<ClientPrepaidPackage> ClientPrepaidPackages => Set<ClientPrepaidPackage>();
         public DbSet<ClientPrepaidBag> ClientPrepaidBags => Set<ClientPrepaidBag>();
@@ -130,10 +140,172 @@ namespace Fel.Infrastructure.Data
             {
                 entity.ToTable("Certificates");
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.FileName).IsRequired().HasMaxLength(500);
+                entity.Property(e => e.EncryptedPassword).IsRequired().HasMaxLength(2000);
+                entity.Property(e => e.Thumbprint).HasMaxLength(128);
+                entity.Property(e => e.SerialNumber).HasMaxLength(128);
+                entity.Property(e => e.Subject).HasMaxLength(1000);
+                entity.Property(e => e.Issuer).HasMaxLength(1000);
+                entity.HasIndex(e => new { e.ClientId, e.Environment, e.Status });
+                entity.HasIndex(e => e.Thumbprint).IsUnique().HasFilter("[Thumbprint] <> ''");
                 entity.HasOne(e => e.Client)
                       .WithMany(c => c.Certificates)
                       .HasForeignKey(e => e.ClientId)
                       .OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Provider)
+                      .WithMany()
+                      .HasForeignKey(e => e.ProviderId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Profile)
+                      .WithMany()
+                      .HasForeignKey(e => e.ProfileId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.CertificateRequest)
+                      .WithOne()
+                      .HasForeignKey<Certificate>(e => e.CertificateRequestId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<CertificateProvider>(entity =>
+            {
+                entity.ToTable("CertificateProviders");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Key).IsRequired().HasMaxLength(80);
+                entity.HasIndex(e => e.Key).IsUnique();
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+                entity.Property(e => e.SandboxEnabled).HasDefaultValue(false);
+                entity.Property(e => e.SandboxBaseUrl).HasMaxLength(500);
+                entity.Property(e => e.ProductionBaseUrl).HasMaxLength(500);
+                entity.Property(e => e.DownloadBaseUrl).HasMaxLength(500);
+                entity.Property(e => e.RaCode).HasMaxLength(100);
+                entity.Property(e => e.ConsumerKeySecretName).HasMaxLength(200);
+                entity.Property(e => e.ConsumerSecretSecretName).HasMaxLength(200);
+                entity.Property(e => e.EncryptedSandboxConsumerKey).HasMaxLength(4000);
+                entity.Property(e => e.EncryptedSandboxConsumerSecret).HasMaxLength(4000);
+                entity.Property(e => e.EncryptedProductionConsumerKey).HasMaxLength(4000);
+                 entity.Property(e => e.EncryptedProductionConsumerSecret).HasMaxLength(4000);
+             });
+
+            modelBuilder.Entity<Client>(entity =>
+            {
+                entity.Property(e => e.OrganizationDepartment).HasMaxLength(100);
+                entity.Property(e => e.OrganizationType).HasMaxLength(30);
+                entity.Property(e => e.PersonType).HasMaxLength(2).IsRequired();
+                entity.Property(e => e.LegalRepresentativeFirstName).HasMaxLength(100);
+                entity.Property(e => e.LegalRepresentativeOtherNames).HasMaxLength(100);
+                entity.Property(e => e.LegalRepresentativeFirstLastName).HasMaxLength(100);
+                entity.Property(e => e.LegalRepresentativeSecondLastName).HasMaxLength(100);
+                entity.Property(e => e.LegalRepresentativeDocumentType).HasMaxLength(30);
+                entity.Property(e => e.LegalRepresentativeDocumentNumber).HasMaxLength(50);
+                entity.Property(e => e.LegalRepresentativeDocumentCountryCode).HasMaxLength(10);
+                entity.Property(e => e.LegalRepresentativeEmail).HasMaxLength(320);
+                entity.Property(e => e.LegalRepresentativeRepresentationCode).HasMaxLength(20);
+            });
+
+            modelBuilder.Entity<CertificateProfile>(entity =>
+            {
+                entity.ToTable("CertificateProfiles");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.ExternalCode).IsRequired().HasMaxLength(500);
+                entity.Property(e => e.Key).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Title).HasMaxLength(250);
+                entity.Property(e => e.Description).HasMaxLength(1000);
+                entity.Property(e => e.PersonType).HasMaxLength(50);
+                entity.Property(e => e.ExternalType).HasMaxLength(100);
+                entity.Property(e => e.TokenType).HasMaxLength(50);
+                entity.Property(e => e.TermsUrl).HasMaxLength(1000);
+                entity.Property(e => e.TermsHash).HasMaxLength(128);
+                entity.HasIndex(e => new { e.ProviderId, e.Environment, e.ExternalCode }).IsUnique();
+                entity.HasOne(e => e.Provider).WithMany(p => p.Profiles).HasForeignKey(e => e.ProviderId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<CertificateProfileField>(entity =>
+            {
+                entity.ToTable("CertificateProfileFields");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.ExternalName).IsRequired().HasMaxLength(150);
+                entity.Property(e => e.Label).HasMaxLength(300);
+                entity.Property(e => e.Type).HasMaxLength(50);
+                entity.Property(e => e.ValidationPattern).HasMaxLength(2000);
+                entity.Property(e => e.DefaultValue).HasMaxLength(4000);
+                entity.Property(e => e.DefinitionHash).HasMaxLength(128);
+                entity.HasIndex(e => new { e.ProfileId, e.ExternalName }).IsUnique();
+                entity.HasOne(e => e.Profile).WithMany(p => p.Fields).HasForeignKey(e => e.ProfileId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<CertificateRequest>(entity =>
+            {
+                entity.ToTable("CertificateRequests");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.ProviderRequestCode).HasMaxLength(100);
+                entity.Property(e => e.ProviderPublicId).HasMaxLength(200);
+                entity.Property(e => e.ProviderStatus).HasMaxLength(100);
+                entity.Property(e => e.AdvancedAccreditedStatus).HasMaxLength(50);
+                entity.Property(e => e.AdvancedPaymentStatus).HasMaxLength(50);
+                entity.Property(e => e.KycUrl).HasMaxLength(2000);
+                entity.Property(e => e.CsrReference).HasMaxLength(500);
+                entity.Property(e => e.CsrHash).HasMaxLength(128);
+                entity.Property(e => e.PublicKeyHash).HasMaxLength(128);
+                entity.Property(e => e.EncryptedPrivateKey).HasColumnType("nvarchar(max)");
+                entity.Property(e => e.KeyAlgorithm).HasMaxLength(30);
+                entity.Property(e => e.TermsUrl).HasMaxLength(1000);
+                entity.Property(e => e.TermsHash).HasMaxLength(128);
+                entity.Property(e => e.TermsAcceptedIpAddress).HasMaxLength(80);
+                entity.Property(e => e.TermsAcceptedUserAgent).HasMaxLength(1000);
+                entity.Property(e => e.LastErrorCode).HasMaxLength(150);
+                entity.Property(e => e.LastErrorMessage).HasMaxLength(2000);
+                entity.Property(e => e.IdempotencyKey).IsRequired().HasMaxLength(150);
+                entity.HasIndex(e => e.IdempotencyKey).IsUnique();
+                entity.HasIndex(e => new { e.ClientId, e.Environment, e.Status });
+                entity.HasIndex(e => new { e.ProviderRequestCode, e.Environment }).IsUnique().HasFilter("[ProviderRequestCode] <> ''");
+                entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Profile).WithMany().HasForeignKey(e => e.ProfileId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.PreviousCertificate).WithMany(c => c.RenewalRequests).HasForeignKey(e => e.PreviousCertificateId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<CertificatePrice>(entity =>
+            {
+                entity.ToTable("CertificatePrices");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.PriceType).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.Currency).IsRequired().HasMaxLength(10);
+                entity.Property(e => e.NetAmount).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.TaxRate).HasColumnType("decimal(8,4)");
+                entity.HasIndex(e => new { e.ProviderId, e.ProfileId, e.Environment, e.TenantId, e.EffectiveFrom });
+                entity.HasOne(e => e.Provider).WithMany().HasForeignKey(e => e.ProviderId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Profile).WithMany(p => p.Prices).HasForeignKey(e => e.ProfileId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<CertificateCharge>(entity =>
+            {
+                entity.ToTable("CertificateCharges");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.TaxAmount).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.TotalAmount).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Currency).IsRequired().HasMaxLength(10);
+                entity.Property(e => e.DescriptionSnapshot).HasMaxLength(500);
+                entity.HasIndex(e => new { e.CertificateRequestId, e.ChargeType }).IsUnique().HasFilter("[Status] <> 4");
+                entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.CertificateRequest).WithMany(r => r.Charges).HasForeignKey(e => e.CertificateRequestId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Price).WithMany(p => p.Charges).HasForeignKey(e => e.PriceId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<CertificateEvent>(entity =>
+            {
+                entity.ToTable("CertificateEvents");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.ProviderStatus).HasMaxLength(100);
+                entity.Property(e => e.CorrelationId).HasMaxLength(100);
+                entity.Property(e => e.IdempotencyKey).HasMaxLength(150);
+                entity.Property(e => e.ActorType).HasMaxLength(50);
+                entity.Property(e => e.MetadataJson).HasColumnType("nvarchar(max)");
+                entity.HasIndex(e => new { e.CertificateRequestId, e.OccurredAt });
+                entity.HasOne(e => e.CertificateRequest).WithMany(r => r.Events).HasForeignKey(e => e.CertificateRequestId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(e => e.Certificate).WithMany().HasForeignKey(e => e.CertificateId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<Document>(entity =>
@@ -297,6 +469,35 @@ namespace Fel.Infrastructure.Data
                     // Nómina
                     new DocumentType { Id = Guid.Parse("00000000-0000-0000-0000-000000000026"), Code = "NE-PAGO", Name = "Nómina Electrónica", Description = "Pago de nómina electrónica", DianCode = "102" },
                     new DocumentType { Id = Guid.Parse("00000000-0000-0000-0000-000000000027"), Code = "NE-AJUSTE", Name = "Nota de Ajuste - Nómina Electrónica", Description = "Ajuste de nómina electrónica", DianCode = "103" }
+                );
+            });
+
+            modelBuilder.Entity<IdentificationType>(entity =>
+            {
+                entity.ToTable("IdentificationTypes");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Code).IsRequired().HasMaxLength(10);
+                entity.HasIndex(e => e.Code).IsUnique();
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+
+                // Los mismos 10 códigos que ya venían hardcodeados en el frontend (client-web),
+                // con exactamente los mismos valores de Code, para que los clientes y customers ya
+                // creados sigan resolviendo igual — esto es un catálogo de referencia, no un FK, así
+                // que los registros existentes no necesitan tocarse.
+                // DataicoCode: equivalencia confirmada contra el error real de la API de Dataico
+                // ('Tiene que ser uno de estos valores: CC CE IE NIT NIT_OTRO_PAIS NUIP PASAPORTE
+                // PEP PPT RC TE TI') — PEP/PPT no tienen código DIAN en este catálogo todavía.
+                entity.HasData(
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000001"), Code = "13", Name = "Cédula de Ciudadanía", IsActive = true, DataicoCode = "CC" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000002"), Code = "22", Name = "Cédula de Extranjería", IsActive = true, DataicoCode = "CE" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000003"), Code = "42", Name = "Documento de Identificación Extranjero", IsActive = true, DataicoCode = "IE" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000004"), Code = "31", Name = "NIT", IsActive = true, DataicoCode = "NIT" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000005"), Code = "50", Name = "NIT de Otro País", IsActive = true, DataicoCode = "NIT_OTRO_PAIS" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000006"), Code = "91", Name = "NUIP", IsActive = true, DataicoCode = "NUIP" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000007"), Code = "41", Name = "Pasaporte", IsActive = true, DataicoCode = "PASAPORTE" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000008"), Code = "11", Name = "Registro Civil", IsActive = true, DataicoCode = "RC" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000009"), Code = "21", Name = "Tarjeta de Extranjería", IsActive = true, DataicoCode = "TE" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-00000000000a"), Code = "12", Name = "Tarjeta de Identidad", IsActive = true, DataicoCode = "TI" }
                 );
             });
 
@@ -545,6 +746,11 @@ namespace Fel.Infrastructure.Data
                       .HasForeignKey(e => e.ClientId)
                       .OnDelete(DeleteBehavior.Restrict);
 
+                entity.HasOne(e => e.UnitOfMeasure)
+                      .WithMany()
+                      .HasForeignKey(e => e.UnitOfMeasureId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
                 entity.HasIndex(e => new { e.ClientId, e.Code }).IsUnique();
             });
 
@@ -587,6 +793,24 @@ namespace Fel.Infrastructure.Data
                 entity.ToTable("TenantIntegratorBillings");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.PricePerUser).HasColumnType("decimal(18,2)");
+
+                entity.HasOne(e => e.Tenant)
+                      .WithMany()
+                      .HasForeignKey(e => e.TenantId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Integrator)
+                      .WithMany()
+                      .HasForeignKey(e => e.IntegratorId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.TenantId, e.IntegratorId }).IsUnique();
+            });
+
+            modelBuilder.Entity<TenantEnabledIntegrator>(entity =>
+            {
+                entity.ToTable("TenantEnabledIntegrators");
+                entity.HasKey(e => e.Id);
 
                 entity.HasOne(e => e.Tenant)
                       .WithMany()
@@ -728,9 +952,9 @@ namespace Fel.Infrastructure.Data
                 entity.HasIndex(e => e.DepartmentCode);
             });
 
-            modelBuilder.Entity<DataicoTaxCatalogItem>(entity =>
+            modelBuilder.Entity<TaxCatalogItem>(entity =>
             {
-                entity.ToTable("DataicoTaxCatalogItems");
+                entity.ToTable("TaxCatalogItems");
                 entity.HasKey(e => e.Id);
                 // Algunos códigos de nómina (WorkerType, PayrollPaymentMeans) son bastante largos
                 // (ej. "TRABAJADOR_DEPENDIENTE_DE_ENTIDAD_BENEFICIARIA_DEL_SISTEMA_GENERAL_DE_..."),
@@ -738,6 +962,7 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.Category).IsRequired().HasMaxLength(150);
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
                 entity.Property(e => e.Rate).HasColumnType("decimal(6,3)");
+                entity.Property(e => e.DianCode).HasMaxLength(10);
 
                 // Precargados con lo que ya venía escrito a mano en el frontend, más los catálogos
                 // completos confirmados contra C:\FEL (Postman real de Dataico + la plantilla de
@@ -748,129 +973,184 @@ namespace Fel.Infrastructure.Data
                     // escribiendo el % a mano. Se dejan inactivas (no se borran, TaxCategory ya
                     // quedó grabado como texto plano en retenciones históricas) y se reemplazan por
                     // combinaciones categoría+tarifa concretas más abajo.
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000001"), Category = "RET_FUENTE", Name = "Retención en la Fuente", Kind = TaxCatalogKind.Retention, IsActive = false, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000002"), Category = "RET_ICA", Name = "Retención de ICA", Kind = TaxCatalogKind.Retention, IsActive = false, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000003"), Category = "RET_IVA", Name = "Retención de IVA", Kind = TaxCatalogKind.Retention, IsActive = false, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000001"), Category = "RET_FUENTE", Name = "Retención en la Fuente", Kind = TaxCatalogKind.Retention, IsActive = false, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000002"), Category = "RET_ICA", Name = "Retención de ICA", Kind = TaxCatalogKind.Retention, IsActive = false, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000003"), Category = "RET_IVA", Name = "Retención de IVA", Kind = TaxCatalogKind.Retention, IsActive = false, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
                     // Combinaciones categoría+tarifa concretas (reemplazan a las de arriba). Las de
                     // RET_ICA son solo un punto de partida (tarifas típicas de Bogotá) — el % real de
                     // ICA depende del municipio y la actividad económica de cada cliente, así que
                     // Superadmin debe ajustar/agregar las que apliquen a cada caso real.
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000001"), Category = "RET_FUENTE", Rate = 2.5m, Name = "Compras generales (2.5%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000002"), Category = "RET_FUENTE", Rate = 4m, Name = "Servicios generales (4%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000003"), Category = "RET_FUENTE", Rate = 11m, Name = "Servicios profesionales / honorarios (11%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000004"), Category = "RET_ICA", Rate = 0.414m, Name = "Actividad industrial Bogotá (0.414%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000005"), Category = "RET_ICA", Rate = 0.966m, Name = "Actividad de servicios Bogotá (0.966%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000006"), Category = "RET_IVA", Rate = 15m, Name = "Estándar (15%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000007"), Category = "RET_IVA", Rate = 20m, Name = "Grandes contribuyentes (20%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000004"), Category = "IMP_CONSUMO", Name = "Impuesto al Consumo", Kind = TaxCatalogKind.OtherTax, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000005"), Category = "IMP_CONSUMO_LICOR", Name = "Impuesto al Consumo de Licores", Kind = TaxCatalogKind.OtherTax, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000006"), Category = "IMP_BOLSA_PLASTICA", Name = "Impuesto a la Bolsa Plástica", Kind = TaxCatalogKind.OtherTax, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000001"), Category = "RET_FUENTE", Rate = 2.5m, Name = "Compras generales (2.5%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000002"), Category = "RET_FUENTE", Rate = 4m, Name = "Servicios generales (4%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000003"), Category = "RET_FUENTE", Rate = 11m, Name = "Servicios profesionales / honorarios (11%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000004"), Category = "RET_ICA", Rate = 0.414m, Name = "Actividad industrial Bogotá (0.414%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000005"), Category = "RET_ICA", Rate = 0.966m, Name = "Actividad de servicios Bogotá (0.966%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000006"), Category = "RET_IVA", Rate = 15m, Name = "Estándar (15%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("11000000-0000-0000-0000-000000000007"), Category = "RET_IVA", Rate = 20m, Name = "Grandes contribuyentes (20%)", Kind = TaxCatalogKind.Retention, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000004"), Category = "IMP_CONSUMO", Name = "Impuesto al Consumo", Kind = TaxCatalogKind.OtherTax, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000005"), Category = "IMP_CONSUMO_LICOR", Name = "Impuesto al Consumo de Licores", Kind = TaxCatalogKind.OtherTax, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000006"), Category = "IMP_BOLSA_PLASTICA", Name = "Impuesto a la Bolsa Plástica", Kind = TaxCatalogKind.OtherTax, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
                     // Tarifas de IVA (DIAN solo reconoce 19% y 5% como tarifas "Gravado"; 0% se modela con el tratamiento Exento).
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000007"), Category = "19", Name = "IVA General (19%)", Kind = TaxCatalogKind.IvaRate, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000008"), Category = "5", Name = "IVA Reducido (5%)", Kind = TaxCatalogKind.IvaRate, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000007"), Category = "19", Name = "IVA General (19%)", Kind = TaxCatalogKind.IvaRate, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000008"), Category = "5", Name = "IVA Reducido (5%)", Kind = TaxCatalogKind.IvaRate, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
                     // Plazos de pago comerciales más usados en Colombia.
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000009"), Category = "0", Name = "Contado (0 días)", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000a"), Category = "15", Name = "15 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000b"), Category = "30", Name = "30 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000c"), Category = "45", Name = "45 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000d"), Category = "60", Name = "60 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000e"), Category = "90", Name = "90 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000009"), Category = "0", Name = "Contado (0 días)", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000a"), Category = "15", Name = "15 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000b"), Category = "30", Name = "30 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000c"), Category = "45", Name = "45 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000d"), Category = "60", Name = "60 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000e"), Category = "90", Name = "90 días", Kind = TaxCatalogKind.PaymentTerm, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
                     // Medios de pago (los mismos que ya venían sugeridos a mano en el frontend).
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000f"), Category = "EFECTIVO", Name = "Efectivo", Kind = TaxCatalogKind.PaymentMeans, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000010"), Category = "TRANSFERENCIA", Name = "Transferencia Bancaria", Kind = TaxCatalogKind.PaymentMeans, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000011"), Category = "DEBIT_CARD", Name = "Tarjeta Débito", Kind = TaxCatalogKind.PaymentMeans, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000012"), Category = "CREDIT_CARD", Name = "Tarjeta Crédito", Kind = TaxCatalogKind.PaymentMeans, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    // DianCode: código real de la tabla 13.3.4.2 Medios de Pago (Caja de Herramientas
+                    // FE V1.9) — verificado contra el archivo oficial, no adivinado. "Transferencia"
+                    // no tiene una entrada literal en la tabla de la DIAN; se usó la más cercana
+                    // ("Transferencia Crédito Bancario") a falta de un ejemplo oficial que la use.
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-00000000000f"), Category = "EFECTIVO", Name = "Efectivo", Kind = TaxCatalogKind.PaymentMeans, DianCode = "10", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000010"), Category = "TRANSFERENCIA", Name = "Transferencia Bancaria", Kind = TaxCatalogKind.PaymentMeans, DianCode = "45", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000011"), Category = "DEBIT_CARD", Name = "Tarjeta Débito", Kind = TaxCatalogKind.PaymentMeans, DianCode = "49", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000012"), Category = "CREDIT_CARD", Name = "Tarjeta Crédito", Kind = TaxCatalogKind.PaymentMeans, DianCode = "48", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    // Forma de Pago DIAN — únicos dos valores válidos. Category conserva los mismos
+                    // códigos internos que ya usaba Document.PaymentMeansType antes de este catálogo.
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000013"), Category = "DEBITO", Name = "Contado", Kind = TaxCatalogKind.FormaPago, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    new TaxCatalogItem { Id = Guid.Parse("10000000-0000-0000-0000-000000000014"), Category = "CREDITO", Name = "Crédito", Kind = TaxCatalogKind.FormaPago, IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                    // Motivo de Nota Crédito — tabla 13.2.4 del anexo técnico (Caja de Herramientas),
+                    // verificado contra el archivo oficial. DianCode guarda el "reason" equivalente de
+                    // Dataico (catálogo reducido, confirmado con ejemplos reales: DEVOLUCION/ANULACION/
+                    // OTROS) — varios códigos DIAN caen en "OTROS" porque Dataico no los distingue.
+                    new TaxCatalogItem { Id = Guid.Parse("80000000-0000-0000-0000-000000000001"), Category = "1", Name = "Devolución parcial de los bienes y/o no aceptación parcial del servicio", Kind = TaxCatalogKind.CreditNoteReason, DianCode = "DEVOLUCION", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("80000000-0000-0000-0000-000000000002"), Category = "2", Name = "Anulación de factura electrónica", Kind = TaxCatalogKind.CreditNoteReason, DianCode = "ANULACION", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("80000000-0000-0000-0000-000000000003"), Category = "3", Name = "Rebaja o descuento parcial o total", Kind = TaxCatalogKind.CreditNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("80000000-0000-0000-0000-000000000004"), Category = "4", Name = "Ajuste de precio", Kind = TaxCatalogKind.CreditNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("80000000-0000-0000-0000-000000000005"), Category = "5", Name = "Descuento comercial por pronto pago", Kind = TaxCatalogKind.CreditNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("80000000-0000-0000-0000-000000000006"), Category = "6", Name = "Descuento comercial por volumen de ventas", Kind = TaxCatalogKind.CreditNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
+                    // Motivo de Nota Débito — tabla 13.2.5. El "reason" de Dataico para nota débito
+                    // nunca se confirmó contra un ejemplo real (ver DataicoDebitNoteRequest.cs) — se
+                    // deja "OTROS" en los 4, mismo default que ya usaba el código anterior, hasta que
+                    // se pueda verificar el catálogo real de Dataico para este tipo de nota.
+                    new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000001"), Category = "1", Name = "Intereses", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000002"), Category = "2", Name = "Gastos por cobrar", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000003"), Category = "3", Name = "Cambio del valor", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000004"), Category = "4", Name = "Otros", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
                     // Tipo de trabajador (Nómina Electrónica) — catálogo completo confirmado contra la
                     // hoja POSIBLE_LISTA_DE_VALORES de la plantilla real de nómina.
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000001"), Category = "DEPENDIENTE", Name = "Dependiente", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000002"), Category = "PROFESOR_DE_ESTABLECIMIENTO_PARTICULAR", Name = "Profesor De Establecimiento Particular", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000003"), Category = "PRE_PENSIONADO_CON_APORTE_VOLUNTARIO_A_SALUD", Name = "Pre Pensionado Con Aporte Voluntario A Salud", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000004"), Category = "SERVICIO_DOMESTICO", Name = "Servicio Domestico", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000005"), Category = "APRENDICES_DEL_SENA_EN_ETAPA_LECTIVA", Name = "Aprendices Del Sena En Etapa Lectiva", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000006"), Category = "COOPERADOS_O_PRE_COOPERATIVAS_DE_TRABAJO_ASOCIADO", Name = "Cooperados O Pre Cooperativas De Trabajo Asociado", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000007"), Category = "ESTUDIANTES_DE_PRACTICAS_LABORALES_EN_EL_SECTOR_PUBLICO", Name = "Estudiantes De Practicas Laborales En El Sector Publico", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000008"), Category = "TRABAJADOR_DEPENDIENTE_DE_ENTIDAD_BENEFICIARIA_DEL_SISTEMA_GENERAL_DE_PARTICIPACIONES_APORTES_PATRONALES", Name = "Trabajador Dependiente De Entidad Beneficiaria Del Sistema General De Participaciones Aportes Patronales", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000009"), Category = "FUNCIONARIOS_PUBLICOS_SIN_TOPE_MAXIMO_DE_IBC", Name = "Funcionarios Publicos Sin Tope Maximo De Ibc", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000010"), Category = "MADRE_COMUNITARIA", Name = "Madre Comunitaria", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000011"), Category = "ESTUDIANTES_DE_POSTGRADO_EN_SALUD", Name = "Estudiantes De Postgrado En Salud", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000012"), Category = "DEPENDIENTE_ENTIDADES_O_UNIVERSIDADES_PUBLICAS_CON_REGIMEN_ESPECIAL_EN_SALUD", Name = "Dependiente Entidades O Universidades Publicas Con Regimen Especial En Salud", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000013"), Category = "PRE_PENSIONADO_DE_ENTIDAD_EN_LIQUIDACION", Name = "Pre Pensionado De Entidad En Liquidacion", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000014"), Category = "ESTUDIANTES_APORTES_SOLO_RIESGOS_LABORALES", Name = "Estudiantes Aportes Solo Riesgos Laborales", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000015"), Category = "TRABAJADOR_DE_TIEMPO_PARCIAL", Name = "Trabajador De Tiempo Parcial", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000016"), Category = "APRENDICES_DEL_SENA_EN_ETAPA_PRODUCTIVA", Name = "Aprendices Del Sena En Etapa Productiva", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000017"), Category = "APRENDICES_DEL_SENA_EN_ETAPA_PRODUCTIVA_REFORMA_2025", Name = "Aprendices Del Sena En Etapa Productiva Reforma 2025", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000018"), Category = "APRENDICES_DEL_SENA_EN_ETAPA_LECTIVA_REFORMA_2025", Name = "Aprendices Del Sena En Etapa Lectiva Reforma 2025", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000001"), Category = "DEPENDIENTE", Name = "Dependiente", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000002"), Category = "PROFESOR_DE_ESTABLECIMIENTO_PARTICULAR", Name = "Profesor De Establecimiento Particular", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000003"), Category = "PRE_PENSIONADO_CON_APORTE_VOLUNTARIO_A_SALUD", Name = "Pre Pensionado Con Aporte Voluntario A Salud", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000004"), Category = "SERVICIO_DOMESTICO", Name = "Servicio Domestico", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000005"), Category = "APRENDICES_DEL_SENA_EN_ETAPA_LECTIVA", Name = "Aprendices Del Sena En Etapa Lectiva", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000006"), Category = "COOPERADOS_O_PRE_COOPERATIVAS_DE_TRABAJO_ASOCIADO", Name = "Cooperados O Pre Cooperativas De Trabajo Asociado", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000007"), Category = "ESTUDIANTES_DE_PRACTICAS_LABORALES_EN_EL_SECTOR_PUBLICO", Name = "Estudiantes De Practicas Laborales En El Sector Publico", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000008"), Category = "TRABAJADOR_DEPENDIENTE_DE_ENTIDAD_BENEFICIARIA_DEL_SISTEMA_GENERAL_DE_PARTICIPACIONES_APORTES_PATRONALES", Name = "Trabajador Dependiente De Entidad Beneficiaria Del Sistema General De Participaciones Aportes Patronales", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000009"), Category = "FUNCIONARIOS_PUBLICOS_SIN_TOPE_MAXIMO_DE_IBC", Name = "Funcionarios Publicos Sin Tope Maximo De Ibc", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000010"), Category = "MADRE_COMUNITARIA", Name = "Madre Comunitaria", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000011"), Category = "ESTUDIANTES_DE_POSTGRADO_EN_SALUD", Name = "Estudiantes De Postgrado En Salud", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000012"), Category = "DEPENDIENTE_ENTIDADES_O_UNIVERSIDADES_PUBLICAS_CON_REGIMEN_ESPECIAL_EN_SALUD", Name = "Dependiente Entidades O Universidades Publicas Con Regimen Especial En Salud", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000013"), Category = "PRE_PENSIONADO_DE_ENTIDAD_EN_LIQUIDACION", Name = "Pre Pensionado De Entidad En Liquidacion", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000014"), Category = "ESTUDIANTES_APORTES_SOLO_RIESGOS_LABORALES", Name = "Estudiantes Aportes Solo Riesgos Laborales", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000015"), Category = "TRABAJADOR_DE_TIEMPO_PARCIAL", Name = "Trabajador De Tiempo Parcial", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000016"), Category = "APRENDICES_DEL_SENA_EN_ETAPA_PRODUCTIVA", Name = "Aprendices Del Sena En Etapa Productiva", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000017"), Category = "APRENDICES_DEL_SENA_EN_ETAPA_PRODUCTIVA_REFORMA_2025", Name = "Aprendices Del Sena En Etapa Productiva Reforma 2025", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000018"), Category = "APRENDICES_DEL_SENA_EN_ETAPA_LECTIVA_REFORMA_2025", Name = "Aprendices Del Sena En Etapa Lectiva Reforma 2025", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },
                     // Tipo de contrato (Nómina Electrónica).
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000001"), Category = "TERMINO_FIJO", Name = "Termino Fijo", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000002"), Category = "TERMINO_INDEFINIDO", Name = "Termino Indefinido", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000003"), Category = "OBRA_LABOR", Name = "Obra Labor", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000004"), Category = "APRENDIZAJE", Name = "Aprendizaje", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000005"), Category = "PRACTICAS_PASANTIAS", Name = "Practicas Pasantias", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000001"), Category = "TERMINO_FIJO", Name = "Termino Fijo", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000002"), Category = "TERMINO_INDEFINIDO", Name = "Termino Indefinido", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000003"), Category = "OBRA_LABOR", Name = "Obra Labor", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000004"), Category = "APRENDIZAJE", Name = "Aprendizaje", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("30000000-0000-0000-0000-000000000005"), Category = "PRACTICAS_PASANTIAS", Name = "Practicas Pasantias", Kind = TaxCatalogKind.ContractType, IsActive = true, CreatedAt = seedDate },
                     // Medio de pago del empleado (Nómina Electrónica) — catálogo distinto del de Facturas/Documentos Soporte.
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000001"), Category = "CTX", Name = "Ctx", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000002"), Category = "VALES", Name = "Vales", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000003"), Category = "NOTA_PROMISORIA_FIRMADA_PRO_EL_BANCO", Name = "Nota Promisoria Firmada Pro El Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000004"), Category = "GIRO_URGENTE", Name = "Giro Urgente", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000005"), Category = "CONCENTRACION_EFECTIVO_AHORROS_/_DESEMBOLSO_CREDITO_CCD", Name = "Concentración Efectivo/Ahorros - Desembolso Crédito CCD", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000006"), Category = "REVERSION_CREDITO_AHORRO", Name = "Reversion Credito Ahorro", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000007"), Category = "DEBITO_CTX", Name = "Debito Ctx", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000008"), Category = "NOTA_RETIRO", Name = "Nota Retiro", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000009"), Category = "NOTA_CAMBIARIA", Name = "Nota Cambiaria", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000010"), Category = "NOTA_RETIRO_TERCERO", Name = "Nota Retiro Tercero", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000011"), Category = "EFECTIVO", Name = "Efectivo", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000012"), Category = "CHEQUE_LOCAL_TRAFERIBLE", Name = "Cheque Local Traferible", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000013"), Category = "NOTA_BANCARIA_TRANFERIBLE", Name = "Nota Bancaria Tranferible", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000014"), Category = "BOOKENTRY_DEBITO", Name = "Bookentry Debito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000015"), Category = "NOTA_PROMISORIA_FIRMADA_POR_EL_ACREEDOR_AVALADA_POR_UN_TERCERO", Name = "Nota Promisoria Firmada Por El Acreedor Avalada Por Un Tercero", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000016"), Category = "PAGO_TESORERIA_URGENTE", Name = "Pago Tesoreria Urgente", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000017"), Category = "REVERSION_CREDITO_DE_DEMANDA_ACH", Name = "Reversion Credito De Demanda Ach", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000018"), Category = "ACUERDO_MUTUO", Name = "Acuerdo Mutuo", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000019"), Category = "TARJETA_CREDITO", Name = "Tarjeta Credito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000020"), Category = "BONOS", Name = "Bonos", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000021"), Category = "DESEMBOLSO_PLUS_DEBITO", Name = "Desembolso Plus Debito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000022"), Category = "CREDITO_AHORRO", Name = "Credito Ahorro", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000023"), Category = "BOOKENTRY_CREDITO", Name = "Bookentry Credito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000024"), Category = "METODO_DE_PAGO_SOLICITADO_NO_USUADO", Name = "Metodo De Pago Solicitado No Usuado", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000025"), Category = "TELEX_ESTANDAR_BANCARIO_FRANCES", Name = "Telex Estandar Bancario Frances", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000026"), Category = "CREDITO_ACH", Name = "Credito Ach", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000027"), Category = "CLEARING_ENTRE_PARTNERS", Name = "Clearing Entre Partners", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000028"), Category = "DESEMBOLSO_DEBITO", Name = "Desembolso Debito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000029"), Category = "DEBITO_DE_DEMANDA_ACH", Name = "Debito De Demanda Ach", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000030"), Category = "INSTRUMENTO_NO_DEFINIDO", Name = "Instrumento No Definido", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000031"), Category = "TRANSFERENCIA_DEBITO_INTERBANCARIO", Name = "Transferencia Debito Interbancario", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000032"), Category = "DESEMBOLSO_CREDITO_PLUS", Name = "Desembolso Credito Plus", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000033"), Category = "PAGO_DEPOSITO_PRE_ACORDADO", Name = "Pago Deposito Pre Acordado", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000034"), Category = "NOTA_PROMISORIA_FIRMADA_POR_UN_BANCO_AVALADA_POR_OTRO_BANCO", Name = "Nota Promisoria Firmada Por Un Banco Avalada Por Otro Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000035"), Category = "NOTA_PROMISORIA_FIRMADA", Name = "Nota Promisoria Firmada", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000036"), Category = "CHEQUE_BANCARIO", Name = "Cheque Bancario", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000037"), Category = "CHEQUE", Name = "Cheque", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000038"), Category = "NOTA_PROMISORIA", Name = "Nota Promisoria", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000039"), Category = "POSTGIRO", Name = "Postgiro", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000040"), Category = "RETIRO_DE_NOTA_POR_EL_POR_EL_ACREEDOR_SOBRE_UN_BANCO", Name = "Retiro De Nota Por El Por El Acreedor Sobre Un Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000041"), Category = "PAGO_COMERCIAL_URGENTE", Name = "Pago Comercial Urgente", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000042"), Category = "RETIRO_DE_NOTA_POR_EL_ACREEDOR_AVALADA_POR_OTRO_BANCO", Name = "Retiro De Nota Por El Acreedor Avalada Por Otro Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000043"), Category = "DEBITO_ACH", Name = "Debito Ach", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000044"), Category = "TARJETA_DEBITO", Name = "Tarjeta Debito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000045"), Category = "NOTA_PROMISORIA_FIRMADA_ACREEDOR", Name = "Nota Promisoria Firmada Acreedor", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000046"), Category = "PROYECTO_BANCARIO", Name = "Proyecto Bancario", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000047"), Category = "NOTA_PROMISORIA_BANCO", Name = "Nota Promisoria Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000048"), Category = "PAGO_NEGOCIO_CORPORATIVO_AHORROS_CREDITO_CTP", Name = "Pago Negocio Corporativo Ahorros Credito Ctp", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000049"), Category = "PAGO_NEGOCIO_CORPORATIVO_AHORROS_DEBITO_CTP", Name = "Pago Negocio Corporativo Ahorros Debito Ctp", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000050"), Category = "CONSIGNACION_BANCARIA", Name = "Consignacion Bancaria", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000051"), Category = "CHEQUE_LOCAL", Name = "Cheque Local", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000052"), Category = "CREDITO_CTP", Name = "Credito Ctp", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000053"), Category = "GIRO_REFERENCIADO", Name = "Giro Referenciado", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000001"), Category = "CTX", Name = "Ctx", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000002"), Category = "VALES", Name = "Vales", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000003"), Category = "NOTA_PROMISORIA_FIRMADA_PRO_EL_BANCO", Name = "Nota Promisoria Firmada Pro El Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000004"), Category = "GIRO_URGENTE", Name = "Giro Urgente", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000005"), Category = "CONCENTRACION_EFECTIVO_AHORROS_/_DESEMBOLSO_CREDITO_CCD", Name = "Concentración Efectivo/Ahorros - Desembolso Crédito CCD", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000006"), Category = "REVERSION_CREDITO_AHORRO", Name = "Reversion Credito Ahorro", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000007"), Category = "DEBITO_CTX", Name = "Debito Ctx", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000008"), Category = "NOTA_RETIRO", Name = "Nota Retiro", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000009"), Category = "NOTA_CAMBIARIA", Name = "Nota Cambiaria", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000010"), Category = "NOTA_RETIRO_TERCERO", Name = "Nota Retiro Tercero", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000011"), Category = "EFECTIVO", Name = "Efectivo", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000012"), Category = "CHEQUE_LOCAL_TRAFERIBLE", Name = "Cheque Local Traferible", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000013"), Category = "NOTA_BANCARIA_TRANFERIBLE", Name = "Nota Bancaria Tranferible", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000014"), Category = "BOOKENTRY_DEBITO", Name = "Bookentry Debito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000015"), Category = "NOTA_PROMISORIA_FIRMADA_POR_EL_ACREEDOR_AVALADA_POR_UN_TERCERO", Name = "Nota Promisoria Firmada Por El Acreedor Avalada Por Un Tercero", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000016"), Category = "PAGO_TESORERIA_URGENTE", Name = "Pago Tesoreria Urgente", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000017"), Category = "REVERSION_CREDITO_DE_DEMANDA_ACH", Name = "Reversion Credito De Demanda Ach", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000018"), Category = "ACUERDO_MUTUO", Name = "Acuerdo Mutuo", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000019"), Category = "TARJETA_CREDITO", Name = "Tarjeta Credito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000020"), Category = "BONOS", Name = "Bonos", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000021"), Category = "DESEMBOLSO_PLUS_DEBITO", Name = "Desembolso Plus Debito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000022"), Category = "CREDITO_AHORRO", Name = "Credito Ahorro", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000023"), Category = "BOOKENTRY_CREDITO", Name = "Bookentry Credito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000024"), Category = "METODO_DE_PAGO_SOLICITADO_NO_USUADO", Name = "Metodo De Pago Solicitado No Usuado", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000025"), Category = "TELEX_ESTANDAR_BANCARIO_FRANCES", Name = "Telex Estandar Bancario Frances", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000026"), Category = "CREDITO_ACH", Name = "Credito Ach", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000027"), Category = "CLEARING_ENTRE_PARTNERS", Name = "Clearing Entre Partners", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000028"), Category = "DESEMBOLSO_DEBITO", Name = "Desembolso Debito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000029"), Category = "DEBITO_DE_DEMANDA_ACH", Name = "Debito De Demanda Ach", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000030"), Category = "INSTRUMENTO_NO_DEFINIDO", Name = "Instrumento No Definido", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000031"), Category = "TRANSFERENCIA_DEBITO_INTERBANCARIO", Name = "Transferencia Debito Interbancario", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000032"), Category = "DESEMBOLSO_CREDITO_PLUS", Name = "Desembolso Credito Plus", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000033"), Category = "PAGO_DEPOSITO_PRE_ACORDADO", Name = "Pago Deposito Pre Acordado", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000034"), Category = "NOTA_PROMISORIA_FIRMADA_POR_UN_BANCO_AVALADA_POR_OTRO_BANCO", Name = "Nota Promisoria Firmada Por Un Banco Avalada Por Otro Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000035"), Category = "NOTA_PROMISORIA_FIRMADA", Name = "Nota Promisoria Firmada", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000036"), Category = "CHEQUE_BANCARIO", Name = "Cheque Bancario", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000037"), Category = "CHEQUE", Name = "Cheque", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000038"), Category = "NOTA_PROMISORIA", Name = "Nota Promisoria", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000039"), Category = "POSTGIRO", Name = "Postgiro", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000040"), Category = "RETIRO_DE_NOTA_POR_EL_POR_EL_ACREEDOR_SOBRE_UN_BANCO", Name = "Retiro De Nota Por El Por El Acreedor Sobre Un Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000041"), Category = "PAGO_COMERCIAL_URGENTE", Name = "Pago Comercial Urgente", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000042"), Category = "RETIRO_DE_NOTA_POR_EL_ACREEDOR_AVALADA_POR_OTRO_BANCO", Name = "Retiro De Nota Por El Acreedor Avalada Por Otro Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000043"), Category = "DEBITO_ACH", Name = "Debito Ach", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000044"), Category = "TARJETA_DEBITO", Name = "Tarjeta Debito", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000045"), Category = "NOTA_PROMISORIA_FIRMADA_ACREEDOR", Name = "Nota Promisoria Firmada Acreedor", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000046"), Category = "PROYECTO_BANCARIO", Name = "Proyecto Bancario", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000047"), Category = "NOTA_PROMISORIA_BANCO", Name = "Nota Promisoria Banco", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000048"), Category = "PAGO_NEGOCIO_CORPORATIVO_AHORROS_CREDITO_CTP", Name = "Pago Negocio Corporativo Ahorros Credito Ctp", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000049"), Category = "PAGO_NEGOCIO_CORPORATIVO_AHORROS_DEBITO_CTP", Name = "Pago Negocio Corporativo Ahorros Debito Ctp", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000050"), Category = "CONSIGNACION_BANCARIA", Name = "Consignacion Bancaria", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000051"), Category = "CHEQUE_LOCAL", Name = "Cheque Local", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000052"), Category = "CREDITO_CTP", Name = "Credito Ctp", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("40000000-0000-0000-0000-000000000053"), Category = "GIRO_REFERENCIADO", Name = "Giro Referenciado", Kind = TaxCatalogKind.PayrollPaymentMeans, IsActive = true, CreatedAt = seedDate },
                     // Nivel tributario y régimen del tercero (todos los partidos: Cliente/Proveedor/Empleado).
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("50000000-0000-0000-0000-000000000001"), Category = "SIMPLIFICADO", Name = "Régimen Simplificado", Kind = TaxCatalogKind.TaxLevelCode, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("50000000-0000-0000-0000-000000000002"), Category = "COMUN", Name = "Régimen Común", Kind = TaxCatalogKind.TaxLevelCode, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("50000000-0000-0000-0000-000000000003"), Category = "RESPONSABLE_DE_IVA", Name = "Responsable de IVA", Kind = TaxCatalogKind.TaxLevelCode, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("50000000-0000-0000-0000-000000000004"), Category = "NO_RESPONSABLE_DE_IVA", Name = "No Responsable de IVA", Kind = TaxCatalogKind.TaxLevelCode, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("60000000-0000-0000-0000-000000000001"), Category = "SIMPLE", Name = "Régimen Simple", Kind = TaxCatalogKind.Regimen, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("60000000-0000-0000-0000-000000000002"), Category = "ORDINARIO", Name = "Régimen Ordinario", Kind = TaxCatalogKind.Regimen, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("60000000-0000-0000-0000-000000000003"), Category = "AUTORRETENEDOR", Name = "Autorretenedor", Kind = TaxCatalogKind.Regimen, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("50000000-0000-0000-0000-000000000001"), Category = "SIMPLIFICADO", Name = "Régimen Simplificado", Kind = TaxCatalogKind.TaxLevelCode, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("50000000-0000-0000-0000-000000000002"), Category = "COMUN", Name = "Régimen Común", Kind = TaxCatalogKind.TaxLevelCode, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("50000000-0000-0000-0000-000000000003"), Category = "RESPONSABLE_DE_IVA", Name = "Responsable de IVA", Kind = TaxCatalogKind.TaxLevelCode, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("50000000-0000-0000-0000-000000000004"), Category = "NO_RESPONSABLE_DE_IVA", Name = "No Responsable de IVA", Kind = TaxCatalogKind.TaxLevelCode, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("60000000-0000-0000-0000-000000000001"), Category = "SIMPLE", Name = "Régimen Simple", Kind = TaxCatalogKind.Regimen, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("60000000-0000-0000-0000-000000000002"), Category = "ORDINARIO", Name = "Régimen Ordinario", Kind = TaxCatalogKind.Regimen, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("60000000-0000-0000-0000-000000000003"), Category = "AUTORRETENEDOR", Name = "Autorretenedor", Kind = TaxCatalogKind.Regimen, IsActive = true, CreatedAt = seedDate },
                     // Tipo de cuenta bancaria (empleados).
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("70000000-0000-0000-0000-000000000001"), Category = "AHORROS", Name = "Ahorros", Kind = TaxCatalogKind.AccountType, IsActive = true, CreatedAt = seedDate },
-                    new DataicoTaxCatalogItem { Id = Guid.Parse("70000000-0000-0000-0000-000000000002"), Category = "CORRIENTE", Name = "Corriente", Kind = TaxCatalogKind.AccountType, IsActive = true, CreatedAt = seedDate }
+                    new TaxCatalogItem { Id = Guid.Parse("70000000-0000-0000-0000-000000000001"), Category = "AHORROS", Name = "Ahorros", Kind = TaxCatalogKind.AccountType, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("70000000-0000-0000-0000-000000000002"), Category = "CORRIENTE", Name = "Corriente", Kind = TaxCatalogKind.AccountType, IsActive = true, CreatedAt = seedDate }
+                );
+            });
+
+            // Catálogo global de Unidades de Medida DIAN (UN/CEFACT Rec. 20) — confirmado contra
+            // fuentes públicas de la DIAN, no inventado: "94" es el código legado numérico de
+            // "Unidad" (=EA), el resto de unidades usa su propio código alfabético también como
+            // DianCode. Superadmin puede agregar más filas; estas son solo el arranque.
+            modelBuilder.Entity<UnitOfMeasure>(entity =>
+            {
+                entity.ToTable("UnitsOfMeasure");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.DianCode).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.Abbreviation).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.DisplayFormat).IsRequired().HasMaxLength(30);
+
+                var uomSeedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                entity.HasData(
+                    new UnitOfMeasure { Id = UnitOfMeasure.DefaultUnidadId, DianCode = "94", Abbreviation = "EA", Name = "Unidad", DisplayFormat = "Combined", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000002"), DianCode = "KGM", Abbreviation = "KGM", Name = "Kilogramo", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000003"), DianCode = "LBR", Abbreviation = "LBR", Name = "Libra", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000004"), DianCode = "HUR", Abbreviation = "HUR", Name = "Hora", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000005"), DianCode = "DAY", Abbreviation = "DAY", Name = "Día", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000006"), DianCode = "ANA", Abbreviation = "ANA", Name = "Año", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000007"), DianCode = "LUN", Abbreviation = "LUN", Name = "Mes", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000008"), DianCode = "DZN", Abbreviation = "DZN", Name = "Docena", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000009"), DianCode = "GLL", Abbreviation = "GLL", Name = "Galón", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000010"), DianCode = "MTR", Abbreviation = "MTR", Name = "Metro", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate },
+                    new UnitOfMeasure { Id = Guid.Parse("30000000-0000-0000-0000-000000000011"), DianCode = "ZZ", Abbreviation = "ZZ", Name = "Mutuamente definido", DisplayFormat = "AbbreviationOnly", IsActive = true, CreatedAt = uomSeedDate }
                 );
             });
         }

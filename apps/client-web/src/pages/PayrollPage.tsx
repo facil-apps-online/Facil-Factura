@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Loader2, ArrowLeft, Edit2, Send, AlertCircle, Eye, RotateCcw, XCircle, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import { useConfirm } from '@shared/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
@@ -43,6 +44,7 @@ const conceptDetails = (c: Concept): string => {
 };
 
 export default function PayrollPage() {
+  const confirm = useConfirm();
   const [entries, setEntries] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -240,7 +242,7 @@ export default function PayrollPage() {
   };
 
   const handleDeleteDraft = async (id: string) => {
-    if (!confirm('¿Eliminar esta nómina?')) return;
+    if (!(await confirm('¿Eliminar esta nómina?'))) return;
     try {
       await api.delete(`/client/payroll/${id}`);
       toast.success('Nómina eliminada');
@@ -330,7 +332,7 @@ export default function PayrollPage() {
                     placeholder="Buscar empleado..."
                     options={employees.map(emp => ({ value: emp.id, label: `${emp.name} (${emp.identificationNumber})` }))}
                   />
-                  {employees.length === 0 && <p className="text-xs text-amber-600 mt-1">No tienes empleados registrados. Créalos primero en "Mis Terceros".</p>}
+                  {employees.length === 0 && <p className="text-xs text-amber-600 mt-1">No tienes empleados registrados. Créales un registro en Terceros.</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Inicio de Período</label>
@@ -459,7 +461,7 @@ export default function PayrollPage() {
                             <td className="p-3 text-sm font-mono font-bold text-right">${(c.amount || 0).toLocaleString('es-CO')}</td>
                           </tr>
                         ))}
-                        {(!entry.accruals || entry.accruals.length === 0) && <tr><td className="p-3 text-sm text-slate-400">Sin devengos.</td></tr>}
+                        {(!entry.accruals || entry.accruals.length === 0) && <tr><td className="p-3 text-sm text-slate-400">No hay devengos.</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -475,7 +477,7 @@ export default function PayrollPage() {
                             <td className="p-3 text-sm font-mono font-bold text-right">${(c.amount || 0).toLocaleString('es-CO')}</td>
                           </tr>
                         ))}
-                        {(!entry.deductions || entry.deductions.length === 0) && <tr><td className="p-3 text-sm text-slate-400">Sin deducciones.</td></tr>}
+                        {(!entry.deductions || entry.deductions.length === 0) && <tr><td className="p-3 text-sm text-slate-400">No hay deducciones.</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -533,8 +535,8 @@ export default function PayrollPage() {
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800">Nómina Electrónica</h1>
-          <p className="text-slate-500 mt-1">Historial de comprobantes de nómina emitidos</p>
+          <h1 className="text-3xl font-extrabold text-slate-800">Nómina electrónica</h1>
+          <p className="text-slate-500 mt-1">Historial de nómina emitida</p>
         </div>
         <div className="flex gap-3">
           <ImportExcelButton endpoint="/client/payroll/import" templateEndpoint="/client/payroll/template" label="Importar Excel" onDone={loadData} />

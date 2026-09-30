@@ -26,11 +26,13 @@ namespace Fel.Infrastructure.Services
 
         private readonly FelDbContext _db;
         private readonly ICoreApiClient _core;
+        private readonly ICryptoService _crypto;
 
-        public PasswordResetService(FelDbContext db, ICoreApiClient core)
+        public PasswordResetService(FelDbContext db, ICoreApiClient core, ICryptoService crypto)
         {
             _db = db;
             _core = core;
+            _crypto = crypto;
         }
 
         // brandLogoUrl/brandName identifican al Tenant dueño de la cuenta (el revendedor cuya
@@ -42,18 +44,35 @@ namespace Fel.Infrastructure.Services
             string portalBaseUrl, string templateType, string? tenantCoreId = null,
             string? brandLogoUrl = null, string? brandName = null, CancellationToken ct = default)
         {
-            var rawToken = GenerateRawToken();
+            // Si ya hay un enlace vigente (no vencido, no usado) para este usuario, se reenvía ese
+            // mismo — no tiene sentido emitir uno nuevo cada vez que el tenant hace clic en
+            // "reenviar": dejaría varios enlaces simultáneamente válidos y, si el destinatario borró
+            // el primer correo, el que llega después seguiría siendo el mismo enlace que ya conocía.
+            var existing = await _db.PasswordResetTokens
+                .Where(t => t.UserType == userType && t.UserId == userId && t.UsedAt == null && t.ExpiresAt > DateTime.UtcNow && t.EncryptedToken != null)
+                .OrderByDescending(t => t.CreatedAt)
+                .FirstOrDefaultAsync(ct);
 
-            _db.PasswordResetTokens.Add(new PasswordResetToken
+            string rawToken;
+            if (existing != null)
             {
-                Id = Guid.NewGuid(),
-                UserType = userType,
-                UserId = userId,
-                TokenHash = Hash(rawToken),
-                ExpiresAt = DateTime.UtcNow.Add(TokenLifetime),
-                CreatedAt = DateTime.UtcNow
-            });
-            await _db.SaveChangesAsync(ct);
+                rawToken = _crypto.Decrypt(existing.EncryptedToken!);
+            }
+            else
+            {
+                rawToken = GenerateRawToken();
+                _db.PasswordResetTokens.Add(new PasswordResetToken
+                {
+                    Id = Guid.NewGuid(),
+                    UserType = userType,
+                    UserId = userId,
+                    TokenHash = Hash(rawToken),
+                    EncryptedToken = _crypto.Encrypt(rawToken),
+                    ExpiresAt = DateTime.UtcNow.Add(TokenLifetime),
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _db.SaveChangesAsync(ct);
+            }
 
             var resetLink = $"{portalBaseUrl.TrimEnd('/')}/reset-password?token={rawToken}";
             return await _core.QueuePlatformEmailAsync(email, templateType, new Dictionary<string, string>

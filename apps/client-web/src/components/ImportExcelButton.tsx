@@ -94,7 +94,7 @@ export default function ImportExcelButton({ endpoint, label, onDone, templateEnd
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-              <h3 className="text-xl font-bold text-slate-800">Resultado de la Importación</h3>
+              <h3 className="text-xl font-bold text-slate-800">Resultado de la importación</h3>
               <button onClick={() => setSummary(null)} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
             </div>
             <div className="p-6 overflow-y-auto">

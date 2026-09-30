@@ -303,6 +303,7 @@ namespace Fel.Api.Client.Controllers
                     document.Status = result.Success ? "APPROVED" : "REJECTED";
                     document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
                     document.Cufe = result.Cufe;
+                    document.QrCode = result.QrCode;
                     document.ProcessedAt = DateTime.UtcNow;
                 }
                 else
@@ -321,7 +322,7 @@ namespace Fel.Api.Client.Controllers
                     var pdfCredentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
-                        () => NominaReportDataMapper.Build(
+                        _ => NominaReportDataMapper.Build(
                             document, document.Customer!, client, draft.Prefix, documentNumber,
                             draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
                             draft.Accruals.Select(c => (c.Code, c.Description, c.Amount ?? 0m)),
@@ -744,6 +745,7 @@ namespace Fel.Api.Client.Controllers
             document.Status = result.Success ? "APPROVED" : "REJECTED";
             document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
             document.Cufe = result.Cufe; // CUNE de nómina — antes no se guardaba, necesario para Notas de Eliminación/Reemplazo.
+            document.QrCode = result.QrCode;
             document.ProcessedAt = DateTime.UtcNow;
 
             return result;

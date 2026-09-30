@@ -116,6 +116,9 @@ namespace Fel.Api.Superadmin.Controllers
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] SuperadminResetPasswordDto request)
         {
+            var passwordError = Fel.Core.Security.PasswordPolicy.Validate(request.NewPassword);
+            if (passwordError != null) return BadRequest(passwordError);
+
             var consumed = await _passwordResetService.ConsumeAsync(request.Token, PortalUserType.Superadmin);
             if (consumed == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 

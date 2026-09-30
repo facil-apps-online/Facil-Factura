@@ -50,7 +50,8 @@ namespace Fel.Api.Superadmin.Controllers
                         versionNumber = t.VersionNumber,
                         documentTypeId = t.DocumentTypeId,
                         documentType = t.DocumentType != null ? t.DocumentType.Name : "N/A",
-                        previousVersionId = t.PreviousVersionId
+                        previousVersionId = t.PreviousVersionId,
+                        mostrarRetenciones = t.MostrarRetenciones
                     })
                     .ToListAsync();
 
@@ -80,7 +81,8 @@ namespace Fel.Api.Superadmin.Controllers
                         version = t.VersionNumber,
                         status = t.Status.ToString(),
                         createdAt = t.CreatedAt,
-                        updatedAt = t.UpdatedAt
+                        updatedAt = t.UpdatedAt,
+                        mostrarRetenciones = t.MostrarRetenciones
                     })
                     .ToListAsync();
 
@@ -109,7 +111,7 @@ namespace Fel.Api.Superadmin.Controllers
                     return BadRequest("Esta plantilla aún no tiene un archivo .repx asociado.");
                 }
 
-                var data = BuildSampleData(template.DocumentType?.Code ?? "");
+                var data = Fel.Infrastructure.Services.TemplatePreviewSampleData.BuildSampleData(template.DocumentType?.Code ?? "", template.MostrarRetenciones);
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {
@@ -122,185 +124,6 @@ namespace Fel.Api.Superadmin.Controllers
             {
                 return StatusCode(500, ex.Message);
             }
-        }
-
-        // Datos ficticios pero realistas — mismo contrato de nombres planos que
-        // InvoiceReportDataMapper/SupportDocumentReportDataMapper/NominaReportDataMapper, para que
-        // la vista previa se vea igual de completa que un documento real.
-        private static System.Collections.Generic.Dictionary<string, object?> BuildSampleData(string documentTypeCode)
-        {
-            if (documentTypeCode.StartsWith("DS")) return SampleSupportDocumentData(documentTypeCode);
-            if (documentTypeCode.StartsWith("NE")) return SampleNominaData(documentTypeCode);
-            return SampleInvoiceData(documentTypeCode);
-        }
-
-        private static System.Collections.Generic.Dictionary<string, object?> SampleInvoiceData(string documentTypeCode)
-        {
-            var documentoTipo = documentTypeCode switch
-            {
-                "NC" => "NOTA CRÉDITO ELECTRÓNICA",
-                "ND" => "NOTA DÉBITO ELECTRÓNICA",
-                "DE-POS" => "DOCUMENTO EQUIVALENTE - TIQUETE POS",
-                _ => "FACTURA ELECTRÓNICA DE VENTA"
-            };
-            var esNota = documentTypeCode is "NC" or "ND";
-
-            return new System.Collections.Generic.Dictionary<string, object?>
-            {
-                ["EmisorLogoUrl"] = "",
-                ["EmisorRazonSocial"] = "Comercializadora Ejemplo S.A.S.",
-                ["EmisorNombreComercial"] = "Tienda Ejemplo",
-                ["EmisorNit"] = "900123456",
-                ["EmisorDv"] = "7",
-                ["EmisorDireccion"] = "Calle 10 # 20-30",
-                ["EmisorCiudad"] = "Bogotá D.C.",
-                ["EmisorTelefono"] = "601 555 1234",
-                ["EmisorEmail"] = "facturacion@ejemplo.com",
-                ["EmisorCalidadTributaria"] = "Responsable de IVA",
-
-                ["AdquirenteNombre"] = "Juan Pérez Gómez",
-                ["AdquirenteTipoIdentificacion"] = "CC",
-                ["AdquirenteIdentificacion"] = "1234567890",
-                ["AdquirenteDireccion"] = "Carrera 15 # 40-50",
-                ["AdquirenteCiudad"] = "Bogotá D.C.",
-                ["AdquirenteTelefono"] = "310 555 6789",
-                ["AdquirenteEmail"] = "juan.perez@correo.com",
-
-                ["DocumentoTipo"] = documentoTipo,
-                ["DocumentoNumero"] = "SETP 1",
-                ["ResolucionTexto"] = "Resolución DIAN 18760000001 · Rango SETP 1-5000 · Vigente hasta 31/12/2027",
-                ["FechaGeneracion"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
-                ["FechaVencimiento"] = DateTime.Now.AddDays(30).ToString("dd/MM/yyyy"),
-                ["Cufe"] = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-                ["MedioPago"] = "10",
-                ["FormaPago"] = "Contado",
-                ["OrdenCompra"] = "OC-2026-001",
-                ["Notas"] = "Documento de ejemplo — vista previa de diseño.",
-                ["NotaReferencia"] = esNota ? "Ajusta el documento N° SETP 1 · CUFE a1b2c3d4e5f6...ejemplo · Motivo: Devolución parcial" : null,
-
-                ["Subtotal"] = "168.000",
-                ["Iva"] = "31.920",
-                ["Descuento"] = "0",
-                ["Cargo"] = "0",
-                ["Total"] = "199.920",
-                ["TotalEnLetras"] = "CIENTO NOVENTA Y NUEVE MIL NOVECIENTOS VEINTE PESOS M/CTE",
-
-                ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
-                ["FabricanteSoftwareNit"] = "900.303.194-6",
-                ["NombreSoftware"] = "Facil Factura",
-                ["ProveedorTecnologicoNombre"] = null,
-                ["ProveedorTecnologicoNit"] = null,
-
-                ["DataSource"] = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object?>>
-                {
-                    new() { ["Codigo"] = "PRD001", ["Nombre"] = "Producto de ejemplo A", ["Cantidad"] = "2", ["Unidad"] = "Unidad", ["ValorUnitario"] = "50.000", ["PorcentajeIva"] = "19%", ["ValorIva"] = "19.000", ["TotalLinea"] = "119.000" },
-                    new() { ["Codigo"] = "PRD002", ["Nombre"] = "Producto de ejemplo B", ["Cantidad"] = "1", ["Unidad"] = "Unidad", ["ValorUnitario"] = "68.000", ["PorcentajeIva"] = "19%", ["ValorIva"] = "12.920", ["TotalLinea"] = "80.920" }
-                }
-            };
-        }
-
-        private static System.Collections.Generic.Dictionary<string, object?> SampleSupportDocumentData(string documentTypeCode)
-        {
-            var esAjuste = documentTypeCode == "DS-AJUSTE";
-            return new System.Collections.Generic.Dictionary<string, object?>
-            {
-                ["EmisorLogoUrl"] = "",
-                ["EmisorRazonSocial"] = "Comercializadora Ejemplo S.A.S.",
-                ["EmisorNombreComercial"] = "Tienda Ejemplo",
-                ["EmisorNit"] = "900123456",
-                ["EmisorDv"] = "7",
-                ["EmisorDireccion"] = "Calle 10 # 20-30",
-                ["EmisorCiudad"] = "Bogotá D.C.",
-                ["EmisorTelefono"] = "601 555 1234",
-                ["EmisorEmail"] = "facturacion@ejemplo.com",
-                ["EmisorCalidadTributaria"] = "Responsable de IVA",
-
-                ["ProveedorNombre"] = "Distribuidora Proveedor Ltda.",
-                ["ProveedorTipoIdentificacion"] = "NIT",
-                ["ProveedorIdentificacion"] = "800987654",
-                ["ProveedorDireccion"] = "Avenida 30 # 5-15",
-                ["ProveedorCiudad"] = "Medellín",
-                ["ProveedorTelefono"] = "604 555 4321",
-                ["ProveedorEmail"] = "ventas@proveedor.com",
-
-                ["DocumentoTitulo"] = esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO",
-                ["DocumentoNumero"] = "DS 1",
-                ["ResolucionTexto"] = "Resolución DIAN 18760000002 · Rango DS 1-5000 · Vigente hasta 31/12/2027",
-                ["FechaGeneracion"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
-                ["Cufe"] = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
-                ["MedioPago"] = "10",
-                ["FormaPago"] = "Contado",
-                ["OrdenCompra"] = "OC-2026-002",
-                ["ReferenciaAjuste"] = esAjuste ? "Corrección de valores — documento de ejemplo" : null,
-                ["Notas"] = "Documento de ejemplo — vista previa de diseño.",
-
-                ["Subtotal"] = "120.000",
-                ["Iva"] = "0",
-                ["Descuento"] = "0",
-                ["Total"] = "120.000",
-                ["TotalEnLetras"] = "CIENTO VEINTE MIL PESOS M/CTE",
-
-                ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
-                ["FabricanteSoftwareNit"] = "900.303.194-6",
-                ["NombreSoftware"] = "Facil Factura",
-                ["ProveedorTecnologicoNombre"] = null,
-                ["ProveedorTecnologicoNit"] = null,
-
-                ["DataSource"] = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object?>>
-                {
-                    new() { ["Codigo"] = "SRV001", ["Nombre"] = "Servicio de ejemplo", ["Cantidad"] = "1", ["Unidad"] = "Unidad", ["ValorUnitario"] = "120.000", ["PorcentajeIva"] = "0%", ["ValorIva"] = "0", ["TotalLinea"] = "120.000" }
-                }
-            };
-        }
-
-        private static System.Collections.Generic.Dictionary<string, object?> SampleNominaData(string documentTypeCode)
-        {
-            var esNota = documentTypeCode == "NE-AJUSTE";
-            return new System.Collections.Generic.Dictionary<string, object?>
-            {
-                ["EmisorLogoUrl"] = "",
-                ["EmisorRazonSocial"] = "Comercializadora Ejemplo S.A.S.",
-                ["EmisorNit"] = "900123456",
-                ["EmisorDireccion"] = "Calle 10 # 20-30",
-                ["EmisorCiudad"] = "Bogotá D.C.",
-                ["EmisorTelefono"] = "601 555 1234",
-                ["EmisorEmail"] = "nomina@ejemplo.com",
-
-                ["EmpleadoNombre"] = "María Rodríguez López",
-                ["EmpleadoTipoIdentificacion"] = "CC",
-                ["EmpleadoIdentificacion"] = "1098765432",
-                ["EmpleadoDireccion"] = "Calle 80 # 10-20",
-                ["EmpleadoCiudad"] = "Bogotá D.C.",
-
-                ["DocumentoTitulo"] = esNota ? "NOTA DE AJUSTE - NÓMINA ELECTRÓNICA" : "NÓMINA ELECTRÓNICA",
-                ["DocumentoNumero"] = "NE-1",
-                ["ReferenciaAjuste"] = esNota ? "Corrección de devengados — documento de ejemplo" : null,
-                ["FechaGeneracion"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
-                ["PeriodoTexto"] = $"{DateTime.Now.AddDays(-30):dd/MM/yyyy} — {DateTime.Now:dd/MM/yyyy}",
-                ["FechaPago"] = DateTime.Now.ToString("dd/MM/yyyy"),
-                ["MedioPago"] = "Consignación",
-                ["Cune"] = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
-
-                ["TotalDevengado"] = "2.500.000",
-                ["TotalDeduccion"] = "200.000",
-                ["NetoPagar"] = "2.300.000",
-                ["NetoPagarEnLetras"] = "DOS MILLONES TRESCIENTOS MIL PESOS M/CTE",
-
-                ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
-                ["FabricanteSoftwareNit"] = "900.303.194-6",
-                ["NombreSoftware"] = "Facil Factura",
-                ["SoftwareId"] = "SOFT-EJEMPLO-0001",
-                ["ProveedorTecnologicoNombre"] = null,
-                ["ProveedorTecnologicoNit"] = null,
-
-                ["DataSource"] = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object?>>
-                {
-                    new() { ["Tipo"] = "DEVENGADOS", ["Codigo"] = "001", ["Descripcion"] = "Salario básico", ["Valor"] = "2.300.000" },
-                    new() { ["Tipo"] = "DEVENGADOS", ["Codigo"] = "002", ["Descripcion"] = "Auxilio de transporte", ["Valor"] = "200.000" },
-                    new() { ["Tipo"] = "DEDUCCIONES", ["Codigo"] = "101", ["Descripcion"] = "Salud", ["Valor"] = "100.000" },
-                    new() { ["Tipo"] = "DEDUCCIONES", ["Codigo"] = "102", ["Descripcion"] = "Pensión", ["Valor"] = "100.000" }
-                }
-            };
         }
 
         public class CreateTemplateRequest
@@ -487,6 +310,7 @@ namespace Fel.Api.Superadmin.Controllers
                     DocumentTypeId = sourceTemplate.DocumentTypeId,
                     TenantId = null,
                     ClientId = null,
+                    MostrarRetenciones = sourceTemplate.MostrarRetenciones,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -547,6 +371,7 @@ namespace Fel.Api.Superadmin.Controllers
                     DocumentTypeId = sourceTemplate.DocumentTypeId,
                     TenantId = null,
                     ClientId = null,
+                    MostrarRetenciones = sourceTemplate.MostrarRetenciones,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -554,6 +379,36 @@ namespace Fel.Api.Superadmin.Controllers
                 await _dbContext.SaveChangesAsync();
 
                 return Ok(new { message = $"Versión {newVersionTemplate.VersionNumber} subida en estado Borrador.", templateId = newVersionTemplate.Id, templateKey });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        public class SetMostrarRetencionesRequest
+        {
+            public bool MostrarRetenciones { get; set; }
+        }
+
+        // PUT: api/superadmin/templates/{id}/mostrar-retenciones
+        [HttpPut("{id:guid}/mostrar-retenciones")]
+        public async Task<IActionResult> SetMostrarRetenciones(Guid id, [FromBody] SetMostrarRetencionesRequest request)
+        {
+            try
+            {
+                var template = await _dbContext.DocumentTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == null && t.ClientId == null);
+
+                if (template == null)
+                    return NotFound("Plantilla global no encontrada.");
+
+                template.MostrarRetenciones = request.MostrarRetenciones;
+                template.UpdatedAt = DateTime.UtcNow;
+
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { message = "Preferencia de retenciones actualizada." });
             }
             catch (Exception ex)
             {

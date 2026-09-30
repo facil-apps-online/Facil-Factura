@@ -139,9 +139,9 @@ export const DocumentTemplates = () => {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'Published': return <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">Publicado</span>;
+      case 'Published': return <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold">Publicada</span>;
       case 'Draft': return <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full text-xs font-bold">Borrador</span>;
-      case 'Archived': return <span className="bg-slate-500/20 text-slate-400 border border-slate-500/30 px-3 py-1 rounded-full text-xs font-bold">Archivado</span>;
+      case 'Archived': return <span className="bg-slate-500/20 text-slate-400 border border-slate-500/30 px-3 py-1 rounded-full text-xs font-bold">Archivada</span>;
       default: return null;
     }
   };
@@ -157,7 +157,7 @@ export const DocumentTemplates = () => {
             <FileText className="w-8 h-8 text-indigo-400" />
             Modelos de Diseño
           </h1>
-          <p className="text-slate-400 mt-2 text-lg font-medium">Sube archivos .repx (DevExpress Report Designer) y gestiona sus versiones para este tipo de documento.</p>
+          <p className="text-slate-400 mt-2 text-lg font-medium">Administra las plantillas y sus versiones para este tipo de documento.</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
@@ -172,7 +172,7 @@ export const DocumentTemplates = () => {
         <table className="w-full text-left">
           <thead className="bg-slate-900/50 border-b border-slate-700/50">
             <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre del Modelo</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre de la plantilla</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Versión</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Estado</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Fecha Creación</th>
@@ -245,10 +245,10 @@ export const DocumentTemplates = () => {
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200 border-slate-700">
-            <h2 className="text-2xl font-bold text-white mb-6">Nueva Plantilla Base</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">Nueva plantilla</h2>
             <form onSubmit={handleUpload} className="space-y-5">
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Nombre del Modelo</label>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Nombre de la plantilla</label>
                 <input
                   type="text"
                   required
@@ -259,7 +259,7 @@ export const DocumentTemplates = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Archivo .repx</label>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Archivo de plantilla</label>
                 <input
                   ref={newFileInputRef}
                   required
@@ -268,7 +268,7 @@ export const DocumentTemplates = () => {
                   onChange={e => setNewFile(e.target.files?.[0] ?? null)}
                   className="w-full text-sm text-slate-300 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer bg-slate-800/50 border border-slate-700 rounded-xl"
                 />
-                <p className="text-xs text-slate-500 mt-2">El archivo se sube directo a Facil Reports; la plantilla queda en Borrador hasta que la publiques.</p>
+                <p className="text-xs text-slate-500 mt-2">La plantilla quedará como borrador hasta que la publiques.</p>
               </div>
 
               <div className="flex gap-4 pt-4">
@@ -289,11 +289,11 @@ export const DocumentTemplates = () => {
       {showVersionModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200 border-slate-700">
-            <h2 className="text-2xl font-bold text-white mb-6">Subir Nueva Versión</h2>
-            <p className="text-slate-400 mb-4 text-sm">Al guardar, se creará un borrador de la versión siguiente. Tu plantilla actualmente publicada no será afectada hasta que publiques la nueva versión.</p>
+            <h2 className="text-2xl font-bold text-white mb-6">Subir nueva versión</h2>
+            <p className="text-slate-400 mb-4 text-sm">Se creará un borrador. La versión publicada seguirá activa hasta que publiques la nueva.</p>
             <form onSubmit={handleUploadNewVersion} className="space-y-5">
               <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">Archivo .repx</label>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Archivo de plantilla</label>
                 <input
                   required
                   type="file"

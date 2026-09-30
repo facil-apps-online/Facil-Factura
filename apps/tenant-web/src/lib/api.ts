@@ -33,3 +33,20 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// El backend ([ApiController]) responde 400 con un ValidationProblemDetails (objeto
+// {type,title,status,errors,traceId}) cuando falla el model binding — pasar ese objeto directo a
+// toast.error() lo intenta renderizar como children de React y revienta con el error #31.
+export function getErrorMessage(err: any, fallback: string): string {
+  const data = err?.response?.data;
+  if (!data) return fallback;
+  if (typeof data === 'string') return data;
+  if (typeof data.detail === 'string') return data.detail;
+  if (data.errors && typeof data.errors === 'object') {
+    const firstError = Object.values(data.errors).flat()[0];
+    if (typeof firstError === 'string') return firstError;
+  }
+  if (typeof data.message === 'string') return data.message;
+  if (typeof data.title === 'string') return data.title;
+  return fallback;
+}

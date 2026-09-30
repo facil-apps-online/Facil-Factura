@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Loader2, ArrowLeft, UserPlus, X, Edit2, Send, Percent, Eye, RotateCcw, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import { useConfirm } from '@shared/components/ConfirmDialog';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
@@ -12,19 +13,6 @@ const IVA_TREATMENTS = [
   { value: 'Gravado', label: 'Gravado' },
   { value: 'Exento', label: 'Exento' },
   { value: 'Excluido', label: 'Excluido' }
-];
-
-const IDENTIFICATION_TYPES = [
-  { value: '13', label: 'Cédula de Ciudadanía' },
-  { value: '22', label: 'Cédula de Extranjería' },
-  { value: '42', label: 'Documento de Identificación Extranjero' },
-  { value: '31', label: 'NIT' },
-  { value: '50', label: 'NIT de Otro País' },
-  { value: '91', label: 'NUIP' },
-  { value: '41', label: 'Pasaporte' },
-  { value: '11', label: 'Registro Civil' },
-  { value: '21', label: 'Tarjeta de Extranjería' },
-  { value: '12', label: 'Tarjeta de Identidad' }
 ];
 
 const initialQuickProvider = {
@@ -81,6 +69,7 @@ const discriminatedRetentions = (
 };
 
 export default function SupportDocumentsPage() {
+  const confirm = useConfirm();
   const [documents, setDocuments] = useState<any[]>([]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>('this-month');
   const [customFrom, setCustomFrom] = useState(() => getDateRangeForPreset('this-month')!.from);
@@ -110,6 +99,7 @@ export default function SupportDocumentsPage() {
   const [paymentMeansCatalog, setPaymentMeansCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [taxLevelCatalog, setTaxLevelCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [regimenCatalog, setRegimenCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  const [identificationTypeOptions, setIdentificationTypeOptions] = useState<{ value: string, label: string }[]>([]);
 
   const initialForm = {
     customerId: '',
@@ -159,6 +149,9 @@ export default function SupportDocumentsPage() {
       .catch(() => {});
     api.get('/client/tax-catalog?kind=Regimen')
       .then(res => setRegimenCatalog(res.data))
+      .catch(() => {});
+    api.get('/client/identification-types')
+      .then(res => setIdentificationTypeOptions(res.data.map((t: any) => ({ value: t.code, label: t.name }))))
       .catch(() => {});
   }, []);
 
@@ -406,17 +399,19 @@ export default function SupportDocumentsPage() {
     try {
       await api.post(`/client/support-documents/${id}/publish`);
       toast.success('Documento soporte emitido correctamente');
-      loadData();
-      if (viewingDoc?.id === id) handleViewDetail({ id });
     } catch (err: any) {
+      // El backend guarda el estado "RECHAZADA" y el motivo aunque la respuesta sea un error
+      // (el rechazo del integrador no es una falla nuestra) — hay que refrescar igual.
       toast.error(getErrorMessage(err, 'Error al emitir el documento soporte'));
     } finally {
+      loadData();
+      if (viewingDoc?.id === id) handleViewDetail({ id });
       setPublishingId(null);
     }
   };
 
   const handleDeleteDraft = async (id: string) => {
-    if (!confirm('¿Eliminar este documento?')) return;
+    if (!(await confirm('¿Eliminar este documento?'))) return;
     try {
       await api.delete(`/client/support-documents/${id}`);
       toast.success('Documento eliminado');
@@ -483,7 +478,7 @@ export default function SupportDocumentsPage() {
                 value={formData.paymentMeans}
                 onChange={v => setFormData({ ...formData, paymentMeans: v })}
                 placeholder="Buscar medio de pago..."
-                options={paymentMeansCatalog.map(c => ({ value: c.category, label: c.name }))}
+                options={[...paymentMeansCatalog].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(c => ({ value: c.category, label: c.name }))}
               />
             </div>
             <div>
@@ -492,7 +487,12 @@ export default function SupportDocumentsPage() {
                 required
                 value={formData.paymentMeansType}
                 onChange={v => {
-                  setFormData({ ...formData, paymentMeansType: v, paymentTermDays: v === 'CREDITO' ? formData.paymentTermDays : '' });
+                  setFormData({
+                    ...formData,
+                    paymentMeansType: v,
+                    paymentTermDays: v === 'CREDITO' ? formData.paymentTermDays : '',
+                    paymentMeans: v === 'CREDITO' ? '' : formData.paymentMeans,
+                  });
                   if (v !== 'CREDITO') setPaymentTermCustom(false);
                 }}
                 placeholder="Contado o crédito..."
@@ -533,8 +533,8 @@ export default function SupportDocumentsPage() {
 
           {formData.referenceDocumentId && (
             <div className="p-6 bg-amber-50 border border-amber-200 rounded-xl">
-              <h3 className="text-amber-800 font-bold mb-2">Generando Nota de Ajuste</h3>
-              <p className="text-sm text-amber-700 mb-4">Esta nota ajustará el documento soporte seleccionado.</p>
+              <h3 className="text-amber-800 font-bold mb-2">Generando nota de ajuste</h3>
+              <p className="text-sm text-amber-700 mb-4">La nota ajustará el documento seleccionado.</p>
               <div>
                 <label className="block text-sm font-bold text-amber-800 mb-2">Concepto del Ajuste</label>
                 <input type="text" value={formData.referenceConcept} onChange={e => setFormData({ ...formData, referenceConcept: e.target.value })} className="w-full px-4 py-2 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none" />
@@ -620,7 +620,7 @@ export default function SupportDocumentsPage() {
                           );
                         })}
                         {item.retentions.length === 0 && <p className="text-xs text-slate-400">Sin retenciones en esta línea.</p>}
-                        {retentionCatalog.length === 0 && <p className="text-xs text-amber-600">Superadmin no ha configurado retenciones en el catálogo todavía.</p>}
+                        {retentionCatalog.length === 0 && <p className="text-xs text-amber-600">No hay retenciones configuradas.</p>}
                       </div>
                     </div>
                   )}
@@ -663,8 +663,8 @@ export default function SupportDocumentsPage() {
                   </div>
                 );
               })}
-              {formData.generalRetentions.length === 0 && <p className="text-xs text-slate-400">Sin retenciones generales (ej. ReteICA, ReteIVA) en este documento.</p>}
-              {retentionCatalog.length === 0 && <p className="text-xs text-amber-600">Superadmin no ha configurado retenciones en el catálogo todavía.</p>}
+              {formData.generalRetentions.length === 0 && <p className="text-xs text-slate-400">No hay retenciones agregadas.</p>}
+              {retentionCatalog.length === 0 && <p className="text-xs text-amber-600">No hay retenciones configuradas.</p>}
             </div>
           </div>
 
@@ -752,7 +752,7 @@ export default function SupportDocumentsPage() {
                       value={quickProvider.identificationType}
                       onChange={v => setQuickProvider({ ...quickProvider, identificationType: v })}
                       placeholder="Buscar tipo de identificación..."
-                      options={IDENTIFICATION_TYPES}
+                      options={identificationTypeOptions}
                     />
                   </div>
                   <div>
@@ -937,7 +937,7 @@ export default function SupportDocumentsPage() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-800">Documentos Soporte</h1>
-          <p className="text-slate-500 mt-1">Compras a proveedores no obligados a facturar</p>
+          <p className="text-slate-500 mt-1">Compras a proveedores no obligados a facturar electrónicamente</p>
         </div>
         <button onClick={() => { setEditingId(null); setPaymentTermCustom(false); setFormData(initialForm); setView('create'); }} className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all">
           <Plus size={20} /> Nuevo Documento Soporte

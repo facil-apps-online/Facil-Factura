@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Fel.Infrastructure.Dian
 {
@@ -25,18 +28,20 @@ namespace Fel.Infrastructure.Dian
         private readonly IXmlSigner _xmlSigner;
         private readonly ICryptoVault _cryptoVault;
         private readonly IDianSoapClient _dianSoapClient;
+        private readonly ILogger<NativeDianSubmissionProvider> _logger;
 
         public string IntegratorCode => "NATIVE";
 
         public NativeDianSubmissionProvider(
             FelDbContext dbContext, IUblGenerator ublGenerator, IXmlSigner xmlSigner,
-            ICryptoVault cryptoVault, IDianSoapClient dianSoapClient)
+            ICryptoVault cryptoVault, IDianSoapClient dianSoapClient, ILogger<NativeDianSubmissionProvider> logger)
         {
             _dbContext = dbContext;
             _ublGenerator = ublGenerator;
             _xmlSigner = xmlSigner;
             _cryptoVault = cryptoVault;
             _dianSoapClient = dianSoapClient;
+            _logger = logger;
         }
 
         public async Task<DocumentSubmissionResult> SubmitAsync(
@@ -76,17 +81,61 @@ namespace Fel.Infrastructure.Dian
                 return new DocumentSubmissionResult { Success = false, Status = invoice.Status, Cufe = string.Empty, ResponseMessage = invoice.DianResponseMessage };
             }
 
+            var documentType = invoice.DocumentTypeId.HasValue
+                ? await _dbContext.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == invoice.DocumentTypeId.Value)
+                : null;
+
             if (string.IsNullOrEmpty(invoice.Number))
             {
-                invoice.Number = (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
+                // Las Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que
+                // no pueden compartir el NextNumber de la resolución de Factura — antes lo hacían,
+                // y cada nota consumía un número que le correspondía a la siguiente factura real.
+                invoice.Number = invoice.ReferenceDocumentId.HasValue
+                    ? (await (documentType?.Code == "ND"
+                        ? Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextDebitNoteNumberAsync(_dbContext, client.Id)
+                        : Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextCreditNoteNumberAsync(_dbContext, client.Id))).ToString()
+                    : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
             }
 
+            // La DIAN exige que la fecha de emisión coincida con la fecha de firma (regla FAD09e) —
+            // no se puede emitir con fecha anterior a hoy. Se refresca acá, en el momento real de
+            // envío/firma, en vez de dejar la fecha en que el borrador se creó (que puede ser de
+            // días antes si el documento quedó pendiente o se reintenta un envío fallido).
+            invoice.IssueDate = DateTime.UtcNow;
+
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-            var ublData = DianDocumentMapper.BuildInvoiceData(invoice, customer, items, resolution, client, municipalities);
+            var paymentMeansDianCodes = await _dbContext.TaxCatalogItems.AsNoTracking()
+                .Where(t => t.Kind == TaxCatalogKind.PaymentMeans && t.DianCode != null)
+                .ToDictionaryAsync(t => t.Category, t => t.DianCode!);
+
+            // ReferenceDocumentId solo tiene valor en notas crédito/débito — antes esto siempre caía
+            // en BuildInvoiceData sin importar el tipo real, así que una nota salía literalmente como
+            // factura (mismo DianCode="01" y sin el grupo DiscrepancyResponse que exige la DIAN).
+            Fel.Core.Models.UblInvoiceData ublData;
+            string filePrefix;
+            if (invoice.ReferenceDocumentId.HasValue)
+            {
+                if (documentType == null)
+                    throw new InvalidOperationException("Esta nota no tiene un tipo de documento asignado; no se puede determinar su código DIAN.");
+
+                var originalDocument = await _dbContext.Documents.FindAsync(invoice.ReferenceDocumentId.Value)
+                    ?? throw new InvalidOperationException("El documento original referenciado por esta nota ya no existe.");
+
+                ublData = documentType.Code == "ND"
+                    ? DianDocumentMapper.BuildDebitNoteData(invoice, originalDocument, customer, items, resolution, client, municipalities, documentType, paymentMeansDianCodes)
+                    : DianDocumentMapper.BuildCreditNoteData(invoice, originalDocument, customer, items, resolution, client, municipalities, documentType, paymentMeansDianCodes);
+                filePrefix = documentType.Code == "ND" ? Fel.Infrastructure.Services.DianFileNaming.NotaDebito : Fel.Infrastructure.Services.DianFileNaming.NotaCredito;
+            }
+            else
+            {
+                ublData = DianDocumentMapper.BuildInvoiceData(invoice, customer, items, resolution, client, municipalities, paymentMeansDianCodes, documentType);
+                filePrefix = Fel.Infrastructure.Services.DianFileNaming.FacturaVenta;
+            }
 
             var xml = _ublGenerator.GenerateInvoiceXml(ublData);
             var cufe = _ublGenerator.CalculateCufe(ublData);
             invoice.Cufe = cufe;
+            invoice.QrCode = _ublGenerator.BuildGraphicQrContent(ublData, cufe);
 
             string signedXml;
             try
@@ -103,16 +152,38 @@ namespace Fel.Infrastructure.Dian
             }
 
             var fileSequence = await Fel.Infrastructure.Services.DianFileNaming.ClaimNextSequenceAsync(_dbContext, client.Id);
-            var zipFileName = Fel.Infrastructure.Services.DianFileNaming.BuildFileName("z", client.TaxId, fileSequence);
-            var entryFileName = Fel.Infrastructure.Services.DianFileNaming.BuildFileName(Fel.Infrastructure.Services.DianFileNaming.FacturaVenta, client.TaxId, fileSequence);
+            var entryFileName = Fel.Infrastructure.Services.DianFileNaming.BuildFileName(filePrefix, client.TaxId, fileSequence);
 
             try
             {
-                var dianResponse = await _dianSoapClient.SendBillAsync(zipFileName, entryFileName, signedXml, cert, ublData.Environment);
+                // SendBillSync (síncrona, un documento a la vez) en vez de SendBillAsync (por lotes)
+                // — esta última exige una autorización aparte de la DIAN para envíos masivos que no
+                // todo emisor tiene (ver DianStatusPollingWorker/caso SoFactory NIT 900303194); la
+                // vía síncrona es la que corresponde a facturación normal y devuelve el veredicto
+                // (IsValid/StatusDescription) en la misma respuesta, sin necesitar GetStatusZip
+                // después. SendTestSetAsync (por lotes también) sigue aparte, solo para habilitación.
+                var dianResponse = await _dianSoapClient.SendDocumentSyncAsync(entryFileName, signedXml, cert, ublData.Environment);
+                // Nivel Information silenciado por defecto (ver appsettings.json) — se activa por
+                // namespace cuando hace falta ver el veredicto crudo completo (incluye notificaciones
+                // no bloqueantes que DianStatusOutcome no expone, ej. FAJ43b/RUT01).
+                _logger.LogInformation("[DIAN] Respuesta cruda para {Number}: {DianResponse}", invoice.Number, dianResponse);
+                var outcome = DianStatusOutcome.FromGetStatusZipResponse(dianResponse);
 
-                invoice.Status = "PROCESSING";
-                invoice.DianResponseMessage = dianResponse;
-                return new DocumentSubmissionResult { Success = true, Status = invoice.Status, Cufe = cufe, ResponseMessage = dianResponse };
+                if (!outcome.Resolved)
+                {
+                    // La DIAN no devolvió veredicto pese al envío síncrono — se deja en PROCESSING
+                    // (con el trackId si vino) para que DianStatusPollingWorker lo resuelva después,
+                    // en vez de asumir un estado que la DIAN no confirmó.
+                    invoice.Status = "PROCESSING";
+                    invoice.DianResponseMessage = dianResponse;
+                    invoice.DianTrackId = ExtractZipKey(dianResponse);
+                    return new DocumentSubmissionResult { Success = true, Status = invoice.Status, Cufe = cufe, ResponseMessage = dianResponse };
+                }
+
+                invoice.Status = outcome.Accepted ? "APPROVED" : "REJECTED";
+                invoice.DianResponseMessage = outcome.Accepted ? outcome.StatusDescription : outcome.RejectionSummary;
+                invoice.ProcessedAt = DateTime.UtcNow;
+                return new DocumentSubmissionResult { Success = outcome.Accepted, Status = invoice.Status, Cufe = cufe, ResponseMessage = invoice.DianResponseMessage };
             }
             catch (Exception ex)
             {
@@ -120,6 +191,23 @@ namespace Fel.Infrastructure.Dian
                 invoice.DianResponseMessage = ex.Message;
                 invoice.ProcessedAt = DateTime.UtcNow;
                 return new DocumentSubmissionResult { Success = false, Status = invoice.Status, Cufe = cufe, ResponseMessage = ex.Message };
+            }
+        }
+
+        // El ZipKey es el identificador que después se usa con GetStatusZip para preguntar el
+        // veredicto real (ver DianStatusPollingWorker) — se parsea con XDocument y no con string
+        // matching por la misma razón que DianStatusOutcome: la respuesta trae namespaces reales.
+        private static string? ExtractZipKey(string soapResponse)
+        {
+            if (string.IsNullOrWhiteSpace(soapResponse)) return null;
+            try
+            {
+                var doc = System.Xml.Linq.XDocument.Parse(soapResponse);
+                return doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "ZipKey")?.Value;
+            }
+            catch (System.Xml.XmlException)
+            {
+                return null;
             }
         }
     }

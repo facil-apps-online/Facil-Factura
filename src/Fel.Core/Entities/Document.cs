@@ -1,8 +1,21 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Fel.Core.Entities
 {
+    // Resumen liviano de un documento relacionado (nota que referencia una factura, o la factura
+    // que una nota referencia) — solo para pintar el ícono de "documentos relacionados" en el
+    // listado del portal de clientes sin tener que pedir el detalle de cada fila.
+    public class RelatedDocumentSummary
+    {
+        public Guid Id { get; set; }
+        public string Number { get; set; } = string.Empty;
+        public string TypeCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public decimal TotalAmount { get; set; }
+    }
+
     public class Document
     {
         public Guid Id { get; set; }
@@ -16,10 +29,23 @@ namespace Fel.Core.Entities
         public string TypeCode { get; set; } = string.Empty;
         public string Number { get; set; } = string.Empty;
         public string? Cufe { get; set; }
-        
+
+        // Contenido completo del código QR de la representación gráfica (Anexo Técnico Factura
+        // Electrónica v1.9, numeral 11: NumFac/FecFac/HorFac/NitFac/DocAdq/ValFac/ValIva/ValOtroIm/
+        // ValTolFac/CUFE/QRCode=<url de consulta>), NO solo el CUFE — antes la plantilla de
+        // impresión codificaba únicamente el CUFE en el QR porque este campo no existía. Con
+        // Dataico se recibe ya armado en su respuesta; en el envío nativo directo a la DIAN lo
+        // construimos nosotros (ver IUblGenerator.BuildGraphicQrContent).
+        public string? QrCode { get; set; }
+
         public string Status { get; set; } = "PENDING"; // PENDING, PROCESSING, APPROVED, REJECTED
         public string? DianResponseCode { get; set; }
         public string? DianResponseMessage { get; set; }
+
+        // ZipKey que devuelve SendBillAsync al emitir directo a la DIAN (NativeDianSubmissionProvider)
+        // — se necesita para preguntarle después a la DIAN el veredicto real con GetStatusZip
+        // (ver DianStatusPollingWorker). Null para documentos que no pasaron por esa vía (ej. Dataico).
+        public string? DianTrackId { get; set; }
         
         public string? XmlUrl { get; set; }
         public string? PdfUrl { get; set; }
@@ -92,7 +118,17 @@ namespace Fel.Core.Entities
         public Guid? ReferenceDocumentId { get; set; }
         public Document? ReferenceDocument { get; set; }
         public string ReferenceConcept { get; set; } = string.Empty;
+        // Código DIAN real del motivo de la nota (cbc:ResponseCode, catálogo cerrado 1-6 para Nota
+        // Crédito / 1-4 para Nota Débito, ver TaxCatalogKind.CreditNoteReason/DebitNoteReason) — solo
+        // aplica cuando el documento es una nota (ReferenceDocumentId tiene valor).
+        public string? DiscrepancyResponseCode { get; set; }
 
         public ICollection<DocumentItem> Items { get; set; } = new List<DocumentItem>();
+
+        // Solo para el listado del portal de clientes (ver InvoiceController.GetAll): notas que
+        // referencian esta factura, calculado aparte con una sola consulta extra — no es una
+        // relación EF real, así que no participa en el mapeo ni requiere migración.
+        [NotMapped]
+        public List<RelatedDocumentSummary>? RelatedNotes { get; set; }
     }
 }

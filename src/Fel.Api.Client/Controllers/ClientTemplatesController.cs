@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Fel.Core.Entities;
+using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +14,12 @@ namespace Fel.Api.Client.Controllers
     public class ClientTemplatesController : ControllerBase
     {
         private readonly FelDbContext _dbContext;
+        private readonly IFacilReportsClient _reportsClient;
 
-        public ClientTemplatesController(FelDbContext dbContext)
+        public ClientTemplatesController(FelDbContext dbContext, IFacilReportsClient reportsClient)
         {
             _dbContext = dbContext;
+            _reportsClient = reportsClient;
         }
 
         private Guid GetCurrentClientId()
@@ -97,7 +100,8 @@ namespace Fel.Api.Client.Controllers
                         documentTypeId = t.DocumentTypeId,
                         documentType = t.DocumentType != null ? t.DocumentType.Name : "N/A",
                         scope = t.ClientId == clientId ? "Propio" : t.TenantId == client.TenantId ? "Tenant" : "Global",
-                        clonedFromId = t.ClonedFromId
+                        clonedFromId = t.ClonedFromId,
+                        mostrarRetenciones = t.MostrarRetenciones
                     })
                     .ToListAsync();
 
@@ -106,6 +110,49 @@ namespace Fel.Api.Client.Controllers
             catch (Exception ex)
             {
                 return BadRequest(ex.Message);
+            }
+        }
+
+        // POST: api/client/templates/{id}/preview — renderiza el .repx con datos de ejemplo (no
+        // reales), para poder ver cómo se ve el diseño sin necesitar un documento emitido.
+        [HttpPost("{id:guid}/preview")]
+        public async Task<IActionResult> Preview(Guid id)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var client = await _dbContext.Clients.FindAsync(clientId);
+                if (client == null) return NotFound("Cliente no encontrado.");
+
+                var template = await _dbContext.DocumentTemplates
+                    .Include(t => t.DocumentType)
+                    .FirstOrDefaultAsync(t => t.Id == id &&
+                        ((t.TenantId == null && t.ClientId == null) ||
+                         (t.TenantId == client.TenantId && t.ClientId == null) ||
+                         t.ClientId == clientId));
+
+                if (template == null) return NotFound("Plantilla no encontrada.");
+                if (string.IsNullOrWhiteSpace(template.RepxTemplateKey))
+                {
+                    return BadRequest("Esta plantilla aún no tiene un archivo .repx asociado.");
+                }
+
+                var data = Fel.Infrastructure.Services.TemplatePreviewSampleData.BuildSampleData(template.DocumentType?.Code ?? "", template.MostrarRetenciones);
+                var pdfBytes = await _reportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
+                if (pdfBytes == null)
+                {
+                    return BadRequest("No se pudo generar la vista previa. Revisa que Facil Reports esté disponible.");
+                }
+
+                return File(pdfBytes, "application/pdf");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
             }
         }
 
@@ -135,6 +182,13 @@ namespace Fel.Api.Client.Controllers
                 if (sourceTemplate == null)
                     return NotFound("Plantilla origen no encontrada o no está publicada.");
 
+                var sourceBytes = await _reportsClient.DownloadTemplateAsync(sourceTemplate.RepxTemplateKey);
+                if (sourceBytes == null)
+                    return BadRequest("No se pudo copiar el diseño original desde Facil Reports.");
+
+                if (!await _reportsClient.UploadTemplateAsync(request.NewRepxTemplateKey, sourceBytes))
+                    return BadRequest("No se pudo guardar la copia del diseño en Facil Reports.");
+
                 var clonedTemplate = new DocumentTemplate
                 {
                     Id = Guid.NewGuid(),
@@ -146,6 +200,7 @@ namespace Fel.Api.Client.Controllers
                     DocumentTypeId = sourceTemplate.DocumentTypeId,
                     TenantId = client.TenantId,
                     ClientId = clientId,
+                    MostrarRetenciones = sourceTemplate.MostrarRetenciones,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -213,6 +268,40 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        public class SetMostrarRetencionesRequest
+        {
+            public bool MostrarRetenciones { get; set; }
+        }
+
+        // PUT: api/client/templates/{id}/mostrar-retenciones — solo sobre plantillas propias del
+        // cliente (Draft o Published: es una preferencia de datos del reporte, no un cambio de
+        // diseño del .repx, así que no exige una nueva versión).
+        [HttpPut("{id:guid}/mostrar-retenciones")]
+        public async Task<IActionResult> SetMostrarRetenciones(Guid id, [FromBody] SetMostrarRetencionesRequest request)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+
+                var template = await _dbContext.DocumentTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && t.ClientId == clientId);
+
+                if (template == null)
+                    return NotFound("Plantilla no encontrada o no te pertenece.");
+
+                template.MostrarRetenciones = request.MostrarRetenciones;
+                template.UpdatedAt = DateTime.UtcNow;
+
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { message = "Preferencia de retenciones actualizada." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         public class NewVersionTemplateRequest
         {
             public string NewRepxTemplateKey { get; set; } = string.Empty;
@@ -235,11 +324,22 @@ namespace Fel.Api.Client.Controllers
                 if (sourceTemplate.Status != TemplateStatus.Published)
                     return BadRequest("Solo puedes versionar plantillas que estén Publicadas.");
 
+                var newRepxTemplateKey = string.IsNullOrWhiteSpace(request.NewRepxTemplateKey) ? sourceTemplate.RepxTemplateKey : request.NewRepxTemplateKey;
+                if (newRepxTemplateKey != sourceTemplate.RepxTemplateKey)
+                {
+                    var sourceBytes = await _reportsClient.DownloadTemplateAsync(sourceTemplate.RepxTemplateKey);
+                    if (sourceBytes == null)
+                        return BadRequest("No se pudo copiar el diseño publicado desde Facil Reports.");
+
+                    if (!await _reportsClient.UploadTemplateAsync(newRepxTemplateKey, sourceBytes))
+                        return BadRequest("No se pudo guardar la copia del diseño en Facil Reports.");
+                }
+
                 var newVersionTemplate = new DocumentTemplate
                 {
                     Id = Guid.NewGuid(),
                     Name = sourceTemplate.Name,
-                    RepxTemplateKey = string.IsNullOrWhiteSpace(request.NewRepxTemplateKey) ? sourceTemplate.RepxTemplateKey : request.NewRepxTemplateKey,
+                    RepxTemplateKey = newRepxTemplateKey,
                     Status = TemplateStatus.Draft,
                     VersionNumber = sourceTemplate.VersionNumber + 1,
                     PreviousVersionId = sourceTemplate.Id,
@@ -247,6 +347,7 @@ namespace Fel.Api.Client.Controllers
                     DocumentTypeId = sourceTemplate.DocumentTypeId,
                     TenantId = sourceTemplate.TenantId,
                     ClientId = clientId,
+                    MostrarRetenciones = sourceTemplate.MostrarRetenciones,
                     CreatedAt = DateTime.UtcNow
                 };
 

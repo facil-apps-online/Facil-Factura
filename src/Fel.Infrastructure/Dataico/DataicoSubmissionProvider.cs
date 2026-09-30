@@ -40,7 +40,15 @@ namespace Fel.Infrastructure.Dataico
         {
             if (string.IsNullOrEmpty(invoice.Number))
             {
-                invoice.Number = (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
+                // Las Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que
+                // no pueden compartir el NextNumber de la resolución de Factura — antes lo hacían,
+                // y cada nota consumía un número que le correspondía a la siguiente factura real.
+                invoice.Number = invoice.TypeCode switch
+                {
+                    "NC" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextCreditNoteNumberAsync(_dbContext, client.Id)).ToString(),
+                    "ND" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextDebitNoteNumberAsync(_dbContext, client.Id)).ToString(),
+                    _ => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString()
+                };
             }
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
 
@@ -61,23 +69,36 @@ namespace Fel.Infrastructure.Dataico
                     throw new NotSupportedException("La factura original no tiene un identificador de Dataico registrado (puede no haberse emitido por Dataico, o haberse emitido antes de que empezáramos a guardarlo). No se puede generar la nota.");
                 }
 
+                var reasonKind = invoice.TypeCode == "NC" ? TaxCatalogKind.CreditNoteReason : TaxCatalogKind.DebitNoteReason;
+                var reasonDianCodes = await _dbContext.TaxCatalogItems.AsNoTracking()
+                    .Where(t => t.Kind == reasonKind && t.DianCode != null)
+                    .ToDictionaryAsync(t => t.Category, t => t.DianCode!);
+
                 result = invoice.TypeCode == "NC"
                     ? await _dataicoApiService.SendCreditNoteAsync(
-                        DataicoDocumentMapper.BuildCreditNoteRequest(invoice, resolution, client, originalInvoice.DataicoDocumentId, items),
+                        DataicoDocumentMapper.BuildCreditNoteRequest(invoice, resolution, client, originalInvoice.DataicoDocumentId, items, reasonDianCodes),
                         credentials)
                     : await _dataicoApiService.SendDebitNoteAsync(
-                        DataicoDocumentMapper.BuildDebitNoteRequest(invoice, resolution, client, originalInvoice.DataicoDocumentId, items),
+                        DataicoDocumentMapper.BuildDebitNoteRequest(invoice, resolution, client, originalInvoice.DataicoDocumentId, items, reasonDianCodes),
                         credentials);
             }
             else
             {
-                var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType);
+                // Equivalencia de tipo de identificación administrable desde el catálogo (Superadmin
+                // > Tipos de Identificación); si un código no tiene DataicoCode capturado, ToDataicoParty
+                // cae a la tabla fija de DataicoMapper (ya corregida a los valores reales de Dataico).
+                var identificationTypeOverrides = await _dbContext.IdentificationTypes
+                    .Where(t => t.DataicoCode != null && t.DataicoCode != "")
+                    .ToDictionaryAsync(t => t.Code, t => t.DataicoCode!);
+
+                var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType, identificationTypeOverrides);
                 result = await _dataicoApiService.SendInvoiceAsync(dataicoRequest, credentials);
             }
 
             invoice.Status = result.Success ? "APPROVED" : "REJECTED";
             invoice.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
             invoice.Cufe = result.Cufe;
+            invoice.QrCode = result.QrCode;
             invoice.DataicoDocumentId = result.DataicoDocumentId;
             invoice.PdfUrl = result.PdfUrl;
             invoice.XmlUrl = result.XmlUrl;
@@ -87,7 +108,7 @@ namespace Fel.Infrastructure.Dataico
             {
                 await _customPdfService.TrySendCustomPdfAsync(
                     invoice, customer?.Email, client,
-                    () => InvoiceReportDataMapper.Build(invoice, customer, client, resolution, items.ToList(), originalInvoiceForPdf),
+                    template => InvoiceReportDataMapper.Build(invoice, customer, client, resolution, items.ToList(), originalInvoiceForPdf, template.MostrarRetenciones),
                     credentials);
             }
 

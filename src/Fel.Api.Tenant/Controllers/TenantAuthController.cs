@@ -155,6 +155,9 @@ namespace Fel.Api.Tenant.Controllers
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] TenantResetPasswordRequest request)
         {
+            var passwordError = Fel.Core.Security.PasswordPolicy.Validate(request.NewPassword);
+            if (passwordError != null) return BadRequest(passwordError);
+
             var consumed = await _passwordResetService.ConsumeAsync(request.Token, PortalUserType.Tenant);
             if (consumed == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 

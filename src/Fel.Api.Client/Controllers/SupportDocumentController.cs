@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Fel.Core.Entities;
@@ -44,6 +45,18 @@ namespace Fel.Api.Client.Controllers
             throw new UnauthorizedAccessException("x-client-id Header is missing");
         }
 
+        // Ver el comentario equivalente en InvoiceController.
+        private async Task<(Dictionary<string, string> PaymentMeans, Dictionary<string, string> FormaPago)> GetPaymentCatalogsAsync()
+        {
+            var paymentMeans = await _dbContext.TaxCatalogItems
+                .Where(i => i.Kind == TaxCatalogKind.PaymentMeans)
+                .ToDictionaryAsync(i => i.Category, i => i.Name);
+            var formaPago = await _dbContext.TaxCatalogItems
+                .Where(i => i.Kind == TaxCatalogKind.FormaPago)
+                .ToDictionaryAsync(i => i.Category, i => i.Name);
+            return (paymentMeans, formaPago);
+        }
+
         // Sin from/to, el rango por defecto es el mes calendario en curso (ver misma nota en
         // InvoiceController.GetAll).
         [HttpGet]
@@ -79,7 +92,7 @@ namespace Fel.Api.Client.Controllers
                 var document = await _dbContext.Documents
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
-                    .Include(d => d.Items).ThenInclude(i => i.Retentions)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode));
 
@@ -153,7 +166,7 @@ namespace Fel.Api.Client.Controllers
                 // choca con el ON DELETE CASCADE de la FK, tirando DbUpdateConcurrencyException
                 // (la fila ya no existe porque la BD la borró en cascada al borrar el ítem padre).
                 var document = await _dbContext.Documents
-                    .Include(d => d.Items)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber))
                     .Include(d => d.GeneralRetentions)
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode));
 
@@ -181,9 +194,11 @@ namespace Fel.Api.Client.Controllers
                 // cascada al borrar el ítem, y las nuevas vienen anidadas en cada ítem del payload.
                 _dbContext.DocumentItems.RemoveRange(document.Items);
                 document.Items.Clear();
+                var itemLine = 0;
                 foreach (var item in updated.Items)
                 {
                     item.DocumentId = document.Id;
+                    item.LineNumber = itemLine++;
                     foreach (var retention in item.Retentions) retention.DocumentItemId = item.Id;
                     // Se agrega vía el DbSet (no document.Items.Add) para que EF lo marque Added de
                     // forma explícita: como el Document padre ya viene trackeado, el fixup automático
@@ -218,7 +233,7 @@ namespace Fel.Api.Client.Controllers
             {
                 var clientId = GetCurrentClientId();
                 var document = await _dbContext.Documents
-                    .Include(d => d.Items).ThenInclude(i => i.Retentions)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
                     .Include(d => d.Customer)
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode));
@@ -251,7 +266,14 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("No hay una resolución de documento soporte activa registrada para este emisor.");
                 }
 
-                if (string.IsNullOrWhiteSpace(document.PaymentMeans) || string.IsNullOrWhiteSpace(document.PaymentMeansType))
+                if (string.IsNullOrWhiteSpace(document.PaymentMeansType))
+                {
+                    return BadRequest("Debes indicar la forma de pago (Contado/Crédito).");
+                }
+
+                // DEBITO ("Contado") sí necesita el medio de pago concreto; CREDITO solo maneja
+                // plazo de pago y nunca lo captura en el formulario.
+                if (document.PaymentMeansType == "DEBITO" && string.IsNullOrWhiteSpace(document.PaymentMeans))
                 {
                     return BadRequest("Debes indicar el medio de pago.");
                 }
@@ -277,6 +299,7 @@ namespace Fel.Api.Client.Controllers
                     document.Status = result.Success ? "APPROVED" : "REJECTED";
                     document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
                     document.Cufe = result.Cufe;
+                    document.QrCode = result.QrCode;
                     document.ProcessedAt = DateTime.UtcNow;
                 }
                 else
@@ -289,9 +312,10 @@ namespace Fel.Api.Client.Controllers
                     document.IntegratorId = client.IntegratorId;
 
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
+                    var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
-                        () => SupportDocumentReportDataMapper.Build(document, document.Customer, client, resolution, document.Items.ToList()),
+                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog),
                         credentials);
                 }
 
@@ -360,6 +384,7 @@ namespace Fel.Api.Client.Controllers
                 TotalAmount = request.Items.Sum(i => LineBase(i) * (1 + EffectiveRate(i) / 100)) - (request.GeneralDiscountAmount ?? 0)
             };
 
+            var supportItemLine = 0;
             foreach (var item in request.Items)
             {
                 var rate = EffectiveRate(item);
@@ -368,6 +393,7 @@ namespace Fel.Api.Client.Controllers
                 {
                     Id = Guid.NewGuid(),
                     DocumentId = document.Id,
+                    LineNumber = supportItemLine++,
                     Code = item.Code,
                     Name = item.Name,
                     Quantity = item.Quantity,
@@ -422,6 +448,7 @@ namespace Fel.Api.Client.Controllers
             document.Status = result.Success ? "APPROVED" : "REJECTED";
             document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
             document.Cufe = result.Cufe;
+            document.QrCode = result.QrCode;
             document.ProcessedAt = DateTime.UtcNow;
 
             return result;

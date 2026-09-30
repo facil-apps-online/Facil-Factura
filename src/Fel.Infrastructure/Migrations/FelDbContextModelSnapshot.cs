@@ -62,6 +62,18 @@ namespace Fel.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ActivationAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("AutoRenewalEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("CertificateRequestId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uniqueidentifier");
 
@@ -70,23 +82,700 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<string>("EncryptedPassword")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("Environment")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("ExpirationDate")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("FileName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("NotAfter")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("NotBefore")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ProviderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("RenewalLeadTimeDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RetiredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SerialNumber")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Thumbprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CertificateRequestId")
+                        .IsUnique()
+                        .HasFilter("[CertificateRequestId] IS NOT NULL");
+
+                    b.HasIndex("ProfileId");
+
+                    b.HasIndex("ProviderId");
+
+                    b.HasIndex("Thumbprint")
+                        .IsUnique()
+                        .HasFilter("[Thumbprint] <> ''");
+
+                    b.HasIndex("ClientId", "Environment", "Status");
+
+                    b.ToTable("Certificates", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateCharge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("BillingPeriodEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("BillingPeriodStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CertificateRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ChargeType")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("DescriptionSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("PriceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,2)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ClientId");
 
-                    b.ToTable("Certificates", (string)null);
+                    b.HasIndex("PriceId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("CertificateRequestId", "ChargeType")
+                        .IsUnique()
+                        .HasFilter("[Status] <> 4");
+
+                    b.ToTable("CertificateCharges", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid?>("CertificateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CertificateRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("EventType")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("FromStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("MetadataJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ProviderHttpStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProviderStatus")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("ToStatus")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CertificateId");
+
+                    b.HasIndex("CertificateRequestId", "OccurredAt");
+
+                    b.ToTable("CertificateEvents", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificatePrice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Environment")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("NetAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("PriceType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProviderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasColumnType("decimal(8,4)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfileId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("ProviderId", "ProfileId", "Environment", "TenantId", "EffectiveFrom");
+
+                    b.ToTable("CertificatePrices", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("Environment")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ExternalCode")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ExternalType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("LastSyncedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PersonType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("ProviderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("ProviderValidityDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TermsHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("TermsUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("TokenType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProviderId", "Environment", "ExternalCode")
+                        .IsUnique();
+
+                    b.ToTable("CertificateProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateProfileField", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DefaultValue")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("DefinitionHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ExternalName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("FetchedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsEditable")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsRequired")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsUsed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ValidationPattern")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfileId", "ExternalName")
+                        .IsUnique();
+
+                    b.ToTable("CertificateProfileFields", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateProvider", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ConsumerKeySecretName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ConsumerSecretSecretName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DownloadBaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("EncryptedProductionConsumerKey")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("EncryptedProductionConsumerSecret")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("EncryptedSandboxConsumerKey")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("EncryptedSandboxConsumerSecret")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<int>("MaxRetryAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("ProductionBaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RaCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("RequestTimeoutSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SandboxBaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("SandboxEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("CertificateProviders", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AdvancedAccreditedStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("AdvancedPaymentStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CsrHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CsrReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("DownloadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EncryptedPrivateKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Environment")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime?>("InstalledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("KeyAlgorithm")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("KeySize")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("KycCompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("KycUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("KycUrlFetchedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LastErrorCode")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("LastErrorMessage")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("LastProviderSyncAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("NextProviderSyncAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("NextRetryAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("PreviousCertificateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProviderPublicId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProviderRequestCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ProviderStatus")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PublicKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("ReadyAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RequestType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("TermsAcceptedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("TermsAcceptedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TermsAcceptedIpAddress")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("TermsAcceptedUserAgent")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("TermsHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("TermsUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("PreviousCertificateId");
+
+                    b.HasIndex("ProfileId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("ProviderRequestCode", "Environment")
+                        .IsUnique()
+                        .HasFilter("[ProviderRequestCode] <> ''");
+
+                    b.HasIndex("ClientId", "Environment", "Status");
+
+                    b.ToTable("CertificateRequests", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Client", b =>
@@ -209,11 +898,62 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsAgenteRetenedorIva")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsAutorretenedorRenta")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsDeveloperSandbox")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsGranContribuyente")
                         .HasColumnType("bit");
 
                     b.Property<double?>("Latitude")
                         .HasColumnType("float");
+
+                    b.Property<string>("LegalRepresentativeDocumentCountryCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("LegalRepresentativeDocumentNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("LegalRepresentativeDocumentType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("LegalRepresentativeEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("LegalRepresentativeFirstLastName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("LegalRepresentativeFirstName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("LegalRepresentativeOrganizationalArea")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LegalRepresentativeOtherNames")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("LegalRepresentativeRepresentationCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("LegalRepresentativeSecondLastName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("LegalRepresentativeStartDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("LiveApiKey")
                         .IsRequired()
@@ -260,6 +1000,25 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("MinSaludUserType")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<long?>("NextCreditNoteNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("NextDebitNoteNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("OrganizationDepartment")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("OrganizationType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("PersonType")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
                     b.Property<string>("Phone")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -294,6 +1053,27 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<string>("ReceptionEmailUser")
                         .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SmtpFromEmail")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SmtpFromName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SmtpHost")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SmtpPasswordEncrypted")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("SmtpPort")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("SmtpUseSsl")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SmtpUser")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("SoftwareId")
@@ -364,6 +1144,9 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<int>("TestSetSentInvoices")
                         .HasColumnType("int");
+
+                    b.Property<string>("UnitOfMeasureDisplayOverride")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("VerificationDigit")
                         .IsRequired()
@@ -766,7 +1549,1415 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("Customers", (string)null);
                 });
 
-            modelBuilder.Entity("Fel.Core.Entities.DataicoTaxCatalogItem", b =>
+            modelBuilder.Entity("Fel.Core.Entities.DeveloperUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("DeveloperUsers", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DianMunicipality", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(5)
+                        .HasColumnType("nvarchar(5)");
+
+                    b.Property<string>("DepartmentCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("DepartmentName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Code");
+
+                    b.HasIndex("DepartmentCode");
+
+                    b.ToTable("DianMunicipalities", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Document", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Cufe")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("CustomerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DataicoDocumentId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DianResponseCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DianResponseMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DianTrackId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DiscrepancyResponseCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("DocumentTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("GeneralChargeAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("GeneralChargeReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("GeneralDiscountAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("GeneralDiscountReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("IssueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PaymentMeans")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PaymentMeansType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("PaymentTermDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PdfUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("PriceCharged")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PurchaseOrderReference")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("QrCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReferenceConcept")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ReferenceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ResolutionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SectorExtensionData")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("TrackingId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("TypeCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("UsedTemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("XmlUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("DocumentTypeId");
+
+                    b.HasIndex("IntegratorId");
+
+                    b.HasIndex("ReferenceDocumentId");
+
+                    b.HasIndex("ResolutionId");
+
+                    b.HasIndex("UsedTemplateId");
+
+                    b.ToTable("Documents", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentGeneralRetention", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(6,3)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.ToTable("DocumentGeneralRetentions", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal>("DiscountRate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("IvaTreatment")
+                        .HasColumnType("int");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<Guid?>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<bool>("RetentionOverridden")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SectorExtensionData")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("UnitOfMeasureAbbreviation")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UnitOfMeasureCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UnitOfMeasureDisplayFormat")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("DocumentItems", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentRetention", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("BaseAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("DocumentItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentItemId");
+
+                    b.ToTable("DocumentRetentions", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClonedFromId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DocumentTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("MostrarRetenciones")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid?>("PreviousVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RepxTemplateKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("ClonedFromId");
+
+                    b.HasIndex("DocumentTypeId");
+
+                    b.HasIndex("PreviousVersionId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("DocumentTemplates", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("CustomizationId")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DianCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("GoverningEntity")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("OperationType")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("DocumentTypes", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            Code = "FE-STD",
+                            Description = "Factura Electrónica de Venta",
+                            DianCode = "01",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Factura de Venta - Estándar",
+                            OperationType = "10"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000002"),
+                            Code = "FE-SALUD",
+                            Description = "Factura Electrónica con RIPS",
+                            DianCode = "01",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Factura de Venta - Sector Salud",
+                            OperationType = "10"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000003"),
+                            Code = "FE-AIU",
+                            Description = "Servicios AIU",
+                            DianCode = "01",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Factura de Venta - AIU",
+                            OperationType = "09"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000004"),
+                            Code = "FE-MANDATO",
+                            Description = "Factura bajo Mandato",
+                            DianCode = "01",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Factura de Venta - Mandatos",
+                            OperationType = "11"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000005"),
+                            Code = "FE-TRANSP",
+                            Description = "Servicio de Transporte de Carga",
+                            DianCode = "01",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Factura de Venta - Transporte",
+                            OperationType = "15"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000006"),
+                            Code = "FE-EXP",
+                            Description = "Factura de Exportación",
+                            DianCode = "02",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Factura de Venta - Exportación",
+                            OperationType = "10"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000007"),
+                            Code = "FC-FACT",
+                            Description = "Contingencia del obligado a facturar",
+                            DianCode = "03",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Factura de Contingencia Facturador",
+                            OperationType = "10"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000008"),
+                            Code = "FC-DIAN",
+                            Description = "Contingencia tipo DIAN",
+                            DianCode = "04",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Factura de Contingencia DIAN",
+                            OperationType = "10"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000009"),
+                            Code = "NC",
+                            Description = "Nota Crédito Electrónica",
+                            DianCode = "91",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Nota Crédito",
+                            OperationType = "20"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000010"),
+                            Code = "ND",
+                            Description = "Nota Débito Electrónica",
+                            DianCode = "92",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Nota Débito",
+                            OperationType = "30"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000011"),
+                            Code = "DE-POS",
+                            Description = "Tiquete de máquina registradora POS",
+                            DianCode = "20",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Tiquete POS"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000012"),
+                            Code = "DE-CINE",
+                            Description = "Boleta de ingreso a cine",
+                            DianCode = "25",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Cine"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000013"),
+                            Code = "DE-PASAJEROS",
+                            Description = "Tiquete de transporte terrestre de pasajeros",
+                            DianCode = "35",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Transporte Pasajeros"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000014"),
+                            Code = "DE-EXTRACTO",
+                            Description = "Extracto expedido por sociedades financieras y fondos",
+                            DianCode = "45",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Extracto"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000015"),
+                            Code = "DE-AEREO",
+                            Description = "Tiquete de transporte aéreo de pasajeros",
+                            DianCode = "50",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Transporte Aéreo"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000016"),
+                            Code = "DE-JUEGOSLOC",
+                            Description = "Documento en juegos localizados y no localizados",
+                            DianCode = "30",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Juegos Localizados"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000017"),
+                            Code = "DE-AZAR",
+                            Description = "Boletas en juegos de suerte y azar (mismo código DIAN que juegos localizados)",
+                            DianCode = "30",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Suerte y Azar"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000018"),
+                            Code = "DE-PEAJE",
+                            Description = "Cobro de peajes",
+                            DianCode = "40",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Peajes"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000019"),
+                            Code = "DE-BOLSA",
+                            Description = "Liquidación de operaciones Bolsa de Valores",
+                            DianCode = "55",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Bolsa de Valores"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000020"),
+                            Code = "DE-AGRO",
+                            Description = "Operaciones bolsa agropecuaria y otros commodities (mismo código DIAN que bolsa de valores)",
+                            DianCode = "55",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Bolsa Agropecuaria"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000021"),
+                            Code = "DE-SERVICIOSP",
+                            Description = "Servicios públicos domiciliarios",
+                            DianCode = "60",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Servicios Públicos"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000022"),
+                            Code = "DE-ESPECTACULOS",
+                            Description = "Ingreso a espectáculos públicos",
+                            DianCode = "27",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Equivalente - Espectáculos Públicos"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000023"),
+                            Code = "DE-AJUSTE-CREDITO",
+                            Description = "Nota de ajuste tipo crédito para documentos equivalentes",
+                            DianCode = "94",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Nota de Ajuste (Crédito) - Doc. Equivalente"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000032"),
+                            Code = "DE-AJUSTE-DEBITO",
+                            Description = "Nota de ajuste tipo débito para documentos equivalentes",
+                            DianCode = "93",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Nota de Ajuste (Débito) - Doc. Equivalente"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000024"),
+                            Code = "DS",
+                            Description = "Documento soporte",
+                            DianCode = "05",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Doc. Soporte - Adquisiciones a No Obligados"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000025"),
+                            Code = "DS-AJUSTE",
+                            Description = "Ajuste a documento soporte",
+                            DianCode = "95",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Nota de Ajuste - Doc. Soporte"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000026"),
+                            Code = "NE-PAGO",
+                            Description = "Pago de nómina electrónica",
+                            DianCode = "102",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Nómina Electrónica"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000027"),
+                            Code = "NE-AJUSTE",
+                            Description = "Ajuste de nómina electrónica",
+                            DianCode = "103",
+                            GoverningEntity = "DIAN",
+                            IsActive = true,
+                            Name = "Nota de Ajuste - Nómina Electrónica"
+                        });
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.IdentificationType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("DataicoCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("IdentificationTypes", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000001"),
+                            Code = "13",
+                            DataicoCode = "CC",
+                            IsActive = true,
+                            Name = "Cédula de Ciudadanía"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000002"),
+                            Code = "22",
+                            DataicoCode = "CE",
+                            IsActive = true,
+                            Name = "Cédula de Extranjería"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000003"),
+                            Code = "42",
+                            DataicoCode = "IE",
+                            IsActive = true,
+                            Name = "Documento de Identificación Extranjero"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000004"),
+                            Code = "31",
+                            DataicoCode = "NIT",
+                            IsActive = true,
+                            Name = "NIT"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000005"),
+                            Code = "50",
+                            DataicoCode = "NIT_OTRO_PAIS",
+                            IsActive = true,
+                            Name = "NIT de Otro País"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000006"),
+                            Code = "91",
+                            DataicoCode = "NUIP",
+                            IsActive = true,
+                            Name = "NUIP"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000007"),
+                            Code = "41",
+                            DataicoCode = "PASAPORTE",
+                            IsActive = true,
+                            Name = "Pasaporte"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000008"),
+                            Code = "11",
+                            DataicoCode = "RC",
+                            IsActive = true,
+                            Name = "Registro Civil"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000009"),
+                            Code = "21",
+                            DataicoCode = "TE",
+                            IsActive = true,
+                            Name = "Tarjeta de Extranjería"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-00000000000a"),
+                            Code = "12",
+                            DataicoCode = "TI",
+                            IsActive = true,
+                            Name = "Tarjeta de Identidad"
+                        });
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Integrator", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Nit")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Integrators", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000101"),
+                            Code = "NATIVE",
+                            IsActive = true,
+                            Kind = 0,
+                            Name = "Emisión directa DIAN",
+                            Nit = ""
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000102"),
+                            Code = "DATAICO",
+                            IsActive = true,
+                            Kind = 1,
+                            Name = "Dataico S.A.S.",
+                            Nit = "900.XXX.XXX-X"
+                        });
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.PasswordResetToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EncryptedToken")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("UserType")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PasswordResetTokens");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("DiscountedPricePerUser")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TotalPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("PrepaidPackages", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Product", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("IvaRate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("IvaTreatment")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("RetentionGroupKey")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("StandardCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UnitOfMeasureId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UnitOfMeasureId");
+
+                    b.HasIndex("ClientId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("Products", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ProductTax", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductTaxes", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Cufe")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DocumentId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DocumentTypeCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("IssueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("IssuerName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IssuerTaxId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RawXml")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.ToTable("ReceivedDocuments");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocumentEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Cude")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DianResponseMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EventCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("ReceivedDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceivedDocumentId");
+
+                    b.ToTable("ReceivedDocumentEvents");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Resolution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("NextNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("NumberEnd")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("NumberStart")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResolutionNumber")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TechnicalKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ValidFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ValidTo")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.ToTable("Resolutions", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.RetentionConcept", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("BaseType")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("BaseUvt")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("GroupKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("GroupLabel")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("PersonType")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RetentionConcepts");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.RipsCie10Rule", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("AllowedGender")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("MaxAgeDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinAgeDays")
+                        .HasColumnType("int");
+
+                    b.HasKey("Code");
+
+                    b.ToTable("RipsCie10Rules");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.RipsCupsRule", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("AllowedGender")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<int>("MaxAgeDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinAgeDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("RequiresDiagnosis")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Code");
+
+                    b.ToTable("RipsCupsRules");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.SuperadminUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("SuperadminUsers", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TariffTier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("MaxDocuments")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinDocuments")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("PricePerDocument")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegratorId");
+
+                    b.ToTable("TariffTiers", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            IsActive = true,
+                            MaxDocuments = 2000,
+                            MinDocuments = 1,
+                            Name = "Nivel 1",
+                            PricePerDocument = 70m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000002"),
+                            IsActive = true,
+                            MaxDocuments = 5000,
+                            MinDocuments = 2001,
+                            Name = "Nivel 2",
+                            PricePerDocument = 50m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000003"),
+                            IsActive = true,
+                            MaxDocuments = 10000,
+                            MinDocuments = 5001,
+                            Name = "Nivel 3",
+                            PricePerDocument = 40m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000004"),
+                            IsActive = true,
+                            MaxDocuments = 100000,
+                            MinDocuments = 10001,
+                            Name = "Nivel 4",
+                            PricePerDocument = 30m
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000005"),
+                            IsActive = true,
+                            MinDocuments = 100001,
+                            Name = "Nivel 5",
+                            PricePerDocument = 20m
+                        });
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TaxCatalogItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -779,6 +2970,10 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("DianCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -796,7 +2991,7 @@ namespace Fel.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("DataicoTaxCatalogItems", (string)null);
+                    b.ToTable("TaxCatalogItems", (string)null);
 
                     b.HasData(
                         new
@@ -1000,6 +3195,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("10000000-0000-0000-0000-00000000000f"),
                             Category = "EFECTIVO",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "10",
                             IsActive = true,
                             Kind = 4,
                             Name = "Efectivo"
@@ -1009,6 +3205,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("10000000-0000-0000-0000-000000000010"),
                             Category = "TRANSFERENCIA",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "45",
                             IsActive = true,
                             Kind = 4,
                             Name = "Transferencia Bancaria"
@@ -1018,6 +3215,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("10000000-0000-0000-0000-000000000011"),
                             Category = "DEBIT_CARD",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "49",
                             IsActive = true,
                             Kind = 4,
                             Name = "Tarjeta Débito"
@@ -1027,9 +3225,128 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("10000000-0000-0000-0000-000000000012"),
                             Category = "CREDIT_CARD",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "48",
                             IsActive = true,
                             Kind = 4,
                             Name = "Tarjeta Crédito"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000013"),
+                            Category = "DEBITO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 11,
+                            Name = "Contado"
+                        },
+                        new
+                        {
+                            Id = new Guid("10000000-0000-0000-0000-000000000014"),
+                            Category = "CREDITO",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 11,
+                            Name = "Crédito"
+                        },
+                        new
+                        {
+                            Id = new Guid("80000000-0000-0000-0000-000000000001"),
+                            Category = "1",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "DEVOLUCION",
+                            IsActive = true,
+                            Kind = 12,
+                            Name = "Devolución parcial de los bienes y/o no aceptación parcial del servicio"
+                        },
+                        new
+                        {
+                            Id = new Guid("80000000-0000-0000-0000-000000000002"),
+                            Category = "2",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "ANULACION",
+                            IsActive = true,
+                            Kind = 12,
+                            Name = "Anulación de factura electrónica"
+                        },
+                        new
+                        {
+                            Id = new Guid("80000000-0000-0000-0000-000000000003"),
+                            Category = "3",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "OTROS",
+                            IsActive = true,
+                            Kind = 12,
+                            Name = "Rebaja o descuento parcial o total"
+                        },
+                        new
+                        {
+                            Id = new Guid("80000000-0000-0000-0000-000000000004"),
+                            Category = "4",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "OTROS",
+                            IsActive = true,
+                            Kind = 12,
+                            Name = "Ajuste de precio"
+                        },
+                        new
+                        {
+                            Id = new Guid("80000000-0000-0000-0000-000000000005"),
+                            Category = "5",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "OTROS",
+                            IsActive = true,
+                            Kind = 12,
+                            Name = "Descuento comercial por pronto pago"
+                        },
+                        new
+                        {
+                            Id = new Guid("80000000-0000-0000-0000-000000000006"),
+                            Category = "6",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "OTROS",
+                            IsActive = true,
+                            Kind = 12,
+                            Name = "Descuento comercial por volumen de ventas"
+                        },
+                        new
+                        {
+                            Id = new Guid("90000000-0000-0000-0000-000000000001"),
+                            Category = "1",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "OTROS",
+                            IsActive = true,
+                            Kind = 13,
+                            Name = "Intereses"
+                        },
+                        new
+                        {
+                            Id = new Guid("90000000-0000-0000-0000-000000000002"),
+                            Category = "2",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "OTROS",
+                            IsActive = true,
+                            Kind = 13,
+                            Name = "Gastos por cobrar"
+                        },
+                        new
+                        {
+                            Id = new Guid("90000000-0000-0000-0000-000000000003"),
+                            Category = "3",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "OTROS",
+                            IsActive = true,
+                            Kind = 13,
+                            Name = "Cambio del valor"
+                        },
+                        new
+                        {
+                            Id = new Guid("90000000-0000-0000-0000-000000000004"),
+                            Category = "4",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "OTROS",
+                            IsActive = true,
+                            Kind = 13,
+                            Name = "Otros"
                         },
                         new
                         {
@@ -1798,1271 +4115,6 @@ namespace Fel.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Fel.Core.Entities.DeveloperUser", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ClientId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.HasIndex("Email")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("DeveloperUsers", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.DianMunicipality", b =>
-                {
-                    b.Property<string>("Code")
-                        .HasMaxLength(5)
-                        .HasColumnType("nvarchar(5)");
-
-                    b.Property<string>("DepartmentCode")
-                        .IsRequired()
-                        .HasMaxLength(2)
-                        .HasColumnType("nvarchar(2)");
-
-                    b.Property<string>("DepartmentName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.HasKey("Code");
-
-                    b.HasIndex("DepartmentCode");
-
-                    b.ToTable("DianMunicipalities", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.Document", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ClientId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Cufe")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("CustomerId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("DataicoDocumentId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("DianResponseCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("DianResponseMessage")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("DocumentTypeId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("GeneralChargeAmount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("GeneralChargeReason")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal?>("GeneralDiscountAmount")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<string>("GeneralDiscountReason")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("IntegratorId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("IssueDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Notes")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Number")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("PaymentMeans")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PaymentMeansType")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("PaymentTermDays")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PdfUrl")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("PriceCharged")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime?>("ProcessedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("PurchaseOrderReference")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ReferenceConcept")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("ReferenceDocumentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ResolutionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("SectorExtensionData")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<decimal>("Subtotal")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("TaxAmount")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<string>("TrackingId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("TypeCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("UsedTemplateId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("XmlUrl")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.HasIndex("CustomerId");
-
-                    b.HasIndex("DocumentTypeId");
-
-                    b.HasIndex("IntegratorId");
-
-                    b.HasIndex("ReferenceDocumentId");
-
-                    b.HasIndex("ResolutionId");
-
-                    b.HasIndex("UsedTemplateId");
-
-                    b.ToTable("Documents", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.DocumentGeneralRetention", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("DocumentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("Rate")
-                        .HasColumnType("decimal(6,3)");
-
-                    b.Property<string>("TaxCategory")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DocumentId");
-
-                    b.ToTable("DocumentGeneralRetentions", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<decimal>("DiscountRate")
-                        .HasColumnType("decimal(5,2)");
-
-                    b.Property<Guid>("DocumentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("IvaTreatment")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)");
-
-                    b.Property<Guid?>("ProductId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("Quantity")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<bool>("RetentionOverridden")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("SectorExtensionData")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("TaxAmount")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("TaxRate")
-                        .HasColumnType("decimal(5,2)");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("UnitPrice")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DocumentId");
-
-                    b.HasIndex("ProductId");
-
-                    b.ToTable("DocumentItems", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.DocumentRetention", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("BaseAmount")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<Guid>("DocumentItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("Rate")
-                        .HasColumnType("decimal(5,2)");
-
-                    b.Property<string>("TaxCategory")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DocumentItemId");
-
-                    b.ToTable("DocumentRetentions", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.DocumentTemplate", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ClientId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ClonedFromId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("DocumentTypeId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<Guid?>("PreviousVersionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("RepxTemplateKey")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<Guid?>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("VersionNumber")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.HasIndex("ClonedFromId");
-
-                    b.HasIndex("DocumentTypeId");
-
-                    b.HasIndex("PreviousVersionId");
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("DocumentTemplates", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.DocumentType", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("CustomizationId")
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("DianCode")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<string>("GoverningEntity")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<string>("OperationType")
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.ToTable("DocumentTypes", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
-                            Code = "FE-STD",
-                            Description = "Factura Electrónica de Venta",
-                            DianCode = "01",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Factura de Venta - Estándar",
-                            OperationType = "10"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000002"),
-                            Code = "FE-SALUD",
-                            Description = "Factura Electrónica con RIPS",
-                            DianCode = "01",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Factura de Venta - Sector Salud",
-                            OperationType = "10"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000003"),
-                            Code = "FE-AIU",
-                            Description = "Servicios AIU",
-                            DianCode = "01",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Factura de Venta - AIU",
-                            OperationType = "09"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000004"),
-                            Code = "FE-MANDATO",
-                            Description = "Factura bajo Mandato",
-                            DianCode = "01",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Factura de Venta - Mandatos",
-                            OperationType = "11"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000005"),
-                            Code = "FE-TRANSP",
-                            Description = "Servicio de Transporte de Carga",
-                            DianCode = "01",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Factura de Venta - Transporte",
-                            OperationType = "15"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000006"),
-                            Code = "FE-EXP",
-                            Description = "Factura de Exportación",
-                            DianCode = "02",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Factura de Venta - Exportación",
-                            OperationType = "10"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000007"),
-                            Code = "FC-FACT",
-                            Description = "Contingencia del obligado a facturar",
-                            DianCode = "03",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Factura de Contingencia Facturador",
-                            OperationType = "10"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000008"),
-                            Code = "FC-DIAN",
-                            Description = "Contingencia tipo DIAN",
-                            DianCode = "04",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Factura de Contingencia DIAN",
-                            OperationType = "10"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000009"),
-                            Code = "NC",
-                            Description = "Nota Crédito Electrónica",
-                            DianCode = "91",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Nota Crédito",
-                            OperationType = "20"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000010"),
-                            Code = "ND",
-                            Description = "Nota Débito Electrónica",
-                            DianCode = "92",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Nota Débito",
-                            OperationType = "30"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000011"),
-                            Code = "DE-POS",
-                            Description = "Tiquete de máquina registradora POS",
-                            DianCode = "20",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Tiquete POS"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000012"),
-                            Code = "DE-CINE",
-                            Description = "Boleta de ingreso a cine",
-                            DianCode = "25",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Cine"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000013"),
-                            Code = "DE-PASAJEROS",
-                            Description = "Tiquete de transporte terrestre de pasajeros",
-                            DianCode = "35",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Transporte Pasajeros"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000014"),
-                            Code = "DE-EXTRACTO",
-                            Description = "Extracto expedido por sociedades financieras y fondos",
-                            DianCode = "45",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Extracto"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000015"),
-                            Code = "DE-AEREO",
-                            Description = "Tiquete de transporte aéreo de pasajeros",
-                            DianCode = "50",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Transporte Aéreo"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000016"),
-                            Code = "DE-JUEGOSLOC",
-                            Description = "Documento en juegos localizados y no localizados",
-                            DianCode = "30",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Juegos Localizados"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000017"),
-                            Code = "DE-AZAR",
-                            Description = "Boletas en juegos de suerte y azar (mismo código DIAN que juegos localizados)",
-                            DianCode = "30",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Suerte y Azar"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000018"),
-                            Code = "DE-PEAJE",
-                            Description = "Cobro de peajes",
-                            DianCode = "40",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Peajes"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000019"),
-                            Code = "DE-BOLSA",
-                            Description = "Liquidación de operaciones Bolsa de Valores",
-                            DianCode = "55",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Bolsa de Valores"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000020"),
-                            Code = "DE-AGRO",
-                            Description = "Operaciones bolsa agropecuaria y otros commodities (mismo código DIAN que bolsa de valores)",
-                            DianCode = "55",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Bolsa Agropecuaria"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000021"),
-                            Code = "DE-SERVICIOSP",
-                            Description = "Servicios públicos domiciliarios",
-                            DianCode = "60",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Servicios Públicos"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000022"),
-                            Code = "DE-ESPECTACULOS",
-                            Description = "Ingreso a espectáculos públicos",
-                            DianCode = "27",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Equivalente - Espectáculos Públicos"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000023"),
-                            Code = "DE-AJUSTE-CREDITO",
-                            Description = "Nota de ajuste tipo crédito para documentos equivalentes",
-                            DianCode = "94",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Nota de Ajuste (Crédito) - Doc. Equivalente"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000032"),
-                            Code = "DE-AJUSTE-DEBITO",
-                            Description = "Nota de ajuste tipo débito para documentos equivalentes",
-                            DianCode = "93",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Nota de Ajuste (Débito) - Doc. Equivalente"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000024"),
-                            Code = "DS",
-                            Description = "Documento soporte",
-                            DianCode = "05",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Doc. Soporte - Adquisiciones a No Obligados"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000025"),
-                            Code = "DS-AJUSTE",
-                            Description = "Ajuste a documento soporte",
-                            DianCode = "95",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Nota de Ajuste - Doc. Soporte"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000026"),
-                            Code = "NE-PAGO",
-                            Description = "Pago de nómina electrónica",
-                            DianCode = "102",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Nómina Electrónica"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000027"),
-                            Code = "NE-AJUSTE",
-                            Description = "Ajuste de nómina electrónica",
-                            DianCode = "103",
-                            GoverningEntity = "DIAN",
-                            IsActive = true,
-                            Name = "Nota de Ajuste - Nómina Electrónica"
-                        });
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.Integrator", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<string>("Nit")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.ToTable("Integrators", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000101"),
-                            Code = "NATIVE",
-                            IsActive = true,
-                            Kind = 0,
-                            Name = "Emisión directa DIAN",
-                            Nit = ""
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000102"),
-                            Code = "DATAICO",
-                            IsActive = true,
-                            Kind = 1,
-                            Name = "Dataico S.A.S.",
-                            Nit = "900.XXX.XXX-X"
-                        });
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.PasswordResetToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("UserType")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("PasswordResetTokens");
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal>("DiscountedPricePerUser")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("TotalPrice")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("PrepaidPackages", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.Product", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ClientId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal>("IvaRate")
-                        .HasColumnType("decimal(5,2)");
-
-                    b.Property<int>("IvaTreatment")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)");
-
-                    b.Property<string>("RetentionGroupKey")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("StandardCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("UnitOfMeasure")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("UnitPrice")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId", "Code")
-                        .IsUnique();
-
-                    b.ToTable("Products", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.ProductTax", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ProductId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("Rate")
-                        .HasColumnType("decimal(5,2)");
-
-                    b.Property<string>("TaxCategory")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProductId");
-
-                    b.ToTable("ProductTaxes", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocument", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ClientId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Cufe")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("DocumentId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("DocumentTypeCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("IssueDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("IssuerName")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("IssuerTaxId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RawXml")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("ReceivedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("SourceType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.ToTable("ReceivedDocuments");
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.ReceivedDocumentEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Cude")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("DianResponseMessage")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("EventCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("ReceivedDocumentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("SentAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReceivedDocumentId");
-
-                    b.ToTable("ReceivedDocumentEvents");
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.Resolution", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ClientId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("DocumentType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsDefault")
-                        .HasColumnType("bit");
-
-                    b.Property<long?>("NextNumber")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("NumberEnd")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("NumberStart")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Prefix")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ResolutionNumber")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("TechnicalKey")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("ValidFrom")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("ValidTo")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.ToTable("Resolutions", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.RetentionConcept", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("BaseType")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("BaseUvt")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("EffectiveFrom")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("GroupKey")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("GroupLabel")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("PersonType")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("Rate")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("TaxCategory")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("RetentionConcepts");
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.RipsCie10Rule", b =>
-                {
-                    b.Property<string>("Code")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("AllowedGender")
-                        .IsRequired()
-                        .HasMaxLength(2)
-                        .HasColumnType("nvarchar(2)");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<int>("MaxAgeDays")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinAgeDays")
-                        .HasColumnType("int");
-
-                    b.HasKey("Code");
-
-                    b.ToTable("RipsCie10Rules");
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.RipsCupsRule", b =>
-                {
-                    b.Property<string>("Code")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("AllowedGender")
-                        .IsRequired()
-                        .HasMaxLength(2)
-                        .HasColumnType("nvarchar(2)");
-
-                    b.Property<int>("MaxAgeDays")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinAgeDays")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<bool>("RequiresDiagnosis")
-                        .HasColumnType("bit");
-
-                    b.HasKey("Code");
-
-                    b.ToTable("RipsCupsRules");
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.SuperadminUser", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Email")
-                        .IsUnique();
-
-                    b.ToTable("SuperadminUsers", (string)null);
-                });
-
-            modelBuilder.Entity("Fel.Core.Entities.TariffTier", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("IntegratorId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<int?>("MaxDocuments")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinDocuments")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("PricePerDocument")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IntegratorId");
-
-                    b.ToTable("TariffTiers", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
-                            IsActive = true,
-                            MaxDocuments = 2000,
-                            MinDocuments = 1,
-                            Name = "Nivel 1",
-                            PricePerDocument = 70m
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000002"),
-                            IsActive = true,
-                            MaxDocuments = 5000,
-                            MinDocuments = 2001,
-                            Name = "Nivel 2",
-                            PricePerDocument = 50m
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000003"),
-                            IsActive = true,
-                            MaxDocuments = 10000,
-                            MinDocuments = 5001,
-                            Name = "Nivel 3",
-                            PricePerDocument = 40m
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000004"),
-                            IsActive = true,
-                            MaxDocuments = 100000,
-                            MinDocuments = 10001,
-                            Name = "Nivel 4",
-                            PricePerDocument = 30m
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000005"),
-                            IsActive = true,
-                            MinDocuments = 100001,
-                            Name = "Nivel 5",
-                            PricePerDocument = 20m
-                        });
-                });
-
             modelBuilder.Entity("Fel.Core.Entities.TaxParameter", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3162,6 +4214,12 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<string>("FirstLastName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FirstName")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -3223,6 +4281,12 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("SecondLastName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SecondName")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("ShowUsageToClients")
                         .HasColumnType("bit");
 
@@ -3230,6 +4294,27 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SmtpFromEmail")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SmtpFromName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SmtpHost")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SmtpPasswordEncrypted")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("SmtpPort")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("SmtpUseSsl")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SmtpUser")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("TaxId")
                         .IsRequired()
@@ -3306,6 +4391,28 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("TenantBillings", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantEnabledIntegrator", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("IntegratorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegratorId");
+
+                    b.HasIndex("TenantId", "IntegratorId")
+                        .IsUnique();
+
+                    b.ToTable("TenantEnabledIntegrators", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.TenantIntegratorBilling", b =>
@@ -3500,6 +4607,155 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("TenantUserPricings", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.UnitOfMeasure", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Abbreviation")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DianCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("DisplayFormat")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("UnitsOfMeasure", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000001"),
+                            Abbreviation = "EA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "94",
+                            DisplayFormat = "Combined",
+                            IsActive = true,
+                            Name = "Unidad"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000002"),
+                            Abbreviation = "KGM",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "KGM",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Kilogramo"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000003"),
+                            Abbreviation = "LBR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "LBR",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Libra"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000004"),
+                            Abbreviation = "HUR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "HUR",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Hora"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000005"),
+                            Abbreviation = "DAY",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "DAY",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Día"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000006"),
+                            Abbreviation = "ANA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "ANA",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Año"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000007"),
+                            Abbreviation = "LUN",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "LUN",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Mes"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000008"),
+                            Abbreviation = "DZN",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "DZN",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Docena"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000009"),
+                            Abbreviation = "GLL",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "GLL",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Galón"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000010"),
+                            Abbreviation = "MTR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "MTR",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Metro"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-000000000011"),
+                            Abbreviation = "ZZ",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DianCode = "ZZ",
+                            DisplayFormat = "AbbreviationOnly",
+                            IsActive = true,
+                            Name = "Mutuamente definido"
+                        });
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Associate", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
@@ -3513,13 +4769,169 @@ namespace Fel.Infrastructure.Migrations
 
             modelBuilder.Entity("Fel.Core.Entities.Certificate", b =>
                 {
+                    b.HasOne("Fel.Core.Entities.CertificateRequest", "CertificateRequest")
+                        .WithOne()
+                        .HasForeignKey("Fel.Core.Entities.Certificate", "CertificateRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Fel.Core.Entities.Client", "Client")
                         .WithMany("Certificates")
                         .HasForeignKey("ClientId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Fel.Core.Entities.CertificateProfile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.CertificateProvider", "Provider")
+                        .WithMany()
+                        .HasForeignKey("ProviderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CertificateRequest");
+
                     b.Navigation("Client");
+
+                    b.Navigation("Profile");
+
+                    b.Navigation("Provider");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateCharge", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.CertificateRequest", "CertificateRequest")
+                        .WithMany("Charges")
+                        .HasForeignKey("CertificateRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.CertificatePrice", "Price")
+                        .WithMany("Charges")
+                        .HasForeignKey("PriceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CertificateRequest");
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Price");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateEvent", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Certificate", "Certificate")
+                        .WithMany()
+                        .HasForeignKey("CertificateId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.CertificateRequest", "CertificateRequest")
+                        .WithMany("Events")
+                        .HasForeignKey("CertificateRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Certificate");
+
+                    b.Navigation("CertificateRequest");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificatePrice", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.CertificateProfile", "Profile")
+                        .WithMany("Prices")
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.CertificateProvider", "Provider")
+                        .WithMany()
+                        .HasForeignKey("ProviderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Profile");
+
+                    b.Navigation("Provider");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateProfile", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.CertificateProvider", "Provider")
+                        .WithMany("Profiles")
+                        .HasForeignKey("ProviderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Provider");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateProfileField", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.CertificateProfile", "Profile")
+                        .WithMany("Fields")
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Profile");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateRequest", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Certificate", "PreviousCertificate")
+                        .WithMany("RenewalRequests")
+                        .HasForeignKey("PreviousCertificateId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.CertificateProfile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("PreviousCertificate");
+
+                    b.Navigation("Profile");
+
+                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Client", b =>
@@ -3884,7 +5296,15 @@ namespace Fel.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Fel.Core.Entities.UnitOfMeasure", "UnitOfMeasure")
+                        .WithMany()
+                        .HasForeignKey("UnitOfMeasureId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.Navigation("Client");
+
+                    b.Navigation("UnitOfMeasure");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.ProductTax", b =>
@@ -3958,6 +5378,25 @@ namespace Fel.Infrastructure.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantEnabledIntegrator", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Integrator", "Integrator")
+                        .WithMany()
+                        .HasForeignKey("IntegratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Integrator");
 
                     b.Navigation("Tenant");
                 });
@@ -4058,6 +5497,35 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.Certificate", b =>
+                {
+                    b.Navigation("RenewalRequests");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificatePrice", b =>
+                {
+                    b.Navigation("Charges");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateProfile", b =>
+                {
+                    b.Navigation("Fields");
+
+                    b.Navigation("Prices");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateProvider", b =>
+                {
+                    b.Navigation("Profiles");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateRequest", b =>
+                {
+                    b.Navigation("Charges");
+
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Client", b =>

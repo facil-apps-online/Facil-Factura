@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
-import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, MapPin, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, RotateCcw } from 'lucide-react';
-import { api } from '../lib/api';
+import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, RotateCcw } from 'lucide-react';
+import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
+import ClientFormFields from '../components/ClientFormFields';
 
-const libraries: "places"[] = ['places'];
-// TODO: El usuario deberá reemplazar esto por su API Key real en el .env
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSy_TU_LLAVE_DE_PRUEBA_AQUI"; 
+const CLIENT_CERTIFICATE_FIELDS = new Set([
+  'district', 'state', 'departament', 'addressCorp', 'address', 'legalNameCorp',
+  'name', 'lastName', 'dnAlternativo1', 'identity', 'email', 'countryCode',
+  'identityType', 'dnAlternativo2'
+]);
 
 export default function ClientEdit() {
   const { id } = useParams();
@@ -30,18 +32,41 @@ export default function ClientEdit() {
     technicalKey: '',
     documentType: 'FE'
   });
+  const [editingResolutionId, setEditingResolutionId] = useState<string | null>(null);
+  const documentTypeLabels: Record<string, string> = {
+    FE: 'Factura Electrónica (FE)',
+    NC: 'Nota Crédito (NC)',
+    ND: 'Nota Débito (ND)',
+    POS: 'Documento Soporte / POS',
+    NE: 'Nómina Electrónica (NE)'
+  };
   const [certInfo, setCertInfo] = useState<any>(null);
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPassword, setCertPassword] = useState('');
   const [uploadingCert, setUploadingCert] = useState(false);
+  const [certificateEnvironment, setCertificateEnvironment] = useState<'Sandbox' | 'Production'>('Sandbox');
+  const [certificateOptions, setCertificateOptions] = useState<any>(null);
+  const [selectedCertificateProfile, setSelectedCertificateProfile] = useState('');
+  const [certificateFormValues, setCertificateFormValues] = useState<Record<string, string>>({});
+  const [acceptCertificateTerms, setAcceptCertificateTerms] = useState(false);
+  const [requestingCertificate, setRequestingCertificate] = useState(false);
   const [habilitationStatus, setHabilitationStatus] = useState<any>(null);
   const [magicLink, setMagicLink] = useState('');
   const [isHabilitating, setIsHabilitating] = useState(false);
   const [testDocPreview, setTestDocPreview] = useState<any>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [sendingTestDoc, setSendingTestDoc] = useState(false);
-  const [portalUser, setPortalUser] = useState({ name: '', email: '', password: '' });
+  // Documentos de prueba ya enviados en esta sesión — el trackId es lo que permite preguntarle
+  // después a la DIAN el veredicto real (GetStatusZip), ver handleCheckTestDocStatus.
+  const [sentTestDocs, setSentTestDocs] = useState<{ documentNumber: string, cufe: string, trackId: string, checking: boolean, outcome: any }[]>([]);
+  // Para consultar documentos enviados en una sesión anterior (el trackId sale de los logs del
+  // servidor si se perdió) sin tener que reenviarlos — reenviar gasta un intento real del set.
+  const [manualTrackId, setManualTrackId] = useState('');
+  const [checkingManualTrackId, setCheckingManualTrackId] = useState(false);
+  const [manualTrackIdOutcome, setManualTrackIdOutcome] = useState<any>(null);
+  const [portalUser, setPortalUser] = useState({ name: '', email: '' });
   const [hasPortalUser, setHasPortalUser] = useState(false);
+  const [invitationStatus, setInvitationStatus] = useState<{ sent: boolean; at: string; detail?: string } | null>(null);
   const [portalUserActive, setPortalUserActive] = useState(true);
   const [savingPortalUser, setSavingPortalUser] = useState(false);
   const [docProvider, setDocProvider] = useState({
@@ -90,6 +115,7 @@ export default function ClientEdit() {
   const [savingRetentions, setSavingRetentions] = useState(false);
   const [client, setClient] = useState({
     companyName: '',
+    personType: 'PJ',
     commercialName: '',
     taxId: '',
     verificationDigit: '',
@@ -97,8 +123,25 @@ export default function ClientEdit() {
     phone: '',
     address: '',
     city: '',
+    cityCode: '' as string | null,
+    organizationDepartment: '',
+    organizationType: 'RM',
+    legalRepresentativeFirstName: '',
+    legalRepresentativeOtherNames: '',
+    legalRepresentativeFirstLastName: '',
+    legalRepresentativeSecondLastName: '',
+    legalRepresentativeDocumentType: '',
+    legalRepresentativeDocumentNumber: '',
+    legalRepresentativeDocumentCountryCode: 'CO',
+    legalRepresentativeEmail: '',
+    legalRepresentativeRepresentationCode: '',
+    legalRepresentativeOrganizationalArea: '',
+    legalRepresentativeStartDate: null as string | null,
     taxRegime: '',
     economicActivity: '',
+    isGranContribuyente: false,
+    isAgenteRetenedorIva: false,
+    isAutorretenedorRenta: false,
     appliesRetentions: true,
     associateId: '' as string | null,
     latitude: null as number | null,
@@ -120,7 +163,8 @@ export default function ClientEdit() {
           ...res.data,
           associateId: res.data.associateId || '',
           latitude: res.data.latitude || 4.6097, // Default a Bogotá si no tiene
-          longitude: res.data.longitude || -74.0817
+          longitude: res.data.longitude || -74.0817,
+          legalRepresentativeDocumentCountryCode: res.data.legalRepresentativeDocumentCountryCode || 'CO'
         })))
         .catch(() => toast.error("No se pudo cargar el cliente"))
         .finally(() => setLoading(false));
@@ -136,9 +180,18 @@ export default function ClientEdit() {
       .catch(() => toast.error("Error al cargar resoluciones"));
   };
 
+  const [noteCounters, setNoteCounters] = useState<{ nextCreditNoteNumber: number; nextDebitNoteNumber: number } | null>(null);
+
+  const loadNoteCounters = () => {
+    api.get(`/tenant/clients/${id}/note-counters`)
+      .then(res => setNoteCounters(res.data))
+      .catch(() => toast.error("Error al cargar los consecutivos de notas"));
+  };
+
   const [editingNextNumberId, setEditingNextNumberId] = useState<string | null>(null);
   const [nextNumberDraft, setNextNumberDraft] = useState('');
   const [savingNextNumber, setSavingNextNumber] = useState(false);
+  const [fetchingTechnicalKeyId, setFetchingTechnicalKeyId] = useState<string | null>(null);
 
   const startEditNextNumber = (r: any) => {
     setEditingNextNumberId(r.id);
@@ -161,6 +214,35 @@ export default function ClientEdit() {
       toast.error(err?.response?.data?.message || err?.response?.data || 'Error al actualizar el consecutivo');
     } finally {
       setSavingNextNumber(false);
+    }
+  };
+
+  const [editingNoteCounterType, setEditingNoteCounterType] = useState<'credit' | 'debit' | null>(null);
+  const [noteCounterDraft, setNoteCounterDraft] = useState('');
+  const [savingNoteCounter, setSavingNoteCounter] = useState(false);
+
+  const startEditNoteCounter = (type: 'credit' | 'debit') => {
+    setEditingNoteCounterType(type);
+    setNoteCounterDraft(String(type === 'credit' ? noteCounters?.nextCreditNoteNumber ?? 1 : noteCounters?.nextDebitNoteNumber ?? 1));
+  };
+
+  const saveNoteCounter = async (type: 'credit' | 'debit') => {
+    const value = parseInt(noteCounterDraft, 10);
+    if (!Number.isFinite(value) || value < 1) {
+      toast.error('Ingresa un número válido');
+      return;
+    }
+    setSavingNoteCounter(true);
+    try {
+      const payload = type === 'credit' ? { nextCreditNoteNumber: value } : { nextDebitNoteNumber: value };
+      const res = await api.put(`/tenant/clients/${id}/note-counters`, payload);
+      setNoteCounters(res.data);
+      toast.success('Consecutivo actualizado');
+      setEditingNoteCounterType(null);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data || 'Error al actualizar el consecutivo');
+    } finally {
+      setSavingNoteCounter(false);
     }
   };
 
@@ -209,6 +291,50 @@ export default function ClientEdit() {
     }
   };
 
+  const [smtpSettings, setSmtpSettings] = useState<any>({
+    smtpHost: '', smtpPort: 587, smtpUseSsl: true, smtpUser: '',
+    smtpFromEmail: '', smtpFromName: '', hasPassword: false
+  });
+  const [smtpPasswordDraft, setSmtpPasswordDraft] = useState('');
+  const [savingSmtp, setSavingSmtp] = useState(false);
+  const [testingSmtpConn, setTestingSmtpConn] = useState(false);
+
+  const loadSmtpSettings = () => {
+    api.get(`/tenant/clients/${id}/smtp-settings`)
+      .then(res => setSmtpSettings(res.data))
+      .catch(() => toast.error('Error al cargar la configuración SMTP'));
+  };
+
+  const saveSmtpSettings = async () => {
+    setSavingSmtp(true);
+    try {
+      await api.put(`/tenant/clients/${id}/smtp-settings`, {
+        ...smtpSettings,
+        smtpPassword: smtpPasswordDraft || undefined
+      });
+      toast.success('Configuración guardada');
+      setSmtpPasswordDraft('');
+      loadSmtpSettings();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al guardar');
+    } finally {
+      setSavingSmtp(false);
+    }
+  };
+
+  const testSmtpConnection = async () => {
+    setTestingSmtpConn(true);
+    try {
+      const res = await api.post(`/tenant/clients/${id}/smtp-settings/test-connection`);
+      if (res.data.success) toast.success(res.data.message);
+      else toast.error(res.data.message);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al probar la conexión');
+    } finally {
+      setTestingSmtpConn(false);
+    }
+  };
+
   const [templateSettings, setTemplateSettings] = useState<any[]>([]);
   const [selectedTemplateSetting, setSelectedTemplateSetting] = useState<any | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
@@ -253,6 +379,81 @@ export default function ClientEdit() {
     api.get(`/tenant/clients/${id}/certificate`)
       .then(res => setCertInfo(res.data))
       .catch(() => setCertInfo(null));
+    api.get(`/tenant/clients/${id}/certificate/options?environment=${certificateEnvironment}`)
+      .then(res => {
+        setCertificateOptions(res.data);
+        if (!selectedCertificateProfile && res.data.profiles?.length) {
+          const firstProfile = res.data.profiles[0];
+          setSelectedCertificateProfile(firstProfile.id);
+          initializeCertificateForm(firstProfile);
+        }
+      })
+      .catch(() => setCertificateOptions(null));
+  };
+
+  const initializeCertificateForm = (profile: any) => {
+    const initial: Record<string, string> = {};
+    for (const field of profile.fields || []) {
+      const fallback = field.defaultValue?.split(';')[0]?.split('|').at(-1) || '';
+      const clientValues: Record<string, string> = {
+        district: client.city,
+        state: client.organizationDepartment || client.city,
+        departament: client.legalRepresentativeOrganizationalArea || 'FACTURACION ELECTRONICA',
+        addressCorp: client.address,
+        address: client.address,
+        dnAlternativo1: client.taxId,
+        legalNameCorp: client.companyName,
+        email: client.legalRepresentativeEmail || client.email,
+        countryCode: client.legalRepresentativeDocumentCountryCode || 'CO',
+        identityType: client.legalRepresentativeDocumentType === 'CC' || client.legalRepresentativeDocumentType === 'IDC'
+          ? 'IDC'
+          : (client.legalRepresentativeDocumentType || 'IDC'),
+        dnAlternativo2: client.organizationType || 'RM'
+      };
+      clientValues.name = [client.legalRepresentativeFirstName, client.legalRepresentativeOtherNames]
+        .filter(Boolean)
+        .join(' ');
+      clientValues.lastName = [client.legalRepresentativeFirstLastName, client.legalRepresentativeSecondLastName].filter(Boolean).join(' ');
+      clientValues.identity = client.legalRepresentativeDocumentNumber;
+      clientValues.dnAlternativo2 = client.organizationType || 'RM';
+      initial[field.externalName] = clientValues[field.externalName] || fallback;
+    }
+    setCertificateFormValues(initial);
+  };
+
+  const handleCreateCertificateRequest = async () => {
+    if (!selectedCertificateProfile || !acceptCertificateTerms) {
+      toast.error('Selecciona un perfil y acepta los términos del certificado');
+      return;
+    }
+    const profile = certificateOptions?.profiles?.find((item: any) => item.id === selectedCertificateProfile);
+    const missingFields = (profile?.fields || [])
+      .filter((field: any) => field.isRequired && !String(certificateFormValues[field.externalName] || '').trim())
+      .map((field: any) => field.label);
+    if (profile?.externalType === 'INDIVIDUAL' && !String(certificateFormValues.state || '').trim()) {
+      missingFields.push('Departamento');
+    }
+    if (missingFields.length > 0) {
+      toast.error(`Completa: ${missingFields.join(', ')}`);
+      return;
+    }
+    setRequestingCertificate(true);
+    try {
+      const response = await api.post(`/tenant/clients/${id}/certificate/requests`, {
+        profileId: selectedCertificateProfile,
+        environment: certificateEnvironment === 'Sandbox' ? 1 : 2,
+        acceptTerms: true,
+        formValues: certificateFormValues
+      });
+      toast.success(response.data.kycUrl ? 'Solicitud creada. Completa la validación de identidad.' : 'Solicitud creada correctamente');
+      loadCertificate();
+    } catch (err: any) {
+      const providerDetails = typeof err.response?.data?.details === 'string' ? err.response.data.details : '';
+      const message = getErrorMessage(err, 'No fue posible crear la solicitud');
+      toast.error(providerDetails ? `${message}: ${providerDetails}` : message);
+    } finally {
+      setRequestingCertificate(false);
+    }
   };
 
   const loadHabilitationStatus = () => {
@@ -265,7 +466,7 @@ export default function ClientEdit() {
     api.get(`/tenant/clients/${id}/portal-user`)
       .then(res => {
         if (res.data) {
-          setPortalUser({ name: res.data.name, email: res.data.email, password: '' });
+          setPortalUser({ name: res.data.name, email: res.data.email });
           setHasPortalUser(true);
           setPortalUserActive(res.data.isActive);
         } else {
@@ -318,15 +519,16 @@ export default function ClientEdit() {
   };
 
   useEffect(() => {
-    if (activeTab === 'resolutions') loadResolutions();
+    if (activeTab === 'resolutions') { loadResolutions(); loadNoteCounters(); }
     if (activeTab === 'certificate') loadCertificate();
     if (activeTab === 'dian') loadHabilitationStatus();
     if (activeTab === 'credentials') { loadPortalUser(); loadDocProvider(); loadIntegrators(); loadClientIntegratorBilling(); loadMinSaludCatalogs(); loadMinSaludConfig(); }
     if (activeTab === 'prepaid') { loadPrepaid(); loadIntegrators(); }
     if (activeTab === 'enablements') { loadEnabledDocTypes(); loadEnabledRetentions(); }
     if (activeTab === 'reception') loadReceptionSettings();
+    if (activeTab === 'smtp') loadSmtpSettings();
     if (activeTab === 'templates') loadTemplateSettings();
-  }, [activeTab]);
+  }, [activeTab, certificateEnvironment]);
 
   const loadEnabledDocTypes = () => {
     api.get(`/tenant/clients/${id}/enabled-document-types`).then(res => setEnabledDocTypes(res.data)).catch(() => {});
@@ -380,48 +582,12 @@ export default function ClientEdit() {
     return () => clearInterval(interval);
   }, [habilitationStatus?.status]);
 
-  const autocompleteRef = React.useRef<google.maps.places.Autocomplete | null>(null);
-
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries
-  });
-
-  const onLoadAutocomplete = (autocomplete: google.maps.places.Autocomplete) => {
-    autocompleteRef.current = autocomplete;
-  };
-
-  const onPlaceChanged = () => {
-    if (autocompleteRef.current !== null) {
-      const place = autocompleteRef.current.getPlace();
-      if (place.geometry && place.geometry.location) {
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-        
-        let newCity = '';
-        place.address_components?.forEach(component => {
-          if (component.types.includes('locality')) {
-            newCity = component.long_name;
-          }
-        });
-
-        setClient(prev => ({
-          ...prev,
-          address: place.formatted_address || '',
-          city: newCity || prev.city,
-          latitude: lat,
-          longitude: lng
-        }));
-      }
-    }
-  };
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await api.put(`/tenant/clients/${id}`, {
-        companyName: client.companyName,
+         companyName: client.companyName,
+         personType: client.personType,
         commercialName: client.commercialName,
         taxId: client.taxId,
         verificationDigit: client.verificationDigit,
@@ -429,8 +595,24 @@ export default function ClientEdit() {
         phone: client.phone,
         address: client.address,
         city: client.city,
+        cityCode: client.cityCode,
+        organizationDepartment: client.organizationDepartment,
+        organizationType: client.organizationType,
+        legalRepresentativeFirstName: client.legalRepresentativeFirstName,
+        legalRepresentativeOtherNames: client.legalRepresentativeOtherNames,
+        legalRepresentativeFirstLastName: client.legalRepresentativeFirstLastName,
+        legalRepresentativeSecondLastName: client.legalRepresentativeSecondLastName,
+        legalRepresentativeDocumentType: client.legalRepresentativeDocumentType,
+        legalRepresentativeDocumentNumber: client.legalRepresentativeDocumentNumber,
+        legalRepresentativeDocumentCountryCode: client.legalRepresentativeDocumentCountryCode,
+        legalRepresentativeEmail: client.legalRepresentativeEmail,
+        legalRepresentativeRepresentationCode: client.legalRepresentativeRepresentationCode,
+        legalRepresentativeStartDate: client.legalRepresentativeStartDate,
         taxRegime: client.taxRegime,
         economicActivity: client.economicActivity,
+        isGranContribuyente: client.isGranContribuyente,
+        isAgenteRetenedorIva: client.isAgenteRetenedorIva,
+        isAutorretenedorRenta: client.isAutorretenedorRenta,
         appliesRetentions: client.appliesRetentions,
         associateId: client.associateId || null,
         latitude: client.latitude,
@@ -448,11 +630,14 @@ export default function ClientEdit() {
     e.preventDefault();
     setSavingPortalUser(true);
     try {
-      await api.put(`/tenant/clients/${id}/portal-user`, portalUser);
+      const wasNew = !hasPortalUser;
+      const res = await api.put(`/tenant/clients/${id}/portal-user`, portalUser);
       toast.success(hasPortalUser ? 'Acceso al portal actualizado.' : 'Acceso al portal creado exitosamente.');
       setHasPortalUser(true);
       setPortalUserActive(true);
-      setPortalUser(prev => ({ ...prev, password: '' }));
+      if (wasNew && res.data.invitationSent !== null && res.data.invitationSent !== undefined) {
+        setInvitationStatus({ sent: res.data.invitationSent, at: new Date().toISOString(), detail: res.data.invitationError });
+      }
     } catch (err: any) {
       toast.error(err.response?.data || 'Error al guardar el acceso al portal.');
     } finally {
@@ -462,9 +647,12 @@ export default function ClientEdit() {
 
   const handleResendPortalInvitation = async () => {
     try {
-      await api.post(`/tenant/clients/${id}/portal-user/resend-invitation`);
-      toast.success('Invitación reenviada.');
+      const res = await api.post(`/tenant/clients/${id}/portal-user/resend-invitation`);
+      setInvitationStatus({ sent: res.data.sent, at: new Date().toISOString(), detail: res.data.detail });
+      if (res.data.sent) toast.success('Invitación reenviada.');
+      else toast.error(res.data.message || 'No se pudo enviar el correo.');
     } catch (err: any) {
+      setInvitationStatus({ sent: false, at: new Date().toISOString(), detail: err.response?.data });
       toast.error(err.response?.data || 'Error al reenviar la invitación.');
     }
   };
@@ -624,6 +812,41 @@ export default function ClientEdit() {
     toast.success(`${label} copiada al portapapeles.`);
   };
 
+  const closeResModal = () => {
+    setShowResModal(false);
+    setEditingResolutionId(null);
+    setNewRes({
+      resolutionNumber: '',
+      prefix: '',
+      numberStart: 0,
+      numberEnd: 0,
+      validFrom: '',
+      validTo: '',
+      technicalKey: '',
+      documentType: 'FE'
+    });
+  };
+
+  const openCreateResolutionModal = () => {
+    setEditingResolutionId(null);
+    setShowResModal(true);
+  };
+
+  const startEditResolution = (r: any) => {
+    setEditingResolutionId(r.id);
+    setNewRes({
+      resolutionNumber: r.resolutionNumber || '',
+      prefix: r.prefix || '',
+      numberStart: r.numberStart || 0,
+      numberEnd: r.numberEnd || 0,
+      validFrom: r.validFrom ? r.validFrom.split('T')[0] : '',
+      validTo: r.validTo ? r.validTo.split('T')[0] : '',
+      technicalKey: r.technicalKey || '',
+      documentType: r.documentType
+    });
+    setShowResModal(true);
+  };
+
   const handleCreateResolution = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -638,12 +861,18 @@ export default function ClientEdit() {
             validTo: newRes.validTo || '2099-12-31',
           }
         : newRes;
-      await api.post(`/tenant/clients/${id}/resolutions`, payload);
-      toast.success("Resolución agregada");
-      setShowResModal(false);
+
+      if (editingResolutionId) {
+        await api.put(`/tenant/clients/${id}/resolutions/${editingResolutionId}`, payload);
+        toast.success("Resolución actualizada");
+      } else {
+        await api.post(`/tenant/clients/${id}/resolutions`, payload);
+        toast.success("Resolución agregada");
+      }
+      closeResModal();
       loadResolutions();
-    } catch (err) {
-      toast.error("Error al crear resolución");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data || (editingResolutionId ? "Error al actualizar resolución" : "Error al crear resolución"));
     }
   };
 
@@ -669,23 +898,66 @@ export default function ClientEdit() {
       const res = await api.post(`/tenant/clients/${id}/resolutions/parse`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      
-      const parsed = res.data;
-      setNewRes(prev => ({
-        ...prev,
-        resolutionNumber: parsed.resolutionNumber || prev.resolutionNumber,
-        prefix: parsed.prefix || prev.prefix,
-        numberStart: parsed.numberStart || prev.numberStart,
-        numberEnd: parsed.numberEnd || prev.numberEnd,
-        validFrom: parsed.validFrom ? parsed.validFrom.split('T')[0] : prev.validFrom,
-        validTo: parsed.validTo ? parsed.validTo.split('T')[0] : prev.validTo
-      }));
-      toast.success("PDF procesado. Verifica los datos extraídos.");
+
+      const parsedList: any[] = res.data;
+
+      if (parsedList.length > 1) {
+        // El PDF trae varios rangos en la misma hoja (ej. Factura Electrónica + Documento
+        // Soporte) — se cargan todas directamente en vez de pasar por el modal una por una;
+        // el cliente elimina después la que no necesite.
+        let created = 0;
+        for (const parsed of parsedList) {
+          try {
+            await api.post(`/tenant/clients/${id}/resolutions`, {
+              resolutionNumber: parsed.resolutionNumber || '',
+              prefix: parsed.prefix || '',
+              numberStart: parsed.numberStart || 0,
+              numberEnd: parsed.numberEnd || 0,
+              validFrom: parsed.validFrom ? parsed.validFrom.split('T')[0] : '',
+              validTo: parsed.validTo ? parsed.validTo.split('T')[0] : '',
+              technicalKey: '',
+              documentType: parsed.documentType || 'FE'
+            });
+            created++;
+          } catch {
+            // Sigue con las demás aunque una falle (ej. duplicada) — se reporta el conteo real al final.
+          }
+        }
+        toast.success(`${created} de ${parsedList.length} resoluciones cargadas desde el PDF.`);
+        closeResModal();
+        loadResolutions();
+      } else {
+        const parsed = parsedList[0] || {};
+        setNewRes(prev => ({
+          ...prev,
+          resolutionNumber: parsed.resolutionNumber || prev.resolutionNumber,
+          prefix: parsed.prefix || prev.prefix,
+          numberStart: parsed.numberStart || prev.numberStart,
+          numberEnd: parsed.numberEnd || prev.numberEnd,
+          validFrom: parsed.validFrom ? parsed.validFrom.split('T')[0] : prev.validFrom,
+          validTo: parsed.validTo ? parsed.validTo.split('T')[0] : prev.validTo,
+          documentType: parsed.documentType || prev.documentType
+        }));
+        toast.success("PDF procesado. Verifica los datos extraídos.");
+      }
     } catch (err: any) {
       toast.error(err.response?.data || "Error al procesar el PDF");
     } finally {
       setUploadingPdf(false);
       e.target.value = '';
+    }
+  };
+
+  const handleFetchTechnicalKey = async (resId: string) => {
+    setFetchingTechnicalKeyId(resId);
+    try {
+      await api.post(`/tenant/clients/${id}/resolutions/${resId}/fetch-technical-key`);
+      toast.success("Clave Técnica obtenida de la DIAN y guardada");
+      loadResolutions();
+    } catch (err: any) {
+      toast.error(err?.response?.data || "Error consultando la Clave Técnica");
+    } finally {
+      setFetchingTechnicalKeyId(null);
     }
   };
 
@@ -763,12 +1035,40 @@ export default function ClientEdit() {
     try {
       const res = await api.post(`/tenant/clients/${id}/dian/send-test-document`);
       toast.success(`Documento ${res.data.documentNumber} enviado a la DIAN.`);
+      setSentTestDocs(prev => [...prev, { documentNumber: res.data.documentNumber, cufe: res.data.cufe, trackId: res.data.trackId, checking: false, outcome: null }]);
       setTestDocPreview(null);
       loadHabilitationStatus();
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Error enviando el documento de prueba");
     } finally {
       setSendingTestDoc(false);
+    }
+  };
+
+  // "Resuelto" (aceptado/rechazado) según la DIAN vía GetStatusZip — sin esto, "enviado a la DIAN"
+  // solo confirma que llegó, no si fue validado (ver el comentario en TestSetSubmissionResult).
+  const handleCheckTestDocStatus = async (trackId: string) => {
+    setSentTestDocs(prev => prev.map(d => d.trackId === trackId ? { ...d, checking: true } : d));
+    try {
+      const res = await api.get(`/tenant/clients/${id}/dian/test-document-status`, { params: { trackId } });
+      setSentTestDocs(prev => prev.map(d => d.trackId === trackId ? { ...d, checking: false, outcome: res.data } : d));
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error consultando el estado del documento");
+      setSentTestDocs(prev => prev.map(d => d.trackId === trackId ? { ...d, checking: false } : d));
+    }
+  };
+
+  const handleCheckManualTrackId = async () => {
+    if (!manualTrackId.trim()) return;
+    setCheckingManualTrackId(true);
+    setManualTrackIdOutcome(null);
+    try {
+      const res = await api.get(`/tenant/clients/${id}/dian/test-document-status`, { params: { trackId: manualTrackId.trim() } });
+      setManualTrackIdOutcome(res.data);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error consultando el estado del documento");
+    } finally {
+      setCheckingManualTrackId(false);
     }
   };
 
@@ -822,7 +1122,7 @@ export default function ClientEdit() {
               activeTab === 'resolutions' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            <FileSignature size={18} /> Resoluciones DIAN
+            <FileSignature size={18} /> Resoluciones y Consecutivos
           </button>
           <button 
             onClick={() => setActiveTab('dian')}
@@ -873,6 +1173,14 @@ export default function ClientEdit() {
             <Inbox size={18} /> Eventos de Recepción
           </button>
           <button
+            onClick={() => setActiveTab('smtp')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'smtp' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Mail size={18} /> SMTP de Reenvío
+          </button>
+          <button
             onClick={() => setActiveTab('templates')}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
               activeTab === 'templates' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
@@ -890,131 +1198,7 @@ export default function ClientEdit() {
                 <h2 className="text-xl font-bold text-slate-800 mb-6">Información del Emisor</h2>
                 <form onSubmit={handleSave} className="space-y-6">
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Identidad */}
-                    <div className="space-y-6">
-                      <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-2">Identidad Tributaria</h3>
-                      
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Razón Social</label>
-                        <input type="text" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.companyName} onChange={e => setClient({...client, companyName: e.target.value})} />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Nombre Comercial</label>
-                        <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.commercialName} onChange={e => setClient({...client, commercialName: e.target.value})} />
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-4">
-                        <div className="col-span-3">
-                          <label className="block text-sm font-semibold text-slate-700 mb-2">NIT</label>
-                          <input type="text" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.taxId} onChange={e => setClient({...client, taxId: e.target.value})} />
-                        </div>
-                        <div className="col-span-1">
-                          <label className="block text-sm font-semibold text-slate-700 mb-2">DV</label>
-                          <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-center" value={client.verificationDigit} onChange={e => setClient({...client, verificationDigit: e.target.value})} />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700 mb-2">Régimen Fiscal</label>
-                          <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.taxRegime} onChange={e => setClient({...client, taxRegime: e.target.value})}>
-                            <option value="">Seleccione...</option>
-                            <option value="48">Resp. de IVA (48)</option>
-                            <option value="49">No Resp. de IVA (49)</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700 mb-2">CIIU</label>
-                          <input type="text" placeholder="Ej. 6201" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.economicActivity} onChange={e => setClient({...client, economicActivity: e.target.value})} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Asociado (comercial a cargo)</label>
-                        <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.associateId || ''} onChange={e => setClient({...client, associateId: e.target.value})}>
-                          <option value="">Sin asociado</option>
-                          {associates.map(a => (
-                            <option key={a.id} value={a.id}>{a.name}{!a.isActive ? ' (inactivo)' : ''}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Contacto y Ubicación */}
-                    <div className="space-y-6">
-                      <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-2">Contacto y Ubicación (Google Maps)</h3>
-                      
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Correo de Alertas / Facturación</label>
-                        <input type="email" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.email} onChange={e => setClient({...client, email: e.target.value})} />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Teléfono Celular o Fijo</label>
-                        <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.phone} onChange={e => setClient({...client, phone: e.target.value})} />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Buscar Dirección Oficial</label>
-                        {isLoaded ? (
-                          <Autocomplete onLoad={onLoadAutocomplete} onPlaceChanged={onPlaceChanged}>
-                            <input 
-                              type="text" 
-                              placeholder="Busca en Google Maps..."
-                              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                              value={client.address}
-                              onChange={e => setClient({...client, address: e.target.value})}
-                            />
-                          </Autocomplete>
-                        ) : (
-                          <input type="text" disabled placeholder="Cargando mapas..." className="w-full px-4 py-3 bg-slate-100 text-slate-500 border border-slate-200 rounded-xl" />
-                        )}
-                      </div>
-
-                      <div className="h-48 rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative">
-                        {isLoaded && client.latitude && client.longitude ? (
-                          <GoogleMap
-                            mapContainerStyle={{ width: '100%', height: '100%' }}
-                            center={{ lat: client.latitude, lng: client.longitude }}
-                            zoom={15}
-                            options={{ disableDefaultUI: true, zoomControl: true }}
-                          >
-                            <Marker position={{ lat: client.latitude, lng: client.longitude }} />
-                          </GoogleMap>
-                        ) : (
-                          <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400 font-medium text-sm">
-                            <MapPin className="w-8 h-8 opacity-50 mb-2" />
-                            <span>Ubique el negocio en el mapa</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Municipio / Ciudad (Auto-completado)</label>
-                        <input type="text" placeholder="Ej. 11001 (Bogotá)" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.city} onChange={e => setClient({...client, city: e.target.value})} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-6 border-t border-slate-100">
-                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Tarifa a este Cliente</h3>
-                    <div className="grid grid-cols-2 gap-4 max-w-md">
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Valor a Cobrar</label>
-                        <input type="number" min="0" step="0.01" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono" value={client.subscriptionRate} onChange={e => setClient({...client, subscriptionRate: parseFloat(e.target.value) || 0})} />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Frecuencia</label>
-                        <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.billingFrequency} onChange={e => setClient({...client, billingFrequency: e.target.value})}>
-                          <option value="Monthly">Mensual</option>
-                          <option value="Annual">Anual</option>
-                        </select>
-                      </div>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2">Lo que le cobras a este cliente por el servicio — independiente de cómo Facil Factura te cobra a ti.</p>
-                  </div>
+                  <ClientFormFields client={client} setClient={setClient} associates={associates} showBillingSection />
 
                   <div className="pt-6 border-t border-slate-100 flex justify-end">
                     <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-transform hover:-translate-y-0.5">
@@ -1027,10 +1211,11 @@ export default function ClientEdit() {
             )}
 
             {activeTab === 'resolutions' && (
+              <>
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-bold text-slate-800">Resoluciones de Facturación</h2>
-                  <button onClick={() => setShowResModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium shadow-md transition-colors flex items-center gap-2 text-sm">
+                  <button onClick={openCreateResolutionModal} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium shadow-md transition-colors flex items-center gap-2 text-sm">
                     <Plus size={16} /> Nueva Resolución
                   </button>
                 </div>
@@ -1110,9 +1295,24 @@ export default function ClientEdit() {
                               )}
                             </td>
                             <td className="py-4 px-4 text-center">
-                              <button onClick={() => handleDeleteResolution(r.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
-                                <Trash2 size={16} />
-                              </button>
+                              <div className="flex items-center justify-center gap-1">
+                                {r.documentType === 'FE' && (
+                                  <button
+                                    onClick={() => handleFetchTechnicalKey(r.id)}
+                                    disabled={fetchingTechnicalKeyId === r.id}
+                                    className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-50"
+                                    title="Consultar Clave Técnica real en la DIAN (GetNumberingRange)"
+                                  >
+                                    {fetchingTechnicalKeyId === r.id ? <Loader2 size={16} className="animate-spin" /> : <FileKey size={16} />}
+                                  </button>
+                                )}
+                                <button onClick={() => startEditResolution(r)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar">
+                                  <Pencil size={16} />
+                                </button>
+                                <button onClick={() => handleDeleteResolution(r.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar">
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1121,6 +1321,64 @@ export default function ClientEdit() {
                   </div>
                 )}
               </div>
+
+              <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 mt-8">
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold text-slate-800">Consecutivos de Notas</h2>
+                  <p className="text-slate-500 mt-1 text-sm max-w-2xl">
+                    Las Notas Crédito y Débito no tienen un rango autorizado por la DIAN (no aplica una resolución) — este consecutivo es interno, y sirve solo para numerarlas de forma ordenada.
+                  </p>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500 text-sm border-y border-slate-200">
+                        <th className="font-semibold py-3 px-4 rounded-tl-xl">Tipo de Nota</th>
+                        <th className="font-semibold py-3 px-4 rounded-tr-xl">Próximo #</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(['credit', 'debit'] as const).map(type => (
+                        <tr key={type} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                          <td className="py-4 px-4">
+                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${type === 'credit' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                              {type === 'credit' ? 'Nota Crédito' : 'Nota Débito'}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-sm">
+                            {editingNoteCounterType === type ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  autoFocus
+                                  className="w-24 px-2 py-1.5 bg-white border border-blue-500 rounded-lg outline-none text-sm font-mono"
+                                  value={noteCounterDraft}
+                                  onChange={e => setNoteCounterDraft(e.target.value)}
+                                  disabled={savingNoteCounter}
+                                />
+                                <button onClick={() => saveNoteCounter(type)} disabled={savingNoteCounter} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Guardar">
+                                  {savingNoteCounter ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                                </button>
+                                <button onClick={() => setEditingNoteCounterType(null)} disabled={savingNoteCounter} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Cancelar">
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            ) : (
+                              <button onClick={() => startEditNoteCounter(type)} className="flex items-center gap-1.5 font-mono font-bold text-slate-700 hover:text-blue-600 group">
+                                {type === 'credit' ? noteCounters?.nextCreditNoteNumber ?? 1 : noteCounters?.nextDebitNoteNumber ?? 1}
+                                <Pencil size={13} className="text-slate-300 group-hover:text-blue-600" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              </>
             )}
 
             {activeTab === 'certificate' && (
@@ -1130,9 +1388,66 @@ export default function ClientEdit() {
                     <FileKey size={24} />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-slate-800">Certificado Digital (Firma Electrónica)</h2>
-                    <p className="text-sm text-slate-500">Carga el certificado .p12 o .pfx para firmar XML en nombre de este emisor.</p>
+                    <h2 className="text-xl font-bold text-slate-800">Certificado digital</h2>
+                    <p className="text-sm text-slate-500">Solicita y administra certificados por ambiente.</p>
                   </div>
+                </div>
+
+                <div className="mb-8 rounded-2xl border border-blue-100 bg-blue-50 p-6 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-slate-800">Solicitar certificado automáticamente</h3>
+                      <p className="text-sm text-slate-600">La solicitud se procesa con Viafirma. En Sandbox no se reemplaza el certificado existente.</p>
+                    </div>
+                    <select value={certificateEnvironment} onChange={e => { setCertificateEnvironment(e.target.value as 'Sandbox' | 'Production'); setSelectedCertificateProfile(''); }} className="rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm">
+                      <option value="Sandbox">Sandbox</option>
+                      <option value="Production">Producción</option>
+                    </select>
+                  </div>
+                  {certificateOptions?.profiles?.length ? (
+                    <>
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                        Completa los datos del representante legal en los campos marcados con *. Viafirma los exige para emitir el certificado y no los reemplazaremos con datos de la organización.
+                      </div>
+                       <div className="rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700">
+                         Perfil seleccionado: {certificateOptions.profiles.find((profile: any) => profile.id === selectedCertificateProfile)?.title}
+                       </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                         {(certificateOptions.profiles.find((profile: any) => profile.id === selectedCertificateProfile)?.fields || []).filter((field: any) => !CLIENT_CERTIFICATE_FIELDS.has(field.externalName)).map((field: any) => {
+                          const options = (field.defaultValue || '').split(';').filter(Boolean).map((option: string) => {
+                            const separator = option.lastIndexOf('|');
+                            return separator >= 0 ? { label: option.slice(0, separator), value: option.slice(separator + 1) } : { label: option, value: option };
+                          });
+                          if (field.externalName === 'dnAlternativo2' && !options.some((option: any) => option.value === 'RM')) {
+                            options.unshift({ label: 'Registro Mercantil', value: 'RM' });
+                          }
+                          const value = certificateFormValues[field.externalName] || '';
+                          const updateValue = (next: string) => setCertificateFormValues(current => ({ ...current, [field.externalName]: next }));
+                          return (
+                            <label key={field.externalName} className="space-y-1 text-sm font-medium text-slate-700">
+                              <span>{field.label}{field.isRequired ? ' *' : ''}</span>
+                              {field.type === 'SELECT' ? (
+                                <select required={field.isRequired} value={value} onChange={event => updateValue(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                                  <option value="">Selecciona una opción</option>
+                                  {options.map((option: any) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                              ) : (
+                                <input required={field.isRequired} type={field.type === 'EMAIL' ? 'email' : 'text'} value={value} onChange={event => updateValue(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" />
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" checked={acceptCertificateTerms} onChange={e => setAcceptCertificateTerms(e.target.checked)} className="mt-1" /> Acepto los términos y condiciones del certificado seleccionado.</label>
+                      <button type="button" onClick={handleCreateCertificateRequest} disabled={requestingCertificate || !acceptCertificateTerms} className="rounded-xl bg-blue-600 px-5 py-3 font-bold text-white disabled:opacity-50">
+                        {requestingCertificate ? 'Creando solicitud...' : 'Solicitar certificado'}
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-slate-600">No hay perfiles disponibles para este ambiente. Solicita a Administración sincronizar los perfiles.</p>
+                  )}
+                  {certificateOptions?.certificates?.length > 0 && <div className="border-t border-blue-100 pt-3 text-sm text-slate-600">Este ambiente tiene {certificateOptions.certificates.length} certificado(s). Las solicitudes nuevas se conservan como historial y no eliminan los existentes.</div>}
+                  {certificateOptions?.requests?.length > 0 && <div className="border-t border-blue-100 pt-3 space-y-2"><p className="text-sm font-semibold text-slate-700">Solicitudes recientes</p>{certificateOptions.requests.slice(0, 3).map((request: any) => <div key={request.id} className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600"><span>{request.status} · {new Date(request.createdAt).toLocaleString()}</span>{request.kycUrl && <a href={request.kycUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">Completar validación</a>}</div>)}</div>}
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1215,22 +1530,27 @@ export default function ClientEdit() {
                 <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                   <h2 className="text-xl font-bold text-slate-800 mb-1">Proveedor de Documentos Electrónicos</h2>
                   <p className="text-slate-500 text-sm mb-6">
-                    Por defecto los documentos se emiten con el motor propio. Si este emisor factura con Dataico, actívalo aquí y captura sus credenciales.
+                    {integrators.length > 1
+                      ? 'Por defecto los documentos se emiten con el motor propio. Si este emisor factura con otro proveedor, actívalo aquí y captura sus credenciales.'
+                      : 'Los documentos de este emisor se emiten con el motor propio (emisión directa ante la DIAN).'}
                   </p>
                   <form onSubmit={handleSaveDocProvider} className="space-y-4">
                     <div className="flex gap-3">
-                      {['Native', 'Dataico'].map(p => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setDocProvider({ ...docProvider, documentProvider: p })}
-                          className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors ${
-                            docProvider.documentProvider === p ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                          }`}
-                        >
-                          {p === 'Native' ? 'Motor Propio' : 'Dataico'}
-                        </button>
-                      ))}
+                      {integrators.map(i => {
+                        const value = i.code === 'DATAICO' ? 'Dataico' : 'Native';
+                        return (
+                          <button
+                            key={i.id}
+                            type="button"
+                            onClick={() => setDocProvider({ ...docProvider, documentProvider: value })}
+                            className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors ${
+                              docProvider.documentProvider === value ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                            }`}
+                          >
+                            {i.code === 'NATIVE' ? 'Motor Propio' : i.name}
+                          </button>
+                        );
+                      })}
                     </div>
 
                     {docProvider.documentProvider === 'Dataico' && (
@@ -1459,7 +1779,7 @@ export default function ClientEdit() {
                     Con estas credenciales tu cliente ingresa a <span className="font-mono">clients.facil-factura.pro</span> usando el slug de tu empresa (configurado en Apariencia y Branding).
                   </p>
                   {hasPortalUser && (
-                    <div className="flex items-center gap-3 mb-6">
+                    <div className="flex items-center gap-3 mb-3">
                       {portalUserActive ? (
                         <>
                           <button type="button" onClick={handleResendPortalInvitation} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors">
@@ -1476,7 +1796,19 @@ export default function ClientEdit() {
                       )}
                     </div>
                   )}
-                  <form onSubmit={handleSavePortalUser} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                  {invitationStatus && (
+                    <div className={`flex items-start gap-2 mb-6 px-3 py-2 rounded-lg border text-xs font-medium ${
+                      invitationStatus.sent ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'
+                    }`}>
+                      {invitationStatus.sent ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />}
+                      <span>
+                        {invitationStatus.sent
+                          ? `Correo de invitación enviado correctamente (${new Date(invitationStatus.at).toLocaleTimeString('es-CO')}).`
+                          : `No se pudo enviar el correo${invitationStatus.detail ? `: ${invitationStatus.detail}` : '.'}`}
+                      </span>
+                    </div>
+                  )}
+                  <form onSubmit={handleSavePortalUser} className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre</label>
                       <input required type="text" value={portalUser.name} onChange={e => setPortalUser({ ...portalUser, name: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
@@ -1484,15 +1816,9 @@ export default function ClientEdit() {
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email de acceso</label>
                       <input required type="email" value={portalUser.email} onChange={e => setPortalUser({ ...portalUser, email: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                      {!hasPortalUser && <p className="text-xs text-slate-400 mt-1">Le enviaremos un correo de invitación para que establezca su propia contraseña.</p>}
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                        {hasPortalUser ? 'Nueva contraseña (opcional)' : 'Contraseña (opcional)'}
-                      </label>
-                      <input type="password" value={portalUser.password} onChange={e => setPortalUser({ ...portalUser, password: e.target.value })} placeholder={hasPortalUser ? 'Dejar vacío para no cambiar' : 'Dejar vacío para invitar por correo'} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                      {!hasPortalUser && <p className="text-xs text-slate-400 mt-1">Si la dejas vacía, le enviaremos un correo de invitación para que cree su propia contraseña.</p>}
-                    </div>
-                    <div className="md:col-span-3 flex justify-end">
+                    <div className="md:col-span-2 flex justify-end">
                       <button type="submit" disabled={savingPortalUser} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
                         {savingPortalUser ? 'Guardando...' : hasPortalUser ? 'Actualizar acceso' : 'Crear acceso'}
                       </button>
@@ -1501,13 +1827,13 @@ export default function ClientEdit() {
                 </div>
 
                 <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                <h2 className="text-xl font-bold text-slate-800 mb-6">Credenciales de Integración B2B</h2>
+                <h2 className="text-xl font-bold text-slate-800 mb-6">Credenciales de integración</h2>
                 <div className="space-y-6">
                   <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl">
                     <div className="flex justify-between items-start mb-4">
                       <div>
-                        <h3 className="font-semibold text-slate-800 mb-1">Credenciales de Producción (Live)</h3>
-                        <p className="text-slate-500 text-sm">Usa estas credenciales para emitir documentos con validez legal.</p>
+                        <h3 className="font-semibold text-slate-800 mb-1">Credenciales de producción</h3>
+                        <p className="text-slate-500 text-sm">Usa estas credenciales para emitir documentos en producción.</p>
                       </div>
                       <button type="button" onClick={() => generateKey('live')} className="px-4 py-2 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-700 transition-colors">Regenerar</button>
                     </div>
@@ -1535,8 +1861,8 @@ export default function ClientEdit() {
                   <div className="bg-amber-50/50 border border-amber-200/50 p-6 rounded-2xl">
                     <div className="flex justify-between items-start mb-4">
                       <div>
-                        <h3 className="font-semibold text-slate-800 mb-1">Credenciales de Pruebas (Test / Sandbox)</h3>
-                        <p className="text-slate-500 text-sm">Entorno de habilitación de la DIAN.</p>
+                        <h3 className="font-semibold text-slate-800 mb-1">Credenciales de pruebas</h3>
+                        <p className="text-slate-500 text-sm">Entorno de pruebas de la DIAN.</p>
                       </div>
                       <button type="button" onClick={() => generateKey('test')} className="px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg font-medium hover:bg-amber-50 transition-colors">Regenerar</button>
                     </div>
@@ -1695,7 +2021,7 @@ export default function ClientEdit() {
                       {savingDocTypes ? 'Guardando...' : 'Guardar'}
                     </button>
                   </div>
-                  <p className="text-slate-500 text-sm mb-6">Qué puede emitir este Client desde su formulario de facturación.</p>
+                  <p className="text-slate-500 text-sm mb-6">Documentos que puede emitir este cliente.</p>
                   <div className="space-y-2">
                     {enabledDocTypes.map((d: any) => (
                       <label key={d.id} className="flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors">
@@ -1715,7 +2041,7 @@ export default function ClientEdit() {
                       {savingRetentions ? 'Guardando...' : 'Guardar'}
                     </button>
                   </div>
-                  <p className="text-slate-500 text-sm mb-6">Qué conceptos de retención puede elegir este Client por línea de factura.</p>
+                  <p className="text-slate-500 text-sm mb-6">Retenciones disponibles para este cliente.</p>
                   <div className="space-y-4">
                     {Object.entries(
                       enabledRetentions.reduce((groups: Record<string, any[]>, r: any) => {
@@ -1805,7 +2131,7 @@ export default function ClientEdit() {
 
                 <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                   <h2 className="text-xl font-bold text-slate-800 mb-2">Eventos automáticos</h2>
-                  <p className="text-slate-500 mb-6 text-sm">Cuáles eventos RADIAN se disparan solos al recibir un documento. Reclamo implica una disputa formal — solo actívalo si el cliente tiene una validación confiable antes.</p>
+                  <p className="text-slate-500 mb-6 text-sm">Selecciona los eventos que se crearán automáticamente al recibir un documento.</p>
 
                   <div className="space-y-3">
                     {([
@@ -1825,6 +2151,70 @@ export default function ClientEdit() {
 
                   <button onClick={saveReceptionSettings} disabled={savingReception} className="mt-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
                     {savingReception ? 'Guardando...' : 'Guardar eventos automáticos'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'smtp' && (
+              <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <Mail className="text-blue-600" size={20} />
+                  <h2 className="text-xl font-bold text-slate-800">Correo para Reenvío de Documentos</h2>
+                </div>
+                <p className="text-slate-500 mb-6 text-sm">
+                  Configura, en nombre de este cliente, el SMTP propio para reenviarle a sus clientes un documento ya aprobado cuando emite directo a la DIAN (sin Dataico).
+                  Si lo dejas vacío, se usa el SMTP del tenant (si lo tiene configurado).
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor SMTP</label>
+                    <input type="text" placeholder="smtp.gmail.com" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                      value={smtpSettings.smtpHost || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpHost: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
+                    <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                      value={smtpSettings.smtpPort || 587} onChange={e => setSmtpSettings({ ...smtpSettings, smtpPort: parseInt(e.target.value) || 587 })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
+                    <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                      value={smtpSettings.smtpUser || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpUser: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                      Contraseña {smtpSettings.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada)</span>}
+                    </label>
+                    <input type="password" placeholder={smtpSettings.hasPassword ? '••••••••' : ''} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                      value={smtpPasswordDraft} onChange={e => setSmtpPasswordDraft(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo remitente</label>
+                    <input type="email" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                      value={smtpSettings.smtpFromEmail || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpFromEmail: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre remitente</label>
+                    <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                      value={smtpSettings.smtpFromName || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpFromName: e.target.value })} />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-2 mt-4 cursor-pointer">
+                  <input type="checkbox" checked={!!smtpSettings.smtpUseSsl}
+                    onChange={e => setSmtpSettings({ ...smtpSettings, smtpUseSsl: e.target.checked })}
+                    className="w-4 h-4 rounded accent-blue-600" />
+                  <span className="text-sm text-slate-600">Usar SSL/TLS (recomendado)</span>
+                </label>
+
+                <div className="flex gap-3 mt-6">
+                  <button onClick={saveSmtpSettings} disabled={savingSmtp} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+                    {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
+                  </button>
+                  <button onClick={testSmtpConnection} disabled={testingSmtpConn} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
+                    {testingSmtpConn ? 'Probando...' : 'Probar conexión'}
                   </button>
                 </div>
               </div>
@@ -1912,8 +2302,8 @@ export default function ClientEdit() {
                     <div className="h-full min-h-[400px] rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center p-8 text-center">
                       <div className="max-w-xs">
                         <LayoutTemplate className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                        <h3 className="text-lg font-bold text-slate-600 mb-2">Selecciona un Comprobante</h3>
-                        <p className="text-sm text-slate-400">Elige un tipo de comprobante en la lista de la izquierda para ver y aplicar sus diseños disponibles.</p>
+                        <h3 className="text-lg font-bold text-slate-600 mb-2">Selecciona un documento</h3>
+                        <p className="text-sm text-slate-400">Selecciona un documento para ver y aplicar sus diseños.</p>
                       </div>
                     </div>
                   )}
@@ -2043,6 +2433,70 @@ export default function ClientEdit() {
                         <pre className="text-xs bg-slate-900 text-slate-100 rounded-xl p-4 overflow-auto max-h-96 whitespace-pre-wrap break-all">{testDocPreview.signedXml}</pre>
                       </div>
                     )}
+
+                    <div className="mt-6 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                      <p className="text-sm font-bold text-slate-700 mb-2">Consultar un envío anterior por trackId (ZipKey)</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={manualTrackId}
+                          onChange={e => setManualTrackId(e.target.value)}
+                          placeholder="ZipKey devuelto por la DIAN al enviar"
+                          className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm outline-none font-mono"
+                        />
+                        <button
+                          onClick={handleCheckManualTrackId}
+                          disabled={checkingManualTrackId}
+                          className="bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2"
+                        >
+                          {checkingManualTrackId ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                          Ver estado
+                        </button>
+                      </div>
+                      {manualTrackIdOutcome && (
+                        manualTrackIdOutcome.resolved ? (
+                          <span className={`inline-block mt-3 text-sm font-bold px-3 py-1 rounded-full ${manualTrackIdOutcome.accepted ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {manualTrackIdOutcome.accepted ? 'Aceptado por la DIAN' : `Rechazado: ${manualTrackIdOutcome.rules?.join(' | ') || manualTrackIdOutcome.statusDescription}`}
+                          </span>
+                        ) : (
+                          <p className="mt-3 text-sm text-slate-500">La DIAN todavía la está validando — intenta de nuevo en un momento.</p>
+                        )
+                      )}
+                    </div>
+
+                    {sentTestDocs.length > 0 && (
+                      <div className="mt-6 space-y-2">
+                        <p className="text-sm font-bold text-slate-700">Documentos enviados en esta sesión</p>
+                        {sentTestDocs.map(doc => (
+                          <div key={doc.trackId} className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+                            <div className="text-sm">
+                              <span className="font-bold">{doc.documentNumber}</span>
+                              <span className="text-slate-400 mx-2">·</span>
+                              <span className="text-xs text-slate-400">ZipKey:</span>{' '}
+                              <span className="font-mono text-xs text-slate-500">{doc.trackId}</span>
+                            </div>
+                            {doc.outcome ? (
+                              doc.outcome.resolved ? (
+                                <span className={`text-sm font-bold px-3 py-1 rounded-full ${doc.outcome.accepted ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                  {doc.outcome.accepted ? 'Aceptado por la DIAN' : `Rechazado: ${doc.outcome.rules?.join(' | ') || doc.outcome.statusDescription}`}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-slate-500">La DIAN todavía la está validando — intenta de nuevo en un momento.</span>
+                              )
+                            ) : (
+                              <button
+                                onClick={() => handleCheckTestDocStatus(doc.trackId)}
+                                disabled={doc.checking}
+                                className="bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2"
+                              >
+                                {doc.checking ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                Ver estado
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2054,7 +2508,7 @@ export default function ClientEdit() {
                     </div>
                     <div>
                       <h2 className="text-xl font-bold text-slate-800">Habilitación y Set de Pruebas</h2>
-                      <p className="text-sm text-slate-500">Automatiza la habilitación pegando el enlace de acceso enviado por la DIAN al correo del cliente.</p>
+                      <p className="text-sm text-slate-500">Completa la habilitación con el enlace enviado por la DIAN.</p>
                     </div>
                   </div>
 
@@ -2065,7 +2519,7 @@ export default function ClientEdit() {
                       </div>
                       <div>
                         <h3 className="font-bold text-emerald-900 text-lg">Cliente Habilitado en Producción</h3>
-                        <p className="text-emerald-700/80">Este cliente ha completado satisfactoriamente los requisitos técnicos y puede emitir comprobantes con validez legal.</p>
+                        <p className="text-emerald-700/80">Este cliente está habilitado para emitir documentos en producción.</p>
                       </div>
                     </div>
                   ) : (
@@ -2131,39 +2585,46 @@ export default function ClientEdit() {
           <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                <FileSignature className="text-blue-600" /> Nueva Resolución
+                <FileSignature className="text-blue-600" /> {editingResolutionId ? 'Editar Resolución' : 'Nueva Resolución'}
               </h3>
-              <button onClick={() => setShowResModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+              <button onClick={closeResModal} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <X size={24} />
               </button>
             </div>
-            
+
             <form onSubmit={handleCreateResolution} className="space-y-4">
-              {/* Botón de carga de PDF */}
-              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-semibold text-blue-800">Autocompletar con PDF</h4>
-                  <p className="text-xs text-blue-600/70 mt-0.5">Sube el Formulario 1876 de la DIAN para extraer los datos.</p>
+              {!editingResolutionId && (
+                <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-blue-800">Autocompletar con PDF</h4>
+                    <p className="text-xs text-blue-600/70 mt-0.5">Sube el Formulario 1876 de la DIAN para extraer los datos.</p>
+                  </div>
+                  <div>
+                    <label className="cursor-pointer bg-white text-blue-600 border border-blue-200 hover:border-blue-400 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
+                      {uploadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSignature size={16} />}
+                      {uploadingPdf ? 'Leyendo...' : 'Cargar PDF'}
+                      <input type="file" accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={uploadingPdf} />
+                    </label>
+                  </div>
                 </div>
-                <div>
-                  <label className="cursor-pointer bg-white text-blue-600 border border-blue-200 hover:border-blue-400 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
-                    {uploadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSignature size={16} />}
-                    {uploadingPdf ? 'Leyendo...' : 'Cargar PDF'}
-                    <input type="file" accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={uploadingPdf} />
-                  </label>
-                </div>
-              </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Tipo de Documento</label>
-                  <select required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.documentType} onChange={e => setNewRes({...newRes, documentType: e.target.value})}>
-                    <option value="FE">Factura Electrónica (FE)</option>
-                    <option value="NC">Nota Crédito (NC)</option>
-                    <option value="ND">Nota Débito (ND)</option>
-                    <option value="POS">Documento Soporte / POS</option>
-                    <option value="NE">Nómina Electrónica (NE)</option>
-                  </select>
+                  {editingResolutionId ? (
+                    <div className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 cursor-not-allowed" title="El tipo de documento no se puede cambiar al editar — crea una resolución nueva si necesitas otro tipo.">
+                      {documentTypeLabels[newRes.documentType] || newRes.documentType}
+                    </div>
+                  ) : (
+                    <select required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.documentType} onChange={e => setNewRes({...newRes, documentType: e.target.value})}>
+                      <option value="FE">Factura Electrónica (FE)</option>
+                      <option value="NC">Nota Crédito (NC)</option>
+                      <option value="ND">Nota Débito (ND)</option>
+                      <option value="POS">Documento Soporte / POS</option>
+                      <option value="NE">Nómina Electrónica (NE)</option>
+                    </select>
+                  )}
                 </div>
                 {newRes.documentType !== 'NE' && (
                   <div>
@@ -2217,9 +2678,9 @@ export default function ClientEdit() {
               )}
 
               <div className="pt-4 flex justify-end gap-3">
-                <button type="button" onClick={() => setShowResModal(false)} className="px-5 py-2.5 text-slate-500 hover:bg-slate-100 rounded-xl font-medium transition-colors">Cancelar</button>
+                <button type="button" onClick={closeResModal} className="px-5 py-2.5 text-slate-500 hover:bg-slate-100 rounded-xl font-medium transition-colors">Cancelar</button>
                 <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-semibold shadow-md transition-colors">
-                  Guardar Resolución
+                  {editingResolutionId ? 'Guardar Cambios' : 'Guardar Resolución'}
                 </button>
               </div>
             </form>

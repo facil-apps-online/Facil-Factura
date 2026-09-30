@@ -16,10 +16,12 @@ namespace Fel.Api.Client.Controllers
     public class CustomerController : ControllerBase
     {
         private readonly FelDbContext _dbContext;
+        private readonly Fel.Infrastructure.Services.DianRutParserService _rutParser;
 
-        public CustomerController(FelDbContext dbContext)
+        public CustomerController(FelDbContext dbContext, Fel.Infrastructure.Services.DianRutParserService rutParser)
         {
             _dbContext = dbContext;
+            _rutParser = rutParser;
         }
 
         private Guid GetCurrentClientId()
@@ -30,6 +32,63 @@ namespace Fel.Api.Client.Controllers
                     return clientId;
             }
             throw new UnauthorizedAccessException("x-client-id Header is missing");
+        }
+
+        // Lee un RUT (Formulario 001 de la DIAN) y devuelve sus datos para prellenar el alta de un
+        // tercero (persona natural o jurídica) — no crea nada, el usuario revisa y confirma en el
+        // formulario. Mismo servicio que usa Superadmin para el alta de Tenants
+        // (Fel.Infrastructure.Services.DianRutParserService).
+        [HttpPost("parse-rut")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ParseRut([FromForm] IFormFile file)
+        {
+            try
+            {
+                GetCurrentClientId();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+
+            if (file == null || file.Length == 0)
+                return BadRequest(new { message = "No se adjuntó ningún archivo." });
+
+            if (!string.Equals(file.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "El RUT debe ser el PDF que descarga el portal de la DIAN." });
+
+            using var stream = file.OpenReadStream();
+            var rut = await _rutParser.ParsePdfAsync(stream);
+
+            if (!rut.IsSuccess)
+                return BadRequest(new { message = rut.ErrorMessage });
+
+            var isNatural = !string.IsNullOrWhiteSpace(rut.FirstName) || !string.IsNullOrWhiteSpace(rut.FirstLastName);
+
+            return Ok(new
+            {
+                personType = isNatural ? "Natural" : "Juridica",
+                identificationType = isNatural ? "13" : "31",
+                identificationNumber = rut.TaxId,
+                verificationDigit = rut.VerificationDigit,
+                name = rut.LegalName,
+                firstName = rut.FirstName,
+                secondName = rut.SecondName,
+                firstLastName = rut.FirstLastName,
+                secondLastName = rut.SecondLastName,
+                address = rut.Address,
+                cityName = rut.City,
+                cityCode = rut.CityCode,
+                department = rut.Department,
+                email = rut.Email,
+                phone = rut.Phone,
+                // El RUT no trae el código DANE de municipio ni el régimen tributario propio de
+                // Dataico directamente — solo las responsabilidades (casilla 53), de donde se
+                // deduce una sugerencia razonable para los dos catálogos que Dataico exige.
+                dataicoRegimen = rut.ResponsibilityCodes.Contains("47") ? "SIMPLE" : "ORDINARIO",
+                dataicoTaxLevelCode = rut.ResponsibilityCodes.Contains("48") ? "RESPONSABLE_DE_IVA" : "NO_RESPONSABLE_DE_IVA",
+                isElectronicInvoicer = rut.IsElectronicInvoicer
+            });
         }
 
         [HttpGet]

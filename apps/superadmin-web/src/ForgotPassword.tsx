@@ -29,8 +29,8 @@ export const ForgotPassword = () => {
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[100px] pointer-events-none"></div>
 
       <div className="bg-white/5 backdrop-blur-2xl border border-white/10 p-10 rounded-[2rem] shadow-2xl w-full max-w-[420px] relative z-10">
-        <h1 className="text-2xl font-extrabold text-white text-center mb-2">Recuperar Contraseña</h1>
-        <p className="text-slate-400 text-center text-sm mb-8">Te enviaremos un enlace para restablecerla.</p>
+        <h1 className="text-2xl font-extrabold text-white text-center mb-2">Recuperar contraseña</h1>
+        <p className="text-slate-400 text-center text-sm mb-8">Te enviaremos un enlace para crear una nueva contraseña.</p>
 
         {sent ? (
           <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm text-center py-4 rounded-xl font-medium">

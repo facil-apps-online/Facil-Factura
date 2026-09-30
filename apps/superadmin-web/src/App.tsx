@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Receipt, Settings, Plus, LogOut, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, Settings, Plus, LogOut, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
 import { api } from './api';
@@ -12,12 +12,15 @@ import { DocumentTypes } from './DocumentTypes';
 import { Integrators } from './Integrators';
 import { TariffTiers } from './TariffTiers';
 import { TaxCatalog } from './TaxCatalog';
+import { UnitOfMeasureCatalog } from './UnitOfMeasureCatalog';
+import { IdentificationTypes } from './IdentificationTypes';
 import { RetentionEngine } from './RetentionEngine';
 import { DocumentTemplates } from './DocumentTemplates';
 import { TemplateEditor } from './TemplateEditor';
 import { Billing } from './Billing';
 import { ForgotPassword } from './ForgotPassword';
 import { ResetPassword } from './ResetPassword';
+import { CertificateProviders } from './CertificateProviders';
 
 const libraries: "places"[] = ['places'];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSy_TU_LLAVE_DE_PRUEBA_AQUI";
@@ -98,7 +101,7 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0B1120]">
         <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
-        <p className="text-slate-400 font-medium animate-pulse">Conectando al Motor Central...</p>
+        <p className="text-slate-400 font-medium animate-pulse">Cargando...</p>
       </div>
     );
   }
@@ -131,7 +134,7 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
             <input 
               type="email" 
               required
-              placeholder="Correo electrónico maestro"
+              placeholder="Correo electrónico"
               className="w-full bg-black/20 border border-slate-700 text-white pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-500"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -144,7 +147,7 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
             <input 
               type="password" 
               required
-              placeholder="Contraseña de alta seguridad"
+              placeholder="Contraseña"
               className="w-full bg-black/20 border border-slate-700 text-white pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-500"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -193,25 +196,25 @@ const Dashboard = () => {
 
   return (
     <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <h1 className="text-3xl font-extrabold text-white mb-8 tracking-tight">Panel de Control</h1>
+      <h1 className="text-3xl font-extrabold text-white mb-8 tracking-tight">Resumen</h1>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="glass-panel p-6 rounded-2xl hover:shadow-[0_0_20px_rgba(37,99,235,0.2)] transition-all">
           <div className="flex items-center justify-between">
-            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Tenants Activos</p>
+            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Clientes activos</p>
             <div className="bg-blue-500/10 p-2 rounded-lg border border-blue-500/20"><Users className="w-5 h-5 text-blue-400" /></div>
           </div>
           <p className="text-4xl font-extrabold text-white mt-4">{metrics.activeTenants}</p>
         </div>
         <div className="glass-panel p-6 rounded-2xl hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all">
           <div className="flex items-center justify-between">
-            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Docs Procesados</p>
+            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Documentos procesados</p>
             <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20"><Receipt className="w-5 h-5 text-emerald-400" /></div>
           </div>
           <p className="text-4xl font-extrabold text-white mt-4">{metrics.documentsThisMonth}</p>
         </div>
         <div className="glass-panel p-6 rounded-2xl hover:shadow-[0_0_20px_rgba(99,102,241,0.2)] transition-all">
           <div className="flex items-center justify-between">
-            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Proyección Mes</p>
+            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Proyección del mes</p>
             <div className="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20"><span className="text-indigo-400 font-bold">$</span></div>
           </div>
           <p className="text-4xl font-extrabold text-indigo-400 mt-4">
@@ -228,6 +231,10 @@ const emptyTenantForm = {
   name: '',
   commercialName: '',
   legalName: '',
+  firstName: '',
+  secondName: '',
+  firstLastName: '',
+  secondLastName: '',
   email: '',
   slug: '',
   taxId: '',
@@ -253,7 +260,6 @@ const emptyTenantForm = {
   defaultCurrencyId: '284d016a-80ba-4667-a3d0-a23989eb2733',
   adminName: '',
   adminEmail: '',
-  adminPassword: '',
 };
 
 interface RegCountry {
@@ -355,7 +361,7 @@ const TenantsList = () => {
     if (!regData) {
       api.get<RegistrationData>('/registration-data')
         .then(res => setRegData(res.data))
-        .catch(() => toast.error("No se pudieron cargar los países disponibles."));
+        .catch(() => toast.error("No se pudieron cargar los países."));
     }
   };
 
@@ -391,13 +397,13 @@ const TenantsList = () => {
       await api.post('/tenants', formData);
       setShowModal(false);
       setFormData({ ...emptyTenantForm });
-      toast.success("Tenant registrado con éxito.");
+      toast.success("Cuenta registrada correctamente.");
       loadTenants();
     } catch (err) {
       const detail = axios.isAxiosError(err)
         ? (typeof err.response?.data === 'string' ? err.response.data : err.response?.data?.title) ?? err.message
         : null;
-      toast.error(detail ? `Error al crear Tenant: ${detail}` : "Error al crear Tenant.");
+      toast.error(detail ? `No se pudo registrar la cuenta: ${detail}` : "No se pudo registrar la cuenta.");
       console.error('CreateTenant failed', err);
     } finally {
       setSaving(false);
@@ -450,11 +456,11 @@ const TenantsList = () => {
   return (
     <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-extrabold text-white tracking-tight">Gestión de Tenants</h1>
+        <h1 className="text-3xl font-extrabold text-white tracking-tight">Gestión de cuentas</h1>
         <button 
           onClick={openModal}
           className="flex items-center bg-slate-900 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-slate-800 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
-          <Plus className="w-5 h-5 mr-2" /> Registrar Tenant
+          <Plus className="w-5 h-5 mr-2" /> Registrar cuenta
         </button>
       </div>
 
@@ -462,7 +468,7 @@ const TenantsList = () => {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200 p-4 overflow-y-auto">
           <div className="modal-light bg-white p-8 rounded-3xl w-full max-w-3xl shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-slate-900">Registrar Tenant</h2>
+              <h2 className="text-2xl font-bold text-slate-900">Registrar cuenta</h2>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700 transition-colors">
                 <X className="w-6 h-6" />
               </button>
@@ -491,24 +497,24 @@ const TenantsList = () => {
                 </div>
               </section>
 
-              {/* Información Principal */}
+              {/* Información básica */}
               <section className="border border-slate-200 rounded-2xl p-5">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-600" /> Información Principal</h3>
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-600" /> Información básica</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Comercial</label>
                     <input required type="text" placeholder="Ej. Glamtica" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.name} onChange={e => setField('name', e.target.value)} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Razón Social (Legal Name)</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Razón social</label>
                     <input type="text" placeholder="Ej. Glamtica SAS" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.legalName} onChange={e => setField('legalName', e.target.value)} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Comercial Secundario</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre comercial alternativo</label>
                     <input type="text" placeholder="Ej. Glamtica Spa" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.commercialName} onChange={e => setField('commercialName', e.target.value)} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Slug (Identificador URL)</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Identificador de acceso</label>
                     <input required type="text" placeholder="glamtica" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm" value={formData.slug} onChange={e => setField('slug', slugify(e.target.value))} />
                   </div>
                 </div>
@@ -516,11 +522,11 @@ const TenantsList = () => {
 
               {/* Información Fiscal */}
               <section className="border border-slate-200 rounded-2xl p-5">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Hash className="w-5 h-5 text-blue-600" /> Información Fiscal (DIAN)</h3>
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Hash className="w-5 h-5 text-blue-600" /> Información fiscal</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <label className="block text-sm font-semibold text-slate-700 mb-1">NIT / ID Fiscal</label>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">NIT</label>
                       <input required type="text" placeholder="Ej. 901958059" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.taxId} onChange={e => setField('taxId', e.target.value)} />
                     </div>
                     <div className="w-24">
@@ -529,15 +535,15 @@ const TenantsList = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email Facturación Electrónica</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Correo de facturación electrónica</label>
                     <input required type="email" placeholder="admin@glamtica.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.einvoicingEmail} onChange={e => setField('einvoicingEmail', e.target.value)} />
                   </div>
                 </div>
               </section>
 
-              {/* Configuración Regional */}
+              {/* Configuración regional */}
               <section className="border border-slate-200 rounded-2xl p-5">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600" /> Configuración Regional</h3>
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600" /> Configuración regional</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">País</label>
@@ -547,7 +553,7 @@ const TenantsList = () => {
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
-                    <p className="text-xs text-slate-500 mt-1">Filtra las direcciones y sugiere idioma, moneda y zona horaria.</p>
+                    <p className="text-xs text-slate-500 mt-1">Define el país, idioma, moneda y zona horaria.</p>
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Idioma</label>
@@ -578,10 +584,10 @@ const TenantsList = () => {
 
               {/* Dirección Física con Google Autocomplete */}
               <section className="border border-slate-200 rounded-2xl p-5">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><MapPin className="w-5 h-5 text-emerald-600" /> Dirección Física</h3>
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><MapPin className="w-5 h-5 text-emerald-600" /> Dirección</h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Buscar Dirección</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Buscar dirección</label>
                     {isLoaded ? (
                       <Autocomplete
                         onLoad={onLoadAutocomplete}
@@ -601,11 +607,11 @@ const TenantsList = () => {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1">Dirección (Línea 1)</label>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Dirección</label>
                       <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalAddressLine1} onChange={e => setField('physicalAddressLine1', e.target.value)} />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1">Dirección (Línea 2, Opcional)</label>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Complemento de dirección (opcional)</label>
                       <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalAddressLine2} onChange={e => setField('physicalAddressLine2', e.target.value)} />
                     </div>
                     <div>
@@ -613,7 +619,7 @@ const TenantsList = () => {
                       <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalCity} onChange={e => setField('physicalCity', e.target.value)} />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1">Estado/Departamento</label>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Departamento</label>
                       <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all" value={formData.physicalState} onChange={e => setField('physicalState', e.target.value)} />
                     </div>
                     <div>
@@ -626,7 +632,7 @@ const TenantsList = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Vista previa del mapa</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Mapa</label>
                     <div className="h-48 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
                       {isLoaded && formData.latitude && formData.longitude ? (
                         <GoogleMap
@@ -638,7 +644,7 @@ const TenantsList = () => {
                           <Marker position={{ lat: formData.latitude, lng: formData.longitude }} />
                         </GoogleMap>
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-400 font-medium">Selecciona una dirección para ver el mapa</div>
+                        <div className="w-full h-full flex items-center justify-center text-slate-400 font-medium">Selecciona una dirección para verla en el mapa</div>
                       )}
                     </div>
                   </div>
@@ -670,7 +676,7 @@ const TenantsList = () => {
                     <input type="url" placeholder="https://glamtica.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.website} onChange={e => setField('website', e.target.value)} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email de Facturación (cuenta)</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Correo de la cuenta</label>
                     <input type="email" placeholder="facturacion@glamtica.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.email} onChange={e => setField('email', e.target.value)} />
                   </div>
                 </div>
@@ -678,21 +684,16 @@ const TenantsList = () => {
 
               {/* Usuario Administrador del Tenant */}
               <section className="border border-slate-200 rounded-2xl p-5 bg-blue-50/40">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> Cuenta de Administrador</h3>
-                <p className="text-sm text-slate-500 mb-4">Estas serán las credenciales para que el tenant inicie sesión en su portal (tenants.facil-factura.pro).</p>
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> Administrador de la cuenta</h3>
+                <p className="text-sm text-slate-500 mb-4">Enviaremos una invitación para crear la contraseña y entrar al portal.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Completo</label>
                     <input type="text" autoComplete="off" name="tenant-admin-name" placeholder="Ej. Ana García" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminName} onChange={e => setField('adminName', e.target.value)} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email (Login)</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Correo de acceso</label>
                     <input type="email" autoComplete="off" name="tenant-admin-email" placeholder="admin@glamtica.com" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminEmail} onChange={e => setField('adminEmail', e.target.value)} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña Inicial</label>
-                    <input type="password" autoComplete="new-password" name="tenant-admin-password" placeholder="Mínimo 6 caracteres" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.adminPassword} onChange={e => setField('adminPassword', e.target.value)} />
-                    <p className="text-xs text-slate-500 mt-1">Comparte esta contraseña de forma segura con tu cliente.</p>
                   </div>
                 </div>
               </section>
@@ -740,7 +741,7 @@ const TenantsList = () => {
               </tr>
             ))}
             {tenants.length === 0 && (
-              <tr><td colSpan={4} className="text-center py-12 text-slate-500 font-medium">No hay tenants registrados en el sistema.</td></tr>
+              <tr><td colSpan={4} className="text-center py-12 text-slate-500 font-medium">Aún no hay cuentas registradas.</td></tr>
             )}
           </tbody>
         </table>
@@ -771,10 +772,13 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
     { to: "/", icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard" },
     { to: "/tenants", icon: <Users className="w-5 h-5" />, label: "Tenants (Clientes)" },
     { to: "/certificates", icon: <FileKey className="w-5 h-5" />, label: "Certificados" },
+    { to: "/certificate-provider", icon: <ShieldCheck className="w-5 h-5" />, label: "Proveedor de Certificados" },
     { to: "/document-types", icon: <Settings className="w-5 h-5" />, label: "Tipos de Documento" },
     { to: "/integrators", icon: <Cable className="w-5 h-5" />, label: "Integradores" },
     { to: "/tariff-tiers", icon: <Coins className="w-5 h-5" />, label: "Tarifario por Volumen" },
     { to: "/tax-catalog", icon: <Percent className="w-5 h-5" />, label: "Catálogo de Impuestos" },
+    { to: "/units-of-measure", icon: <Ruler className="w-5 h-5" />, label: "Unidades de Medida" },
+    { to: "/identification-types", icon: <BadgeCheck className="w-5 h-5" />, label: "Tipos de Identificación" },
     { to: "/retention-engine", icon: <Calculator className="w-5 h-5" />, label: "Motor de Retenciones" },
     { to: "/billing", icon: <Receipt className="w-5 h-5" />, label: "Facturación" },
   ];
@@ -791,7 +795,7 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
             {!collapsed && (
               <button
                 onClick={toggleCollapsed}
-                title="Colapsar menú"
+                title="Contraer menú"
                 className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors shrink-0"
               >
                 <ChevronLeft size={18} />
@@ -807,7 +811,7 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
               <ChevronRight size={18} />
             </button>
           )}
-          {!collapsed && <p className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] ml-11">Superadmin</p>}
+          {!collapsed && <p className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em] ml-11">Administrador</p>}
         </div>
 
         <nav className="space-y-2 mb-8 px-4">
@@ -827,9 +831,9 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
         <div className="p-4 mt-auto border-t border-slate-800">
           <button
             onClick={handleLogout}
-            title={collapsed ? 'Cerrar Sesión' : undefined}
+            title={collapsed ? 'Cerrar sesión' : undefined}
             className={`flex items-center w-full px-4 py-3 rounded-xl font-medium text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-colors ${collapsed ? 'justify-center px-0' : ''}`}>
-            <LogOut className={`w-5 h-5 opacity-70 ${collapsed ? '' : 'mr-3'}`} /> {!collapsed && 'Cerrar Sesión'}
+            <LogOut className={`w-5 h-5 opacity-70 ${collapsed ? '' : 'mr-3'}`} /> {!collapsed && 'Cerrar sesión'}
           </button>
         </div>
       </aside>
@@ -867,16 +871,19 @@ const App = () => {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/tenants" element={<TenantsList />} />
                   <Route path="/certificates" element={<Certificates />} />
+                  <Route path="/certificate-provider" element={<CertificateProviders />} />
                   <Route path="/tenants/edit/:id" element={<TenantEdit />} />
                   <Route path="/document-types" element={<DocumentTypes />} />
                   <Route path="/integrators" element={<Integrators />} />
                   <Route path="/tariff-tiers" element={<TariffTiers />} />
                   <Route path="/tax-catalog" element={<TaxCatalog />} />
+                  <Route path="/units-of-measure" element={<UnitOfMeasureCatalog />} />
+                  <Route path="/identification-types" element={<IdentificationTypes />} />
                   <Route path="/retention-engine" element={<RetentionEngine />} />
                   <Route path="/document-types/:typeId/templates" element={<DocumentTemplates />} />
                   <Route path="/document-types/:typeId/templates/:templateKey/edit" element={<TemplateEditor />} />
                   <Route path="/billing" element={<Billing />} />
-                  <Route path="/settings" element={<div className="p-10"><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Configuración del Motor</h1></div>} />
+                  <Route path="/settings" element={<div className="p-10"><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Configuración</h1></div>} />
                 </Routes>
               </ProtectedLayout>
             ) : (

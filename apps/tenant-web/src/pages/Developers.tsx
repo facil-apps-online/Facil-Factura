@@ -82,7 +82,7 @@ export default function Developers() {
     <div className="p-10 h-full overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Developers</h1>
+          <h1 className="text-3xl font-bold text-slate-800">Desarrolladores</h1>
           <p className="text-slate-500 mt-2">
             Invita a tu equipo técnico al portal de integración (developers.facil-factura.pro). Todos comparten un único
             Client de prueba, aislado de tus clientes reales.
@@ -93,7 +93,7 @@ export default function Developers() {
           className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-medium shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-all"
         >
           <Plus size={20} />
-          <span>Invitar Developer</span>
+          <span>Invitar desarrollador</span>
         </button>
       </div>
 
@@ -109,7 +109,7 @@ export default function Developers() {
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
             {developers.length === 0 && !loading && (
-              <tr><td colSpan={4} className="text-center py-8 text-slate-500">Aún no has invitado a ningún developer.</td></tr>
+              <tr><td colSpan={4} className="text-center py-8 text-slate-500">Aún no has invitado a ningún desarrollador.</td></tr>
             )}
             {developers.map(d => (
               <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
@@ -150,7 +150,7 @@ export default function Developers() {
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Invitar Developer</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Invitar desarrollador</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1">Nombre</label>
@@ -160,7 +160,7 @@ export default function Developers() {
                 <label className="block text-sm font-medium text-slate-600 mb-1">Email</label>
                 <input required type="email" className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
               </div>
-              <p className="text-xs text-slate-400">Le enviaremos un enlace para que establezca su propia contraseña en el portal de developers.</p>
+              <p className="text-xs text-slate-400">Enviaremos un enlace para crear la contraseña y entrar al portal de desarrolladores.</p>
               <div className="flex gap-3 justify-end pt-4">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-medium transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-medium shadow-md transition-colors disabled:opacity-50">

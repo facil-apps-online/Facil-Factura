@@ -10,6 +10,7 @@ namespace Fel.Core.Entities
         public Tenant Tenant { get; set; } = null!;
         
         public string CompanyName { get; set; } = string.Empty;
+        public string PersonType { get; set; } = "PJ"; // PN = Persona Natural, PJ = Persona Jurídica
         public string CommercialName { get; set; } = string.Empty;
         public string TaxId { get; set; } = string.Empty; // NIT
         public string VerificationDigit { get; set; } = string.Empty; // DV
@@ -24,10 +25,43 @@ namespace Fel.Core.Entities
         public string Address { get; set; } = string.Empty;
         public string City { get; set; } = string.Empty;
         public string? CityCode { get; set; } // Código DANE del municipio (5 dígitos), para emitir directo a la DIAN
+        public string? OrganizationDepartment { get; set; } // Departamento de la organización, para el certificado
+        public string? OrganizationType { get; set; } // Código del tipo de organización requerido por Viafirma
+
+        // Representante legal registrado en la hoja de representación del RUT (casillas 98-110).
+        // Es opcional: el RUT puede venir solo con la hoja principal y algunas entidades pueden
+        // requerir que el usuario complete o corrija estos datos manualmente.
+        public string? LegalRepresentativeFirstName { get; set; }
+        public string? LegalRepresentativeOtherNames { get; set; }
+        public string? LegalRepresentativeFirstLastName { get; set; }
+        public string? LegalRepresentativeSecondLastName { get; set; }
+        public string? LegalRepresentativeDocumentType { get; set; }
+        public string? LegalRepresentativeDocumentNumber { get; set; }
+        public string? LegalRepresentativeDocumentCountryCode { get; set; }
+        public string? LegalRepresentativeEmail { get; set; }
+        public string? LegalRepresentativeRepresentationCode { get; set; }
+        public DateTime? LegalRepresentativeStartDate { get; set; }
+
+        // Área/departamento donde trabaja el representante legal dentro de la empresa (ej. "Gerencia
+        // General", "Legal") — la exige Viafirma como Unidad Organizacional del certificado. No
+        // confundir con OrganizationDepartment, que es el departamento geográfico (Google Maps/RUT).
+        public string? LegalRepresentativeOrganizationalArea { get; set; }
         
         // Fiscal
         public string TaxRegime { get; set; } = string.Empty;
         public string EconomicActivity { get; set; } = string.Empty;
+
+        // Responsabilidades del RUT (casilla 53) que la representación gráfica debe declarar
+        // explícitamente además del régimen de IVA — 13 = Gran Contribuyente, 09 = Agente
+        // Retenedor de IVA, 15 = Autorretenedor de renta.
+        public bool IsGranContribuyente { get; set; }
+        public bool IsAgenteRetenedorIva { get; set; }
+        public bool IsAutorretenedorRenta { get; set; }
+
+        // null = usar el DisplayFormat que trae cada fila del catálogo de Unidades de Medida;
+        // con valor, el Client fuerza el mismo formato para todas sus unidades en sus facturas
+        // (Combined = "94 - EA", CodeOnly = "94", AbbreviationOnly = "EA").
+        public string? UnitOfMeasureDisplayOverride { get; set; }
 
         // Ya no tiene ningún efecto: la retención se elige 100% manual por línea de factura, sin
         // ninguna resolución automática que este campo pudiera activar/desactivar. Se conserva sin
@@ -156,6 +190,26 @@ namespace Fel.Core.Entities
         public string LogoDarkUrl { get; set; } = string.Empty;
         public string PrimaryColorLight { get; set; } = "#2563eb"; // Blue-600 default
         public string PrimaryColorDark { get; set; } = "#f8fafc";  // Slate-50 default
+
+        // --- SMTP propio (opcional, para reenvío de documentos del flujo nativo DIAN) ---
+        // Prioridad al resolver el transporte de correo: Client > Tenant > Brevo de la plataforma.
+        // Si estos campos están vacíos, el envío cae al SMTP del Tenant y luego al de la plataforma.
+        public string? SmtpHost { get; set; }
+        public int? SmtpPort { get; set; }
+        public string? SmtpUser { get; set; }
+        public string? SmtpPasswordEncrypted { get; set; }
+        public bool SmtpUseSsl { get; set; } = true;
+        public string? SmtpFromEmail { get; set; }
+        public string? SmtpFromName { get; set; }
+
+        // Consecutivo interno de Notas Crédito/Débito — separado del NextNumber de la Resolución
+        // de Factura porque las notas no tienen rango autorizado propio ante la DIAN (solo
+        // reutilizan el Prefix de la resolución "FE", ver DianDocumentMapper.BuildCreditNoteData).
+        // Antes se reclamaba con ResolutionNumbering.ClaimNextNumberAsync(resolution.Id) sobre la
+        // MISMA resolución de Factura, lo que hacía que cada nota consumiera un número que le
+        // correspondía a la siguiente factura real.
+        public long? NextCreditNoteNumber { get; set; }
+        public long? NextDebitNoteNumber { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }

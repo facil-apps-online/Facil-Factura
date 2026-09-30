@@ -62,6 +62,13 @@ namespace Fel.Infrastructure.Dian
                 // queda con 3 bytes antes de "<?xml ...?>", lo que puede tumbar un parser que no lo
                 // maneje. UTF8Encoding(false) omite el BOM.
                 using var writer = new System.IO.StreamWriter(entryStream, new UTF8Encoding(false));
+                // UblGenerator/XadesSigner arman el XML con XElement/XmlDocument.OuterXml, que nunca
+                // incluyen el prólogo <?xml ...?> — confirmado comparando contra un XML real ya
+                // aceptado por la DIAN y contra el ejemplo oficial de la Caja de Herramientas: ambos
+                // sí lo traen. Se agrega acá, al escribir el archivo final, sin tocar CUFE ni firma
+                // (que operan sobre el contenido del documento, no sobre el prólogo).
+                if (!signedXml.TrimStart().StartsWith("<?xml", StringComparison.Ordinal))
+                    await writer.WriteAsync("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
                 await writer.WriteAsync(signedXml);
             }
             return Convert.ToBase64String(memoryStream.ToArray());
@@ -159,6 +166,13 @@ namespace Fel.Infrastructure.Dian
         {
             var body = $"<wcf:GetStatusZip><wcf:trackId>{trackId}</wcf:trackId></wcf:GetStatusZip>";
             return await SendSignedAsync("GetStatusZip", body, certificate, environment);
+        }
+
+        // Numeral 7.15 — solo existe en producción en operación ("1"), no en habilitación.
+        public async Task<string> GetNumberingRangeAsync(string accountCode, string accountCodeT, string softwareCode, X509Certificate2 certificate)
+        {
+            var body = $"<wcf:GetNumberingRange><wcf:accountCode>{accountCode}</wcf:accountCode><wcf:accountCodeT>{accountCodeT}</wcf:accountCodeT><wcf:softwareCode>{softwareCode}</wcf:softwareCode></wcf:GetNumberingRange>";
+            return await SendSignedAsync("GetNumberingRange", body, certificate, "1", "Error consultando rangos de numeración en la DIAN");
         }
 
         // Firma SOLO el header <wsa:To> (no el Body ni el Timestamp) — confirmado contra la

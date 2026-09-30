@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ClosedXML.Excel;
@@ -40,6 +41,7 @@ namespace Fel.Api.Client.Controllers
                 var clientId = GetCurrentClientId();
                 var products = await _dbContext.Products
                     .Include(p => p.Taxes)
+                    .Include(p => p.UnitOfMeasure)
                     .Where(p => p.ClientId == clientId)
                     .OrderByDescending(p => p.CreatedAt)
                     .ToListAsync();
@@ -60,6 +62,7 @@ namespace Fel.Api.Client.Controllers
                 var clientId = GetCurrentClientId();
                 var product = await _dbContext.Products
                     .Include(p => p.Taxes)
+                    .Include(p => p.UnitOfMeasure)
                     .FirstOrDefaultAsync(p => p.Id == id && p.ClientId == clientId);
 
                 if (product == null) return NotFound("Producto no encontrado.");
@@ -125,7 +128,7 @@ namespace Fel.Api.Client.Controllers
                 product.StandardCode = updateData.StandardCode;
                 product.Name = updateData.Name;
                 product.UnitPrice = updateData.UnitPrice;
-                product.UnitOfMeasure = updateData.UnitOfMeasure;
+                product.UnitOfMeasureId = updateData.UnitOfMeasureId;
                 product.IvaTreatment = updateData.IvaTreatment;
                 product.IvaRate = updateData.IvaTreatment == IvaTreatment.Gravado ? updateData.IvaRate : 0;
                 product.RetentionGroupKey = string.IsNullOrWhiteSpace(updateData.RetentionGroupKey) ? null : updateData.RetentionGroupKey;
@@ -205,6 +208,12 @@ namespace Fel.Api.Client.Controllers
                 var sheet = workbook.Worksheets.First();
                 var rows = sheet.RowsUsed().Skip(1);
 
+                // Por código DIAN (columna "UnidadMedida" del Excel) — el archivo sigue trayendo
+                // texto plano ("94", "KGM"), no el Id del catálogo, así que se resuelve aquí.
+                var unitsByDianCode = await _dbContext.UnitsOfMeasure
+                    .Where(u => u.IsActive)
+                    .ToDictionaryAsync(u => u.DianCode, u => u.Id, StringComparer.OrdinalIgnoreCase);
+
                 foreach (var row in rows)
                 {
                     summary.TotalRows++;
@@ -242,7 +251,7 @@ namespace Fel.Api.Client.Controllers
                             Name = name,
                             StandardCode = row.Cell(3).GetString().Trim(),
                             UnitPrice = row.Cell(4).GetValue<decimal>(),
-                            UnitOfMeasure = string.IsNullOrWhiteSpace(row.Cell(5).GetString()) ? "94" : row.Cell(5).GetString().Trim(),
+                            UnitOfMeasureId = unitsByDianCode.TryGetValue(row.Cell(5).GetString().Trim(), out var uomId) ? uomId : Fel.Core.Entities.UnitOfMeasure.DefaultUnidadId,
                             IvaTreatment = ivaTreatment,
                             IvaRate = ivaTreatment == IvaTreatment.Gravado && !row.Cell(7).IsEmpty() ? row.Cell(7).GetValue<decimal>() : 0,
                             CreatedAt = DateTime.UtcNow,

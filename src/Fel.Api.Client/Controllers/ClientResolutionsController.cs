@@ -82,14 +82,14 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("El archivo debe ser un PDF.");
 
                 using var stream = file.OpenReadStream();
-                var result = await _parserService.ParsePdfAsync(stream);
+                var results = await _parserService.ParsePdfAsync(stream);
 
-                if (!result.IsSuccess)
+                if (results.Count == 1 && !results[0].IsSuccess)
                 {
-                    return BadRequest(result.ErrorMessage);
+                    return BadRequest(results[0].ErrorMessage);
                 }
 
-                return Ok(result);
+                return Ok(results);
             }
             catch (Exception ex)
             {
@@ -139,8 +139,8 @@ namespace Fel.Api.Client.Controllers
                 {
                     Id = Guid.NewGuid(),
                     ClientId = clientId,
-                    ResolutionNumber = request.ResolutionNumber,
-                    Prefix = request.Prefix ?? "",
+                    ResolutionNumber = request.ResolutionNumber?.Trim() ?? "",
+                    Prefix = request.Prefix?.Trim() ?? "",
                     NumberStart = request.NumberStart,
                     NumberEnd = request.NumberEnd,
                     ValidFrom = request.ValidFrom,
@@ -172,6 +172,61 @@ namespace Fel.Api.Client.Controllers
             }
         }
         
+        public class UpdateResolutionRequest
+        {
+            public string ResolutionNumber { get; set; } = string.Empty;
+            public string Prefix { get; set; } = string.Empty;
+            public long NumberStart { get; set; }
+            public long NumberEnd { get; set; }
+            public DateTime ValidFrom { get; set; }
+            public DateTime ValidTo { get; set; }
+            public string TechnicalKey { get; set; } = string.Empty;
+        }
+
+        // No incluye DocumentType a propósito: cambiar el tipo de una resolución ya en uso arrastra
+        // la numeración y el default por tipo. Si hace falta otro tipo, se crea una resolución nueva.
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> UpdateResolution(Guid id, [FromBody] UpdateResolutionRequest request)
+        {
+            var clientId = GetCurrentClientId();
+
+            var resolution = await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId);
+            if (resolution == null) return NotFound();
+
+            // El próximo consecutivo a usar no se toca acá (tiene su propio endpoint), pero el
+            // rango editado tiene que seguir conteniéndolo — si no, la próxima factura emitida
+            // quedaría fuera del rango autorizado sin que nadie lo note hasta que la DIAN la rechace.
+            var nextNumber = resolution.NextNumber ?? resolution.NumberStart;
+            if (nextNumber < request.NumberStart || nextNumber > request.NumberEnd)
+            {
+                return BadRequest($"El rango debe seguir incluyendo el próximo número a usar ({nextNumber}).");
+            }
+
+            resolution.ResolutionNumber = request.ResolutionNumber?.Trim() ?? "";
+            resolution.Prefix = request.Prefix?.Trim() ?? "";
+            resolution.NumberStart = request.NumberStart;
+            resolution.NumberEnd = request.NumberEnd;
+            resolution.ValidFrom = request.ValidFrom;
+            resolution.ValidTo = request.ValidTo;
+            resolution.TechnicalKey = request.TechnicalKey ?? "";
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                resolution.Id,
+                resolution.ResolutionNumber,
+                resolution.Prefix,
+                resolution.NumberStart,
+                resolution.NumberEnd,
+                resolution.ValidFrom,
+                resolution.ValidTo,
+                resolution.TechnicalKey,
+                resolution.DocumentType,
+                resolution.NextNumber,
+                resolution.IsDefault
+            });
+        }
+
         public class SetNextNumberRequest
         {
             public long NextNumber { get; set; }
@@ -235,6 +290,58 @@ namespace Fel.Api.Client.Controllers
             await _dbContext.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // Consecutivo interno de Notas Crédito/Débito — separado del NextNumber de cualquier
+        // Resolution porque las notas no tienen rango autorizado propio ante la DIAN (ver
+        // ResolutionNumbering.ClaimNextCreditNoteNumberAsync/ClaimNextDebitNoteNumberAsync). Ruta
+        // bajo /resolutions a propósito: HmacAuthenticationMiddleware ya exime ese prefijo para
+        // que el portal de cliente use su sesión (x-client-id) en vez de HMAC.
+        [HttpGet("note-counters")]
+        public async Task<IActionResult> GetNoteCounters()
+        {
+            var clientId = GetCurrentClientId();
+            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);
+            if (client == null) return NotFound();
+
+            return Ok(new
+            {
+                nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
+                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1
+            });
+        }
+
+        public class UpdateNoteCountersRequest
+        {
+            public long? NextCreditNoteNumber { get; set; }
+            public long? NextDebitNoteNumber { get; set; }
+        }
+
+        [HttpPut("note-counters")]
+        public async Task<IActionResult> UpdateNoteCounters([FromBody] UpdateNoteCountersRequest request)
+        {
+            var clientId = GetCurrentClientId();
+            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);
+            if (client == null) return NotFound();
+
+            if (request.NextCreditNoteNumber.HasValue)
+            {
+                if (request.NextCreditNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Crédito debe ser mayor a 0.");
+                client.NextCreditNoteNumber = request.NextCreditNoteNumber.Value;
+            }
+            if (request.NextDebitNoteNumber.HasValue)
+            {
+                if (request.NextDebitNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Débito debe ser mayor a 0.");
+                client.NextDebitNoteNumber = request.NextDebitNoteNumber.Value;
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
+                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1
+            });
         }
     }
 }

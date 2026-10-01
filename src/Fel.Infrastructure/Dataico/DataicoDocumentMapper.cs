@@ -28,10 +28,26 @@ namespace Fel.Infrastructure.Dataico
             _ => null
         };
 
+        // Retenciones por ítem (las que se eligen a mano en cada línea): solo categoría y tarifa, Dataico
+        // calcula base y valor. "extra" solo lo usa el documento soporte (ver BuildGeneralRetentionsPerItem).
         private static List<DataicoTax>? BuildRetentions(IEnumerable<DocumentRetention> retentions, IEnumerable<DataicoTax>? extra = null)
         {
             var list = retentions.Select(r => new DataicoTax { tax_category = r.TaxCategory, tax_rate = r.Rate }).ToList();
             if (extra != null) list.AddRange(extra);
+            return list.Count > 0 ? list : null;
+        }
+
+        // Retenciones generales del documento tal como las espera Dataico en factura y notas: una lista
+        // al nivel del documento con categoría y tarifa, sin base ni valor — Dataico los calcula. Antes
+        // se repartían entre los ítems con un valor calculado por nosotros (truncado), y Dataico
+        // rechazaba por un centavo ("tax_rate x base_amount = tax_amount", "base_amount =
+        // rondeo_dian(...)"). Con el valor en manos de Dataico no hay nada que descuadrar.
+        private static List<DataicoTax>? BuildDocumentRetentions(Document document)
+        {
+            var list = document.GeneralRetentions
+                .Where(r => !string.IsNullOrWhiteSpace(r.TaxCategory) && r.Rate > 0)
+                .Select(r => new DataicoTax { tax_category = r.TaxCategory, tax_rate = r.Rate })
+                .ToList();
             return list.Count > 0 ? list : null;
         }
 
@@ -41,6 +57,9 @@ namespace Fel.Infrastructure.Dataico
         // la base correspondiente — RET_IVA sobre el IVA generado de cada línea (es una retención
         // sobre el impuesto, no sobre la venta); cualquier otra categoría sobre la base gravable
         // (subtotal) de cada línea.
+        //
+        // SOLO LO USA EL DOCUMENTO SOPORTE: su ejemplo oficial de Dataico envía la retención con tarifa,
+        // base y valor. Factura, nota crédito y nota débito usan BuildDocumentRetentions (sin valores).
         private static Dictionary<Guid, List<DataicoTax>> BuildGeneralRetentionsPerItem(Document document, IReadOnlyList<DocumentItem> items)
         {
             var result = items.ToDictionary(i => i.Id, i => new List<DataicoTax>());
@@ -48,11 +67,16 @@ namespace Fel.Infrastructure.Dataico
 
             decimal LineBase(DocumentItem i) => i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100);
 
+            // IVA de la línea como lo calcula Dataico: la base ya redondeada por la tarifa, redondeado.
+            decimal LineIva(DocumentItem i) => i.IvaTreatment == IvaTreatment.Gravado && i.TaxRate > 0
+                ? DianRounding.Round2(DianRounding.Round2(LineBase(i)) * i.TaxRate / 100)
+                : 0m;
+
             foreach (var generalRetention in document.GeneralRetentions)
             {
                 if (generalRetention.TaxCategory == "RET_IVA")
                 {
-                    AddProrated(result, items, generalRetention.TaxCategory, generalRetention.Rate, i => i.TaxAmount);
+                    AddProrated(result, items, generalRetention.TaxCategory, generalRetention.Rate, LineIva);
                 }
                 else
                 {
@@ -63,16 +87,11 @@ namespace Fel.Infrastructure.Dataico
             return result;
         }
 
-        // Trunca (no redondea) a 2 decimales — confirmado contra un rechazo real de la DIAN: 116250
-        // * 0.414% da exactamente 481.275 (punto medio exacto entre 481.27 y 481.28), y Math.Round
-        // sin modo explícito usa redondeo bancario ("al par más cercano"), que ahí da 481.28. La
-        // DIAN exige 481.27 — trunca, no redondea al par. Usar rate <= 0 || truncado <= 0 evita que
-        // una tarifa/base positiva pero menor a un centavo caiga en 0 silenciosamente sin más razón
-        // que el truncado.
-        private static decimal Truncate2(decimal value) => Math.Truncate(value * 100) / 100;
-
+        // Redondeo a 2 decimales según el Anexo Técnico de la DIAN (ver DianRounding). Antes se truncaba
+        // por un rechazo real (116250 * 0.414% = 481.275 debía ser 481.27), pero truncar solo coincide
+        // con la regla cuando el tercer decimal es 0-4; con 6-9 Dataico espera el centavo siguiente.
         // Cada ítem calcula su propio tax_amount directamente sobre su propio base_amount, ambos ya
-        // truncados a 2 decimales antes de multiplicar — no se reparte un monto global prorrateado
+        // redondeados a 2 decimales (regla DIAN) antes de multiplicar — no se reparte un monto global prorrateado
         // (eso hacía que tax_rate * base_amount no cuadrara exacto con el tax_amount enviado, y
         // Dataico rechaza el documento por esa inconsistencia). La pequeña diferencia de centavos
         // que esto puede dejar entre la suma por ítem y el monto global calculado sobre el
@@ -89,7 +108,7 @@ namespace Fel.Infrastructure.Dataico
 
             foreach (var item in items)
             {
-                var baseAmount = Truncate2(weightOf(item));
+                var baseAmount = DianRounding.Round2(weightOf(item));
                 if (baseAmount <= 0) continue;
 
                 result[item.Id].Add(new DataicoTax
@@ -97,7 +116,7 @@ namespace Fel.Infrastructure.Dataico
                     tax_category = category,
                     tax_rate = rate,
                     base_amount = baseAmount,
-                    tax_amount = Truncate2(baseAmount * rate / 100)
+                    tax_amount = DianRounding.Round2(baseAmount * rate / 100)
                 });
             }
         }
@@ -175,8 +194,10 @@ namespace Fel.Infrastructure.Dataico
                 charges = BuildCharges(document)
             };
 
+            // Retenciones generales al nivel del documento, solo categoría y tarifa (ver BuildDocumentRetentions).
+            request.retentions = BuildDocumentRetentions(document);
+
             var itemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();
-            var generalRetentions = BuildGeneralRetentionsPerItem(document, itemsList);
 
             foreach (var item in itemsList)
             {
@@ -187,7 +208,7 @@ namespace Fel.Infrastructure.Dataico
                     description = item.Name,
                     price = item.UnitPrice,
                     discount_rate = item.DiscountRate,
-                    retentions = BuildRetentions(item.Retentions, generalRetentions[item.Id])
+                    retentions = BuildRetentions(item.Retentions)
                 };
 
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);
@@ -235,8 +256,9 @@ namespace Fel.Infrastructure.Dataico
                 charges = BuildCharges(document)
             };
 
+            request.retentions = BuildDocumentRetentions(document);
+
             var creditNoteItemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();
-            var creditNoteGeneralRetentions = BuildGeneralRetentionsPerItem(document, creditNoteItemsList);
 
             foreach (var item in creditNoteItemsList)
             {
@@ -247,7 +269,7 @@ namespace Fel.Infrastructure.Dataico
                     description = item.Name,
                     price = item.UnitPrice,
                     discount_rate = item.DiscountRate,
-                    retentions = BuildRetentions(item.Retentions, creditNoteGeneralRetentions[item.Id])
+                    retentions = BuildRetentions(item.Retentions)
                 };
 
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);
@@ -277,8 +299,9 @@ namespace Fel.Infrastructure.Dataico
                 charges = BuildCharges(document)
             };
 
+            request.retentions = BuildDocumentRetentions(document);
+
             var debitNoteItemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();
-            var debitNoteGeneralRetentions = BuildGeneralRetentionsPerItem(document, debitNoteItemsList);
 
             foreach (var item in debitNoteItemsList)
             {
@@ -289,7 +312,7 @@ namespace Fel.Infrastructure.Dataico
                     description = item.Name,
                     price = item.UnitPrice,
                     discount_rate = item.DiscountRate,
-                    retentions = BuildRetentions(item.Retentions, debitNoteGeneralRetentions[item.Id])
+                    retentions = BuildRetentions(item.Retentions)
                 };
 
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);

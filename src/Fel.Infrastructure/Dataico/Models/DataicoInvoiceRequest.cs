@@ -74,6 +74,14 @@ namespace Fel.Infrastructure.Dataico.Models
         public DataicoParty customer { get; set; } = new();
         public List<DataicoInvoiceItem> items { get; set; } = new();
 
+        // Retenciones definidas una sola vez para todo el documento (ReteICA, ReteIVA, ReteFuente...),
+        // solo con categoría y tarifa: Dataico calcula base y valor con su propio redondeo. Es la forma
+        // de los ejemplos oficiales de su API (POST invoices y credit_notes con "retentions" al mismo
+        // nivel que "items"). Las retenciones por ítem siguen viajando dentro de cada ítem.
+        [JsonPropertyName("retentions")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<DataicoTax>? retentions { get; set; }
+
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<DataicoCharge>? charges { get; set; }
     }

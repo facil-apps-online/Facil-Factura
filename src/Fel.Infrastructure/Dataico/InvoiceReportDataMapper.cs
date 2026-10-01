@@ -79,13 +79,10 @@ namespace Fel.Infrastructure.Dataico
         private static string Money(decimal value) => value.ToString("N2", Co);
         private static string Qty(decimal value) => value.ToString("0.##", Co);
         private static string Pct(decimal value) => value.ToString("0.##", Co) + "%";
+        // Las tarifas de retención llevan hasta 3 decimales (ReteICA 0,414 % / 0,966 %): con "0.##" se
+        // imprimían recortadas ("0,97%" para 0,966 %).
+        private static string RetPct(decimal value) => value.ToString("0.###", Co) + "%";
         private static string RetentionLabel(string category) => RetentionCategoryLabels.GetValueOrDefault(category, category);
-
-        // Igual al truncado (no redondeado) que usa DataicoDocumentMapper.AddProrated para las
-        // retenciones generales que sí se envían a Dataico — confirmado contra un rechazo real de
-        // la DIAN (ver esa clase). El monto que se retuvo de verdad y el que se imprime en el
-        // comprobante deben coincidir centavo a centavo.
-        private static decimal Truncate2(decimal value) => Math.Truncate(value * 100) / 100;
 
         // originalDocument: el documento referenciado por una Nota Crédito/Débito
         // (invoice.ReferenceDocumentId) — null para una factura normal. Notas Crédito/Débito
@@ -127,14 +124,20 @@ namespace Fel.Infrastructure.Dataico
                 foreach (var r in item.Retentions)
                 {
                     var key = (r.TaxCategory, r.Rate);
-                    retencionesPorCategoria[key] = retencionesPorCategoria.GetValueOrDefault(key) + r.Amount;
+                    // Dataico calcula estas retenciones por su cuenta (solo recibe la tarifa), con la base
+                    // redondeada de la línea; se imprime el mismo valor con la misma regla (DianRounding).
+                    retencionesPorCategoria[key] = retencionesPorCategoria.GetValueOrDefault(key)
+                        + DianRounding.Round2(DianRounding.Round2(r.BaseAmount) * r.Rate / 100);
                 }
             }
             foreach (var gr in invoice.GeneralRetentions)
             {
+                // Las retenciones generales viajan a Dataico al nivel del documento (solo categoría y
+                // tarifa) y Dataico las calcula sobre los totales: base redondeada por la tarifa.
                 var baseAmount = gr.TaxCategory == "RET_IVA" ? invoice.TaxAmount : invoice.Subtotal;
                 var key = (gr.TaxCategory, gr.Rate);
-                retencionesPorCategoria[key] = retencionesPorCategoria.GetValueOrDefault(key) + Truncate2(baseAmount * gr.Rate / 100);
+                retencionesPorCategoria[key] = retencionesPorCategoria.GetValueOrDefault(key)
+                    + DianRounding.Round2(DianRounding.Round2(baseAmount) * gr.Rate / 100);
             }
             var totalRetenciones = retencionesPorCategoria.Values.Sum();
 
@@ -168,7 +171,7 @@ namespace Fel.Infrastructure.Dataico
                 {
                     impuestos.Add(new Dictionary<string, object?>
                     {
-                        ["Concepto"] = $"{RetentionLabel(kv.Key.Categoria)} {Pct(kv.Key.Tarifa)}",
+                        ["Concepto"] = $"{RetentionLabel(kv.Key.Categoria)} {RetPct(kv.Key.Tarifa)}",
                         ["Valor"] = Money(kv.Value),
                         ["Tipo"] = "Retencion"
                     });

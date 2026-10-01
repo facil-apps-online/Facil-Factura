@@ -7,14 +7,14 @@ using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dataico
 {
-    // Mismo contrato plano que Invoice/SupportDocumentReportDataMapper, adaptado a Nómina
-    // Electrónica: no hay "adquirente" sino un empleado, y en vez de ítems con IVA hay conceptos
-    // de devengo/deducción. Facil Reports solo soporta una lista (DataSource) por reporte, así que
-    // devengos y deducciones van en la MISMA lista con un campo Tipo ("DEVENGADO"/"DEDUCCION") — el
-    // .repx los separa visualmente con un GroupHeaderBand agrupado por ese campo. Los totales por
-    // grupo (Total Devengado/Total Deducción/Neto) vienen ya calculados como Parameters aparte, no
-    // como sumas calculadas dentro del reporte, para no depender de la configuración de Summary de
-    // DevExpress (que no podemos validar sin el Report Designer real).
+    // Mismo contrato que Invoice/SupportDocumentReportDataMapper ("Documento" + listas), adaptado a
+    // Nómina Electrónica: no hay "adquirente" sino un empleado, no hay IVA ni retenciones, y el
+    // detalle se discrimina por conceptos: dos listas, "Devengos" y "Deducciones", cada una con
+    // {Codigo, Descripcion, Valor}. La plantilla estándar las imprime como dos secciones, cada una con
+    // su título y encabezado de columnas (un DetailReportBand por lista). Los totales (Total
+    // Devengado/Total Deducción/Neto) vienen ya calculados en "Documento", no como sumas dentro del
+    // reporte, para no depender de la configuración de Summary de DevExpress. Antes devolvía campos
+    // planos y una sola lista "DataSource" con un campo Tipo.
     //
     // Desacoplado de PayrollConceptItem (que vive en Fel.Api.Client, una capa por encima de
     // Fel.Infrastructure) a propósito: el llamador arma las tuplas simples.
@@ -57,60 +57,67 @@ namespace Fel.Infrastructure.Dataico
 
             return new Dictionary<string, object?>
             {
-                ["EmisorLogoUrl"] = client.LogoLightUrl,
-                ["EmisorRazonSocial"] = client.CompanyName,
-                ["EmisorNit"] = client.TaxId,
-                ["EmisorDireccion"] = client.Address,
-                ["EmisorCiudad"] = client.City,
-                ["EmisorTelefono"] = client.Phone,
-                ["EmisorEmail"] = client.Email,
+                ["Documento"] = new Dictionary<string, object?>
+                {
+                    // Empleador
+                    ["EmisorLogoUrl"] = client.LogoLightUrl,
+                    ["EmisorRazonSocial"] = client.CompanyName,
+                    ["EmisorNit"] = client.TaxId,
+                    ["EmisorDireccion"] = client.Address,
+                    ["EmisorCiudad"] = client.City,
+                    ["EmisorTelefono"] = client.Phone,
+                    ["EmisorEmail"] = client.Email,
 
-                ["EmpleadoNombre"] = employee.Name,
-                ["EmpleadoTipoIdentificacion"] = employee.IdentificationType,
-                ["EmpleadoIdentificacion"] = employee.IdentificationNumber,
-                ["EmpleadoDireccion"] = employee.Address,
-                ["EmpleadoCiudad"] = employee.CityName,
+                    // Trabajador
+                    ["EmpleadoNombre"] = employee.Name,
+                    ["EmpleadoTipoIdentificacion"] = employee.IdentificationType,
+                    ["EmpleadoIdentificacion"] = employee.IdentificationNumber,
+                    ["EmpleadoDireccion"] = employee.Address,
+                    ["EmpleadoCiudad"] = employee.CityName,
 
-                ["DocumentoTitulo"] = titulo,
-                ["DocumentoNumero"] = $"{prefix}-{numeroConsecutivo}",
-                ["ReferenciaAjuste"] = esNota ? document.ReferenceConcept : null,
-                ["FechaGeneracion"] = document.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
-                ["PeriodoTexto"] = $"{initialSettlement:dd/MM/yyyy} — {finalSettlement:dd/MM/yyyy}",
-                ["FechaPago"] = paymentDate.ToString("dd/MM/yyyy"),
-                ["MedioPago"] = medioPago,
-                ["Cune"] = document.Cufe,
-                ["QrCode"] = document.QrCode ?? document.Cufe,
+                    // Documento ("DocumentoTipo", no "DocumentoTitulo": mismo nombre que Factura)
+                    ["DocumentoTipo"] = titulo,
+                    ["DocumentoNumero"] = $"{prefix}-{numeroConsecutivo}",
+                    ["NotaReferencia"] = esNota && !string.IsNullOrWhiteSpace(document.ReferenceConcept) ? $"Motivo: {document.ReferenceConcept}" : null,
+                    ["FechaGeneracion"] = document.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
+                    ["PeriodoTexto"] = $"{initialSettlement:dd/MM/yyyy} — {finalSettlement:dd/MM/yyyy}",
+                    ["FechaPago"] = paymentDate.ToString("dd/MM/yyyy"),
+                    ["MedioPago"] = medioPago,
+                    ["Cune"] = document.Cufe,
+                    ["QrCode"] = document.QrCode ?? document.Cufe,
+                    // URL del QR (ver InvoiceReportDataMapper): Facil Reports la reconoce y genera el QR
+                    // localmente; con el motor DevExpress se descarga de ese servicio.
+                    ["QrImageUrl"] = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + Uri.EscapeDataString(document.QrCode ?? document.Cufe ?? string.Empty),
 
-                ["TotalDevengado"] = Money(totalDevengado),
-                ["TotalDeduccion"] = Money(totalDeduccion),
-                ["NetoPagar"] = Money(neto),
-                ["NetoPagarEnLetras"] = NumberToWordsEs.ConvertirPesos(neto),
+                    ["TotalDevengado"] = Money(totalDevengado),
+                    ["TotalDeduccion"] = Money(totalDeduccion),
+                    ["NetoPagar"] = Money(neto),
+                    ["NetoPagarEnLetras"] = NumberToWordsEs.ConvertirPesos(neto),
 
-                ["FabricanteSoftwareNombre"] = FabricanteSoftwareNombre,
-                ["FabricanteSoftwareNit"] = FabricanteSoftwareNit,
-                ["NombreSoftware"] = NombreSoftware,
-                // Art. 5 num. 13 de la Resolución 000013 de 2021 pide además el "software ID" —
-                // en DIAN directa es el SoftwareId propio del Cliente (su habilitación); con un
-                // integrador externo no aplica un id propio del Cliente, así que queda vacío.
-                ["SoftwareId"] = esIntegradorExterno ? null : client.SoftwareId,
-                ["ProveedorTecnologicoNombre"] = esIntegradorExterno ? client.Integrator.Name : null,
-                ["ProveedorTecnologicoNit"] = esIntegradorExterno ? client.Integrator.Nit : null,
+                    ["FabricanteSoftwareNombre"] = FabricanteSoftwareNombre,
+                    ["FabricanteSoftwareNit"] = FabricanteSoftwareNit,
+                    ["NombreSoftware"] = NombreSoftware,
+                    // Art. 5 num. 13 de la Resolución 000013 de 2021 pide además el "software ID" —
+                    // en DIAN directa es el SoftwareId propio del Cliente (su habilitación); con un
+                    // integrador externo no aplica un id propio del Cliente, así que queda vacío.
+                    ["SoftwareId"] = esIntegradorExterno ? null : client.SoftwareId,
+                    ["ProveedorTecnologicoNombre"] = esIntegradorExterno ? client.Integrator.Name : null,
+                    ["ProveedorTecnologicoNit"] = esIntegradorExterno ? client.Integrator.Nit : null
+                },
 
-                ["DataSource"] = devengosList.Select(d => new Dictionary<string, object?>
-                    {
-                        ["Tipo"] = "DEVENGADOS",
-                        ["Codigo"] = d.Codigo,
-                        ["Descripcion"] = d.Descripcion,
-                        ["Valor"] = Money(d.Valor)
-                    })
-                    .Concat(deduccionesList.Select(d => new Dictionary<string, object?>
-                    {
-                        ["Tipo"] = "DEDUCCIONES",
-                        ["Codigo"] = d.Codigo,
-                        ["Descripcion"] = d.Descripcion,
-                        ["Valor"] = Money(d.Valor)
-                    }))
-                    .ToList()
+                ["Devengos"] = devengosList.Select(d => new Dictionary<string, object?>
+                {
+                    ["Codigo"] = d.Codigo,
+                    ["Descripcion"] = d.Descripcion,
+                    ["Valor"] = Money(d.Valor)
+                }).ToList(),
+
+                ["Deducciones"] = deduccionesList.Select(d => new Dictionary<string, object?>
+                {
+                    ["Codigo"] = d.Codigo,
+                    ["Descripcion"] = d.Descripcion,
+                    ["Valor"] = Money(d.Valor)
+                }).ToList()
             };
         }
     }

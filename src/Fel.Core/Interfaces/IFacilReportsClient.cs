@@ -11,10 +11,12 @@ namespace Fel.Core.Interfaces
     // API key.
     public interface IFacilReportsClient
     {
-        // data se bindea por nombre a los Parameters del reporte (los objetos anidados se aplanan
-        // como "padre.hijo"); un arreglo bajo la clave "DataSource" alimenta las tablas del reporte
-        // (ej. las líneas de una factura). Devuelve null si la plantilla no existe o el servicio no
-        // está configurado (sin API key) — no lanza excepción para no tumbar el flujo de emisión.
+        // data es un único objeto: "Documento" (los campos de encabezado y totales, p. ej.
+        // [Documento.Total]) más los arreglos anidados que pida cada tipo de documento — "Items" e
+        // "Impuestos" (factura, notas, documento soporte y POS) o "Devengos" y "Deducciones" (nómina).
+        // Cada arreglo alimenta su propia tabla/banda del reporte. Devuelve null si la plantilla no
+        // existe o el servicio no está configurado (sin API key) — no lanza excepción para no tumbar el
+        // flujo de emisión.
         Task<byte[]?> GenerateReportAsync(string templateKey, Dictionary<string, object?> data, CancellationToken ct = default);
 
         // Sube un archivo .repx a Facil Reports bajo templateKey (POST /api/templates/save), para

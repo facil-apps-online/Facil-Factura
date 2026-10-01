@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Fel.Infrastructure.Services
 {
-    // Datos ficticios pero realistas — mismo contrato de nombres planos que
+    // Datos ficticios pero realistas — mismo contrato ("Documento" + listas) que
     // InvoiceReportDataMapper/SupportDocumentReportDataMapper/NominaReportDataMapper — para que la
     // vista previa de un diseño (sin un documento real emitido) se vea igual de completa que uno
     // real. Compartido entre Superadmin, Tenant y Client: los tres portales pueden tener plantillas
@@ -122,105 +122,129 @@ namespace Fel.Infrastructure.Services
         private static Dictionary<string, object?> SampleSupportDocumentData(string documentTypeCode)
         {
             var esAjuste = documentTypeCode == "DS-AJUSTE";
+            // Mismo shape que SupportDocumentReportDataMapper.Build: "Documento" + "Items" + "Impuestos".
             return new Dictionary<string, object?>
             {
-                ["EmisorLogoUrl"] = "",
-                ["EmisorRazonSocial"] = "Comercializadora Ejemplo S.A.S.",
-                ["EmisorNombreComercial"] = "Tienda Ejemplo",
-                ["EmisorNit"] = "900123456",
-                ["EmisorDv"] = "7",
-                ["EmisorDireccion"] = "Calle 10 # 20-30",
-                ["EmisorCiudad"] = "Bogotá D.C.",
-                ["EmisorTelefono"] = "601 555 1234",
-                ["EmisorEmail"] = "facturacion@ejemplo.com",
-                ["EmisorCalidadTributaria"] = "Responsable de IVA",
-
-                ["ProveedorNombre"] = "Distribuidora Proveedor Ltda.",
-                ["ProveedorTipoIdentificacion"] = "NIT",
-                ["ProveedorIdentificacion"] = "800987654",
-                ["ProveedorDireccion"] = "Avenida 30 # 5-15",
-                ["ProveedorCiudad"] = "Medellín",
-                ["ProveedorTelefono"] = "604 555 4321",
-                ["ProveedorEmail"] = "ventas@proveedor.com",
-
-                ["DocumentoTitulo"] = esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO",
-                ["DocumentoNumero"] = "DS 1",
-                ["ResolucionTexto"] = "Resolución DIAN 18760000002 · Rango DS 1-5000 · Vigente hasta 31/12/2027",
-                ["FechaGeneracion"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
-                ["Cufe"] = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
-                ["QrCode"] = "NumFac=DS1\nFecFac=2026-01-15\nHorFac=10:30:00-05:00\nNitFac=900123456\nDocAdq=800987654\nValFac=120.000\nValIva=0.00\nValOtroIm=0.00\nValTolFac=120.000\nCUFE=b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5\nQRCode=https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
-                ["MedioPago"] = "10",
-                ["FormaPago"] = "Contado",
-                ["OrdenCompra"] = "OC-2026-002",
-                ["ReferenciaAjuste"] = esAjuste ? "Corrección de valores — documento de ejemplo" : null,
-                ["Notas"] = "Documento de ejemplo — vista previa de diseño.",
-
-                ["Subtotal"] = "120.000",
-                ["Iva"] = "0",
-                ["Descuento"] = "0",
-                ["Total"] = "120.000",
-                ["TotalEnLetras"] = "CIENTO VEINTE MIL PESOS M/CTE",
-
-                ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
-                ["FabricanteSoftwareNit"] = "900.303.194-6",
-                ["NombreSoftware"] = "Facil Factura",
-                ["ProveedorTecnologicoNombre"] = null,
-                ["ProveedorTecnologicoNit"] = null,
-
-                ["DataSource"] = new List<Dictionary<string, object?>>
+                ["Documento"] = new Dictionary<string, object?>
                 {
-                    new() { ["Codigo"] = "SRV001", ["Nombre"] = "Servicio de ejemplo", ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "120.000", ["PorcentajeIva"] = "0%", ["ValorIva"] = "0", ["TotalLinea"] = "120.000" }
-                }
+                    ["EmisorLogoUrl"] = "",
+                    ["EmisorRazonSocial"] = "Comercializadora Ejemplo S.A.S.",
+                    ["EmisorNombreComercial"] = "Tienda Ejemplo",
+                    ["EmisorNit"] = "900123456",
+                    ["EmisorDv"] = "7",
+                    ["EmisorDireccion"] = "Calle 10 # 20-30",
+                    ["EmisorCiudad"] = "Bogotá D.C.",
+                    ["EmisorTelefono"] = "601 555 1234",
+                    ["EmisorEmail"] = "facturacion@ejemplo.com",
+                    ["EmisorCalidadTributaria"] = "Responsable de IVA",
+                    ["EmisorActividadEconomica"] = "4711",
+                    ["EmisorGranContribuyente"] = "No somos Gran Contribuyente",
+                    ["EmisorAgenteRetenedorIva"] = "No somos Agente Retenedor del Impuesto sobre las Ventas - IVA",
+                    ["EmisorAutorretenedorRenta"] = "No somos Autorretenedor del Impuesto sobre la Renta y Complementarios",
+
+                    ["ProveedorNombre"] = "Distribuidora Proveedor Ltda.",
+                    ["ProveedorTipoIdentificacion"] = "NIT",
+                    ["ProveedorIdentificacion"] = "800987654",
+                    ["ProveedorDireccion"] = "Avenida 30 # 5-15",
+                    ["ProveedorCiudad"] = "Medellín",
+                    ["ProveedorTelefono"] = "604 555 4321",
+                    ["ProveedorEmail"] = "ventas@proveedor.com",
+
+                    ["DocumentoTipo"] = esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO",
+                    ["DocumentoNumero"] = "DS 1",
+                    ["NotaReferencia"] = esAjuste ? "Motivo del ajuste: Corrección de valores — documento de ejemplo" : null,
+                    ["ResolucionTexto"] = "Resolución DIAN 18760000002 · Rango DS 1-5000 · Vigente hasta 31/12/2027",
+                    ["FechaGeneracion"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
+                    ["FechaVencimiento"] = DateTime.Now.AddDays(30).ToString("dd/MM/yyyy"),
+                    ["Cufe"] = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+                    ["QrCode"] = "NumFac=DS1\nFecFac=2026-01-15\nHorFac=10:30:00-05:00\nNitFac=900123456\nDocAdq=800987654\nValFac=120.000\nValIva=0.00\nValOtroIm=0.00\nValTolFac=120.000\nCUFE=b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+                    ["QrImageUrl"] = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + Uri.EscapeDataString("NumFac=DS1\nFecFac=2026-01-15\nNitFac=900123456\nDocAdq=800987654\nValTolFac=120.000\nCUFE=b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"),
+                    ["MedioPago"] = "10",
+                    ["FormaPago"] = "Contado",
+                    ["OrdenCompra"] = "OC-2026-002",
+                    ["Notas"] = "Documento de ejemplo — vista previa de diseño.",
+
+                    ["Subtotal"] = "120.000",
+                    ["Iva"] = "0",
+                    ["Descuento"] = "0",
+                    ["Cargo"] = "0",
+                    ["TotalRetenciones"] = null,
+                    ["NetoAPagar"] = null,
+                    ["Total"] = "120.000",
+                    ["TotalEnLetras"] = "CIENTO VEINTE MIL PESOS M/CTE",
+
+                    ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
+                    ["FabricanteSoftwareNit"] = "900.303.194-6",
+                    ["NombreSoftware"] = "Facil Factura",
+                    ["ProveedorTecnologicoNombre"] = null,
+                    ["ProveedorTecnologicoNit"] = null
+                },
+
+                ["Items"] = new List<Dictionary<string, object?>>
+                {
+                    new() { ["Ordinal"] = "1", ["Codigo"] = "SRV001", ["Nombre"] = "Servicio de ejemplo", ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "120.000", ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = "Gravado", ["PorcentajeIva"] = "0%", ["ValorIva"] = "0", ["TotalLinea"] = "120.000" }
+                },
+
+                ["Impuestos"] = new List<Dictionary<string, object?>>()
             };
         }
 
         private static Dictionary<string, object?> SampleNominaData(string documentTypeCode)
         {
             var esNota = documentTypeCode == "NE-AJUSTE";
+            // Mismo shape que NominaReportDataMapper.Build: "Documento" + "Devengos" + "Deducciones".
             return new Dictionary<string, object?>
             {
-                ["EmisorLogoUrl"] = "",
-                ["EmisorRazonSocial"] = "Comercializadora Ejemplo S.A.S.",
-                ["EmisorNit"] = "900123456",
-                ["EmisorDireccion"] = "Calle 10 # 20-30",
-                ["EmisorCiudad"] = "Bogotá D.C.",
-                ["EmisorTelefono"] = "601 555 1234",
-                ["EmisorEmail"] = "nomina@ejemplo.com",
-
-                ["EmpleadoNombre"] = "María Rodríguez López",
-                ["EmpleadoTipoIdentificacion"] = "CC",
-                ["EmpleadoIdentificacion"] = "1098765432",
-                ["EmpleadoDireccion"] = "Calle 80 # 10-20",
-                ["EmpleadoCiudad"] = "Bogotá D.C.",
-
-                ["DocumentoTitulo"] = esNota ? "NOTA DE AJUSTE - NÓMINA ELECTRÓNICA" : "NÓMINA ELECTRÓNICA",
-                ["DocumentoNumero"] = "NE-1",
-                ["ReferenciaAjuste"] = esNota ? "Corrección de devengados — documento de ejemplo" : null,
-                ["FechaGeneracion"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
-                ["PeriodoTexto"] = $"{DateTime.Now.AddDays(-30):dd/MM/yyyy} — {DateTime.Now:dd/MM/yyyy}",
-                ["FechaPago"] = DateTime.Now.ToString("dd/MM/yyyy"),
-                ["MedioPago"] = "Consignación",
-                ["Cune"] = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
-                ["QrCode"] = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
-
-                ["TotalDevengado"] = "2.500.000",
-                ["TotalDeduccion"] = "200.000",
-                ["NetoPagar"] = "2.300.000",
-                ["NetoPagarEnLetras"] = "DOS MILLONES TRESCIENTOS MIL PESOS M/CTE",
-
-                ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
-                ["FabricanteSoftwareNit"] = "900.303.194-6",
-                ["NombreSoftware"] = "Facil Factura",
-                ["SoftwareId"] = "SOFT-EJEMPLO-0001",
-                ["ProveedorTecnologicoNombre"] = null,
-                ["ProveedorTecnologicoNit"] = null,
-
-                ["DataSource"] = new List<Dictionary<string, object?>>
+                ["Documento"] = new Dictionary<string, object?>
                 {
-                    new() { ["Tipo"] = "DEVENGADOS", ["Codigo"] = "001", ["Descripcion"] = "Salario básico", ["Valor"] = "2.300.000" },
-                    new() { ["Tipo"] = "DEVENGADOS", ["Codigo"] = "002", ["Descripcion"] = "Auxilio de transporte", ["Valor"] = "200.000" },
-                    new() { ["Tipo"] = "DEDUCCIONES", ["Codigo"] = "101", ["Descripcion"] = "Salud", ["Valor"] = "100.000" },
-                    new() { ["Tipo"] = "DEDUCCIONES", ["Codigo"] = "102", ["Descripcion"] = "Pensión", ["Valor"] = "100.000" }
+                    ["EmisorLogoUrl"] = "",
+                    ["EmisorRazonSocial"] = "Comercializadora Ejemplo S.A.S.",
+                    ["EmisorNit"] = "900123456",
+                    ["EmisorDireccion"] = "Calle 10 # 20-30",
+                    ["EmisorCiudad"] = "Bogotá D.C.",
+                    ["EmisorTelefono"] = "601 555 1234",
+                    ["EmisorEmail"] = "nomina@ejemplo.com",
+
+                    ["EmpleadoNombre"] = "María Rodríguez López",
+                    ["EmpleadoTipoIdentificacion"] = "CC",
+                    ["EmpleadoIdentificacion"] = "1098765432",
+                    ["EmpleadoDireccion"] = "Calle 80 # 10-20",
+                    ["EmpleadoCiudad"] = "Bogotá D.C.",
+
+                    ["DocumentoTipo"] = esNota ? "NOTA DE AJUSTE - NÓMINA ELECTRÓNICA" : "NÓMINA ELECTRÓNICA",
+                    ["DocumentoNumero"] = "NE-1",
+                    ["NotaReferencia"] = esNota ? "Motivo: Corrección de devengados — documento de ejemplo" : null,
+                    ["FechaGeneracion"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
+                    ["PeriodoTexto"] = $"{DateTime.Now.AddDays(-30):dd/MM/yyyy} — {DateTime.Now:dd/MM/yyyy}",
+                    ["FechaPago"] = DateTime.Now.ToString("dd/MM/yyyy"),
+                    ["MedioPago"] = "Consignación",
+                    ["Cune"] = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
+                    ["QrCode"] = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
+                    ["QrImageUrl"] = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + Uri.EscapeDataString("c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"),
+
+                    ["TotalDevengado"] = "2.500.000",
+                    ["TotalDeduccion"] = "200.000",
+                    ["NetoPagar"] = "2.300.000",
+                    ["NetoPagarEnLetras"] = "DOS MILLONES TRESCIENTOS MIL PESOS M/CTE",
+
+                    ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
+                    ["FabricanteSoftwareNit"] = "900.303.194-6",
+                    ["NombreSoftware"] = "Facil Factura",
+                    ["SoftwareId"] = "SOFT-EJEMPLO-0001",
+                    ["ProveedorTecnologicoNombre"] = null,
+                    ["ProveedorTecnologicoNit"] = null
+                },
+
+                ["Devengos"] = new List<Dictionary<string, object?>>
+                {
+                    new() { ["Codigo"] = "001", ["Descripcion"] = "Salario básico", ["Valor"] = "2.300.000" },
+                    new() { ["Codigo"] = "002", ["Descripcion"] = "Auxilio de transporte", ["Valor"] = "200.000" }
+                },
+
+                ["Deducciones"] = new List<Dictionary<string, object?>>
+                {
+                    new() { ["Codigo"] = "101", ["Descripcion"] = "Salud", ["Valor"] = "100.000" },
+                    new() { ["Codigo"] = "102", ["Descripcion"] = "Pensión", ["Valor"] = "100.000" }
                 }
             };
         }

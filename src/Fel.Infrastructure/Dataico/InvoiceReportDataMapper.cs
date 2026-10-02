@@ -142,6 +142,7 @@ namespace Fel.Infrastructure.Dataico
                     + DianRounding.Round2(DianRounding.Round2(baseAmount) * gr.Rate / 100);
             }
             var totalRetenciones = retencionesPorCategoria.Values.Sum();
+            var totalNeto = invoice.TotalAmount - (invoice.GeneralDiscountAmount ?? 0) + (invoice.GeneralChargeAmount ?? 0);
 
             // IVA discriminado por tarifa, para la misma tabla de pie que las retenciones — solo
             // ítems Gravados con tarifa > 0 generan línea (un Excluido/Exento con 0% no aporta IVA
@@ -264,9 +265,11 @@ namespace Fel.Infrastructure.Dataico
                     // Ambos null cuando la plantilla tiene MostrarRetenciones=false o el documento
                     // no tiene retenciones — así la plantilla oculta la línea sin más lógica.
                     ["TotalRetenciones"] = mostrarRetenciones && totalRetenciones > 0 ? Money(totalRetenciones) : null,
-                    ["NetoAPagar"] = mostrarRetenciones && totalRetenciones > 0 ? Money(invoice.TotalAmount - totalRetenciones) : null,
-                    ["Total"] = Money(invoice.TotalAmount),
-                    ["TotalEnLetras"] = NumberToWordsEs.ConvertirPesos(invoice.TotalAmount),
+                    // TotalAmount es el bruto (subtotal + IVA): el total de la factura aplica además el
+                    // descuento y el cargo general, y el neto a pagar resta las retenciones a ese total.
+                    ["NetoAPagar"] = mostrarRetenciones && totalRetenciones > 0 ? Money(totalNeto - totalRetenciones) : null,
+                    ["Total"] = Money(totalNeto),
+                    ["TotalEnLetras"] = NumberToWordsEs.ConvertirPesos(totalNeto),
 
                     // Identificación de software (numeral 18, Art. 11 Res. 000165 de 2023) — el
                     // Proveedor Tecnológico solo aplica si el Client factura a través de un

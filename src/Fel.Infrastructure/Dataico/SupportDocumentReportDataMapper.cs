@@ -129,7 +129,7 @@ namespace Fel.Infrastructure.Dataico
                     ["ResolucionTexto"] = resolution == null ? null :
                         $"Resolución DIAN {resolution.ResolutionNumber} · Rango {resolution.Prefix} {resolution.NumberStart}-{resolution.NumberEnd}" +
                         $" · Vigente hasta {resolution.ValidTo:dd/MM/yyyy}",
-                    ["FechaGeneracion"] = document.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
+                    ["FechaGeneracion"] = Fel.Core.Models.ColombiaTime.FromUtc(document.CreatedAt).ToString("dd/MM/yyyy HH:mm:ss"),
                     ["FechaVencimiento"] = document.PaymentTermDays.HasValue ? document.IssueDate.AddDays(document.PaymentTermDays.Value).ToString("dd/MM/yyyy") : null,
                     ["Cufe"] = document.Cufe,
                     ["QrCode"] = document.QrCode ?? document.Cufe,

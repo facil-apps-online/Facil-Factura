@@ -10,6 +10,7 @@ import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset 
 import { exportToCsv } from '../lib/exportCsv';
 import { useNumberFormat } from '../lib/numberFormat';
 import DecimalInput from '../components/DecimalInput';
+import { todayColombia } from '../lib/colombiaTime';
 
 const PAGE_SIZE = 25;
 
@@ -138,7 +139,7 @@ export default function InvoicesPage() {
   // expandedRetentions[index] alterna entre el botón (retención ya elegida o "Ninguna") y el
   // select para elegir/quitar — nunca se muestran los dos a la vez.
 
-  const todayIso = () => new Date().toISOString().slice(0, 10);
+  const todayIso = () => todayColombia();
 
   const initialForm = {
     documentTypeId: '',

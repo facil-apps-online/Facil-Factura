@@ -137,7 +137,7 @@ namespace Fel.Api.Integration.Controllers
             if (string.IsNullOrWhiteSpace(request.DocumentNumber) || string.IsNullOrWhiteSpace(request.Prefix))
                 return BadRequest("El prefijo y el número de documento son obligatorios.");
 
-            if (request.IssueDate == default) request.IssueDate = DateTime.UtcNow;
+            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(
                 this, _dbContext, _cryptoVault, documentTypeCode, request.Prefix, "Documento Equivalente");

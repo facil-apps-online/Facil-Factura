@@ -101,7 +101,7 @@ namespace Fel.Infrastructure.Dian
             // no se puede emitir con fecha anterior a hoy. Se refresca acá, en el momento real de
             // envío/firma, en vez de dejar la fecha en que el borrador se creó (que puede ser de
             // días antes si el documento quedó pendiente o se reintenta un envío fallido).
-            invoice.IssueDate = DateTime.UtcNow;
+            invoice.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
             var paymentMeansDianCodes = await _dbContext.TaxCatalogItems.AsNoTracking()

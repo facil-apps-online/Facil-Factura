@@ -81,7 +81,7 @@ namespace Fel.Infrastructure.Dataico
                     ["DocumentoTipo"] = titulo,
                     ["DocumentoNumero"] = $"{prefix}-{numeroConsecutivo}",
                     ["NotaReferencia"] = esNota && !string.IsNullOrWhiteSpace(document.ReferenceConcept) ? $"Motivo: {document.ReferenceConcept}" : null,
-                    ["FechaGeneracion"] = document.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
+                    ["FechaGeneracion"] = Fel.Core.Models.ColombiaTime.FromUtc(document.CreatedAt).ToString("dd/MM/yyyy HH:mm:ss"),
                     ["PeriodoTexto"] = $"{initialSettlement:dd/MM/yyyy} — {finalSettlement:dd/MM/yyyy}",
                     ["FechaPago"] = paymentDate.ToString("dd/MM/yyyy"),
                     ["MedioPago"] = medioPago,

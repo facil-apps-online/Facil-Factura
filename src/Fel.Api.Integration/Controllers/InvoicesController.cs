@@ -54,7 +54,7 @@ namespace Fel.Api.Integration.Controllers
 
             if (request.IssueDate == default)
             {
-                request.IssueDate = DateTime.UtcNow;
+                request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
             }
 
             if (HttpContext.Items["ClientId"] is not string clientIdStr || !Guid.TryParse(clientIdStr, out var clientId))

@@ -62,8 +62,8 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var rangeStart = (from ?? new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1).AddMonths(-1)).Date;
-                var rangeEnd = (to ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
+                var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1).AddMonths(-1)).Date;
+                var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
                 var entries = await _dbContext.Documents
                     .Include(d => d.Customer)
@@ -286,7 +286,7 @@ namespace Fel.Api.Client.Controllers
                     if (document.TypeCode == DeletionTypeCode)
                     {
                         var deletionRequest = DataicoDocumentMapper.BuildPayrollDeletionRequest(
-                            client, draft.Prefix, documentNumber, DateTime.UtcNow,
+                            client, draft.Prefix, documentNumber, Fel.Core.Models.ColombiaTime.Now,
                             originalDraft.Prefix, originalNumber, originalDocument.Cufe, originalDocument.IssueDate, document.ReferenceConcept);
                         result = await _dataicoApiService.SendPayrollDeletionAsync(deletionRequest, credentials);
                     }
@@ -294,7 +294,7 @@ namespace Fel.Api.Client.Controllers
                     {
                         var replacementRequest = DataicoDocumentMapper.BuildPayrollReplacementRequest(
                             document.Customer!, client, draft.Prefix, documentNumber,
-                            draft.InitialSettlementDate, draft.FinalSettlementDate, DateTime.UtcNow, draft.PaymentDate,
+                            draft.InitialSettlementDate, draft.FinalSettlementDate, Fel.Core.Models.ColombiaTime.Now, draft.PaymentDate,
                             draft.Accruals.Select(ToConceptInput), draft.Deductions.Select(ToConceptInput),
                             originalDraft.Prefix, originalNumber, originalDocument.Cufe, originalDocument.IssueDate, document.ReferenceConcept);
                         result = await _dataicoApiService.SendPayrollReplacementAsync(replacementRequest, credentials);
@@ -631,9 +631,9 @@ namespace Fel.Api.Client.Controllers
                         var deductionsTotal = deductions.Sum(d => d.Amount ?? 0);
 
                         var prefix = string.IsNullOrEmpty(group.Key.Prefijo) ? "N" : group.Key.Prefijo;
-                        var initialSettlement = GetDateAny(groupRows, "LIQUIDACION_INICIO") ?? DateTime.UtcNow;
-                        var finalSettlement = GetDateAny(groupRows, "LIQUIDACION_FINAL") ?? DateTime.UtcNow;
-                        var paymentDate = GetDateAny(groupRows, "FECHA_PAGO") ?? DateTime.UtcNow;
+                        var initialSettlement = GetDateAny(groupRows, "LIQUIDACION_INICIO") ?? Fel.Core.Models.ColombiaTime.Now;
+                        var finalSettlement = GetDateAny(groupRows, "LIQUIDACION_FINAL") ?? Fel.Core.Models.ColombiaTime.Now;
+                        var paymentDate = GetDateAny(groupRows, "FECHA_PAGO") ?? Fel.Core.Models.ColombiaTime.Now;
 
                         // La carga masiva solo deja los documentos en borrador — el cliente los revisa
                         // y los emite uno a uno (o los edita) desde la lista, igual que si los hubiera
@@ -648,7 +648,7 @@ namespace Fel.Api.Client.Controllers
                             Number = string.IsNullOrEmpty(group.Key.Numero) ? DateTime.UtcNow.Ticks.ToString() : group.Key.Numero,
                             Status = "DRAFT",
                             CreatedAt = DateTime.UtcNow,
-                            IssueDate = DateTime.UtcNow,
+                            IssueDate = Fel.Core.Models.ColombiaTime.Now,
                             Subtotal = accrualsTotal,
                             TaxAmount = deductionsTotal,
                             TotalAmount = accrualsTotal - deductionsTotal,
@@ -714,7 +714,7 @@ namespace Fel.Api.Client.Controllers
                 TypeCode = request.NoteType == "ELIMINACION" ? DeletionTypeCode : request.NoteType == "REEMPLAZO" ? ReplacementTypeCode : TypeCode,
                 Number = DateTime.UtcNow.Ticks.ToString(),
                 CreatedAt = DateTime.UtcNow,
-                IssueDate = DateTime.UtcNow,
+                IssueDate = Fel.Core.Models.ColombiaTime.Now,
                 Subtotal = accrualsTotal,
                 TaxAmount = deductionsTotal,
                 TotalAmount = accrualsTotal - deductionsTotal,
@@ -736,7 +736,7 @@ namespace Fel.Api.Client.Controllers
             List<PayrollConceptItem> accruals, List<PayrollConceptItem> deductions)
         {
             var dataicoRequest = DataicoDocumentMapper.BuildPayrollRequest(
-                employee, client, prefix, number, initialSettlement, finalSettlement, DateTime.UtcNow, paymentDate,
+                employee, client, prefix, number, initialSettlement, finalSettlement, Fel.Core.Models.ColombiaTime.Now, paymentDate,
                 accruals.Select(ToConceptInput), deductions.Select(ToConceptInput));
 
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);

@@ -110,8 +110,8 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var rangeStart = (from ?? new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1)).Date;
-                var rangeEnd = (to ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
+                var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1)).Date;
+                var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
                 var invoices = await _dbContext.Documents
                     .Include(d => d.Customer)
@@ -289,7 +289,7 @@ namespace Fel.Api.Client.Controllers
                 invoice.ClientId = clientId;
                 invoice.Status = "DRAFT";
                 invoice.CreatedAt = DateTime.UtcNow;
-                if (invoice.IssueDate == default) invoice.IssueDate = DateTime.UtcNow;
+                if (invoice.IssueDate == default) invoice.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
                 // Fetch the actual document type (for DianCode etc)
                 if (invoice.DocumentTypeId.HasValue)
@@ -662,7 +662,7 @@ namespace Fel.Api.Client.Controllers
                             Number = DateTime.UtcNow.Ticks.ToString(),
                             Status = "DRAFT",
                             CreatedAt = DateTime.UtcNow,
-                            IssueDate = DateTime.UtcNow,
+                            IssueDate = Fel.Core.Models.ColombiaTime.Now,
                             PaymentMeans = paymentMeans,
                             PaymentMeansType = paymentMeansType,
                             Subtotal = items.Sum(i => i.Quantity * i.UnitPrice),

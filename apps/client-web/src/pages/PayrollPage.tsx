@@ -9,6 +9,7 @@ import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset 
 import { exportToCsv } from '../lib/exportCsv';
 import { getNumberFormat, useNumberFormat } from '../lib/numberFormat';
 import DecimalInput from '../components/DecimalInput';
+import { todayColombia } from '../lib/colombiaTime';
 
 const PAGE_SIZE = 25;
 
@@ -64,7 +65,7 @@ export default function PayrollPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
 
-  const today = new Date().toISOString().substring(0, 10);
+  const today = todayColombia();
   const initialForm = {
     employeeId: '',
     prefix: 'NE',

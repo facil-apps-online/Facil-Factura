@@ -55,7 +55,7 @@ namespace Fel.Api.Integration.Controllers
             if (string.IsNullOrWhiteSpace(request.DocumentNumber) || string.IsNullOrWhiteSpace(request.Prefix))
                 return BadRequest("El número de documento soporte es obligatorio.");
 
-            if (request.IssueDate == default) request.IssueDate = DateTime.UtcNow;
+            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(
                 this, _dbContext, _cryptoVault, "DS", request.Prefix, "Documento Soporte");
@@ -85,7 +85,7 @@ namespace Fel.Api.Integration.Controllers
             if (string.IsNullOrWhiteSpace(request.DocumentNumber) || string.IsNullOrWhiteSpace(request.Prefix))
                 return BadRequest("El número de documento es obligatorio.");
 
-            if (request.IssueDate == default) request.IssueDate = DateTime.UtcNow;
+            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(
                 this, _dbContext, _cryptoVault, "DS-AJUSTE", request.Prefix, "Documento Soporte");

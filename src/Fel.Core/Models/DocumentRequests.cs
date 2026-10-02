@@ -8,7 +8,7 @@ namespace Fel.Core.Models
     {
         public string Prefix { get; set; } = string.Empty;
         public string DocumentNumber { get; set; } = string.Empty;
-        public DateTime IssueDate { get; set; } = DateTime.UtcNow;
+        public DateTime IssueDate { get; set; } = ColombiaTime.Now;
         public string Currency { get; set; } = "COP";
         public decimal TotalAmount { get; set; }
         public ExchangeRateData? ExchangeRate { get; set; }
@@ -66,7 +66,7 @@ namespace Fel.Core.Models
     {
         public string Prefix { get; set; } = string.Empty;
         public string DocumentNumber { get; set; } = string.Empty;
-        public DateTime IssueDate { get; set; } = DateTime.UtcNow;
+        public DateTime IssueDate { get; set; } = ColombiaTime.Now;
 
         public string PredecessorNumber { get; set; } = string.Empty;
         public string PredecessorCune { get; set; } = string.Empty;

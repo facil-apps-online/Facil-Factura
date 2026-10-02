@@ -78,7 +78,7 @@ namespace Fel.Infrastructure.Dian
                 DocumentId = documentId,
                 IssuerTaxId = issuerTaxId,
                 IssuerName = issuerName,
-                IssueDate = DateTime.TryParse(issueDateStr, out var issueDate) ? issueDate : DateTime.UtcNow,
+                IssueDate = DateTime.TryParse(issueDateStr, out var issueDate) ? issueDate : Fel.Core.Models.ColombiaTime.Now,
                 TotalAmount = decimal.TryParse(payableAmountStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var total) ? total : 0m
             };
         }

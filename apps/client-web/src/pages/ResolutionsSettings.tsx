@@ -4,6 +4,7 @@ import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { useConfirm } from '@shared/components/ConfirmDialog';
+import { todayColombia } from '../lib/colombiaTime';
 
 export default function ResolutionsSettings() {
   const confirm = useConfirm();
@@ -185,7 +186,7 @@ export default function ResolutionsSettings() {
             ...newRes,
             resolutionNumber: newRes.resolutionNumber || 'N/A',
             numberEnd: newRes.numberEnd || 999999999999,
-            validFrom: newRes.validFrom || new Date().toISOString().split('T')[0],
+            validFrom: newRes.validFrom || todayColombia(),
             validTo: newRes.validTo || '2099-12-31',
           }
         : newRes;

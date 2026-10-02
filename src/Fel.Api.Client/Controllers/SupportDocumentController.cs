@@ -65,8 +65,8 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var rangeStart = (from ?? new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1)).Date;
-                var rangeEnd = (to ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
+                var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1)).Date;
+                var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
                 var docs = await _dbContext.Documents
                     .Include(d => d.Customer)
@@ -369,7 +369,7 @@ namespace Fel.Api.Client.Controllers
                 TypeCode = request.ReferenceDocumentId.HasValue ? AdjustmentTypeCode : TypeCode,
                 Number = DateTime.UtcNow.Ticks.ToString(),
                 CreatedAt = DateTime.UtcNow,
-                IssueDate = DateTime.UtcNow,
+                IssueDate = Fel.Core.Models.ColombiaTime.Now,
                 ResolutionId = request.ResolutionId,
                 PaymentMeans = request.PaymentMeans,
                 PaymentMeansType = request.PaymentMeansType,

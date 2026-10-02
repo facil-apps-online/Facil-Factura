@@ -239,7 +239,7 @@ namespace Fel.Infrastructure.Dataico
                     ["ResolucionTexto"] = resolution == null ? null :
                         $"Resolución DIAN {resolution.ResolutionNumber} · Rango {resolution.Prefix} {resolution.NumberStart}-{resolution.NumberEnd}" +
                         $" · Vigente hasta {resolution.ValidTo:dd/MM/yyyy}",
-                    ["FechaGeneracion"] = invoice.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
+                    ["FechaGeneracion"] = Fel.Core.Models.ColombiaTime.FromUtc(invoice.CreatedAt).ToString("dd/MM/yyyy HH:mm:ss"),
                     ["FechaVencimiento"] = invoice.PaymentTermDays.HasValue ? invoice.IssueDate.AddDays(invoice.PaymentTermDays.Value).ToString("dd/MM/yyyy") : null,
                     ["Cufe"] = invoice.Cufe,
                     // Contenido completo para el código QR de la representación gráfica (no solo

@@ -52,7 +52,7 @@ namespace Fel.Api.Integration.Controllers
             if (!string.IsNullOrWhiteSpace(request.BillingReferenceCufe) && string.IsNullOrWhiteSpace(request.BillingReferenceDocumentNumber))
                 return BadRequest("Si envías BillingReferenceCufe (nota referenciada), también debes enviar BillingReferenceDocumentNumber.");
 
-            if (request.IssueDate == default) request.IssueDate = DateTime.UtcNow;
+            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             if (HttpContext.Items["ClientId"] is not string clientIdStr || !Guid.TryParse(clientIdStr, out var clientId))
             {

@@ -499,7 +499,7 @@ namespace Fel.Infrastructure.Services
             {
                 DocumentNumber = documentNumber,
                 Prefix = prefix,
-                IssueDate = DateTime.UtcNow,
+                IssueDate = Fel.Core.Models.ColombiaTime.Now,
                 Currency = "COP",
                 TotalAmount = unitPrice + taxAmount,
                 Customer = new CustomerData

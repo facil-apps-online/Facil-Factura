@@ -54,7 +54,7 @@ namespace Fel.Api.Integration.Controllers
             if (string.IsNullOrWhiteSpace(request.DocumentNumber) || string.IsNullOrWhiteSpace(request.Prefix))
                 return BadRequest("El prefijo y el número de documento de nómina son obligatorios.");
 
-            if (request.IssueDate == default) request.IssueDate = DateTime.UtcNow;
+            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(this, _dbContext, _cryptoVault);
             if (resolved.Error != null) return resolved.Error;
@@ -107,7 +107,7 @@ namespace Fel.Api.Integration.Controllers
             if (string.IsNullOrWhiteSpace(request.PredecessorCune) || string.IsNullOrWhiteSpace(request.PredecessorNumber))
                 return BadRequest("Debes indicar PredecessorCune y PredecessorNumber del documento de nómina que se está anulando.");
 
-            if (request.IssueDate == default) request.IssueDate = DateTime.UtcNow;
+            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(this, _dbContext, _cryptoVault);
             if (resolved.Error != null) return resolved.Error;

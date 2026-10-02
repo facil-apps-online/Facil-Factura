@@ -48,7 +48,7 @@ namespace Fel.Api.Integration.Controllers
             if (string.IsNullOrWhiteSpace(request.DocumentNumber) || string.IsNullOrWhiteSpace(request.Prefix))
                 return BadRequest("El número de factura de transporte es obligatorio.");
 
-            if (request.IssueDate == default) request.IssueDate = DateTime.UtcNow;
+            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             if (HttpContext.Items["ClientId"] is not string clientIdStr || !Guid.TryParse(clientIdStr, out var clientId))
             {

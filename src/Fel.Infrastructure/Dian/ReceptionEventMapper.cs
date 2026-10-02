@@ -24,8 +24,8 @@ namespace Fel.Infrastructure.Dian
                 // Consecutivo propio del evento — no depende de una Resolución (los eventos no
                 // tienen rango de numeración autorizado como las facturas).
                 DocumentNumber = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(),
-                IssueDate = DateTime.UtcNow,
-                IssueTime = DateTime.UtcNow,
+                IssueDate = Fel.Core.Models.ColombiaTime.Now,
+                IssueTime = Fel.Core.Models.ColombiaTime.Now,
                 Environment = client.DianHabilitationStatus == "Production" ? "1" : "2",
                 SoftwarePin = client.SoftwarePin,
 

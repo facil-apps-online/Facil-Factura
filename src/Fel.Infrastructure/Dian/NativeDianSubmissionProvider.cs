@@ -85,6 +85,19 @@ namespace Fel.Infrastructure.Dian
                 ? await _dbContext.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == invoice.DocumentTypeId.Value)
                 : null;
 
+            // Contrato AIU (operación 09): el Anexo exige el objeto del contrato en la línea de
+            // Administración; sin él (o sin las tres líneas) la DIAN rechazaría el documento, así que se
+            // frena acá antes de reclamar un consecutivo.
+            if (documentType?.OperationType == "09")
+            {
+                var aiu = Fel.Core.Models.AiuContractData.TryRead(invoice.SectorExtensionData);
+                if (aiu == null || string.IsNullOrWhiteSpace(aiu.ContractObject))
+                    throw new NotSupportedException("La factura AIU debe indicar el objeto del contrato (es obligatorio en la línea de Administración).");
+                var codes = items.Select(i => i.Code).ToHashSet();
+                if (!codes.Contains(Fel.Core.Models.AiuContractData.AdminCode) || !codes.Contains(Fel.Core.Models.AiuContractData.UnforeseenCode) || !codes.Contains(Fel.Core.Models.AiuContractData.ProfitCode))
+                    throw new NotSupportedException("La factura AIU debe llevar las líneas de Administración, Imprevistos y Utilidad.");
+            }
+
             if (string.IsNullOrEmpty(invoice.Number))
             {
                 // Las Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que

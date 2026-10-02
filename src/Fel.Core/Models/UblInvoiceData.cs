@@ -126,6 +126,9 @@ namespace Fel.Core.Models
     {
         public string ItemCode { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+        // Información adicional del artículo (cbc:Note de la línea): obligatoria en la línea de
+        // Administración de un contrato AIU (ver AiuContractData.NotePrefix).
+        public string? Note { get; set; }
         public decimal Quantity { get; set; }
         public string UnitCode { get; set; } = "94"; // Código DIAN de la unidad de medida (ver UnitOfMeasure)
         public decimal UnitPrice { get; set; }

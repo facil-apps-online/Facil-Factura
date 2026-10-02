@@ -79,6 +79,47 @@ const STATUS_LABELS: Record<string, string> = {
   REJECTED: 'Rechazada'
 };
 
+// Contrato AIU (Administración, Imprevistos, Utilidad) — factura con tipo de operación "09". El
+// formulario pide la base del contrato y los porcentajes y genera las tres líneas; solo la
+// Utilidad causa IVA. El objeto del contrato va en la nota obligatoria de la línea de Administración.
+// Se guarda como JSON en sectorExtensionData ({ aiu: {...} }), el backend lo lee del documento.
+interface AiuParams {
+  baseAmount: number;
+  adminPercent: number;
+  unforeseenPercent: number;
+  profitPercent: number;
+  ivaRate: number;
+  contractObject: string;
+}
+const AIU_DEFAULT: AiuParams = { baseAmount: 0, adminPercent: 10, unforeseenPercent: 5, profitPercent: 5, ivaRate: 19, contractObject: '' };
+const AIU_OPERATION_TYPE = '09';
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+const buildAiuItems = (aiu: AiuParams) => {
+  const base = (code: string, name: string, percent: number, taxed: boolean) => {
+    const unitPrice = round2(aiu.baseAmount * percent / 100);
+    const taxAmount = taxed ? round2(unitPrice * aiu.ivaRate / 100) : 0;
+    return {
+      productId: '', code, name, quantity: 1, unitPrice,
+      unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined',
+      ivaTreatment: taxed ? 'Gravado' : 'Excluido', taxRate: taxed ? aiu.ivaRate : 0, discountRate: 0,
+      taxAmount, totalAmount: unitPrice + taxAmount, retentions: [] as any[]
+    };
+  };
+  return [
+    base('AIU-A', 'Administración (A.I.U.)', aiu.adminPercent, false),
+    base('AIU-I', 'Imprevistos (A.I.U.)', aiu.unforeseenPercent, false),
+    base('AIU-U', 'Utilidad (A.I.U.)', aiu.profitPercent, true),
+  ];
+};
+
+const parseAiu = (sectorExtensionData?: string): AiuParams | null => {
+  try {
+    const a = JSON.parse(sectorExtensionData || '{}')?.aiu;
+    return a ? { ...AIU_DEFAULT, ...a } : null;
+  } catch { return null; }
+};
+
 // Notas sobre otro documento: crédito/débito de facturas y ajuste de documento soporte.
 const NOTE_BADGES: Record<string, { label: string, className: string }> = {
   NC: { label: 'NC', className: 'bg-amber-100 text-amber-700' },
@@ -222,7 +263,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     totalAmount: 0,
     referenceDocumentId: null as string | null,
     referenceConcept: '',
-    discrepancyResponseCode: ''
+    discrepancyResponseCode: '',
+    aiu: null as AiuParams | null,
+    sectorExtensionData: '{}'
   };
   const [formData, setFormData] = useState(initialForm);
 
@@ -304,7 +347,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     setPaymentTermCustom(false);
     setFormData({
       ...initialForm,
-      documentTypeId: documentTypes.find(d => d.code === '01')?.id || '',
+      documentTypeId: (documentTypes.find(d => d.typeCode === 'FE-STD') || documentTypes.find(d => d.code === '01'))?.id || '',
       // Preselecciona la resolución marcada como default para Factura (FE); antes siempre
       // arrancaba vacía aunque el cliente ya tuviera una definida, y quedaba editable por si
       // hay que emitir con otra.
@@ -387,7 +430,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       setEditingId(full.id);
       setPaymentTermCustom(full.paymentTermDays != null && !paymentTermCatalog.some(c => c.category === String(full.paymentTermDays)));
       setFormData({
-        documentTypeId: full.documentTypeId || documentTypes.find(d => d.code === '01')?.id || '',
+        documentTypeId: full.documentTypeId || (documentTypes.find(d => d.typeCode === 'FE-STD') || documentTypes.find(d => d.code === '01'))?.id || '',
         customerId: full.customerId || '',
         resolutionId: full.resolutionId || '',
         issueDate: full.issueDate ? String(full.issueDate).slice(0, 10) : todayIso(),
@@ -435,7 +478,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         totalAmount: full.totalAmount,
         referenceDocumentId: full.referenceDocumentId,
         referenceConcept: full.referenceConcept || '',
-        discrepancyResponseCode: full.discrepancyResponseCode || ''
+        discrepancyResponseCode: full.discrepancyResponseCode || '',
+        aiu: parseAiu(full.sectorExtensionData),
+        sectorExtensionData: full.sectorExtensionData || '{}'
       });
       setView('create');
     } catch (err) {
@@ -617,6 +662,33 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       setView('create');
     } catch {
       toast.error('Error al cargar el documento soporte original');
+    }
+  };
+
+  const selectedDocType = documentTypes.find(d => d.id === formData.documentTypeId);
+  const isAiu = !isSupport && selectedDocType?.operationType === AIU_OPERATION_TYPE && !formData.referenceDocumentId;
+
+  // Cambia algún dato del contrato AIU: se regeneran las tres líneas y los totales.
+  const applyAiu = (next: AiuParams) => {
+    const items = buildAiuItems(next);
+    const sub = items.reduce((sum, i) => sum + i.unitPrice, 0);
+    const tax = items.reduce((sum, i) => sum + i.taxAmount, 0);
+    setFormData({ ...formData, aiu: next, items, subtotal: sub, taxAmount: tax, totalAmount: sub + tax });
+  };
+
+  const handleDocumentTypeChange = (typeId: string) => {
+    const next = documentTypes.find(d => d.id === typeId);
+    if (!isSupport && next?.operationType === AIU_OPERATION_TYPE) {
+      const aiu = formData.aiu || AIU_DEFAULT;
+      const items = buildAiuItems(aiu);
+      const sub = items.reduce((sum, i) => sum + i.unitPrice, 0);
+      const tax = items.reduce((sum, i) => sum + i.taxAmount, 0);
+      setFormData({ ...formData, documentTypeId: typeId, aiu, items, subtotal: sub, taxAmount: tax, totalAmount: sub + tax });
+    } else if (formData.aiu) {
+      // Se sale de AIU: las líneas generadas no sirven para otro tipo de factura.
+      setFormData({ ...formData, documentTypeId: typeId, aiu: null, items: [], subtotal: 0, taxAmount: 0, totalAmount: 0 });
+    } else {
+      setFormData({ ...formData, documentTypeId: typeId });
     }
   };
 
@@ -852,6 +924,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       toast.error(cfg.missingResolution);
       return;
     }
+    if (isAiu) {
+      const a = formData.aiu || AIU_DEFAULT;
+      if (a.baseAmount <= 0) { toast.error('Indica el valor base del contrato AIU.'); return; }
+      if (a.contractObject.trim().length < 10) { toast.error('Describe el objeto del contrato (es obligatorio en la factura AIU).'); return; }
+    }
     // Hora de Colombia: la fecha de emisión no puede ser anterior a hoy (de hoy en adelante).
     if (formData.issueDate && formData.issueDate < todayColombia()) {
       toast.error('La fecha de emisión no puede ser anterior a hoy.');
@@ -860,8 +937,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
     setSavingDraft(true);
     try {
+      const { aiu: aiuParams, ...formRest } = formData;
       const payload = {
-        ...formData,
+        ...formRest,
+        sectorExtensionData: isAiu && aiuParams ? JSON.stringify({ aiu: aiuParams }) : '{}',
         paymentTermDays: formData.paymentTermDays === '' ? null : formData.paymentTermDays,
         // Las notas no traen resolutionId (el selector queda oculto) — "" no es un Guid? válido
         // para el backend, hay que mandar null.
@@ -951,7 +1030,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 <label className="block text-sm font-bold text-slate-700 mb-2">Tipo de Documento</label>
                 <SearchableSelect
                   value={formData.documentTypeId}
-                  onChange={v => setFormData({...formData, documentTypeId: v})}
+                  onChange={handleDocumentTypeChange}
                   placeholder="Buscar tipo de documento..."
                   options={documentTypes.map(d => ({ value: d.id, label: d.name }))}
                 />
@@ -1127,6 +1206,65 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               );
             })()}
 
+            {isAiu && formData.aiu && (
+              <div className="mb-8">
+                <h3 className="text-lg font-bold text-slate-800 mb-1">Contrato AIU</h3>
+                <p className="text-sm text-slate-500 mb-4">Administración, Imprevistos y Utilidad. El IVA se calcula solo sobre la Utilidad.</p>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Valor base del contrato ($)</label>
+                    <DecimalInput value={formData.aiu.baseAmount} onValueChange={v => applyAiu({ ...formData.aiu!, baseAmount: v })} placeholder="0" blankWhenZero className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Administración %</label>
+                    <DecimalInput value={formData.aiu.adminPercent} onValueChange={v => applyAiu({ ...formData.aiu!, adminPercent: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Imprevistos %</label>
+                    <DecimalInput value={formData.aiu.unforeseenPercent} onValueChange={v => applyAiu({ ...formData.aiu!, unforeseenPercent: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Utilidad %</label>
+                    <DecimalInput value={formData.aiu.profitPercent} onValueChange={v => applyAiu({ ...formData.aiu!, profitPercent: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">IVA sobre la Utilidad %</label>
+                    <DecimalInput value={formData.aiu.ivaRate} onValueChange={v => applyAiu({ ...formData.aiu!, ivaRate: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Objeto del contrato</label>
+                    <input type="text" placeholder="Ej. Obra civil de adecuación de bodega" value={formData.aiu.contractObject} onChange={e => setFormData({ ...formData, aiu: { ...formData.aiu!, contractObject: e.target.value } })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" />
+                    <p className="text-xs text-slate-400 mt-1">Va en la línea de Administración como: "{'Contrato de servicios AIU por concepto de:'} …"</p>
+                  </div>
+                </div>
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
+                        <th className="p-2 pl-3">Concepto</th>
+                        <th className="p-2 text-right">Valor</th>
+                        <th className="p-2">IVA</th>
+                        <th className="p-2 pr-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {formData.items.map((item, index) => (
+                        <tr key={index} className="bg-white text-sm">
+                          <td className="p-2 pl-3">{item.name}</td>
+                          <td className="p-2 text-right font-mono">${fmt.money(item.unitPrice)}</td>
+                          <td className="p-2 text-slate-600">{item.ivaTreatment === 'Gravado' ? `Gravado ${item.taxRate}%` : 'No gravado'}</td>
+                          <td className="p-2 pr-3 text-right font-mono font-bold">${fmt.money(item.totalAmount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {!isAiu && (
             <div className="mb-8">
               <div className="flex justify-between items-end mb-4">
                 <h3 className="text-lg font-bold text-slate-800">Productos o servicios</h3>
@@ -1266,6 +1404,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 <PlusCircle size={18} /> Agregar Ítem
               </button>
             </div>
+            )}
 
             <div className="mb-8">
               <div className="flex justify-between items-end mb-4">

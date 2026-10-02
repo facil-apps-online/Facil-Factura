@@ -380,7 +380,10 @@ namespace Fel.Infrastructure.Ubl.Strategies
             }
 
             var lineElement = new XElement(cac + lineElementName,
-                idElement,
+                idElement);
+            // Orden UBL: ID, Note, cantidad... — la nota solo se emite cuando la línea la trae.
+            if (!string.IsNullOrWhiteSpace(line.Note)) lineElement.Add(new XElement(cbc + "Note", line.Note));
+            lineElement.Add(
                 new XElement(cbc + quantityElementName, new XAttribute("unitCode", line.UnitCode), line.Quantity.ToString("0.00").Replace(",", ".")),
                 new XElement(cbc + "LineExtensionAmount", new XAttribute("currencyID", currency), line.LineExtensionAmount.ToString("0.00").Replace(",", ".")),
                 // Confirmado contra el ejemplo oficial Generica.xml y contra un firmador Python de

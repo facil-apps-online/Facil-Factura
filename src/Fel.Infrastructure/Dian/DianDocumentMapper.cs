@@ -28,9 +28,15 @@ namespace Fel.Infrastructure.Dian
             Client client,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
             IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null,
-            DocumentType? documentType = null)
+            DocumentType? documentType = null,
+            Document? aiuSource = null)
         {
             var itemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();
+
+            // Contrato AIU (operación 09): los datos del contrato viven en el documento; una nota
+            // crédito/débito sobre una factura AIU los toma de la factura original (aiuSource).
+            var aiu = AiuContractData.TryRead((aiuSource ?? document).SectorExtensionData);
+            var isAiu = aiu != null && (documentType?.OperationType == "09" || aiuSource != null);
 
             municipalitiesByCode.TryGetValue(client.CityCode ?? string.Empty, out var issuerMuni);
             municipalitiesByCode.TryGetValue(customer.CityCode ?? string.Empty, out var customerMuni);
@@ -137,19 +143,30 @@ namespace Fel.Infrastructure.Dian
                 var lineBase = item.Quantity * item.UnitPrice * (1 - item.DiscountRate / 100);
                 lineExtension += lineBase;
 
-                data.Lines.Add(new InvoiceLine
+                // AIU: Administración e Imprevistos no hacen parte de la base gravable (solo la
+                // Utilidad causa IVA), y el Anexo dice que a esos ítems NO se les informa TaxTotal
+                // de línea — tampoco entran en la base imponible del encabezado.
+                var outsideTaxBase = isAiu && item.IvaTreatment != IvaTreatment.Gravado;
+
+                var line = new InvoiceLine
                 {
                     ItemCode = item.Code,
                     Description = item.Name,
                     Quantity = item.Quantity,
                     UnitCode = item.UnitOfMeasureCode,
                     UnitPrice = item.UnitPrice,
-                    LineExtensionAmount = lineBase,
-                    Taxes = { new TaxSubtotal { TaxId = "01", TaxableAmount = lineBase, TaxAmount = item.TaxAmount, Percent = item.TaxRate } }
-                });
+                    LineExtensionAmount = lineBase
+                };
+                // La línea de Administración lleva la nota obligatoria con el objeto del contrato.
+                if (isAiu && item.Code == AiuContractData.AdminCode) line.Note = aiu!.BuildAdminNote();
 
-                var prev = taxGroups.TryGetValue(item.TaxRate, out var v) ? v : (Base: 0m, Amount: 0m);
-                taxGroups[item.TaxRate] = (prev.Base + lineBase, prev.Amount + item.TaxAmount);
+                if (!outsideTaxBase)
+                {
+                    line.Taxes.Add(new TaxSubtotal { TaxId = "01", TaxableAmount = lineBase, TaxAmount = item.TaxAmount, Percent = item.TaxRate });
+                    var prev = taxGroups.TryGetValue(item.TaxRate, out var v) ? v : (Base: 0m, Amount: 0m);
+                    taxGroups[item.TaxRate] = (prev.Base + lineBase, prev.Amount + item.TaxAmount);
+                }
+                data.Lines.Add(line);
             }
 
             foreach (var (rate, (baseAmount, amount)) in taxGroups)
@@ -159,7 +176,8 @@ namespace Fel.Infrastructure.Dian
 
             var totalTax = taxGroups.Values.Sum(v => v.Amount);
             data.LineExtensionAmount = lineExtension;
-            data.TaxExclusiveAmount = lineExtension;
+            // Base imponible total: en un AIU es solo la de la Utilidad (LineExtensionAmount incluye A e I).
+            data.TaxExclusiveAmount = isAiu ? taxGroups.Values.Sum(v => v.Base) : lineExtension;
             data.TaxInclusiveAmount = lineExtension + totalTax;
 
             // Descuento y cargo general del documento (no afectan las bases gravables: el IVA se
@@ -220,7 +238,7 @@ namespace Fel.Infrastructure.Dian
             DocumentType documentType,
             IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null)
         {
-            var data = BuildInvoiceData(document, customer, items, resolution, client, municipalitiesByCode, paymentMeansDianCodes, documentType);
+            var data = BuildInvoiceData(document, customer, items, resolution, client, municipalitiesByCode, paymentMeansDianCodes, documentType, originalDocument);
             data.DiscrepancyResponseCode = document.DiscrepancyResponseCode ?? string.Empty;
             data.DiscrepancyDescription = document.ReferenceConcept;
             data.BillingReferenceCufe = originalDocument.Cufe ?? string.Empty;

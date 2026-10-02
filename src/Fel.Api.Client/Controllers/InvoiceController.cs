@@ -95,7 +95,7 @@ namespace Fel.Api.Client.Controllers
 
             var types = await _dbContext.DocumentTypes
                 .Where(d => d.IsActive && SupportedDianCodes.Contains(d.DianCode) && enabledIds.Contains(d.Id))
-                .Select(d => new { id = d.Id, code = d.DianCode, name = d.Name })
+                .Select(d => new { id = d.Id, code = d.DianCode, typeCode = d.Code, operationType = d.OperationType, name = d.Name })
                 .ToListAsync();
 
             return Ok(types);
@@ -329,6 +329,8 @@ namespace Fel.Api.Client.Controllers
                 invoice.CustomerId = invoiceData.CustomerId;
                 invoice.DocumentTypeId = invoiceData.DocumentTypeId;
                 invoice.Notes = invoiceData.Notes;
+                // Datos de sector (hoy: contrato AIU) — se guardan tal cual los arma el formulario.
+                invoice.SectorExtensionData = string.IsNullOrWhiteSpace(invoiceData.SectorExtensionData) ? "{}" : invoiceData.SectorExtensionData;
                 invoice.SectorExtensionData = invoiceData.SectorExtensionData;
 
                 invoice.ReferenceDocumentId = invoiceData.ReferenceDocumentId;
@@ -805,7 +807,10 @@ namespace Fel.Api.Client.Controllers
                     }
 
                     var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-                    var ublData = DianDocumentMapper.BuildInvoiceData(invoice, invoice.Customer, invoice.Items, invoice.Resolution, client, municipalities);
+                    var resendDocType = invoice.DocumentTypeId.HasValue
+                        ? await _dbContext.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == invoice.DocumentTypeId.Value)
+                        : null;
+                    var ublData = DianDocumentMapper.BuildInvoiceData(invoice, invoice.Customer, invoice.Items, invoice.Resolution, client, municipalities, null, resendDocType);
                     var xml = _ublGenerator.GenerateInvoiceXml(ublData);
                     var recalculatedCufe = _ublGenerator.CalculateCufe(ublData);
 

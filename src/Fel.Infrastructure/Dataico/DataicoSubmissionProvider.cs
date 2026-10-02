@@ -38,6 +38,19 @@ namespace Fel.Infrastructure.Dataico
             Document invoice, Customer customer, ICollection<DocumentItem> items,
             Client client, Resolution resolution, string paymentMeans, string paymentMeansType)
         {
+            // Con Dataico solo se emiten factura estándar y notas crédito/débito: los demás tipos de
+            // factura (AIU, mandato, salud, transporte) llevan información propia que este envío no
+            // manda, y saldrían como una venta común. Solo están disponibles con emisión directa a la DIAN.
+            if (invoice.DocumentTypeId.HasValue)
+            {
+                var typeCode = await _dbContext.DocumentTypes.AsNoTracking()
+                    .Where(t => t.Id == invoice.DocumentTypeId.Value).Select(t => t.Code).FirstOrDefaultAsync();
+                if (typeCode != null && typeCode is not ("FE-STD" or "NC" or "ND"))
+                {
+                    throw new NotSupportedException("Este tipo de factura solo está disponible con emisión directa a la DIAN; con el integrador configurado solo se emite factura estándar y notas crédito/débito.");
+                }
+            }
+
             if (string.IsNullOrEmpty(invoice.Number))
             {
                 // Las Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que

@@ -7,6 +7,8 @@ import ImportExcelButton from '../components/ImportExcelButton';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
+import { getNumberFormat, useNumberFormat } from '../lib/numberFormat';
+import DecimalInput from '../components/DecimalInput';
 
 const PAGE_SIZE = 25;
 
@@ -39,11 +41,12 @@ const conceptDetails = (c: Concept): string => {
   if (c.days) parts.push(`${c.days} día(s)`);
   if (c.percentage) parts.push(`${c.percentage}%`);
   if (c.hours) parts.push(`${c.hours}h`);
-  if (c.amountNs) parts.push(`+$${c.amountNs.toLocaleString('es-CO')} no salarial`);
+  if (c.amountNs) parts.push(`+$${getNumberFormat().number(c.amountNs, 3)} no salarial`);
   return parts.join(' · ');
 };
 
 export default function PayrollPage() {
+  const fmt = useNumberFormat();
   const confirm = useConfirm();
   const [entries, setEntries] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -281,7 +284,7 @@ export default function PayrollPage() {
                 ) : (
                   <input placeholder="Descripción del concepto" required value={c.description} onChange={e => updateConcept(list, idx, 'description', e.target.value)} className="flex-1 px-3 py-2 border rounded-lg text-sm outline-none" />
                 )}
-                <input type="number" step="0.01" placeholder="Valor" value={c.amount} onChange={e => updateConcept(list, idx, 'amount', parseFloat(e.target.value) || 0)} className="w-32 px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
+                <DecimalInput placeholder="Valor" value={c.amount} onValueChange={v => updateConcept(list, idx, 'amount', v)} className="w-32 px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
                 <button type="button" onClick={() => removeConcept(list, idx)} className="p-2 text-slate-400 hover:text-rose-600"><Trash2 size={16} /></button>
               </div>
             );
@@ -352,9 +355,9 @@ export default function PayrollPage() {
           <div className="flex justify-between items-center pt-4 border-t border-slate-100">
             {formData.noteType !== 'ELIMINACION' ? (
               <div className="text-sm text-slate-600">
-                <p>Devengado: <span className="font-bold">${totalAccruals.toLocaleString('es-CO')}</span></p>
-                <p>Deducciones: <span className="font-bold">${totalDeductions.toLocaleString('es-CO')}</span></p>
-                <p className="text-lg font-bold text-slate-800 mt-1">Neto a Pagar: ${(totalAccruals - totalDeductions).toLocaleString('es-CO')}</p>
+                <p>Devengado: <span className="font-bold">${fmt.number(totalAccruals, 3)}</span></p>
+                <p>Deducciones: <span className="font-bold">${fmt.number(totalDeductions, 3)}</span></p>
+                <p className="text-lg font-bold text-slate-800 mt-1">Neto a Pagar: ${fmt.number((totalAccruals - totalDeductions), 3)}</p>
               </div>
             ) : <div />}
             <button type="submit" disabled={submitting} className="px-6 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl transition-colors shadow-md disabled:opacity-50">
@@ -437,7 +440,7 @@ export default function PayrollPage() {
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">
                         {noteTypeOf(r.typeCode) === 'ELIMINACION' ? 'Eliminación' : 'Reemplazo'}
                       </span>
-                      {r.number} · ${r.totalAmount?.toLocaleString('es-CO')} · {r.status}
+                      {r.number} · ${fmt.number(r.totalAmount, 3)} · {r.status}
                     </button>
                   ))}
                 </div>
@@ -458,7 +461,7 @@ export default function PayrollPage() {
                         {(entry.accruals || []).map((c: any, idx: number) => (
                           <tr key={idx}>
                             <td className="p-3 text-sm text-slate-700">{c.code ? humanizeConceptCode(c.code) : c.description}</td>
-                            <td className="p-3 text-sm font-mono font-bold text-right">${(c.amount || 0).toLocaleString('es-CO')}</td>
+                            <td className="p-3 text-sm font-mono font-bold text-right">${fmt.number((c.amount || 0), 3)}</td>
                           </tr>
                         ))}
                         {(!entry.accruals || entry.accruals.length === 0) && <tr><td className="p-3 text-sm text-slate-400">No hay devengos.</td></tr>}
@@ -474,7 +477,7 @@ export default function PayrollPage() {
                         {(entry.deductions || []).map((c: any, idx: number) => (
                           <tr key={idx}>
                             <td className="p-3 text-sm text-slate-700">{c.code ? humanizeConceptCode(c.code) : c.description}</td>
-                            <td className="p-3 text-sm font-mono font-bold text-right">${(c.amount || 0).toLocaleString('es-CO')}</td>
+                            <td className="p-3 text-sm font-mono font-bold text-right">${fmt.number((c.amount || 0), 3)}</td>
                           </tr>
                         ))}
                         {(!entry.deductions || entry.deductions.length === 0) && <tr><td className="p-3 text-sm text-slate-400">No hay deducciones.</td></tr>}
@@ -486,7 +489,7 @@ export default function PayrollPage() {
             )}
 
             <div className="flex justify-end">
-              <p className="text-lg font-bold text-slate-800">Neto: ${entry.totalAmount?.toLocaleString('es-CO')}</p>
+              <p className="text-lg font-bold text-slate-800">Neto: ${fmt.number(entry.totalAmount, 3)}</p>
             </div>
           </div>
         </div>
@@ -606,7 +609,7 @@ export default function PayrollPage() {
                   </div>
                 </td>
                 <td className="p-4 text-slate-500 text-sm">{periodOf(e)}</td>
-                <td className="p-4 text-right font-medium">${e.totalAmount?.toLocaleString('es-CO')}</td>
+                <td className="p-4 text-right font-medium">${fmt.number(e.totalAmount, 3)}</td>
                 <td className="p-4">
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                     e.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
@@ -648,7 +651,7 @@ export default function PayrollPage() {
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-700">
                 <td colSpan={3} className="p-4 text-right">Total del periodo:</td>
-                <td className="p-4 text-right font-mono">${filteredTotal.toLocaleString('es-CO')}</td>
+                <td className="p-4 text-right font-mono">${fmt.number(filteredTotal, 3)}</td>
                 <td colSpan={3}></td>
               </tr>
             </tfoot>

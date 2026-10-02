@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Fel.Core.Entities;
+using Fel.Core.Models;
 using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dataico
@@ -25,8 +26,6 @@ namespace Fel.Infrastructure.Dataico
         private const string FabricanteSoftwareNit = "900.303.194-6";
         private const string NombreSoftware = "Facil Factura";
 
-        private static readonly CultureInfo Co = CultureInfo.GetCultureInfo("es-CO");
-        private static string Money(decimal value) => value.ToString("N0", Co);
 
         public static Dictionary<string, object?> Build(
             Document document, Customer employee, Client client,
@@ -35,6 +34,9 @@ namespace Fel.Infrastructure.Dataico
             IEnumerable<(string? Codigo, string Descripcion, decimal Valor)> devengos,
             IEnumerable<(string? Codigo, string Descripcion, decimal Valor)> deducciones)
         {
+            // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
+            var nf = ReportNumberFormat.For(client.DecimalSeparator);
+            string Money(decimal value) => value.ToString("N0", nf);
             var esIntegradorExterno = client.Integrator.Kind == IntegratorKind.ThirdPartyIntegrator;
             var devengosList = devengos.ToList();
             var deduccionesList = deducciones.ToList();

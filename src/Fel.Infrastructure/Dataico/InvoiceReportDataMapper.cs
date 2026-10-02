@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Fel.Core.Entities;
+using Fel.Core.Models;
 using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dataico
@@ -26,7 +27,6 @@ namespace Fel.Infrastructure.Dataico
         private const string FabricanteSoftwareNit = "900.303.194-6";
         private const string NombreSoftware = "Facil Factura";
 
-        private static readonly CultureInfo Co = CultureInfo.GetCultureInfo("es-CO");
 
         private static readonly Dictionary<string, string> RetentionCategoryLabels = new()
         {
@@ -76,12 +76,6 @@ namespace Fel.Infrastructure.Dataico
             };
         }
 
-        private static string Money(decimal value) => value.ToString("N2", Co);
-        private static string Qty(decimal value) => value.ToString("0.##", Co);
-        private static string Pct(decimal value) => value.ToString("0.##", Co) + "%";
-        // Las tarifas de retención llevan hasta 3 decimales (ReteICA 0,414 % / 0,966 %): con "0.##" se
-        // imprimían recortadas ("0,97%" para 0,966 %).
-        private static string RetPct(decimal value) => value.ToString("0.###", Co) + "%";
         private static string RetentionLabel(string category) => RetentionCategoryLabels.GetValueOrDefault(category, category);
 
         // originalDocument: el documento referenciado por una Nota Crédito/Débito
@@ -95,6 +89,14 @@ namespace Fel.Infrastructure.Dataico
         // flag.
         public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null)
         {
+            // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
+            var nf = ReportNumberFormat.For(client.DecimalSeparator);
+            string Money(decimal value) => value.ToString("N2", nf);
+            string Qty(decimal value) => value.ToString("0.##", nf);
+            string Pct(decimal value) => value.ToString("0.##", nf) + "%";
+            // Las tarifas de retención llevan hasta 3 decimales (ReteICA 0,414 % / 0,966 %): con "0.##" se
+            // imprimían recortadas ("0,97%" para 0,966 %).
+            string RetPct(decimal value) => value.ToString("0.###", nf) + "%";
             var esIntegradorExterno = client.Integrator.Kind == IntegratorKind.ThirdPartyIntegrator;
 
             var documentoTipo = invoice.TypeCode switch
@@ -254,7 +256,7 @@ namespace Fel.Infrastructure.Dataico
                     ["OrdenCompra"] = invoice.PurchaseOrderReference,
                     ["Notas"] = invoice.Notes,
 
-                    // Totales — ya formateados como texto (miles con punto, 2 decimales, es-CO).
+                    // Totales — ya formateados como texto (separadores según Client.DecimalSeparator, 2 decimales).
                     ["Subtotal"] = Money(invoice.Subtotal),
                     ["Iva"] = Money(invoice.TaxAmount),
                     ["Descuento"] = Money(invoice.GeneralDiscountAmount ?? 0),

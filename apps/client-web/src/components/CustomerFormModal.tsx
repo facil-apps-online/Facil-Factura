@@ -4,6 +4,7 @@ import { X, MapPin, FileUp, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import SearchableSelect from '@shared/components/SearchableSelect';
+import DecimalInput from './DecimalInput';
 
 const GOOGLE_MAPS_LIBRARIES: "places"[] = ['places'];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -427,7 +428,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">Salario Base</label>
-                  <input type="number" value={formData.baseSalary} onChange={e => setFormData({...formData, baseSalary: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
+                  <DecimalInput value={formData.baseSalary} onValueChange={v => setFormData({...formData, baseSalary: v})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">Banco</label>

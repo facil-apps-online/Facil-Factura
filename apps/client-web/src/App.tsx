@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { ConfirmDialogProvider } from '@shared/components/ConfirmDialog';
 import { api } from './lib/api';
+import { setDecimalSeparator, useNumberFormat } from './lib/numberFormat';
 
 import TemplateSettings from './pages/TemplateSettings';
 import TemplateEditor from './pages/TemplateEditor';
@@ -27,6 +28,7 @@ interface ClientBranding {
   hasCustomLogo: boolean;
   invoiceLogoUrl: string;
   clientName: string;
+  decimalSeparator?: string;
 }
 
 const BrandingContext = createContext<ClientBranding | null>(null);
@@ -43,6 +45,7 @@ function BrandingProvider({ children }: { children: React.ReactNode }) {
     api.get('/v1/branding/my-branding')
       .then(res => {
         setBranding(res.data);
+        setDecimalSeparator(res.data.decimalSeparator);
         if (res.data.primaryColorLight) {
           document.documentElement.style.setProperty('--color-primary', hexToRgb(res.data.primaryColorLight));
         }
@@ -201,14 +204,14 @@ interface DashboardSummary {
   pendingSetupItems: string[];
 }
 
-const money = (value: number) => `$${Math.round(value).toLocaleString('es-CO')}`;
-
 const SETUP_MESSAGES: Record<string, { text: string; actionLabel?: string; actionTo?: string }> = {
   'no-resolution': { text: 'Configura una resolución para empezar a facturar.', actionLabel: 'Configurar resolución', actionTo: '/resolutions' },
   'no-certificate': { text: 'Tu certificado digital no está vigente. Contacta a tu proveedor para renovarlo.' },
 };
 
 const Dashboard = () => {
+  const fmt = useNumberFormat();
+  const money = (value: number) => `$${fmt.number(Math.round(value), 3)}`;
   const navigate = useNavigate();
   const branding = useContext(BrandingContext);
   const [summary, setSummary] = React.useState<DashboardSummary | null>(null);

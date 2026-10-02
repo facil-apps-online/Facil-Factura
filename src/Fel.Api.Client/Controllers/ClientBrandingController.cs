@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Fel.Core.Interfaces;
+using Fel.Core.Models;
 using Fel.Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -65,7 +66,9 @@ namespace Fel.Api.Client.Controllers
                     // Para el header del portal: identifica al Client (no al Tenant, que ya
                     // aparece en el sidebar) cuando no tiene logo propio cargado.
                     ClientName = string.IsNullOrWhiteSpace(client.CommercialName) ? client.CompanyName : client.CommercialName,
-                    UnitOfMeasureDisplayOverride = client.UnitOfMeasureDisplayOverride
+                    UnitOfMeasureDisplayOverride = client.UnitOfMeasureDisplayOverride,
+                    // Formato numérico del portal y de los PDF de este cliente: "." (punto decimal) o ",".
+                    DecimalSeparator = client.DecimalSeparator
                 };
 
                 return Ok(branding);
@@ -133,6 +136,14 @@ namespace Fel.Api.Client.Controllers
                     ? null
                     : request.UnitOfMeasureDisplayOverride;
 
+                // Solo se cambia si viene un valor válido (este PUT también lo usan pantallas que no lo envían).
+                if (!string.IsNullOrEmpty(request.DecimalSeparator))
+                {
+                    if (!DecimalSeparators.IsValid(request.DecimalSeparator))
+                        return BadRequest(new { Message = "El separador decimal debe ser \".\" o \",\"." });
+                    client.DecimalSeparator = request.DecimalSeparator;
+                }
+
                 await _dbContext.SaveChangesAsync();
                 return Ok(new { Message = "Branding actualizado correctamente." });
             }
@@ -148,5 +159,6 @@ namespace Fel.Api.Client.Controllers
         public string? LogoLightUrl { get; set; }
         public string? LogoDarkUrl { get; set; }
         public string? UnitOfMeasureDisplayOverride { get; set; }
+        public string? DecimalSeparator { get; set; }
     }
 }

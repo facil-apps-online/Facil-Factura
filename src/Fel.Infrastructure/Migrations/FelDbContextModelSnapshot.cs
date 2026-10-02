@@ -848,6 +848,13 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("DecimalSeparator")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(1)
+                        .HasColumnType("nvarchar(1)")
+                        .HasDefaultValue(".");
+
                     b.Property<int>("DianFileSequence")
                         .HasColumnType("int");
 

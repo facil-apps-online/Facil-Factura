@@ -63,6 +63,12 @@ namespace Fel.Core.Entities
         // (Combined = "94 - EA", CodeOnly = "94", AbbreviationOnly = "EA").
         public string? UnitOfMeasureDisplayOverride { get; set; }
 
+        // Formato numérico de este cliente, tanto en el portal de clientes (campos y totales) como en
+        // sus PDF: "." = punto decimal y coma de miles (1,234,567.89 — el estándar acá y el valor por
+        // defecto para los clientes existentes); "," = coma decimal y punto de miles (1.234.567,89).
+        // Es solo de presentación: los valores siempre viajan al servidor como números con punto.
+        public string DecimalSeparator { get; set; } = ".";
+
         // Ya no tiene ningún efecto: la retención se elige 100% manual por línea de factura, sin
         // ninguna resolución automática que este campo pudiera activar/desactivar. Se conserva sin
         // usar por si se retoma la automatización más adelante.

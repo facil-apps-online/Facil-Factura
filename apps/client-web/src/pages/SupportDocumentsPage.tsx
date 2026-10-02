@@ -6,6 +6,8 @@ import { useConfirm } from '@shared/components/ConfirmDialog';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
+import { useNumberFormat } from '../lib/numberFormat';
+import DecimalInput from '../components/DecimalInput';
 
 const PAGE_SIZE = 25;
 
@@ -69,6 +71,7 @@ const discriminatedRetentions = (
 };
 
 export default function SupportDocumentsPage() {
+  const fmt = useNumberFormat();
   const confirm = useConfirm();
   const [documents, setDocuments] = useState<any[]>([]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>('this-month');
@@ -555,9 +558,9 @@ export default function SupportDocumentsPage() {
                   <div className="grid grid-cols-12 gap-2 items-center">
                     <input placeholder="Código" value={item.code} onChange={e => updateItem(idx, 'code', e.target.value)} className="col-span-2 px-3 py-2 border rounded-lg text-sm outline-none" />
                     <input placeholder="Descripción" required value={item.name} onChange={e => updateItem(idx, 'name', e.target.value)} className="col-span-2 px-3 py-2 border rounded-lg text-sm outline-none" />
-                    <input type="number" step="0.01" placeholder="Cant." value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="col-span-1 px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
-                    <input type="number" step="0.01" placeholder="Valor" value={item.unitPrice} onChange={e => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)} className="col-span-2 px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
-                    <input type="number" min="0" max="100" step="0.01" placeholder="Desc. %" value={item.discountRate || 0} onChange={e => updateItem(idx, 'discountRate', parseFloat(e.target.value) || 0)} className="col-span-1 px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
+                    <DecimalInput placeholder="Cant." value={item.quantity} onValueChange={v => updateItem(idx, 'quantity', v)} className="col-span-1 px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
+                    <DecimalInput placeholder="Valor" value={item.unitPrice} onValueChange={v => updateItem(idx, 'unitPrice', v)} className="col-span-2 px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
+                    <DecimalInput placeholder="Desc. %" value={item.discountRate || 0} onValueChange={v => updateItem(idx, 'discountRate', Math.min(v, 100))} className="col-span-1 px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
                     <SearchableSelect
                       className="col-span-2"
                       inputClassName="w-full px-2 py-2 border rounded-lg text-sm outline-none bg-white"
@@ -614,7 +617,7 @@ export default function SupportDocumentsPage() {
                                   </button>
                                 </div>
                               )}
-                              <span className="w-28 text-right font-mono text-sm text-slate-500">${(lineBaseOf(item) * r.rate / 100).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                              <span className="w-28 text-right font-mono text-sm text-slate-500">${fmt.moneyInt((lineBaseOf(item) * r.rate / 100))}</span>
                               <button type="button" onClick={() => removeItemRetention(idx, rIdx)} className="p-2 text-slate-400 hover:text-rose-600"><Trash2 size={16} /></button>
                             </div>
                           );
@@ -658,7 +661,7 @@ export default function SupportDocumentsPage() {
                         </button>
                       </div>
                     )}
-                    <span className="w-32 text-right font-mono text-sm text-slate-500">${generalRetentionAmount(r, subtotal, taxTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                    <span className="w-32 text-right font-mono text-sm text-slate-500">${fmt.moneyInt(generalRetentionAmount(r, subtotal, taxTotal))}</span>
                     <button type="button" onClick={() => removeGeneralRetention(idx)} className="p-2 text-slate-400 hover:text-rose-600"><Trash2 size={16} /></button>
                   </div>
                 );
@@ -677,7 +680,7 @@ export default function SupportDocumentsPage() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">Valor ($)</label>
-                <input type="number" min="0" step="0.01" value={formData.generalDiscountAmount} onChange={e => setFormData({ ...formData, generalDiscountAmount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
+                <DecimalInput blankWhenZero placeholder="0" value={formData.generalDiscountAmount} onValueChange={v => setFormData({ ...formData, generalDiscountAmount: v })} className="w-full px-3 py-2 border rounded-lg text-sm outline-none font-mono" />
               </div>
             </div>
           </div>
@@ -685,12 +688,12 @@ export default function SupportDocumentsPage() {
           {discriminatedRetentions(formData.items, formData.generalRetentions, subtotal, taxTotal).map(r => (
             <div key={r.label} className="flex justify-between text-sm text-rose-600">
               <span>{r.label}:</span>
-              <span className="font-mono">-${r.amount.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+              <span className="font-mono">-${fmt.moneyInt(r.amount)}</span>
             </div>
           ))}
 
           <div className="flex justify-between items-center pt-4 border-t border-slate-100">
-            <p className="text-lg font-bold text-slate-800">Total: ${total.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</p>
+            <p className="text-lg font-bold text-slate-800">Total: ${fmt.moneyInt(total)}</p>
             <button type="submit" disabled={submitting} className="px-6 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50">
               {submitting ? 'Guardando...' : editingId ? 'Guardar Cambios' : 'Guardar Borrador'}
             </button>
@@ -859,7 +862,7 @@ export default function SupportDocumentsPage() {
                   {viewingRelated.map(r => (
                     <button key={r.id} onClick={() => handleViewDetail(r)} className="text-sm text-primary hover:underline flex items-center gap-2">
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">Ajuste</span>
-                      {r.number} · ${r.totalAmount?.toLocaleString('es-CO')} · {r.status}
+                      {r.number} · ${fmt.number(r.totalAmount, 3)} · {r.status}
                     </button>
                   ))}
                 </div>
@@ -882,9 +885,9 @@ export default function SupportDocumentsPage() {
                     <tr key={idx}>
                       <td className="p-3 text-sm text-slate-700">{item.name}</td>
                       <td className="p-3 text-sm">{item.quantity}</td>
-                      <td className="p-3 text-sm font-mono">${item.unitPrice.toLocaleString('es-CO')}</td>
+                      <td className="p-3 text-sm font-mono">${fmt.number(item.unitPrice, 3)}</td>
                       <td className="p-3 text-sm">{item.ivaTreatment === 'Gravado' ? `${item.taxRate}%` : item.ivaTreatment}</td>
-                      <td className="p-3 text-sm font-mono font-bold text-right">${item.totalAmount.toLocaleString('es-CO')}</td>
+                      <td className="p-3 text-sm font-mono font-bold text-right">${fmt.number(item.totalAmount, 3)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -892,7 +895,7 @@ export default function SupportDocumentsPage() {
             </div>
 
             <div className="flex justify-end">
-              <p className="text-lg font-bold text-slate-800">Total: ${doc.totalAmount?.toLocaleString('es-CO')}</p>
+              <p className="text-lg font-bold text-slate-800">Total: ${fmt.number(doc.totalAmount, 3)}</p>
             </div>
           </div>
         </div>
@@ -1001,7 +1004,7 @@ export default function SupportDocumentsPage() {
                   </div>
                 </td>
                 <td className="p-4 font-bold text-slate-800">{d.customer?.name || '-'}</td>
-                <td className="p-4 text-right font-medium">${d.totalAmount?.toLocaleString('es-CO')}</td>
+                <td className="p-4 text-right font-medium">${fmt.number(d.totalAmount, 3)}</td>
                 <td className="p-4">
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                     d.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
@@ -1043,7 +1046,7 @@ export default function SupportDocumentsPage() {
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-700">
                 <td colSpan={2} className="p-4 text-right">Total del periodo:</td>
-                <td className="p-4 text-right font-mono">${filteredTotal.toLocaleString('es-CO')}</td>
+                <td className="p-4 text-right font-mono">${fmt.number(filteredTotal, 3)}</td>
                 <td colSpan={3}></td>
               </tr>
             </tfoot>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Fel.Core.Entities;
+using Fel.Core.Models;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Services;
@@ -190,6 +191,7 @@ namespace Fel.Api.Tenant.Controllers
                 client.IsGranContribuyente,
                 client.IsAgenteRetenedorIva,
                 client.IsAutorretenedorRenta,
+                client.DecimalSeparator,
                 client.AppliesRetentions,
                 client.AssociateId,
                 client.Latitude,
@@ -246,6 +248,7 @@ namespace Fel.Api.Tenant.Controllers
                 IsGranContribuyente = request.IsGranContribuyente,
                 IsAgenteRetenedorIva = request.IsAgenteRetenedorIva,
                 IsAutorretenedorRenta = request.IsAutorretenedorRenta,
+                DecimalSeparator = DecimalSeparators.IsValid(request.DecimalSeparator) ? request.DecimalSeparator! : DecimalSeparators.Point,
                 AssociateId = request.AssociateId,
                 Latitude = request.Latitude,
                 Longitude = request.Longitude,
@@ -328,6 +331,8 @@ namespace Fel.Api.Tenant.Controllers
             client.IsGranContribuyente = request.IsGranContribuyente;
             client.IsAgenteRetenedorIva = request.IsAgenteRetenedorIva;
             client.IsAutorretenedorRenta = request.IsAutorretenedorRenta;
+            // Solo se cambia si viene un valor válido: un portal con una versión anterior del formulario no lo envía.
+            if (DecimalSeparators.IsValid(request.DecimalSeparator)) client.DecimalSeparator = request.DecimalSeparator!;
             client.AppliesRetentions = request.AppliesRetentions;
             client.AssociateId = request.AssociateId;
             client.Latitude = request.Latitude;
@@ -925,6 +930,8 @@ namespace Fel.Api.Tenant.Controllers
         public bool IsGranContribuyente { get; set; }
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
+        // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
+        public string? DecimalSeparator { get; set; }
         public Guid? AssociateId { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
@@ -1008,6 +1015,8 @@ namespace Fel.Api.Tenant.Controllers
         public bool IsGranContribuyente { get; set; }
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
+        // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
+        public string? DecimalSeparator { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
         public decimal SubscriptionRate { get; set; }

@@ -243,6 +243,15 @@ export default function ClientFormFields({ client, setClient, associates, showBi
           </div>
 
           <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Formato de números</label>
+            <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.decimalSeparator || '.'} onChange={e => setClient({ ...client, decimalSeparator: e.target.value })}>
+              <option value=".">Punto decimal, coma de miles (1,234,567.89)</option>
+              <option value=",">Coma decimal, punto de miles (1.234.567,89)</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-1">Cómo ve y escribe los valores en su portal y cómo salen en los PDF de sus documentos.</p>
+          </div>
+
+          <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">Responsable comercial</label>
             <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.associateId || ''} onChange={e => setClient({ ...client, associateId: e.target.value })}>
               <option value="">Sin asociado</option>

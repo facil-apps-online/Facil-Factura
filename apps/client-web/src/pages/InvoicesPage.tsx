@@ -8,6 +8,8 @@ import CustomerFormModal from '../components/CustomerFormModal';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
+import { useNumberFormat } from '../lib/numberFormat';
+import DecimalInput from '../components/DecimalInput';
 
 const PAGE_SIZE = 25;
 
@@ -16,29 +18,6 @@ const IVA_TREATMENTS = [
   { value: 'Exento', label: 'Exento' },
   { value: 'Excluido', label: 'Excluido' }
 ];
-
-// Separadores de decimal/miles según la configuración regional del equipo — no se asume es-CO
-// quemado, así el punto o coma del teclado numérico funciona sin importar el sistema operativo.
-const { decimal: DECIMAL_SEP, group: GROUP_SEP } = (() => {
-  const parts = new Intl.NumberFormat().formatToParts(1234.5);
-  return {
-    decimal: parts.find(p => p.type === 'decimal')?.value || ',',
-    group: parts.find(p => p.type === 'group')?.value || '.',
-  };
-})();
-
-function parseLocaleNumberTyping(raw: string, decimalSep: string, groupSep: string): { display: string; value: number } {
-  let cleaned = raw.split('').filter(ch => /\d/.test(ch) || ch === decimalSep).join('');
-  const firstIdx = cleaned.indexOf(decimalSep);
-  if (firstIdx !== -1) cleaned = cleaned.slice(0, firstIdx + 1) + cleaned.slice(firstIdx + 1).split(decimalSep).join('');
-  let [intPart, decPart] = cleaned.split(decimalSep);
-  intPart = (intPart || '').replace(/^0+(?=\d)/, '');
-  if (decPart !== undefined) decPart = decPart.slice(0, 2);
-  const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, groupSep);
-  const display = decPart !== undefined ? `${intFormatted || '0'}${decimalSep}${decPart}` : intFormatted;
-  const value = parseFloat((intPart || '0') + (decPart !== undefined ? '.' + decPart : '')) || 0;
-  return { display, value };
-}
 
 // Rótulo del resumen de retenciones: el tipo de impuesto, no el nombre del concepto específico
 // del catálogo (ej. "Compras generales (declarantes)") — para que RET_FUENTE al 2.5% y al 3.5%
@@ -109,6 +88,7 @@ const initialQuickProduct = {
 };
 
 export default function InvoicesPage() {
+  const fmt = useNumberFormat();
   const confirm = useConfirm();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>('this-month');
@@ -148,16 +128,6 @@ export default function InvoicesPage() {
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedRetentions, setExpandedRetentions] = useState<Record<number, boolean>>({});
-  // Precio Unitario con separador de miles y decimal mientras se escribe. Se guarda como texto
-  // aparte (no derivado de item.unitPrice) solo para la fila que está en edición, porque si se
-  // derivara del número en cada tecla se perdería la coma decimal a medio escribir (ej. "1234,"
-  // se reformatea de inmediato a "1.234" y nunca se puede terminar de escribir el decimal).
-  const [priceDraftIndex, setPriceDraftIndex] = useState<number | null>(null);
-  const [priceDraft, setPriceDraft] = useState('');
-  const [qtyDraftIndex, setQtyDraftIndex] = useState<number | null>(null);
-  const [qtyDraft, setQtyDraft] = useState('');
-  const formatMoneyEs = (n: number) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  const formatMoneyTyping = (raw: string) => parseLocaleNumberTyping(raw, DECIMAL_SEP, GROUP_SEP);
   const [paymentTermCustom, setPaymentTermCustom] = useState(false);
   // Una retención (por ítem o general) queda "bloqueada" (solo texto) apenas se elige su valor,
   // para que el scroll del mouse u otra interacción accidental sobre el select no la cambie sin
@@ -1072,37 +1042,21 @@ export default function InvoicesPage() {
                             </div>
                           </td>
                           <td className="p-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={qtyDraftIndex === index ? qtyDraft : formatMoneyEs(item.quantity)}
-                              onFocus={() => { setQtyDraftIndex(index); setQtyDraft(item.quantity ? formatMoneyEs(item.quantity) : ''); }}
-                              onChange={e => {
-                                const { display, value } = formatMoneyTyping(e.target.value);
-                                setQtyDraft(display);
-                                updateItem(index, 'quantity', value);
-                              }}
-                              onBlur={() => setQtyDraftIndex(null)}
+                            <DecimalInput
+                              value={item.quantity}
+                              onValueChange={v => updateItem(index, 'quantity', v)}
                               className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none text-center"
                             />
                           </td>
                           <td className="p-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={priceDraftIndex === index ? priceDraft : formatMoneyEs(item.unitPrice)}
-                              onFocus={() => { setPriceDraftIndex(index); setPriceDraft(item.unitPrice ? formatMoneyEs(item.unitPrice) : ''); }}
-                              onChange={e => {
-                                const { display, value } = formatMoneyTyping(e.target.value);
-                                setPriceDraft(display);
-                                updateItem(index, 'unitPrice', value);
-                              }}
-                              onBlur={() => setPriceDraftIndex(null)}
+                            <DecimalInput
+                              value={item.unitPrice}
+                              onValueChange={v => updateItem(index, 'unitPrice', v)}
                               className="w-32 p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right"
                             />
                           </td>
                           <td className="p-2">
-                            <input type="number" min="0" max="100" step="0.01" value={item.discountRate || 0} onChange={e => updateItem(index, 'discountRate', parseFloat(e.target.value) || 0)} className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono" />
+                            <DecimalInput maxDecimals={2} value={item.discountRate || 0} onValueChange={v => updateItem(index, 'discountRate', Math.min(v, 100))} className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono" />
                           </td>
                           <td className="p-2">
                             {item.productId ? (
@@ -1157,7 +1111,7 @@ export default function InvoicesPage() {
                             )}
                           </td>
                           <td className="p-2 pr-3 text-right font-mono font-bold text-slate-700">
-                            ${item.totalAmount.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${fmt.money(item.totalAmount)}
                           </td>
                           <td className="p-1 text-right whitespace-nowrap">
                             <button onClick={() => removeItem(index)} className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
@@ -1221,7 +1175,7 @@ export default function InvoicesPage() {
                             )}
                           </td>
                           <td className="p-4 text-right font-mono font-bold text-slate-700">
-                            ${generalRetentionAmount(r).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                            ${fmt.moneyInt(generalRetentionAmount(r))}
                           </td>
                           <td className="p-2 text-right">
                             <button type="button" onClick={() => removeGeneralRetention(idx)} className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
@@ -1255,7 +1209,7 @@ export default function InvoicesPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 mb-1">Valor ($)</label>
-                      <input type="number" min="0" step="0.01" value={formData.generalDiscountAmount} onChange={e => setFormData({ ...formData, generalDiscountAmount: parseFloat(e.target.value) || 0 })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono" />
+                      <DecimalInput blankWhenZero placeholder="0" value={formData.generalDiscountAmount} onValueChange={v => setFormData({ ...formData, generalDiscountAmount: v })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
                     </div>
                   </div>
                 </div>
@@ -1271,7 +1225,7 @@ export default function InvoicesPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 mb-1">Valor ($)</label>
-                      <input type="number" min="0" step="0.01" value={formData.generalChargeAmount} onChange={e => setFormData({ ...formData, generalChargeAmount: parseFloat(e.target.value) || 0 })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono" />
+                      <DecimalInput blankWhenZero placeholder="0" value={formData.generalChargeAmount} onValueChange={v => setFormData({ ...formData, generalChargeAmount: v })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
                     </div>
                   </div>
                 </div>
@@ -1291,49 +1245,49 @@ export default function InvoicesPage() {
               <div className="flex-1 bg-slate-50 p-6 rounded-2xl border border-slate-200 h-fit">
                 <div className="flex justify-between text-slate-500 mb-2">
                   <span>Subtotal:</span>
-                  <span className="font-mono">${formData.subtotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-mono">${fmt.money(formData.subtotal)}</span>
                 </div>
                 {ivaBreakdown().map(g => (
                   g.isGravado ? (
                     <React.Fragment key={g.label}>
                       <div className="flex justify-between text-slate-500 mb-2">
                         <span>Base {g.label}:</span>
-                        <span className="font-mono">${g.base.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="font-mono">${fmt.money(g.base)}</span>
                       </div>
                       <div className="flex justify-between text-slate-500 mb-2">
                         <span>{g.label}:</span>
-                        <span className="font-mono">${g.tax.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="font-mono">${fmt.money(g.tax)}</span>
                       </div>
                     </React.Fragment>
                   ) : (
                     <div key={g.label} className="flex justify-between text-slate-500 mb-2">
                       <span>{g.label}:</span>
-                      <span className="font-mono">${g.base.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="font-mono">${fmt.money(g.base)}</span>
                     </div>
                   )
                 ))}
                 {discriminatedRetentions().map(r => (
                   <div key={r.label} className="flex justify-between text-rose-600 mb-2">
                     <span>{r.label}:</span>
-                    <span className="font-mono">-${r.amount.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-mono">-${fmt.money(r.amount)}</span>
                   </div>
                 ))}
                 {formData.generalDiscountAmount > 0 && (
                   <div className="flex justify-between text-rose-600 mb-2">
                     <span>{formData.generalDiscountReason || 'Descuento general'}:</span>
-                    <span className="font-mono">-${formData.generalDiscountAmount.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-mono">-${fmt.money(formData.generalDiscountAmount)}</span>
                   </div>
                 )}
                 {formData.generalChargeAmount > 0 && (
                   <div className="flex justify-between text-emerald-600 mb-2">
                     <span>{formData.generalChargeReason || 'Cargo general'}:</span>
-                    <span className="font-mono">+${formData.generalChargeAmount.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-mono">+${fmt.money(formData.generalChargeAmount)}</span>
                   </div>
                 )}
                 <div className="mb-4 pb-4 border-b border-slate-200" />
                 <div className="flex justify-between font-extrabold text-xl text-slate-800">
                   <span>Total:</span>
-                  <span className="font-mono">${(formData.totalAmount - totalRetentions - formData.generalDiscountAmount + formData.generalChargeAmount).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-mono">${fmt.money((formData.totalAmount - totalRetentions - formData.generalDiscountAmount + formData.generalChargeAmount))}</span>
                 </div>
               </div>
             </div>
@@ -1371,7 +1325,7 @@ export default function InvoicesPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Precio Base</label>
-                    <input type="number" step="0.01" required value={quickProduct.unitPrice} onChange={e => setQuickProduct({ ...quickProduct, unitPrice: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
+                    <DecimalInput value={quickProduct.unitPrice} onValueChange={v => setQuickProduct({ ...quickProduct, unitPrice: v })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
                   </div>
                 </div>
                 <div>
@@ -1509,10 +1463,10 @@ export default function InvoicesPage() {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Subtotal</p><p className="text-slate-700 font-medium font-mono">${(inv.subtotal || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Impuestos</p><p className="text-slate-700 font-medium font-mono">${(inv.taxAmount || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Retenciones</p><p className="text-rose-600 font-medium font-mono">-${retentionsTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Total</p><p className="text-slate-800 font-bold font-mono">${invoiceNetTotal(inv).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Subtotal</p><p className="text-slate-700 font-medium font-mono">${fmt.money((inv.subtotal || 0))}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Impuestos</p><p className="text-slate-700 font-medium font-mono">${fmt.money((inv.taxAmount || 0))}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Retenciones</p><p className="text-rose-600 font-medium font-mono">-${fmt.money(retentionsTotal)}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Total</p><p className="text-slate-800 font-bold font-mono">${fmt.money(invoiceNetTotal(inv))}</p></div>
             </div>
 
             {inv.notes && (
@@ -1534,7 +1488,7 @@ export default function InvoicesPage() {
                   {viewingRelated.map(r => (
                     <button key={r.id} onClick={() => handleViewDetail(r)} className="text-sm text-primary hover:underline flex items-center gap-2">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.typeCode === 'NC' ? 'bg-amber-100 text-amber-700' : 'bg-orange-100 text-orange-700'}`}>{r.typeCode}</span>
-                      {r.number} · ${r.totalAmount?.toLocaleString('es-CO')} · {STATUS_LABELS[r.status] || r.status}
+                      {r.number} · ${fmt.number(r.totalAmount, 3)} · {STATUS_LABELS[r.status] || r.status}
                     </button>
                   ))}
                 </div>
@@ -1558,10 +1512,10 @@ export default function InvoicesPage() {
                     <tr key={idx}>
                       <td className="p-3 text-sm text-slate-700">{item.name}</td>
                       <td className="p-3 text-sm">{item.quantity}</td>
-                      <td className="p-3 text-sm font-mono">${item.unitPrice.toLocaleString('es-CO')}</td>
+                      <td className="p-3 text-sm font-mono">${fmt.number(item.unitPrice, 3)}</td>
                       <td className="p-3 text-sm font-mono">{item.discountRate || 0}%</td>
                       <td className="p-3 text-sm">{item.ivaTreatment === 'Gravado' ? `${item.taxRate}%` : item.ivaTreatment}</td>
-                      <td className="p-3 text-sm font-mono font-bold text-right">${item.totalAmount.toLocaleString('es-CO')}</td>
+                      <td className="p-3 text-sm font-mono font-bold text-right">${fmt.number(item.totalAmount, 3)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1572,21 +1526,21 @@ export default function InvoicesPage() {
               <div className="w-full max-w-xs space-y-2 text-sm">
                 {Array.from(taxGroups.values()).map(g => (
                   <React.Fragment key={g.label}>
-                    <div className="flex justify-between text-slate-500"><span>Base {g.label}</span><span className="font-mono">${g.base.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>
-                    {g.tax > 0 && <div className="flex justify-between text-slate-700"><span>{g.label}</span><span className="font-mono">${g.tax.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>}
+                    <div className="flex justify-between text-slate-500"><span>Base {g.label}</span><span className="font-mono">${fmt.moneyInt(g.base)}</span></div>
+                    {g.tax > 0 && <div className="flex justify-between text-slate-700"><span>{g.label}</span><span className="font-mono">${fmt.moneyInt(g.tax)}</span></div>}
                   </React.Fragment>
                 ))}
                 {inv.generalDiscountAmount > 0 && (
-                  <div className="flex justify-between text-rose-600"><span>{inv.generalDiscountReason || 'Descuento'}</span><span className="font-mono">-${inv.generalDiscountAmount.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>
+                  <div className="flex justify-between text-rose-600"><span>{inv.generalDiscountReason || 'Descuento'}</span><span className="font-mono">-${fmt.moneyInt(inv.generalDiscountAmount)}</span></div>
                 )}
                 {inv.generalChargeAmount > 0 && (
-                  <div className="flex justify-between text-slate-700"><span>{inv.generalChargeReason || 'Cargo'}</span><span className="font-mono">${inv.generalChargeAmount.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>
+                  <div className="flex justify-between text-slate-700"><span>{inv.generalChargeReason || 'Cargo'}</span><span className="font-mono">${fmt.moneyInt(inv.generalChargeAmount)}</span></div>
                 )}
                 {retentionsTotal > 0 && (
-                  <div className="flex justify-between text-rose-600"><span>Retenciones</span><span className="font-mono">-${retentionsTotal.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span></div>
+                  <div className="flex justify-between text-rose-600"><span>Retenciones</span><span className="font-mono">-${fmt.moneyInt(retentionsTotal)}</span></div>
                 )}
                 <div className="flex justify-between text-lg font-bold text-slate-800 pt-2 border-t border-slate-200">
-                  <span>Total</span><span className="font-mono">${invoiceNetTotal(inv).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span>Total</span><span className="font-mono">${fmt.money(invoiceNetTotal(inv))}</span>
                 </div>
               </div>
             </div>
@@ -1791,10 +1745,10 @@ export default function InvoicesPage() {
                   </div>
                 </td>
                 <td className="p-4 text-slate-900 min-w-[220px]">{inv.customer?.name || 'Consumidor Final'}</td>
-                <td className="p-4 text-right font-mono text-slate-500">${(inv.subtotal || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="p-4 text-right font-mono text-slate-500">${(inv.taxAmount || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="p-4 text-right font-mono text-rose-600">-${invoiceRetentionsTotal(inv).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="p-4 text-right font-mono font-medium">${invoiceNetTotal(inv).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="p-4 text-right font-mono text-slate-500">${fmt.money((inv.subtotal || 0))}</td>
+                <td className="p-4 text-right font-mono text-slate-500">${fmt.money((inv.taxAmount || 0))}</td>
+                <td className="p-4 text-right font-mono text-rose-600">-${fmt.money(invoiceRetentionsTotal(inv))}</td>
+                <td className="p-4 text-right font-mono font-medium">${fmt.money(invoiceNetTotal(inv))}</td>
                 <td className="p-4 text-center">
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                     inv.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
@@ -1852,10 +1806,10 @@ export default function InvoicesPage() {
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-700">
                 <td colSpan={3} className="p-4 text-right">Total del período:</td>
-                <td className="p-4 text-right font-mono text-slate-500">${filteredTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="p-4 text-right font-mono text-slate-500">${filteredTaxTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="p-4 text-right font-mono text-rose-600">-${filteredRetentionsTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="p-4 text-right font-mono">${filteredNetTotal.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="p-4 text-right font-mono text-slate-500">${fmt.money(filteredTotal)}</td>
+                <td className="p-4 text-right font-mono text-slate-500">${fmt.money(filteredTaxTotal)}</td>
+                <td className="p-4 text-right font-mono text-rose-600">-${fmt.money(filteredRetentionsTotal)}</td>
+                <td className="p-4 text-right font-mono">${fmt.money(filteredNetTotal)}</td>
                 <td colSpan={2}></td>
               </tr>
             </tfoot>

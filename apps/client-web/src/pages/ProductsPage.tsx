@@ -5,6 +5,8 @@ import { api, getErrorMessage } from '../lib/api';
 import { useConfirm } from '@shared/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
 import SearchableSelect from '@shared/components/SearchableSelect';
+import { useNumberFormat } from '../lib/numberFormat';
+import DecimalInput from '../components/DecimalInput';
 
 const IVA_TREATMENTS = [
   { value: 'Gravado', label: 'Gravado' },
@@ -18,6 +20,7 @@ interface ProductTax {
 }
 
 export default function ProductsPage() {
+  const fmt = useNumberFormat();
   const confirm = useConfirm();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +155,7 @@ export default function ProductsPage() {
               <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                 <td className="p-4 font-mono text-sm font-medium text-slate-500">{p.code}</td>
                 <td className="p-4 text-slate-900 font-bold">{p.name}</td>
-                <td className="p-4 text-right font-medium">${p.unitPrice.toLocaleString('es-CO')}</td>
+                <td className="p-4 text-right font-medium">${fmt.number(p.unitPrice, 3)}</td>
                 <td className="p-4 text-right text-slate-500 text-sm">
                   {p.ivaTreatment === 'Gravado' ? `${p.ivaRate}%` : IVA_TREATMENTS.find(t => t.value === p.ivaTreatment)?.label || p.ivaTreatment}
                 </td>
@@ -215,7 +218,7 @@ export default function ProductsPage() {
                 
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Precio base</label>
-                  <input type="number" step="0.01" required value={formData.unitPrice} onChange={e => setFormData({...formData, unitPrice: parseFloat(e.target.value)})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
+                  <DecimalInput value={formData.unitPrice} onValueChange={v => setFormData({...formData, unitPrice: v})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
                 </div>
 
                 <div>
@@ -272,10 +275,10 @@ export default function ProductsPage() {
                           placeholder="Buscar impuesto..."
                           options={otherTaxCatalog.map(c => ({ value: c.category, label: `${c.name} (${c.category})` }))}
                         />
-                        <input
-                          type="number" step="0.01" placeholder="%"
+                        <DecimalInput
+                          placeholder="%" maxDecimals={3}
                           value={tax.rate}
-                          onChange={e => setFormData({ ...formData, taxes: formData.taxes.map((t, i) => i === idx ? { ...t, rate: parseFloat(e.target.value) || 0 } : t) })}
+                          onValueChange={v => setFormData({ ...formData, taxes: formData.taxes.map((t, i) => i === idx ? { ...t, rate: v } : t) })}
                           className="w-24 px-3 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono text-sm"
                         />
                         <button type="button" onClick={() => setFormData({ ...formData, taxes: formData.taxes.filter((_, i) => i !== idx) })} className="p-2 text-slate-400 hover:text-rose-600">

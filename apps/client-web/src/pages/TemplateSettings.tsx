@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Copy, Upload, GitBranch, Pencil, Eye, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import { buildNumberFormat, setDecimalSeparator, useNumberFormat } from '../lib/numberFormat';
 import { useConfirm } from '@shared/components/ConfirmDialog';
 
 interface ClientSetting {
@@ -48,6 +49,8 @@ export default function TemplateSettings() {
   const [showVersionModal, setShowVersionModal] = useState<string | null>(null);
   const [versionKey, setVersionKey] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const fmt = useNumberFormat();
+  const [savingNumberFormat, setSavingNumberFormat] = useState(false);
   const [branding, setBranding] = useState<BrandingData>({ invoiceLogoUrl: '', unitOfMeasureDisplayOverride: '' });
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [savingUnitFormat, setSavingUnitFormat] = useState(false);
@@ -109,6 +112,19 @@ export default function TemplateSettings() {
       toast.error(getErrorMessage(err, 'Error al guardar el formato de unidad de medida'));
     } finally {
       setSavingUnitFormat(false);
+    }
+  };
+
+  const handleSaveNumberFormat = async (value: '.' | ',') => {
+    setSavingNumberFormat(true);
+    try {
+      await api.put('/v1/branding/my-branding', { decimalSeparator: value });
+      setDecimalSeparator(value);
+      toast.success('Formato de números actualizado');
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Error al guardar el formato de números'));
+    } finally {
+      setSavingNumberFormat(false);
     }
   };
 
@@ -302,6 +318,27 @@ export default function TemplateSettings() {
             <option value="Combined">Código y sigla ("94 - EA")</option>
             <option value="CodeOnly">Solo código DIAN ("94")</option>
             <option value="AbbreviationOnly">Solo sigla ("EA")</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Formato de números: portal y PDF */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
+        <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
+          <LayoutTemplate className="w-5 h-5 text-primary" /> Formato de números
+        </h2>
+        <p className="text-sm text-slate-500 mb-6">
+          Cómo se escriben y se muestran los valores en el portal y en los PDF de tus documentos. No cambia los valores que se envían a la DIAN.
+        </p>
+        <div className="max-w-sm">
+          <select
+            disabled={savingNumberFormat}
+            value={fmt.decimal}
+            onChange={e => handleSaveNumberFormat(e.target.value as '.' | ',')}
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-slate-800 appearance-none disabled:opacity-50"
+          >
+            <option value=".">Punto decimal, coma de miles ({buildNumberFormat('.').money(1234567.89)})</option>
+            <option value=",">Coma decimal, punto de miles ({buildNumberFormat(',').money(1234567.89)})</option>
           </select>
         </div>
       </div>

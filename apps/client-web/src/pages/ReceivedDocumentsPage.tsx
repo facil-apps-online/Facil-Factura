@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Inbox, Mail, Upload, Loader2, CheckCircle2, XCircle, Send } from 'lucide-react';
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
+import { useNumberFormat } from '../lib/numberFormat';
 
 const EVENT_INFO: Record<string, { label: string; description: string }> = {
   acuseRecibo: {
@@ -23,6 +24,7 @@ const EVENT_INFO: Record<string, { label: string; description: string }> = {
 };
 
 export default function ReceivedDocumentsPage() {
+  const fmt = useNumberFormat();
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({
@@ -271,7 +273,7 @@ export default function ReceivedDocumentsPage() {
                       <td className="py-4 px-4 font-semibold text-slate-700">{doc.issuerName || doc.issuerTaxId}</td>
                       <td className="py-4 px-4 font-mono text-sm text-slate-600">{doc.documentId}</td>
                       <td className="py-4 px-4 text-sm text-slate-500">{new Date(doc.issueDate).toLocaleDateString()}</td>
-                      <td className="py-4 px-4 font-mono text-sm">${Number(doc.totalAmount).toLocaleString('es-CO')}</td>
+                      <td className="py-4 px-4 font-mono text-sm">${fmt.number(Number(doc.totalAmount), 3)}</td>
                       <td className="py-4 px-4 text-xs text-slate-400">{doc.sourceType === 'Email' ? 'Correo' : 'Manual'}</td>
                       <td className="py-4 px-4">
                         <div className="flex flex-wrap gap-1.5">

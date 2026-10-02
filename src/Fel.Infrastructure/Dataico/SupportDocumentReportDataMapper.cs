@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Fel.Core.Entities;
+using Fel.Core.Models;
 using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dataico
@@ -20,10 +21,6 @@ namespace Fel.Infrastructure.Dataico
         private const string FabricanteSoftwareNit = "900.303.194-6";
         private const string NombreSoftware = "Facil Factura";
 
-        private static readonly CultureInfo Co = CultureInfo.GetCultureInfo("es-CO");
-        private static string Money(decimal value) => value.ToString("N0", Co);
-        private static string Qty(decimal value) => value.ToString("0.##", Co);
-        private static string Pct(decimal value) => value.ToString("0.##", Co) + "%";
 
         // Redacción idéntica a InvoiceReportDataMapper para el encabezado de responsabilidades.
         private static string ResponsabilidadTexto(bool activo, string etiqueta) =>
@@ -61,6 +58,11 @@ namespace Fel.Infrastructure.Dataico
 
         public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null)
         {
+            // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
+            var nf = ReportNumberFormat.For(client.DecimalSeparator);
+            string Money(decimal value) => value.ToString("N0", nf);
+            string Qty(decimal value) => value.ToString("0.##", nf);
+            string Pct(decimal value) => value.ToString("0.##", nf) + "%";
             var esIntegradorExterno = client.Integrator.Kind == IntegratorKind.ThirdPartyIntegrator;
             var esAjuste = document.TypeCode == "DS-AJUSTE";
 

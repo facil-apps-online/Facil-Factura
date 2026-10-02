@@ -255,28 +255,8 @@ namespace Fel.Api.Client.Controllers
         // especificidad que ClientTemplatesController.GetAvailableTemplates. Se devuelve la
         // plantilla completa (no solo el RepxTemplateKey) porque InvoiceReportDataMapper.Build
         // también necesita su MostrarRetenciones.
-        private async Task<Fel.Core.Entities.DocumentTemplate?> ResolveTemplateAsync(Fel.Core.Entities.Client client, Guid documentTypeId)
-        {
-            var selected = await _dbContext.ClientDocumentSettings
-                .Include(s => s.SelectedTemplate)
-                .FirstOrDefaultAsync(s => s.ClientId == client.Id && s.DocumentTypeId == documentTypeId);
-
-            if (selected?.SelectedTemplate != null && selected.SelectedTemplate.Status == TemplateStatus.Published)
-            {
-                return selected.SelectedTemplate;
-            }
-
-            var candidates = await _dbContext.DocumentTemplates
-                .Where(t => t.DocumentTypeId == documentTypeId && t.Status == TemplateStatus.Published &&
-                            ((t.TenantId == null && t.ClientId == null) ||
-                             (t.TenantId == client.TenantId && t.ClientId == null) ||
-                             t.ClientId == client.Id))
-                .ToListAsync();
-
-            return candidates.FirstOrDefault(t => t.ClientId == client.Id)
-                ?? candidates.FirstOrDefault(t => t.TenantId == client.TenantId && t.ClientId == null)
-                ?? candidates.FirstOrDefault(t => t.TenantId == null && t.ClientId == null);
-        }
+        private Task<Fel.Core.Entities.DocumentTemplate?> ResolveTemplateAsync(Fel.Core.Entities.Client client, Guid documentTypeId) =>
+            Fel.Infrastructure.Services.DocumentTemplateResolver.ResolveAsync(_dbContext, client, documentTypeId);
 
         [HttpPost("draft")]
         public async Task<IActionResult> CreateDraft([FromBody] Document invoice)

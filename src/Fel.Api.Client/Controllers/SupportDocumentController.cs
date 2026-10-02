@@ -44,9 +44,11 @@ namespace Fel.Api.Client.Controllers
         private readonly ICryptoService _cryptoService;
         private readonly IDataicoApiService _dataicoApiService;
         private readonly DataicoCustomPdfService _customPdfService;
+        private readonly IFacilReportsClient _facilReportsClient;
 
-        public SupportDocumentController(FelDbContext dbContext, ICryptoService cryptoService, IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService)
+        public SupportDocumentController(FelDbContext dbContext, ICryptoService cryptoService, IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, IFacilReportsClient facilReportsClient)
         {
+            _facilReportsClient = facilReportsClient;
             _dbContext = dbContext;
             _cryptoService = cryptoService;
             _dataicoApiService = dataicoApiService;
@@ -137,6 +139,51 @@ namespace Fel.Api.Client.Controllers
                     .ToListAsync();
 
                 return Ok(related);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Vista previa de impresión (borrador o ya emitido) con la plantilla del cliente — mismo flujo
+        // que InvoiceController.Preview, con el mapper de documento soporte.
+        [HttpGet("{id}/preview")]
+        public async Task<IActionResult> Preview(Guid id)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var document = await _dbContext.Documents
+                    .Include(d => d.Customer)
+                    .Include(d => d.Resolution)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
+                    .Include(d => d.GeneralRetentions)
+                    .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode));
+
+                if (document == null) return NotFound("Documento soporte no encontrado.");
+
+                var documentTypeId = document.DocumentTypeId ?? await GetDocumentTypeIdAsync(document.TypeCode);
+                if (!documentTypeId.HasValue) return BadRequest("El documento no tiene un tipo asignado.");
+
+                var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
+                if (client == null) return NotFound("Emisor no encontrado.");
+
+                var template = await Fel.Infrastructure.Services.DocumentTemplateResolver.ResolveAsync(_dbContext, client, documentTypeId.Value);
+                if (template == null)
+                {
+                    return BadRequest("Aún no hay una plantilla de impresión configurada para este tipo de documento.");
+                }
+
+                var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
+                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog);
+                var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
+                if (pdfBytes == null)
+                {
+                    return BadRequest("No se pudo generar la vista previa. Intenta de nuevo en unos segundos.");
+                }
+
+                return File(pdfBytes, "application/pdf");
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -445,8 +492,12 @@ namespace Fel.Api.Client.Controllers
                     Id = Guid.NewGuid(),
                     DocumentId = document.Id,
                     LineNumber = supportItemLine++,
+                    ProductId = item.ProductId,
                     Code = item.Code,
                     Name = item.Name,
+                    UnitOfMeasureCode = string.IsNullOrWhiteSpace(item.UnitOfMeasureCode) ? "94" : item.UnitOfMeasureCode,
+                    UnitOfMeasureAbbreviation = string.IsNullOrWhiteSpace(item.UnitOfMeasureAbbreviation) ? "EA" : item.UnitOfMeasureAbbreviation,
+                    UnitOfMeasureDisplayFormat = string.IsNullOrWhiteSpace(item.UnitOfMeasureDisplayFormat) ? "Combined" : item.UnitOfMeasureDisplayFormat,
                     Quantity = item.Quantity,
                     UnitPrice = item.UnitPrice,
                     IvaTreatment = item.IvaTreatment,
@@ -508,6 +559,10 @@ namespace Fel.Api.Client.Controllers
 
     public class CreateSupportDocumentItem
     {
+        public Guid? ProductId { get; set; }
+        public string UnitOfMeasureCode { get; set; } = "94";
+        public string UnitOfMeasureAbbreviation { get; set; } = "EA";
+        public string UnitOfMeasureDisplayFormat { get; set; } = "Combined";
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public decimal Quantity { get; set; } = 1;

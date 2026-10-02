@@ -6,6 +6,16 @@ import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import ClientFormFields from '../components/ClientFormFields';
 
+// Consecutivos internos de notas: crédito y débito (facturas) y ajuste (documento soporte).
+type NoteCounterType = 'credit' | 'debit' | 'adjustment';
+const NOTE_COUNTER_FIELD = { credit: 'nextCreditNoteNumber', debit: 'nextDebitNoteNumber', adjustment: 'nextSupportAdjustmentNumber' } as const;
+const NOTE_COUNTER_LABEL: Record<NoteCounterType, string> = { credit: 'Nota Crédito', debit: 'Nota Débito', adjustment: 'Nota de Ajuste (Doc. Soporte)' };
+const NOTE_COUNTER_BADGE: Record<NoteCounterType, string> = {
+  credit: 'bg-emerald-100 text-emerald-700',
+  debit: 'bg-orange-100 text-orange-700',
+  adjustment: 'bg-sky-100 text-sky-700'
+};
+
 const CLIENT_CERTIFICATE_FIELDS = new Set([
   'district', 'state', 'departament', 'addressCorp', 'address', 'legalNameCorp',
   'name', 'lastName', 'dnAlternativo1', 'identity', 'email', 'countryCode',
@@ -181,7 +191,7 @@ export default function ClientEdit() {
       .catch(() => toast.error("Error al cargar resoluciones"));
   };
 
-  const [noteCounters, setNoteCounters] = useState<{ nextCreditNoteNumber: number; nextDebitNoteNumber: number } | null>(null);
+  const [noteCounters, setNoteCounters] = useState<{ nextCreditNoteNumber: number; nextDebitNoteNumber: number; nextSupportAdjustmentNumber: number } | null>(null);
 
   const loadNoteCounters = () => {
     api.get(`/tenant/clients/${id}/note-counters`)
@@ -218,16 +228,16 @@ export default function ClientEdit() {
     }
   };
 
-  const [editingNoteCounterType, setEditingNoteCounterType] = useState<'credit' | 'debit' | null>(null);
+  const [editingNoteCounterType, setEditingNoteCounterType] = useState<NoteCounterType | null>(null);
   const [noteCounterDraft, setNoteCounterDraft] = useState('');
   const [savingNoteCounter, setSavingNoteCounter] = useState(false);
 
-  const startEditNoteCounter = (type: 'credit' | 'debit') => {
+  const startEditNoteCounter = (type: NoteCounterType) => {
     setEditingNoteCounterType(type);
-    setNoteCounterDraft(String(type === 'credit' ? noteCounters?.nextCreditNoteNumber ?? 1 : noteCounters?.nextDebitNoteNumber ?? 1));
+    setNoteCounterDraft(String(noteCounters?.[NOTE_COUNTER_FIELD[type]] ?? 1));
   };
 
-  const saveNoteCounter = async (type: 'credit' | 'debit') => {
+  const saveNoteCounter = async (type: NoteCounterType) => {
     const value = parseInt(noteCounterDraft, 10);
     if (!Number.isFinite(value) || value < 1) {
       toast.error('Ingresa un número válido');
@@ -235,7 +245,7 @@ export default function ClientEdit() {
     }
     setSavingNoteCounter(true);
     try {
-      const payload = type === 'credit' ? { nextCreditNoteNumber: value } : { nextDebitNoteNumber: value };
+      const payload = { [NOTE_COUNTER_FIELD[type]]: value };
       const res = await api.put(`/tenant/clients/${id}/note-counters`, payload);
       setNoteCounters(res.data);
       toast.success('Consecutivo actualizado');
@@ -1328,7 +1338,7 @@ export default function ClientEdit() {
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-slate-800">Consecutivos de Notas</h2>
                   <p className="text-slate-500 mt-1 text-sm max-w-2xl">
-                    Las Notas Crédito y Débito no tienen un rango autorizado por la DIAN (no aplica una resolución) — este consecutivo es interno, y sirve solo para numerarlas de forma ordenada.
+                    Las Notas Crédito, Débito y de Ajuste no tienen un rango autorizado por la DIAN (no aplica una resolución) — este consecutivo es interno, y sirve solo para numerarlas de forma ordenada.
                   </p>
                 </div>
 
@@ -1341,11 +1351,11 @@ export default function ClientEdit() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(['credit', 'debit'] as const).map(type => (
+                      {(['credit', 'debit', 'adjustment'] as const).map(type => (
                         <tr key={type} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                           <td className="py-4 px-4">
-                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${type === 'credit' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
-                              {type === 'credit' ? 'Nota Crédito' : 'Nota Débito'}
+                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${NOTE_COUNTER_BADGE[type]}`}>
+                              {NOTE_COUNTER_LABEL[type]}
                             </span>
                           </td>
                           <td className="py-4 px-4 text-sm">
@@ -1369,7 +1379,7 @@ export default function ClientEdit() {
                               </div>
                             ) : (
                               <button onClick={() => startEditNoteCounter(type)} className="flex items-center gap-1.5 font-mono font-bold text-slate-700 hover:text-blue-600 group">
-                                {type === 'credit' ? noteCounters?.nextCreditNoteNumber ?? 1 : noteCounters?.nextDebitNoteNumber ?? 1}
+                                {noteCounters?.[NOTE_COUNTER_FIELD[type]] ?? 1}
                                 <Pencil size={13} className="text-slate-300 group-hover:text-blue-600" />
                               </button>
                             )}

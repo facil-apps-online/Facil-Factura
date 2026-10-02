@@ -63,6 +63,7 @@ namespace Fel.Infrastructure.Dataico
             string Money(decimal value) => value.ToString("N0", nf);
             string Qty(decimal value) => value.ToString("0.##", nf);
             string Pct(decimal value) => value.ToString("0.##", nf) + "%";
+            var totalNeto = document.TotalAmount - (document.GeneralDiscountAmount ?? 0) + (document.GeneralChargeAmount ?? 0);
             var esIntegradorExterno = client.Integrator.Kind == IntegratorKind.ThirdPartyIntegrator;
             var esAjuste = document.TypeCode == "DS-AJUSTE";
 
@@ -147,8 +148,9 @@ namespace Fel.Infrastructure.Dataico
                     ["Cargo"] = Money(document.GeneralChargeAmount ?? 0),
                     ["TotalRetenciones"] = null,
                     ["NetoAPagar"] = null,
-                    ["Total"] = Money(document.TotalAmount),
-                    ["TotalEnLetras"] = NumberToWordsEs.ConvertirPesos(document.TotalAmount),
+                    // TotalAmount es el bruto (subtotal + IVA); el total a pagar aplica descuento y cargo general.
+                    ["Total"] = Money(totalNeto),
+                    ["TotalEnLetras"] = NumberToWordsEs.ConvertirPesos(totalNeto),
 
                     ["FabricanteSoftwareNombre"] = FabricanteSoftwareNombre,
                     ["FabricanteSoftwareNit"] = FabricanteSoftwareNit,

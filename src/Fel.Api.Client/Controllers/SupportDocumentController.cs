@@ -22,6 +22,24 @@ namespace Fel.Api.Client.Controllers
         // un DRAFT nunca se envió, y un REJECTED fue rechazado por Dataico, así que tampoco llegó.
         private static bool IsEditable(string status) => status == "DRAFT" || status == "REJECTED";
 
+        // La fecha de emisión se maneja en hora de Colombia y, igual que en facturas, no puede ser
+        // anterior a hoy (de hoy en adelante). Sin fecha en el request se usa la de hoy.
+        private static string? ValidateIssueDate(DateTime? issueDate) =>
+            issueDate.HasValue && issueDate.Value.Date < Fel.Core.Models.ColombiaTime.Today
+                ? "La fecha de emisión no puede ser anterior a hoy."
+                : null;
+
+        // Antes de usar el consecutivo de la resolución, el borrador se numeraba con DateTime.Ticks
+        // (18 dígitos). Esos borradores/rechazados viejos se renumeran al publicar.
+        private static bool NeedsConsecutive(string? number) =>
+            string.IsNullOrEmpty(number) || (number.Length >= 15 && number.All(char.IsDigit));
+
+        private async Task<Guid?> GetDocumentTypeIdAsync(string typeCode) =>
+            await _dbContext.DocumentTypes.AsNoTracking()
+                .Where(t => t.Code == typeCode)
+                .Select(t => (Guid?)t.Id)
+                .FirstOrDefaultAsync();
+
         private readonly FelDbContext _dbContext;
         private readonly ICryptoService _cryptoService;
         private readonly IDataicoApiService _dataicoApiService;
@@ -141,7 +159,11 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Debes agregar al menos un ítem.");
                 }
 
+                var dateError = ValidateIssueDate(request.IssueDate);
+                if (dateError != null) return BadRequest(dateError);
+
                 var document = BuildDocument(clientId, provider.Id, request);
+                document.DocumentTypeId = await GetDocumentTypeIdAsync(document.TypeCode);
                 document.Status = "DRAFT";
 
                 _dbContext.Documents.Add(document);
@@ -176,9 +198,17 @@ namespace Fel.Api.Client.Controllers
                 var provider = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == request.CustomerId && c.ClientId == clientId);
                 if (provider == null) return BadRequest("El proveedor/tercero seleccionado no existe.");
 
+                var dateError = ValidateIssueDate(request.IssueDate);
+                if (dateError != null) return BadRequest(dateError);
+
                 var updated = BuildDocument(clientId, provider.Id, request);
 
                 document.CustomerId = provider.Id;
+                document.IssueDate = updated.IssueDate;
+                document.Notes = updated.Notes;
+                document.GeneralChargeReason = updated.GeneralChargeReason;
+                document.GeneralChargeAmount = updated.GeneralChargeAmount;
+                document.DocumentTypeId = await GetDocumentTypeIdAsync(document.TypeCode);
                 document.ResolutionId = request.ResolutionId;
                 document.PaymentMeans = request.PaymentMeans;
                 document.PaymentMeansType = request.PaymentMeansType;
@@ -278,6 +308,21 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Debes indicar el medio de pago.");
                 }
 
+                if (document.IssueDate.Date < Fel.Core.Models.ColombiaTime.Today)
+                {
+                    return BadRequest("La fecha de emisión ya pasó. Edita el documento y actualiza la fecha (de hoy en adelante).");
+                }
+
+                // Consecutivo real, reclamado recién ahora que ya pasaron todas las validaciones (un
+                // documento rechazado que se reintenta conserva el que ya tiene). El Documento Soporte
+                // usa el rango de su resolución; la Nota de Ajuste, su contador propio del Client.
+                if (NeedsConsecutive(document.Number))
+                {
+                    document.Number = document.TypeCode == AdjustmentTypeCode
+                        ? (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextSupportAdjustmentNumberAsync(_dbContext, clientId)).ToString()
+                        : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
+                }
+
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
                 if (document.TypeCode == AdjustmentTypeCode)
                 {
@@ -367,9 +412,11 @@ namespace Fel.Api.Client.Controllers
                 ClientId = clientId,
                 CustomerId = providerId,
                 TypeCode = request.ReferenceDocumentId.HasValue ? AdjustmentTypeCode : TypeCode,
-                Number = DateTime.UtcNow.Ticks.ToString(),
+                // Sin número hasta publicar: ahí se reclama el consecutivo de la resolución/contador.
+                Number = string.Empty,
                 CreatedAt = DateTime.UtcNow,
-                IssueDate = Fel.Core.Models.ColombiaTime.Now,
+                IssueDate = (request.IssueDate ?? Fel.Core.Models.ColombiaTime.Today).Date,
+                Notes = request.Notes ?? string.Empty,
                 ResolutionId = request.ResolutionId,
                 PaymentMeans = request.PaymentMeans,
                 PaymentMeansType = request.PaymentMeansType,
@@ -377,11 +424,15 @@ namespace Fel.Api.Client.Controllers
                 PurchaseOrderReference = request.PurchaseOrderReference,
                 GeneralDiscountReason = request.GeneralDiscountReason,
                 GeneralDiscountAmount = request.GeneralDiscountAmount,
+                GeneralChargeReason = request.GeneralChargeReason,
+                GeneralChargeAmount = request.GeneralChargeAmount,
                 ReferenceDocumentId = request.ReferenceDocumentId,
                 ReferenceConcept = request.ReferenceConcept,
                 Subtotal = request.Items.Sum(LineBase),
                 TaxAmount = request.Items.Sum(i => LineBase(i) * EffectiveRate(i) / 100),
-                TotalAmount = request.Items.Sum(i => LineBase(i) * (1 + EffectiveRate(i) / 100)) - (request.GeneralDiscountAmount ?? 0)
+                // Bruto (subtotal + IVA), igual que en facturas: el descuento y el cargo general se
+                // aplican al mostrar el neto (ver invoiceNetTotal en el portal) y en los PDF.
+                TotalAmount = request.Items.Sum(i => LineBase(i) * (1 + EffectiveRate(i) / 100))
             };
 
             var supportItemLine = 0;
@@ -491,6 +542,10 @@ namespace Fel.Api.Client.Controllers
         public string? PurchaseOrderReference { get; set; }
         public string? GeneralDiscountReason { get; set; }
         public decimal? GeneralDiscountAmount { get; set; }
+        public string? GeneralChargeReason { get; set; }
+        public decimal? GeneralChargeAmount { get; set; }
+        public DateTime? IssueDate { get; set; }
+        public string? Notes { get; set; }
         public System.Collections.Generic.List<CreateGeneralRetention>? GeneralRetentions { get; set; }
         public System.Collections.Generic.List<CreateSupportDocumentItem> Items { get; set; } = new();
 

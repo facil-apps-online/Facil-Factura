@@ -216,6 +216,9 @@ namespace Fel.Core.Entities
         // correspondía a la siguiente factura real.
         public long? NextCreditNoteNumber { get; set; }
         public long? NextDebitNoteNumber { get; set; }
+        // Consecutivo de las Notas de Ajuste del Documento Soporte (DS-AJUSTE), igual que el de las
+        // notas crédito/débito: propio del Client, no compite con el de la resolución del DS.
+        public long? NextSupportAdjustmentNumber { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }

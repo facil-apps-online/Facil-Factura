@@ -93,5 +93,31 @@ namespace Fel.Infrastructure.Services
                 if (affected > 0) return current;
             }
         }
+
+        // Notas de Ajuste del Documento Soporte (DS-AJUSTE): mismo patrón, consecutivo propio del Client.
+        public static async Task<long> ClaimNextSupportAdjustmentNumberAsync(FelDbContext dbContext, Guid clientId)
+        {
+            while (true)
+            {
+                var client = await dbContext.Clients.AsNoTracking()
+                    .Where(c => c.Id == clientId)
+                    .Select(c => new { c.NextSupportAdjustmentNumber })
+                    .FirstOrDefaultAsync();
+
+                if (client == null)
+                {
+                    throw new InvalidOperationException("No se encontró el Client al asignar el consecutivo de la nota de ajuste.");
+                }
+
+                var current = client.NextSupportAdjustmentNumber ?? 1;
+                var next = current + 1;
+
+                var affected = await dbContext.Clients
+                    .Where(c => c.Id == clientId && c.NextSupportAdjustmentNumber == client.NextSupportAdjustmentNumber)
+                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.NextSupportAdjustmentNumber, next));
+
+                if (affected > 0) return current;
+            }
+        }
     }
 }

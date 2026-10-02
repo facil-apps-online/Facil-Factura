@@ -1013,6 +1013,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<long?>("NextDebitNoteNumber")
                         .HasColumnType("bigint");
 
+                    b.Property<long?>("NextSupportAdjustmentNumber")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("OrganizationDepartment")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");

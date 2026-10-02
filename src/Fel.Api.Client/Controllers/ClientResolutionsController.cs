@@ -307,7 +307,8 @@ namespace Fel.Api.Client.Controllers
             return Ok(new
             {
                 nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
-                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1
+                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1,
+                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1
             });
         }
 
@@ -315,6 +316,7 @@ namespace Fel.Api.Client.Controllers
         {
             public long? NextCreditNoteNumber { get; set; }
             public long? NextDebitNoteNumber { get; set; }
+            public long? NextSupportAdjustmentNumber { get; set; }
         }
 
         [HttpPut("note-counters")]
@@ -334,13 +336,19 @@ namespace Fel.Api.Client.Controllers
                 if (request.NextDebitNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Débito debe ser mayor a 0.");
                 client.NextDebitNoteNumber = request.NextDebitNoteNumber.Value;
             }
+            if (request.NextSupportAdjustmentNumber.HasValue)
+            {
+                if (request.NextSupportAdjustmentNumber.Value < 1) return BadRequest("El consecutivo de Nota de Ajuste debe ser mayor a 0.");
+                client.NextSupportAdjustmentNumber = request.NextSupportAdjustmentNumber.Value;
+            }
 
             await _dbContext.SaveChangesAsync();
 
             return Ok(new
             {
                 nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
-                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1
+                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1,
+                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1
             });
         }
     }

@@ -365,9 +365,17 @@ namespace Fel.Api.Client.Controllers
                 // usa el rango de su resolución; la Nota de Ajuste, su contador propio del Client.
                 if (NeedsConsecutive(document.Number))
                 {
-                    document.Number = document.TypeCode == AdjustmentTypeCode
-                        ? (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextSupportAdjustmentNumberAsync(_dbContext, clientId)).ToString()
-                        : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
+                    try
+                    {
+                        document.Number = document.TypeCode == AdjustmentTypeCode
+                            ? (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextSupportAdjustmentNumberAsync(_dbContext, clientId)).ToString()
+                            : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
+                    }
+                    catch (Fel.Infrastructure.Services.ResolutionExhaustedException ex)
+                    {
+                        // Numeración agotada: no se emite ni se consume nada; el documento sigue editable.
+                        return BadRequest(ex.Message);
+                    }
                 }
 
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;

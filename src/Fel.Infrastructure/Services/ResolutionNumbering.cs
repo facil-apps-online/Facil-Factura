@@ -9,6 +9,15 @@ namespace Fel.Infrastructure.Services
     // Asigna el consecutivo real de una Resolución al momento de publicar un documento — antes ese
     // número se rellenaba con DateTime.UtcNow.Ticks cuando el borrador no lo traía, lo que la DIAN
     // (y Dataico) rechaza porque no corresponde a la numeración autorizada.
+    // La resolución llegó a su último número autorizado: no se asigna ni se envía el documento (la
+    // DIAN/Dataico lo rechazarían por numeración agotada). Hereda de NotSupportedException para que
+    // los controladores que ya traducen esa excepción a 400 (InvoiceController.Publish) devuelvan el
+    // mensaje tal cual, sin tocarlos.
+    public class ResolutionExhaustedException : NotSupportedException
+    {
+        public ResolutionExhaustedException(string message) : base(message) { }
+    }
+
     public static class ResolutionNumbering
     {
         // ExecuteUpdateAsync filtrado por el valor de NextNumber leído hace un instante: si otra
@@ -21,7 +30,7 @@ namespace Fel.Infrastructure.Services
             {
                 var resolution = await dbContext.Resolutions.AsNoTracking()
                     .Where(r => r.Id == resolutionId)
-                    .Select(r => new { r.NextNumber, r.NumberStart })
+                    .Select(r => new { r.NextNumber, r.NumberStart, r.NumberEnd, r.Prefix, r.DocumentType })
                     .FirstOrDefaultAsync();
 
                 if (resolution == null)
@@ -30,6 +39,17 @@ namespace Fel.Infrastructure.Services
                 }
 
                 var current = resolution.NextNumber ?? resolution.NumberStart;
+
+                // Validar el rango antes de reclamar: un número fuera de lo autorizado no se consume.
+                // Nómina (NE) no tiene rango DIAN real (el consecutivo lo lleva libremente el
+                // empleador) y NumberEnd = 0 significa "sin tope".
+                if (resolution.DocumentType != "NE" && resolution.NumberEnd > 0 && current > resolution.NumberEnd)
+                {
+                    throw new ResolutionExhaustedException(
+                        $"La resolución {resolution.Prefix} llegó a su último número autorizado ({resolution.NumberEnd}). " +
+                        "Solicita una nueva resolución a la DIAN o usa otra resolución activa.");
+                }
+
                 var next = current + 1;
 
                 var affected = await dbContext.Resolutions

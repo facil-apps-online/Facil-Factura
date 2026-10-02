@@ -75,7 +75,9 @@ namespace Fel.Infrastructure.Ubl
             // NumFac + FecFac + HorFac + ValFac + CodImp1 + ValImp1 + CodImp2 + ValImp2 + CodImp3 + ValImp3 + ValImp + ValTol + NitOFE + NumAdq + ClaveTec + Ambiente
             
             var valFac = data.LineExtensionAmount.ToString("0.00").Replace(",", ".");
-            var valTol = data.TaxInclusiveAmount.ToString("0.00").Replace(",", ".");
+            // ValTol/ValTot = PayableAmount (Anexo Técnico 11.2/11.4): con descuentos o cargos a nivel de factura
+            // difiere de TaxInclusiveAmount.
+            var valTol = data.PayableAmount.ToString("0.00").Replace(",", ".");
             
             var iva = data.Taxes.FirstOrDefault(t => t.TaxId == "01");
             var inc = data.Taxes.FirstOrDefault(t => t.TaxId == "04");
@@ -113,7 +115,9 @@ namespace Fel.Infrastructure.Ubl
         public string CalculateCude(UblInvoiceData data)
         {
             var valFac = data.LineExtensionAmount.ToString("0.00").Replace(",", ".");
-            var valTol = data.TaxInclusiveAmount.ToString("0.00").Replace(",", ".");
+            // ValTol/ValTot = PayableAmount (Anexo Técnico 11.2/11.4): con descuentos o cargos a nivel de factura
+            // difiere de TaxInclusiveAmount.
+            var valTol = data.PayableAmount.ToString("0.00").Replace(",", ".");
 
             var iva = data.Taxes.FirstOrDefault(t => t.TaxId == "01");
             var inc = data.Taxes.FirstOrDefault(t => t.TaxId == "04");
@@ -155,7 +159,7 @@ namespace Fel.Infrastructure.Ubl
                 $"ValFac={data.LineExtensionAmount.ToString("0.00").Replace(",", ".")}",
                 $"ValIva={valIva.ToString("0.00").Replace(",", ".")}",
                 $"ValOtroIm={valOtroIm.ToString("0.00").Replace(",", ".")}",
-                $"ValTolFac={data.TaxInclusiveAmount.ToString("0.00").Replace(",", ".")}",
+                $"ValTolFac={data.PayableAmount.ToString("0.00").Replace(",", ".")}",
                 $"CUFE={cufe}",
                 $"QRCode={qrBaseUrl}{cufe}"
             };

@@ -287,14 +287,55 @@ namespace Fel.Infrastructure.Ubl.Strategies
             return taxTotals;
         }
 
-        protected XElement BuildLegalMonetaryTotal(UblInvoiceData data)
+        // Descuentos y cargos a nivel de factura (FAQ01-FAQ09): los que NO afectan las bases gravables
+        // (los que sí la afectan van por ítem). Solo las usan Factura y Notas Crédito/Débito; el
+        // resto de documentos que comparten BuildLegalMonetaryTotal nunca los han emitido.
+        // ID consecutivo desde 1; AllowanceChargeReasonCode solo aplica (y es obligatorio) para
+        // descuentos (FAQ04); el Amount no puede superar el BaseAmount.
+        protected IEnumerable<XElement> BuildAllowanceCharges(UblInvoiceData data)
         {
-            return new XElement(cac + "LegalMonetaryTotal",
+            var index = 1;
+            foreach (var ac in data.AllowanceCharges)
+            {
+                var el = new XElement(cac + "AllowanceCharge",
+                    new XElement(cbc + "ID", index++.ToString()),
+                    new XElement(cbc + "ChargeIndicator", ac.ChargeIndicator ? "true" : "false")
+                );
+                if (!ac.ChargeIndicator)
+                {
+                    el.Add(new XElement(cbc + "AllowanceChargeReasonCode", ac.ReasonCode));
+                }
+                el.Add(
+                    new XElement(cbc + "AllowanceChargeReason", ac.Reason),
+                    new XElement(cbc + "MultiplierFactorNumeric", ac.Percentage.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)),
+                    new XElement(cbc + "Amount", new XAttribute("currencyID", data.Currency), ac.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)),
+                    new XElement(cbc + "BaseAmount", new XAttribute("currencyID", data.Currency), ac.BaseAmount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))
+                );
+                yield return el;
+            }
+        }
+
+        // includeAllowances=true agrega AllowanceTotalAmount/ChargeTotalAmount (FAU09/FAU10: deben
+        // ser la suma de los AllowanceCharge de la factura, así que solo se piden junto con
+        // BuildAllowanceCharges). PayableAmount debe ser TaxInclusiveAmount - descuentos + cargos (FAU14).
+        protected XElement BuildLegalMonetaryTotal(UblInvoiceData data, bool includeAllowances = false)
+        {
+            var total = new XElement(cac + "LegalMonetaryTotal",
                 new XElement(cbc + "LineExtensionAmount", new XAttribute("currencyID", data.Currency), data.LineExtensionAmount.ToString("0.00").Replace(",", ".")),
                 new XElement(cbc + "TaxExclusiveAmount", new XAttribute("currencyID", data.Currency), data.TaxExclusiveAmount.ToString("0.00").Replace(",", ".")),
-                new XElement(cbc + "TaxInclusiveAmount", new XAttribute("currencyID", data.Currency), data.TaxInclusiveAmount.ToString("0.00").Replace(",", ".")),
-                new XElement(cbc + "PayableAmount", new XAttribute("currencyID", data.Currency), data.PayableAmount.ToString("0.00").Replace(",", "."))
+                new XElement(cbc + "TaxInclusiveAmount", new XAttribute("currencyID", data.Currency), data.TaxInclusiveAmount.ToString("0.00").Replace(",", "."))
             );
+            if (includeAllowances)
+            {
+                var allowances = data.AllowanceCharges.Where(a => !a.ChargeIndicator).Sum(a => a.Amount);
+                var charges = data.AllowanceCharges.Where(a => a.ChargeIndicator).Sum(a => a.Amount);
+                if (allowances > 0)
+                    total.Add(new XElement(cbc + "AllowanceTotalAmount", new XAttribute("currencyID", data.Currency), allowances.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)));
+                if (charges > 0)
+                    total.Add(new XElement(cbc + "ChargeTotalAmount", new XAttribute("currencyID", data.Currency), charges.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)));
+            }
+            total.Add(new XElement(cbc + "PayableAmount", new XAttribute("currencyID", data.Currency), data.PayableAmount.ToString("0.00").Replace(",", ".")));
+            return total;
         }
 
         // "index" es el consecutivo real de la línea (1, 2, 3...) — antes quedaba fijo en "1" para

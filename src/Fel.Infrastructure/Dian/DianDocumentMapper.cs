@@ -161,7 +161,40 @@ namespace Fel.Infrastructure.Dian
             data.LineExtensionAmount = lineExtension;
             data.TaxExclusiveAmount = lineExtension;
             data.TaxInclusiveAmount = lineExtension + totalTax;
-            data.PayableAmount = lineExtension + totalTax;
+
+            // Descuento y cargo general del documento (no afectan las bases gravables: el IVA se
+            // calcula sobre las líneas, igual que en el portal y en el envío a Dataico). Van como
+            // cac:AllowanceCharge a nivel de factura (FAQ01-09). Se informan por el valor completo:
+            // BaseAmount = Amount con 100 % — mismo criterio del "charges" que se manda a Dataico.
+            // Código de descuento "09" (Descuento general, tabla 13.3.9 de la Caja de Herramientas).
+            var generalDiscount = document.GeneralDiscountAmount ?? 0;
+            if (generalDiscount > 0)
+            {
+                data.AllowanceCharges.Add(new AllowanceChargeData
+                {
+                    ChargeIndicator = false,
+                    ReasonCode = "09",
+                    Reason = string.IsNullOrWhiteSpace(document.GeneralDiscountReason) ? "Descuento general" : document.GeneralDiscountReason,
+                    Percentage = 100m,
+                    BaseAmount = generalDiscount,
+                    Amount = generalDiscount
+                });
+            }
+            var generalCharge = document.GeneralChargeAmount ?? 0;
+            if (generalCharge > 0)
+            {
+                data.AllowanceCharges.Add(new AllowanceChargeData
+                {
+                    ChargeIndicator = true,
+                    Reason = string.IsNullOrWhiteSpace(document.GeneralChargeReason) ? "Cargo general" : document.GeneralChargeReason,
+                    Percentage = 100m,
+                    BaseAmount = generalCharge,
+                    Amount = generalCharge
+                });
+            }
+
+            // FAU14: valor de la factura = TaxInclusiveAmount - descuentos + cargos.
+            data.PayableAmount = data.TaxInclusiveAmount - generalDiscount + generalCharge;
 
             return data;
         }

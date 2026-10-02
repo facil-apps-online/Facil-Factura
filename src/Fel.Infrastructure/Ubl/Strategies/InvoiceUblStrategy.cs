@@ -43,8 +43,9 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 BuildAccountingSupplierParty(data),
                 BuildAccountingCustomerParty(data),
                 BuildPaymentMeans(data),
+                BuildAllowanceCharges(data),
                 BuildTaxTotals(data),
-                BuildLegalMonetaryTotal(data)
+                BuildLegalMonetaryTotal(data, includeAllowances: true)
             );
 
             for (int i = 0; i < data.Lines.Count; i++)

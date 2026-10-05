@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
-import { X, MapPin, FileUp, Loader2 } from 'lucide-react';
+import { MapPin, FileUp, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import DecimalInput from './DecimalInput';
+import Modal from './Modal';
+import { Button } from './ui/button';
 
 const GOOGLE_MAPS_LIBRARIES: "places"[] = ['places'];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -212,10 +214,10 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
       let saved;
       if (editingCustomer) {
         saved = await api.put(`/client/customers/${editingCustomer.id}`, payload);
-        toast.success('Cliente actualizado');
+        toast.success(`${formData.partyType} actualizado`);
       } else {
         saved = await api.post('/client/customers', payload);
-        toast.success('Cliente creado');
+        toast.success(`${formData.partyType} creado`);
       }
       onSaved(saved.data);
     } catch (err: any) {
@@ -225,18 +227,26 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-          <h3 className="text-xl font-bold text-slate-800">{editingCustomer ? 'Editar Tercero' : 'Nuevo Tercero'}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto">
+    <Modal
+      open={open}
+      onOpenChange={o => { if (!o) onClose(); }}
+      title={editingCustomer ? 'Editar Tercero' : 'Nuevo Tercero'}
+      size="md"
+      // Los SearchableSelect y el autocompletado de Google Maps se pintan fuera del modal.
+      withFloatingPickers
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" form="customer-form" disabled={saving}>
+            {saving ? 'Guardando...' : `Guardar ${formData.partyType}`}
+          </Button>
+        </>
+      }
+    >
+        <form id="customer-form" onSubmit={handleSubmit}>
           {!editingCustomer && (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between gap-3">
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-bold text-slate-700">Cargar datos desde el RUT</p>
                 <p className="text-xs text-slate-500">Completa algunos datos automáticamente. Revísalos antes de guardar.</p>
@@ -266,14 +276,14 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             {isJuridica ? (
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-bold text-slate-700 mb-1">Razón Social</label>
                 <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
               </div>
             ) : (
-              <div className="col-span-2 grid grid-cols-2 gap-4">
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Nombre 1</label>
                   <input type="text" required value={formData.firstName} onChange={e => updateNamePart('firstName', e.target.value)} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
@@ -345,7 +355,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
               />
             </div>
 
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label className="block text-sm font-bold text-slate-700 mb-1">Dirección</label>
               {isMapsLoaded ? (
                 <Autocomplete onLoad={onLoadAutocomplete} onPlaceChanged={onPlaceChanged}>
@@ -361,7 +371,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
               )}
             </div>
             {formData.latitude != null && formData.longitude != null && (
-              <div className="col-span-2 h-40 rounded-xl overflow-hidden border border-slate-200">
+              <div className="sm:col-span-2 h-40 rounded-xl overflow-hidden border border-slate-200">
                 {isMapsLoaded ? (
                   <GoogleMap
                     mapContainerStyle={{ width: '100%', height: '100%' }}
@@ -395,7 +405,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
           {formData.partyType === 'Empleado' && (
             <div className="mt-4 pt-4 border-t border-slate-100">
               <h4 className="text-sm font-bold text-slate-700 mb-3">Datos de nómina</h4>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">Tipo de Trabajador</label>
                   <SearchableSelect
@@ -451,7 +461,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
                   <label className="block text-xs font-bold text-slate-500 mb-1">Fecha de Ingreso</label>
                   <input type="date" value={formData.startDate?.substring(0, 10) || ''} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
                 </div>
-                <div className="flex items-center gap-4 col-span-2">
+                <div className="flex flex-wrap items-center gap-4 sm:col-span-2">
                   <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
                     <input type="checkbox" checked={formData.highRisk} onChange={e => setFormData({...formData, highRisk: e.target.checked})} /> Alto Riesgo
                   </label>
@@ -463,14 +473,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
             </div>
           )}
 
-          <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100">
-            <button type="button" onClick={onClose} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-            <button type="submit" disabled={saving} className="px-5 py-2 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50">
-              {saving ? 'Guardando...' : `Guardar ${formData.partyType}`}
-            </button>
-          </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -38,7 +38,13 @@ export function getDateRangeForPreset(preset: DateRangePreset): { from: string, 
     case 'last-3-months':
       return { from: toIsoDate(startOfMonth(2)), to: toIsoDate(today) };
     case 'this-year':
-      return { from: toIsoDate(new Date(today.getFullYear(), 0, 1)), to: toIsoDate(today) };
+      // "Este año" debe abarcar todo el año calendario. Esto permite consultar
+      // documentos ya creados cuya fecha de emisión quedó posterior a hoy
+      // (por ejemplo, una factura programada para una fecha futura).
+      return {
+        from: toIsoDate(new Date(today.getFullYear(), 0, 1)),
+        to: toIsoDate(new Date(today.getFullYear(), 11, 31))
+      };
     case 'custom':
       return null;
   }

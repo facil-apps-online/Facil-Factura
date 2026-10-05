@@ -30,13 +30,13 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <div className="bg-white border border-slate-200 p-10 rounded-[2rem] shadow-xl w-full max-w-[420px]">
-        <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-2">Recuperar contraseña</h1>
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 p-4 py-8">
+      <div className="bg-white border border-slate-200 p-6 sm:p-10 rounded-[2rem] shadow-xl w-full max-w-[420px]">
+        <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-2 break-words">Recuperar contraseña</h1>
         <p className="text-slate-500 text-center text-sm mb-8">Te enviaremos un enlace para crear una nueva contraseña.</p>
 
         {sent ? (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm text-center py-4 rounded-xl font-medium">
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm text-center py-4 px-3 rounded-xl font-medium break-words">
             Si el correo está registrado, te llegará un enlace para restablecer tu contraseña.
           </div>
         ) : (
@@ -48,6 +48,8 @@ export default function ForgotPassword() {
               <input
                 type="email"
                 required
+                autoComplete="email"
+                aria-label="Correo de acceso"
                 placeholder="Correo de acceso"
                 className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
                 value={email}
@@ -55,7 +57,7 @@ export default function ForgotPassword() {
               />
             </div>
             {error && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-3 rounded-xl font-medium">
+              <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-3 px-3 rounded-xl font-medium break-words">
                 {error}
               </div>
             )}
@@ -69,7 +71,7 @@ export default function ForgotPassword() {
           </form>
         )}
 
-        <Link to={`/login${tenantSlug ? `?tenant=${tenantSlug}` : ''}`} className="mt-6 flex items-center justify-center gap-2 text-sm text-slate-500 hover:text-slate-700 font-medium">
+        <Link to={`/login${tenantSlug ? `?tenant=${tenantSlug}` : ''}`} className="mt-6 flex items-center justify-center gap-2 py-2 text-sm text-slate-500 hover:text-slate-700 font-medium">
           <ArrowLeft size={16} /> Volver al inicio de sesión
         </Link>
       </div>

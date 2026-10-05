@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, RotateCcw, X, UserPlus, Percent, Eye, Search, Download, ChevronLeft, ChevronRight, Printer, Link2, Info, AlertCircle, Mail } from 'lucide-react';
+import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, RotateCcw, X, UserPlus, Percent, Search, Download, ChevronLeft, ChevronRight, Printer, Link2, Info, AlertCircle, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
-import { useConfirm } from '@shared/components/ConfirmDialog';
+import { useConfirm } from '@/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
 import CustomerFormModal from '../components/CustomerFormModal';
 import SearchableSelect from '@shared/components/SearchableSelect';
@@ -11,6 +11,10 @@ import { exportToCsv } from '../lib/exportCsv';
 import { useNumberFormat } from '../lib/numberFormat';
 import DecimalInput from '../components/DecimalInput';
 import { todayColombia } from '../lib/colombiaTime';
+import Modal from '../components/Modal';
+import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import RowIconButton from '../components/RowIconButton';
+import { Button } from '../components/ui/button';
 
 const PAGE_SIZE = 25;
 
@@ -127,6 +131,9 @@ const NOTE_BADGES: Record<string, { label: string, className: string }> = {
   'DS-AJUSTE': { label: 'Ajuste', className: 'bg-amber-100 text-amber-700' },
 };
 const isNoteType = (typeCode?: string) => !!typeCode && typeCode in NOTE_BADGES;
+const isInvoiceDocument = (typeCode?: string) =>
+  !!typeCode && ((typeCode.startsWith('FE') && typeCode !== 'FE-TEST') || typeCode === 'NC' || typeCode === 'ND');
+const isSupportDocument = (typeCode?: string) => typeCode === 'DS' || typeCode === 'DS-AJUSTE';
 
 // Orden de la lista: primero lo que falta por enviar (Borrador), luego lo rechazado (necesita
 // atención), y de último lo ya tramitado (Procesando/Emitida) — dentro de cada grupo, de mayor a
@@ -184,7 +191,7 @@ const MODES = {
 } as const;
 
 const initialQuickProduct = {
-  code: '', name: '', unitPrice: 0, unitOfMeasure: '94', ivaTreatment: 'Gravado', ivaRate: 19, taxes: [] as any[]
+  code: '', name: '', unitPrice: 0, unitOfMeasureId: '30000000-0000-0000-0000-000000000001', standardCode: '', ivaTreatment: 'Gravado', ivaRate: 19, taxes: [] as any[]
 };
 
 export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
@@ -196,6 +203,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [datePreset, setDatePreset] = useState<DateRangePreset>('this-month');
   const [customFrom, setCustomFrom] = useState(() => getDateRangeForPreset('this-month')!.from);
   const [customTo, setCustomTo] = useState(() => getDateRangeForPreset('this-month')!.to);
+  const [appliedCustomFrom, setAppliedCustomFrom] = useState(() => getDateRangeForPreset('this-month')!.from);
+  const [appliedCustomTo, setAppliedCustomTo] = useState(() => getDateRangeForPreset('this-month')!.to);
   const [customers, setCustomers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [documentTypes, setDocumentTypes] = useState<any[]>([]);
@@ -277,11 +286,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   useEffect(() => {
     loadData();
-  }, [datePreset, customFrom, customTo]);
+  }, [datePreset, appliedCustomFrom, appliedCustomTo]);
 
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, statusFilter, resolutionFilter, datePreset, customFrom, customTo]);
+  }, [searchTerm, statusFilter, resolutionFilter, datePreset, appliedCustomFrom, appliedCustomTo]);
 
   useEffect(() => {
     if (!relatedOpenId) return;
@@ -294,10 +303,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   useEffect(() => {
     api.get('/client/resolutions')
-      .then(res => setResolutions(res.data.filter((r: any) => isSupport ? r.documentType === 'DS' : r.documentType !== 'POS' && r.documentType !== 'FE-TEST')))
+      .then(res => setResolutions(res.data.filter((r: any) => isSupport ? (r.documentType === 'DS' || r.documentType === 'POS') : r.documentType !== 'POS' && r.documentType !== 'FE-TEST')))
       .catch(() => {});
     api.get('/client/tax-catalog?kind=Retention')
-      .then(res => setRetentionCatalog(res.data))
+      .then(res => setRetentionCatalog(res.data.filter((c: any) => !isSupport || c.category !== 'RET_IVA')))
       .catch(() => {});
     api.get('/client/tax-catalog?kind=IvaRate')
       .then(res => setIvaRateCatalog(res.data))
@@ -317,19 +326,21 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     api.get('/client/tax-catalog?kind=DebitNoteReason')
       .then(res => setDebitNoteReasonCatalog(res.data))
       .catch(() => {});
-    api.get('/client/retention-concepts/catalog')
-      .then(res => setAutoRetentionCatalog(res.data.concepts))
+    api.get(`/client/retention-concepts/catalog?scope=${isSupport ? 'Support' : 'Invoice'}`)
+      .then(res => setAutoRetentionCatalog((res.data.concepts || []).filter((c: any) => !isSupport || c.taxCategory !== 'RET_IVA')))
       .catch(() => {});
   }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const range = datePreset === 'custom' ? { from: customFrom, to: customTo } : getDateRangeForPreset(datePreset)!;
+      const range = datePreset === 'custom'
+        ? { from: appliedCustomFrom, to: appliedCustomTo }
+        : getDateRangeForPreset(datePreset)!;
       const [invRes, custRes, prodRes, docTypesRes] = await Promise.all([
         api.get(`${cfg.api}?from=${range.from}&to=${range.to}`),
         api.get(`/client/customers?partyType=${cfg.partyType}`),
-        api.get('/client/products'),
+        api.get(`/client/products?scope=${isSupport ? 'Support' : 'Invoice'}`),
         cfg.documentTypes ? api.get('/client/invoices/document-types') : Promise.resolve({ data: [] })
       ]);
       setInvoices(invRes.data);
@@ -351,7 +362,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       // Preselecciona la resolución marcada como default para Factura (FE); antes siempre
       // arrancaba vacía aunque el cliente ya tuviera una definida, y quedaba editable por si
       // hay que emitir con otra.
-      resolutionId: resolutions.find(r => r.documentType === cfg.resolutionType && r.isDefault)?.id || ''
+      resolutionId: resolutions.find(r => (r.documentType === cfg.resolutionType || (isSupport && r.documentType === 'POS')) && r.isDefault)?.id || ''
     });
     setView('create');
   };
@@ -633,6 +644,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       setFormData({
         ...initialForm,
         customerId: full.customerId,
+        // La nota abre como el documento que ajusta: misma resolución y mismas observaciones.
+        resolutionId: full.resolutionId || '',
+        notes: full.notes || '',
         referenceDocumentId: full.id,
         referenceConcept: 'Ajuste de precio',
         paymentMeans: full.paymentMeans || '',
@@ -653,8 +667,28 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           discountRate: i.discountRate || 0,
           taxAmount: i.taxAmount,
           totalAmount: i.totalAmount,
-          retentions: []
+          // La nota es el reflejo del documento que ajusta: se copian sus retenciones (por ítem y generales)
+          // y el descuento/cargo generales, igual que hace la nota crédito con la factura.
+          retentions: (i.retentions || []).map((r: any) => {
+            const concept = autoRetentionCatalog.find((c: any) => c.taxCategory === r.taxCategory && c.rate === r.rate);
+            return {
+              conceptId: concept?.id || '',
+              taxCategory: r.taxCategory,
+              rate: r.rate,
+              baseType: concept?.baseType || 'Subtotal',
+              name: concept?.name || `${r.taxCategory} ${r.rate}%`
+            };
+          })
         })),
+        generalRetentions: (full.generalRetentions || []).map((r: any) => ({
+          catalogId: retentionCatalog.find(c => c.category === r.taxCategory && c.rate === r.rate)?.id || '',
+          taxCategory: r.taxCategory,
+          rate: r.rate
+        })),
+        generalDiscountReason: full.generalDiscountReason || '',
+        generalDiscountAmount: Number(full.generalDiscountAmount || 0),
+        generalChargeReason: full.generalChargeReason || '',
+        generalChargeAmount: Number(full.generalChargeAmount || 0),
         subtotal: full.subtotal,
         taxAmount: full.taxAmount,
         totalAmount: full.totalAmount
@@ -695,7 +729,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { productId: '', code: '', name: '', quantity: 1, unitPrice: 0, unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined', ivaTreatment: 'Gravado', taxRate: 19, discountRate: 0, taxAmount: 0, totalAmount: 0, retentions: [] }]
+      items: [...formData.items, { productId: '', code: '', name: '', quantity: 1, unitPrice: 0, unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined', ivaTreatment: isSupport ? 'Exento' : 'Gravado', taxRate: isSupport ? 0 : 19, discountRate: 0, taxAmount: 0, totalAmount: 0, retentions: [] }]
     });
   };
 
@@ -719,8 +753,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         item.unitOfMeasureCode = p.unitOfMeasure?.dianCode || '94';
         item.unitOfMeasureAbbreviation = p.unitOfMeasure?.abbreviation || 'EA';
         item.unitOfMeasureDisplayFormat = p.unitOfMeasure?.displayFormat || 'Combined';
-        item.ivaTreatment = p.ivaTreatment || 'Gravado';
-        item.taxRate = p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0;
+        item.ivaTreatment = isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado');
+        item.taxRate = isSupport ? 0 : (p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0);
       }
     }
 
@@ -736,7 +770,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   // Base gravable de la línea = cantidad*valorUnitario menos el descuento de esa línea; el
   // impuesto y el total de la línea se calculan sobre esa base, no sobre el valor bruto.
   const recalcItem = (item: any) => {
-    const effectiveRate = item.ivaTreatment === 'Gravado' ? item.taxRate : 0;
+    const effectiveRate = !isSupport && item.ivaTreatment === 'Gravado' ? item.taxRate : 0;
     const lineBase = item.quantity * item.unitPrice * (1 - (item.discountRate || 0) / 100);
     item.taxAmount = lineBase * (effectiveRate / 100);
     item.totalAmount = lineBase + item.taxAmount;
@@ -887,20 +921,23 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     if (productModalForItemIndex === null) return;
     setSavingProduct(true);
     try {
-      const res = await api.post('/client/products', quickProduct);
+      const quickProductPayload = isSupport
+        ? { ...quickProduct, scope: 'Support', ivaTreatment: 'Exento', ivaRate: 0, taxes: [] }
+        : { ...quickProduct, scope: 'Invoice' };
+      const res = await api.post('/client/products', quickProductPayload);
       const p = res.data;
       toast.success('Producto creado');
       setProducts(prev => [...prev, p]);
 
-      const rate = p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0;
+      const rate = isSupport ? 0 : (p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0);
       const newItems = [...formData.items];
-      const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: p.unitPrice, ivaTreatment: p.ivaTreatment || 'Gravado', taxRate: rate };
+      const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: p.unitPrice, ivaTreatment: isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado'), taxRate: rate };
       recalcItem(item);
       newItems[productModalForItemIndex] = item;
       recalculateTotals(newItems);
 
       setProductModalForItemIndex(null);
-      setQuickProduct(initialQuickProduct);
+      setQuickProduct({ ...initialQuickProduct, ivaTreatment: isSupport ? 'Exento' : 'Gravado', ivaRate: isSupport ? 0 : 19 });
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Error creando el producto'));
     } finally {
@@ -910,8 +947,32 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   const handleSaveDraft = async () => {
     if (savingDraft) return; // evita doble envío por doble clic mientras la petición está en curso
+    if (!isNote && !formData.resolutionId) {
+      toast.error(cfg.missingResolution);
+      return;
+    }
+    if (cfg.documentTypes && !formData.documentTypeId) {
+      toast.error('Debes seleccionar el tipo de documento');
+      return;
+    }
+    if (!formData.issueDate) {
+      toast.error('Debes indicar la fecha de emisión');
+      return;
+    }
     if (!formData.customerId) {
       toast.error(cfg.missingParty);
+      return;
+    }
+    if (!formData.paymentMeansType) {
+      toast.error('Debes seleccionar las condiciones de pago: contado o crédito');
+      return;
+    }
+    if (!formData.paymentMeans) {
+      toast.error('Debes seleccionar el medio de pago');
+      return;
+    }
+    if (formData.paymentMeansType === 'CREDITO' && (formData.paymentTermDays === '' || !Number.isFinite(Number(formData.paymentTermDays)) || Number(formData.paymentTermDays) < 0)) {
+      toast.error('Debes indicar el plazo de pago cuando la operación es a crédito');
       return;
     }
     if (formData.items.length === 0) {
@@ -920,10 +981,6 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     }
     // Las notas no tienen resolución propia — el backend siempre usa la de Factura del emisor,
     // así que no hay nada que el usuario deba elegir acá.
-    if (!formData.referenceDocumentId && !formData.resolutionId) {
-      toast.error(cfg.missingResolution);
-      return;
-    }
     if (isAiu) {
       const a = formData.aiu || AIU_DEFAULT;
       if (a.baseAmount <= 0) { toast.error('Indica el valor base del contrato AIU.'); return; }
@@ -1011,20 +1068,124 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
   if (view === 'create') {
+    // Campos de cada ítem. Son funciones de render, no componentes: definir un componente dentro del
+    // render lo remonta en cada tecla y el campo que se está escribiendo pierde el foco. `table` fija
+    // anchos compactos para la tabla (desde lg); en la tarjeta de móvil los campos ocupan todo el ancho.
+    const itemFields = (item: any, index: number, table: boolean) => ({
+      product: (
+        <div className="flex flex-col gap-2 lg:flex-row lg:gap-1">
+          <SearchableSelect
+            className="lg:flex-1"
+            inputClassName="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none"
+            value={item.productId}
+            onChange={v => updateItem(index, 'productId', v)}
+            placeholder="Buscar por código o nombre..."
+            options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}`, shortLabel: p.code }))}
+            createOptions={q => [
+              { label: `Crear "${q}" como código`, onSelect: () => { setProductModalForItemIndex(index); setQuickProduct({ ...initialQuickProduct, code: q, ivaTreatment: isSupport ? 'Exento' : 'Gravado', ivaRate: isSupport ? 0 : 19 }); } },
+              { label: `Crear "${q}" como nombre`, onSelect: () => { setProductModalForItemIndex(index); setQuickProduct({ ...initialQuickProduct, name: q, ivaTreatment: isSupport ? 'Exento' : 'Gravado', ivaRate: isSupport ? 0 : 19 }); } },
+            ]}
+          />
+          <input
+            type="text"
+            placeholder={item.productId ? 'Descripción de esta línea' : 'Nombre o descripción...'}
+            value={item.name}
+            onChange={e => updateItem(index, 'name', e.target.value)}
+            title={item.productId ? 'Solo afecta esta línea, no modifica el producto del catálogo' : undefined}
+            className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none lg:w-auto lg:flex-1"
+          />
+        </div>
+      ),
+      quantity: (
+        <DecimalInput
+          value={item.quantity}
+          onValueChange={v => updateItem(index, 'quantity', v)}
+          className={`${table ? 'w-20' : 'w-full'} p-2 border border-slate-200 rounded-lg text-sm outline-none text-center`}
+        />
+      ),
+      unitPrice: (
+        <DecimalInput
+          value={item.unitPrice}
+          onValueChange={v => updateItem(index, 'unitPrice', v)}
+          className={`${table ? 'w-32' : 'w-full'} p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right`}
+        />
+      ),
+      discount: (
+        <DecimalInput maxDecimals={2} value={item.discountRate || 0} onValueChange={v => updateItem(index, 'discountRate', Math.min(v, 100))} className={`${table ? 'w-20' : 'w-full'} p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono`} />
+      ),
+      iva: isSupport ? (
+        <div className="w-full p-2 text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg">
+          No aplica IVA
+        </div>
+      ) : item.productId ? (
+        <div className="w-full p-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg" title="El IVA lo define el producto del catálogo">
+          {item.ivaTreatment === 'Gravado' ? `Gravado ${item.taxRate}%` : IVA_TREATMENTS.find(t => t.value === item.ivaTreatment)?.label || item.ivaTreatment}
+        </div>
+      ) : (
+        <div className="flex gap-1">
+          <SearchableSelect
+            className={table ? 'w-32' : 'flex-1'}
+            inputClassName="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none"
+            value={item.ivaTreatment}
+            onChange={v => updateItem(index, 'ivaTreatment', v)}
+            placeholder="IVA..."
+            options={IVA_TREATMENTS}
+          />
+          {item.ivaTreatment === 'Gravado' && (
+            <SearchableSelect
+              className={table ? 'w-24' : 'w-28'}
+              inputClassName="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none bg-white"
+              value={String(item.taxRate)}
+              onChange={v => updateItem(index, 'taxRate', parseFloat(v) || 0)}
+              placeholder="%..."
+              options={ivaRateCatalog.length === 0
+                ? [{ value: String(item.taxRate), label: `${item.taxRate}%` }]
+                : ivaRateCatalog.map(c => ({ value: c.category, label: `${c.category}%` }))}
+            />
+          )}
+        </div>
+      ),
+      retention: expandedRetentions[index] ? (
+        <div className="flex items-center gap-1">
+          <SearchableSelect
+            className="flex-1"
+            inputClassName="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none bg-white"
+            value={item.retentions?.[0]?.conceptId || ''}
+            onChange={v => setItemRetention(index, v)}
+            placeholder="Buscar retención..."
+            options={autoRetentionCatalog.map((c: any) => ({ value: c.id, label: `${c.name} (${c.taxCategory} ${c.rate}%)`, shortLabel: `${c.rate}%` }))}
+          />
+          <button type="button" onClick={() => clearItemRetention(index)} title="Quitar retención" aria-label="Quitar retención" className="flex h-11 w-11 shrink-0 items-center justify-center text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors lg:h-9 lg:w-9">
+            <X size={16} />
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => toggleItemRetentions(index)} title="Retención de esta línea" className={`w-full flex min-h-11 items-center gap-1 p-2 rounded-lg text-sm transition-colors border lg:min-h-0 ${item.retentions?.[0] ? 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100' : 'text-slate-400 border-slate-200 hover:bg-slate-100'}`}>
+          <Percent size={14} />
+          <span className="truncate">{item.retentions?.[0] ? `${item.retentions[0].rate}%` : 'Ninguna'}</span>
+        </button>
+      ),
+      remove: (
+        <button type="button" onClick={() => removeItem(index)} title="Quitar ítem" aria-label={`Quitar ítem ${index + 1}`} className="flex h-11 w-11 items-center justify-center text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors lg:h-9 lg:w-9">
+          <Trash2 size={18} />
+        </button>
+      ),
+    });
+
     return (
-      <div className="p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-        <button onClick={() => { setEditingId(null); setView('list'); }} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 mb-6 font-medium transition-colors">
+      <div className="p-4 sm:p-6 lg:p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <button onClick={() => { setEditingId(null); setView('list'); }} className="flex items-center gap-2 py-2 text-slate-500 hover:text-slate-800 mb-4 sm:mb-6 font-medium transition-colors">
           <ArrowLeft size={20} /> {cfg.backToList}
         </button>
 
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
-          <div className="p-8 border-b border-slate-100 bg-slate-50/50">
+          <div className="p-4 sm:p-6 lg:p-8 border-b border-slate-100 bg-slate-50/50">
             <h2 className="text-2xl font-extrabold text-slate-800">{editingId ? `Editar ${cfg.singular}` : `${isSupport ? 'Nuevo' : 'Nueva'} ${cfg.singular}`}</h2>
             <p className="text-slate-500 mt-1">Completa los datos del documento</p>
           </div>
           
-          <div className="p-8">
-            <div className={`grid ${isNote ? 'grid-cols-1' : 'grid-cols-2'} gap-6 mb-8`}>
+          <div className="p-4 sm:p-6 lg:p-8">
+            <div className={`grid grid-cols-1 ${isNote ? '' : 'md:grid-cols-2'} gap-6 mb-8`}>
               {cfg.documentTypes && (
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Tipo de Documento</label>
@@ -1048,7 +1209,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   placeholder="Buscar resolución por prefijo o número..."
                   options={resolutions.map(r => ({
                     value: r.id,
-                    label: `${r.documentType} · Prefijo ${r.prefix} · Res. ${r.resolutionNumber} (vence ${new Date(r.validTo).toLocaleDateString('es-CO')})`
+                    label: `${r.documentType === 'POS' ? 'DS' : r.documentType} · Prefijo ${r.prefix} · Res. ${r.resolutionNumber} (vence ${new Date(r.validTo).toLocaleDateString('es-CO')})`
                   }))}
                 />
                 {resolutions.length === 0 && (
@@ -1056,7 +1217,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 )}
               </div>
               )}
-              <div className="col-span-2">
+              <div className={isNote ? '' : 'md:col-span-2'}>
                 <label className="block text-sm font-bold text-slate-700 mb-2">{cfg.party}</label>
                 <div className="flex gap-2">
                   <SearchableSelect
@@ -1073,7 +1234,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Fecha de emisión</label>
                 <input
@@ -1155,7 +1316,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             </div>
 
             {formData.referenceDocumentId && isSupport && (
-              <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-xl">
+              <div className="mb-8 p-4 sm:p-6 bg-amber-50 border border-amber-200 rounded-xl">
                 <h3 className="text-amber-800 font-bold mb-2 flex items-center gap-2">
                   <RotateCcw size={18} />
                   Generando Nota de Ajuste
@@ -1178,7 +1339,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             {formData.referenceDocumentId && !isSupport && (() => {
               const isDebitNote = formData.documentTypeId === documentTypes.find(d => d.code === '92')?.id;
               return (
-                <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="mb-8 p-4 sm:p-6 bg-amber-50 border border-amber-200 rounded-xl">
                   <h3 className="text-amber-800 font-bold mb-2 flex items-center gap-2">
                     <RotateCcw size={18} />
                     Generando {isDebitNote ? 'Nota Débito' : 'Nota Crédito'}
@@ -1210,8 +1371,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               <div className="mb-8">
                 <h3 className="text-lg font-bold text-slate-800 mb-1">Contrato AIU</h3>
                 <p className="text-sm text-slate-500 mb-4">Administración, Imprevistos y Utilidad. El IVA se calcula solo sobre la Utilidad.</p>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-                  <div className="md:col-span-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                  <div className="sm:col-span-2">
                     <label className="block text-xs font-bold text-slate-500 mb-1">Valor base del contrato ($)</label>
                     <DecimalInput value={formData.aiu.baseAmount} onValueChange={v => applyAiu({ ...formData.aiu!, baseAmount: v })} placeholder="0" blankWhenZero className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
                   </div>
@@ -1239,28 +1400,17 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     <p className="text-xs text-slate-400 mt-1">Va en la línea de Administración como: "{'Contrato de servicios AIU por concepto de:'} …"</p>
                   </div>
                 </div>
-                <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
-                        <th className="p-2 pl-3">Concepto</th>
-                        <th className="p-2 text-right">Valor</th>
-                        <th className="p-2">IVA</th>
-                        <th className="p-2 pr-3 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {formData.items.map((item, index) => (
-                        <tr key={index} className="bg-white text-sm">
-                          <td className="p-2 pl-3">{item.name}</td>
-                          <td className="p-2 text-right font-mono">${fmt.money(item.unitPrice)}</td>
-                          <td className="p-2 text-slate-600">{item.ivaTreatment === 'Gravado' ? `Gravado ${item.taxRate}%` : 'No gravado'}</td>
-                          <td className="p-2 pr-3 text-right font-mono font-bold">${fmt.money(item.totalAmount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ResponsiveList
+                  rows={formData.items.map((item, index) => ({ item, index }))}
+                  rowKey={row => String(row.index)}
+                  tableFrom="md"
+                  columns={[
+                    { key: 'name', header: 'Concepto', primary: true, render: (row: any) => row.item.name },
+                    { key: 'value', header: 'Valor', align: 'right', cellClassName: 'font-mono', render: (row: any) => `$${fmt.money(row.item.unitPrice)}` },
+                    { key: 'iva', header: 'IVA', cellClassName: 'text-slate-600', render: (row: any) => (row.item.ivaTreatment === 'Gravado' ? `Gravado ${row.item.taxRate}%` : 'No gravado') },
+                    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-bold', render: (row: any) => `$${fmt.money(row.item.totalAmount)}` },
+                  ]}
+                />
               </div>
             )}
 
@@ -1270,7 +1420,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 <h3 className="text-lg font-bold text-slate-800">Productos o servicios</h3>
               </div>
 
-              <div className="border border-slate-200 rounded-2xl overflow-hidden">
+              {/* Desde lg: tabla. Por debajo: una tarjeta editable por ítem. Las dos presentaciones usan los
+                  mismos campos (ver itemFields). */}
+              <div className="hidden border border-slate-200 rounded-2xl overflow-hidden lg:block">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
@@ -1285,113 +1437,23 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {formData.items.map((item, index) => (
-                      <React.Fragment key={index}>
-                        <tr className="bg-white">
-                          <td className="p-2 pl-3">
-                            <div className="flex gap-1">
-                              <SearchableSelect
-                                className="flex-1"
-                                inputClassName="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none"
-                                value={item.productId}
-                                onChange={v => updateItem(index, 'productId', v)}
-                                placeholder="Buscar por código o nombre..."
-                                options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}`, shortLabel: p.code }))}
-                                createOptions={q => [
-                                  { label: `Crear "${q}" como código`, onSelect: () => { setProductModalForItemIndex(index); setQuickProduct({ ...initialQuickProduct, code: q }); } },
-                                  { label: `Crear "${q}" como nombre`, onSelect: () => { setProductModalForItemIndex(index); setQuickProduct({ ...initialQuickProduct, name: q }); } },
-                                ]}
-                              />
-                              <input
-                                type="text"
-                                placeholder={item.productId ? 'Descripción de esta línea' : 'Nombre o descripción...'}
-                                value={item.name}
-                                onChange={e => updateItem(index, 'name', e.target.value)}
-                                title={item.productId ? 'Solo afecta esta línea, no modifica el producto del catálogo' : undefined}
-                                className="flex-1 p-2 border border-slate-200 rounded-lg text-sm outline-none"
-                              />
-                            </div>
-                          </td>
-                          <td className="p-2">
-                            <DecimalInput
-                              value={item.quantity}
-                              onValueChange={v => updateItem(index, 'quantity', v)}
-                              className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none text-center"
-                            />
-                          </td>
-                          <td className="p-2">
-                            <DecimalInput
-                              value={item.unitPrice}
-                              onValueChange={v => updateItem(index, 'unitPrice', v)}
-                              className="w-32 p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right"
-                            />
-                          </td>
-                          <td className="p-2">
-                            <DecimalInput maxDecimals={2} value={item.discountRate || 0} onValueChange={v => updateItem(index, 'discountRate', Math.min(v, 100))} className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono" />
-                          </td>
-                          <td className="p-2">
-                            {item.productId ? (
-                              <div className="w-full p-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg" title="El IVA lo define el producto del catálogo">
-                                {item.ivaTreatment === 'Gravado' ? `Gravado ${item.taxRate}%` : IVA_TREATMENTS.find(t => t.value === item.ivaTreatment)?.label || item.ivaTreatment}
-                              </div>
-                            ) : (
-                              <div className="flex gap-1">
-                                <SearchableSelect
-                                  className="w-32"
-                                  inputClassName="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none"
-                                  value={item.ivaTreatment}
-                                  onChange={v => updateItem(index, 'ivaTreatment', v)}
-                                  placeholder="IVA..."
-                                  options={IVA_TREATMENTS}
-                                />
-                                {item.ivaTreatment === 'Gravado' && (
-                                  <SearchableSelect
-                                    className="w-24"
-                                    inputClassName="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none bg-white"
-                                    value={String(item.taxRate)}
-                                    onChange={v => updateItem(index, 'taxRate', parseFloat(v) || 0)}
-                                    placeholder="%..."
-                                    options={ivaRateCatalog.length === 0
-                                      ? [{ value: String(item.taxRate), label: `${item.taxRate}%` }]
-                                      : ivaRateCatalog.map(c => ({ value: c.category, label: `${c.category}%` }))}
-                                  />
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-2">
-                            {expandedRetentions[index] ? (
-                              <div className="flex items-center gap-1">
-                                <SearchableSelect
-                                  className="flex-1"
-                                  inputClassName="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none bg-white"
-                                  value={item.retentions?.[0]?.conceptId || ''}
-                                  onChange={v => setItemRetention(index, v)}
-                                  placeholder="Buscar retención..."
-                                  options={autoRetentionCatalog.map((c: any) => ({ value: c.id, label: `${c.name} (${c.taxCategory} ${c.rate}%)`, shortLabel: `${c.rate}%` }))}
-                                />
-                                <button type="button" onClick={() => clearItemRetention(index)} title="Quitar retención" className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                                  <X size={16} />
-                                </button>
-                              </div>
-                            ) : (
-                              <button type="button" onClick={() => toggleItemRetentions(index)} title="Retención de esta línea" className={`w-full flex items-center gap-1 p-2 rounded-lg text-sm transition-colors border ${item.retentions?.[0] ? 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100' : 'text-slate-400 border-slate-200 hover:bg-slate-100'}`}>
-                                <Percent size={14} />
-                                <span className="truncate">{item.retentions?.[0] ? `${item.retentions[0].rate}%` : 'Ninguna'}</span>
-                              </button>
-                            )}
-                          </td>
+                    {formData.items.map((item, index) => {
+                      const f = itemFields(item, index, true);
+                      return (
+                        <tr key={index} className="bg-white">
+                          <td className="p-2 pl-3">{f.product}</td>
+                          <td className="p-2">{f.quantity}</td>
+                          <td className="p-2">{f.unitPrice}</td>
+                          <td className="p-2">{f.discount}</td>
+                          <td className="p-2">{f.iva}</td>
+                          <td className="p-2">{f.retention}</td>
                           <td className="p-2 pr-3 text-right font-mono font-bold text-slate-700">
                             ${fmt.money(item.totalAmount)}
                           </td>
-                          <td className="p-1 text-right whitespace-nowrap">
-                            <button onClick={() => removeItem(index)} className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                              <Trash2 size={18} />
-                            </button>
-                          </td>
+                          <td className="p-1 text-right whitespace-nowrap">{f.remove}</td>
                         </tr>
-                      </React.Fragment>
-                    ))}
+                      );
+                    })}
                     {formData.items.length === 0 && (
                       <tr>
                         <td colSpan={8} className="p-8 text-center text-slate-400">Sin ítems agregados.</td>
@@ -1400,71 +1462,104 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   </tbody>
                 </table>
               </div>
-              <button onClick={addItem} className="mt-3 px-4 py-2 text-primary font-bold flex items-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all">
+
+              <div className="space-y-3 lg:hidden">
+                {formData.items.map((item, index) => {
+                  const f = itemFields(item, index, false);
+                  const label = 'block text-xs font-bold text-slate-500 mb-1';
+                  return (
+                    <div key={index} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Ítem {index + 1}</span>
+                        {f.remove}
+                      </div>
+                      <div>
+                        <span className={label}>Producto</span>
+                        {f.product}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <span className={label}>Cantidad</span>
+                          {f.quantity}
+                        </div>
+                        <div>
+                          <span className={label}>Descuento %</span>
+                          {f.discount}
+                        </div>
+                      </div>
+                      <div>
+                        <span className={label}>Precio unitario</span>
+                        {f.unitPrice}
+                      </div>
+                      <div>
+                        <span className={label}>IVA</span>
+                        {f.iva}
+                      </div>
+                      <div>
+                        <span className={label}>Retención</span>
+                        {f.retention}
+                      </div>
+                      <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                        <span className="text-sm font-bold text-slate-500">Total</span>
+                        <span className="font-mono font-bold text-slate-700">${fmt.money(item.totalAmount)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {formData.items.length === 0 && (
+                  <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-400">Sin ítems agregados.</p>
+                )}
+              </div>
+
+              <button onClick={addItem} className="mt-3 w-full justify-center px-4 py-3 text-primary font-bold flex items-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all sm:w-auto sm:py-2">
                 <PlusCircle size={18} /> Agregar Ítem
               </button>
             </div>
             )}
 
             <div className="mb-8">
-              <div className="flex justify-between items-end mb-4">
+              <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-end sm:justify-between">
                 <h3 className="text-lg font-bold text-slate-800">Retenciones (opcional)</h3>
-                <button type="button" disabled={availableRetentionOptions(formData.generalRetentions.map(r => r.catalogId)).length === 0} onClick={addGeneralRetention} className="px-4 py-2 text-primary font-bold flex items-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-primary/30">
+                <button type="button" disabled={availableRetentionOptions(formData.generalRetentions.map(r => r.catalogId)).length === 0} onClick={addGeneralRetention} className="px-4 py-3 sm:py-2 text-primary font-bold flex items-center justify-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-primary/30">
                   <PlusCircle size={18} /> Agregar Retención
                 </button>
               </div>
 
-              <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
-                      <th className="p-4 w-2/3">Retención</th>
-                      <th className="p-4 text-right">Monto</th>
-                      <th className="p-4"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {formData.generalRetentions.map((r, idx) => {
-                      const catalogEntry = retentionCatalog.find(c => c.id === r.catalogId);
-                      const isEditing = editingGeneralRetentionIdx === idx;
-                      return (
-                        <tr key={idx} className="bg-white">
-                          <td className="p-2">
-                            {isEditing ? (
-                              <SearchableSelect
-                                value={r.catalogId}
-                                onChange={v => updateGeneralRetention(idx, v)}
-                                placeholder="Buscar retención..."
-                                options={availableRetentionOptions(formData.generalRetentions.map(rr => rr.catalogId), r.catalogId).map(c => ({ value: c.id, label: `${c.name} (${c.category} ${c.rate}%)`, shortLabel: `${c.rate}%` }))}
-                              />
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="flex-1 p-2 text-sm text-slate-700">{catalogEntry ? `${catalogEntry.rate}%` : `${r.rate}%`}</span>
-                                <button type="button" onClick={() => setEditingGeneralRetentionIdx(idx)} title="Editar" className="p-2 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors">
-                                  <Edit2 size={16} />
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-4 text-right font-mono font-bold text-slate-700">
-                            ${fmt.moneyInt(generalRetentionAmount(r))}
-                          </td>
-                          <td className="p-2 text-right">
-                            <button type="button" onClick={() => removeGeneralRetention(idx)} className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                              <Trash2 size={18} />
+              {/* Lista de filas (no tabla): en cada fila la retención a la izquierda y, a la derecha, el monto y quitar. */}
+              <ul className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100 bg-white">
+                {formData.generalRetentions.map((r, idx) => {
+                  const catalogEntry = retentionCatalog.find(c => c.id === r.catalogId);
+                  const isEditing = editingGeneralRetentionIdx === idx;
+                  return (
+                    <li key={idx} className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
+                      <div className="min-w-0 basis-full sm:basis-auto sm:flex-1">
+                        {isEditing ? (
+                          <SearchableSelect
+                            value={r.catalogId}
+                            onChange={v => updateGeneralRetention(idx, v)}
+                            placeholder="Buscar retención..."
+                            options={availableRetentionOptions(formData.generalRetentions.map(rr => rr.catalogId), r.catalogId).map(c => ({ value: c.id, label: `${c.name} (${c.category} ${c.rate}%)`, shortLabel: `${c.rate}%` }))}
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="flex-1 p-2 text-sm text-slate-700">{catalogEntry ? `${catalogEntry.rate}%` : `${r.rate}%`}</span>
+                            <button type="button" onClick={() => setEditingGeneralRetentionIdx(idx)} title="Editar" aria-label="Editar retención" className="flex h-11 w-11 items-center justify-center text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors md:h-9 md:w-9">
+                              <Edit2 size={16} />
                             </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {formData.generalRetentions.length === 0 && (
-                      <tr>
-                        <td colSpan={3} className="p-8 text-center text-slate-400">No hay retenciones agregadas.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                          </div>
+                        )}
+                      </div>
+                      <span className="ml-auto font-mono font-bold text-slate-700">${fmt.moneyInt(generalRetentionAmount(r))}</span>
+                      <button type="button" onClick={() => removeGeneralRetention(idx)} title="Quitar retención" aria-label="Quitar retención" className="flex h-11 w-11 items-center justify-center text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors md:h-9 md:w-9">
+                        <Trash2 size={18} />
+                      </button>
+                    </li>
+                  );
+                })}
+                {formData.generalRetentions.length === 0 && (
+                  <li className="p-8 text-center text-slate-400">No hay retenciones agregadas.</li>
+                )}
+              </ul>
               {retentionCatalog.length === 0 && <p className="text-xs text-amber-600 mt-2">No hay retenciones configuradas.</p>}
             </div>
 
@@ -1474,7 +1569,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   <div className="flex justify-between items-end mb-4">
                     <h3 className="text-lg font-bold text-slate-800">Descuento general (opcional)</h3>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 mb-1">Motivo</label>
                       <input type="text" placeholder="Ej. Pronto pago" value={formData.generalDiscountReason} onChange={e => setFormData({ ...formData, generalDiscountReason: e.target.value })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" />
@@ -1491,7 +1586,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   <div className="flex justify-between items-end mb-4">
                     <h3 className="text-lg font-bold text-slate-800">Cargo general (opcional)</h3>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 mb-1">Motivo</label>
                       <input type="text" placeholder="Ej. Flete" value={formData.generalChargeReason} onChange={e => setFormData({ ...formData, generalChargeReason: e.target.value })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" />
@@ -1507,16 +1602,17 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
               <div className="w-full lg:flex-1">
                 <h3 className="text-lg font-bold text-slate-800 mb-4">Observaciones (opcional)</h3>
-                <textarea
+                <input
+                  type="text"
                   placeholder="Notas adicionales para este documento..."
                   value={formData.notes}
                   onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                  rows={5}
-                  className="w-full p-3 border border-slate-200 rounded-lg text-sm outline-none resize-none focus:ring-2 focus:ring-primary"
+                  maxLength={500}
+                  className="w-full p-3 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
-              <div className="flex-1 bg-slate-50 p-6 rounded-2xl border border-slate-200 h-fit">
+              <div className="flex-1 bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200 h-fit">
                 <div className="flex justify-between text-slate-500 mb-2">
                   <span>Subtotal:</span>
                   <span className="font-mono">${fmt.money(formData.subtotal)}</span>
@@ -1566,9 +1662,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </div>
             </div>
             
-            <div className="mt-8 flex justify-end gap-4">
+            <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-4">
               <button onClick={() => { setEditingId(null); setView('list'); }} className="px-6 py-3 font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-              <button onClick={handleSaveDraft} disabled={savingDraft} className="px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              <button onClick={handleSaveDraft} disabled={savingDraft} className="justify-center px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 <FileText size={18} /> {savingDraft ? 'Guardando...' : editingId ? 'Guardar Cambios' : 'Guardar Borrador'}
               </button>
             </div>
@@ -1585,60 +1681,61 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         />
 
         {productModalForItemIndex !== null && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <h3 className="text-xl font-bold text-slate-800">Nuevo producto</h3>
-                <button onClick={() => setProductModalForItemIndex(null)} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
-              </div>
-              <form onSubmit={handleSaveQuickProduct} className="p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Código (SKU)</label>
-                    <input type="text" required value={quickProduct.code} onChange={e => setQuickProduct({ ...quickProduct, code: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Precio Base</label>
-                    <DecimalInput value={quickProduct.unitPrice} onValueChange={v => setQuickProduct({ ...quickProduct, unitPrice: v })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
-                  </div>
+          <Modal
+            open
+            onOpenChange={open => { if (!open) setProductModalForItemIndex(null); }}
+            title="Nuevo producto"
+            size="sm"
+            // Los SearchableSelect de IVA se pintan en un portal sobre <body>.
+            withFloatingPickers
+            footer={
+              <>
+                <Button type="button" variant="ghost" onClick={() => setProductModalForItemIndex(null)}>Cancelar</Button>
+                <Button type="submit" form="quick-product-form" disabled={savingProduct}>{savingProduct ? 'Creando...' : 'Crear Producto'}</Button>
+              </>
+            }
+          >
+            <form id="quick-product-form" onSubmit={handleSaveQuickProduct} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Código (SKU)</label>
+                  <input type="text" required value={quickProduct.code} onChange={e => setQuickProduct({ ...quickProduct, code: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Nombre o Descripción</label>
-                  <input type="text" required value={quickProduct.name} onChange={e => setQuickProduct({ ...quickProduct, name: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Precio Base</label>
+                  <DecimalInput value={quickProduct.unitPrice} onValueChange={v => setQuickProduct({ ...quickProduct, unitPrice: v })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Nombre o Descripción</label>
+                <input type="text" required value={quickProduct.name} onChange={e => setQuickProduct({ ...quickProduct, name: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
+              </div>
+              {!isSupport && <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Tratamiento del IVA</label>
+                  <SearchableSelect
+                    value={quickProduct.ivaTreatment}
+                    onChange={v => setQuickProduct({ ...quickProduct, ivaTreatment: v, ivaRate: v === 'Gravado' ? 19 : 0 })}
+                    placeholder="Buscar tratamiento IVA..."
+                    options={IVA_TREATMENTS}
+                  />
+                </div>
+                {quickProduct.ivaTreatment === 'Gravado' && (
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Tratamiento del IVA</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Tarifa IVA</label>
                     <SearchableSelect
-                      value={quickProduct.ivaTreatment}
-                      onChange={v => setQuickProduct({ ...quickProduct, ivaTreatment: v, ivaRate: v === 'Gravado' ? 19 : 0 })}
-                      placeholder="Buscar tratamiento IVA..."
-                      options={IVA_TREATMENTS}
+                      value={String(quickProduct.ivaRate)}
+                      onChange={v => setQuickProduct({ ...quickProduct, ivaRate: parseFloat(v) || 0 })}
+                      placeholder="Buscar tarifa..."
+                      options={ivaRateCatalog.length === 0
+                        ? [{ value: String(quickProduct.ivaRate), label: `${quickProduct.ivaRate}%` }]
+                        : ivaRateCatalog.map(c => ({ value: c.category, label: c.name }))}
                     />
                   </div>
-                  {quickProduct.ivaTreatment === 'Gravado' && (
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Tarifa IVA</label>
-                      <SearchableSelect
-                        value={String(quickProduct.ivaRate)}
-                        onChange={v => setQuickProduct({ ...quickProduct, ivaRate: parseFloat(v) || 0 })}
-                        placeholder="Buscar tarifa..."
-                        options={ivaRateCatalog.length === 0
-                          ? [{ value: String(quickProduct.ivaRate), label: `${quickProduct.ivaRate}%` }]
-                          : ivaRateCatalog.map(c => ({ value: c.category, label: c.name }))}
-                      />
-                    </div>
-                  )}
-                </div>
-                <div className="flex justify-end gap-3 pt-2">
-                  <button type="button" onClick={() => setProductModalForItemIndex(null)} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-                  <button type="submit" disabled={savingProduct} className="px-5 py-2 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50">
-                    {savingProduct ? 'Creando...' : 'Crear Producto'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+                )}
+              </div>}
+            </form>
+          </Modal>
         )}
       </div>
     );
@@ -1661,19 +1758,19 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     const retentionsTotal = invoiceRetentionsTotal(inv);
 
     return (
-      <div className="p-8">
-        <button onClick={() => { setViewingInvoice(null); setView('list'); }} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 mb-6 font-medium transition-colors">
+      <div className="p-4 sm:p-6 lg:p-8">
+        <button onClick={() => { setViewingInvoice(null); setView('list'); }} className="flex items-center gap-2 py-2 text-slate-500 hover:text-slate-800 mb-4 sm:mb-6 font-medium transition-colors">
           <ArrowLeft size={20} /> {cfg.backToList}
         </button>
 
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
-          <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start flex-wrap gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
+          <div className="p-4 sm:p-6 lg:p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start flex-wrap gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-3 mb-1">
                 {isNote && (
                   <span className={`px-2 py-0.5 rounded text-xs font-bold ${NOTE_BADGES[inv.typeCode].className}`}>{NOTE_BADGES[inv.typeCode].label}</span>
                 )}
-                <h2 className="text-2xl font-extrabold text-slate-800">{inv.resolution?.prefix ? `${inv.resolution.prefix} ` : ''}{inv.number || 'Borrador'}</h2>
+                <h2 className="text-2xl font-extrabold text-slate-800 break-words">{(inv.prefix || inv.resolution?.prefix) ? `${inv.prefix || inv.resolution?.prefix} ` : ''}{inv.number || 'Borrador'}</h2>
                 <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                   inv.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
                   inv.status === 'PROCESSING' ? 'bg-blue-100 text-blue-600' :
@@ -1683,50 +1780,50 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   {STATUS_LABELS[inv.status] || inv.status}
                 </span>
               </div>
-              <p className="text-slate-500">{new Date(inv.issueDate).toLocaleDateString('es-CO')} · {inv.customer?.name || 'Consumidor Final'}</p>
+              <p className="text-slate-500 break-words">{new Date(inv.issueDate).toLocaleDateString('es-CO')} · {inv.customer?.name || 'Consumidor Final'}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={() => handlePreviewPdf(inv)} disabled={previewingId === inv.id} className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 disabled:opacity-50">
+              <button onClick={() => handlePreviewPdf(inv)} disabled={previewingId === inv.id} className="px-4 py-3 md:py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 disabled:opacity-50">
                 {previewingId === inv.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />} Vista Previa
               </button>
               {(inv.status === 'REJECTED' || inv.status === 'APPROVED') && inv.dianResponseMessage && (
                 <button
                   onClick={() => setResponseModalInv(inv)}
-                  className={`px-4 py-2 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 ${inv.status === 'REJECTED' ? 'text-rose-700 bg-rose-50 hover:bg-rose-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
+                  className={`px-4 py-3 md:py-2 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 ${inv.status === 'REJECTED' ? 'text-rose-700 bg-rose-50 hover:bg-rose-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
                 >
                   {inv.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
                   {inv.status === 'REJECTED' ? 'Motivo del rechazo' : 'Respuesta de la DIAN'}
                 </button>
               )}
               {cfg.resend && inv.status === 'APPROVED' && (
-                <button onClick={() => openResendModal(inv)} className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
+                <button onClick={() => openResendModal(inv)} className="px-4 py-3 md:py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
                   <Mail size={16} /> Reenviar
                 </button>
               )}
               {(inv.status === 'DRAFT' || inv.status === 'REJECTED') && (
                 <>
-                  <button onClick={() => handleEditDraft(inv)} className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
+                  <button onClick={() => handleEditDraft(inv)} className="px-4 py-3 md:py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
                     <Edit2 size={16} /> Editar
                   </button>
-                  <button onClick={() => handlePublishInvoice(inv)} disabled={publishingId === inv.id} className="px-4 py-2 text-white bg-primary hover:bg-primary/90 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2 disabled:opacity-50">
+                  <button onClick={() => handlePublishInvoice(inv)} disabled={publishingId === inv.id} className="px-4 py-3 md:py-2 text-white bg-primary hover:bg-primary/90 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2 disabled:opacity-50">
                     <Send size={16} /> Emitir
                   </button>
-                  <button onClick={() => handleDeleteDraft(inv.id)} className="px-4 py-2 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
+                  <button onClick={() => handleDeleteDraft(inv.id)} className="px-4 py-3 md:py-2 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl font-bold text-sm transition-colors flex items-center gap-2">
                     <Trash2 size={16} /> Eliminar
                   </button>
                 </>
               )}
               {isSupport && inv.status === 'APPROVED' && !isNote && (
-                <button onClick={() => handleCreateAdjustment(inv)} className="px-4 py-2 text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2">
+                <button onClick={() => handleCreateAdjustment(inv)} className="px-4 py-3 md:py-2 text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2">
                   <RotateCcw size={16} /> Generar Nota de Ajuste
                 </button>
               )}
               {cfg.creditDebitNotes && inv.status === 'APPROVED' && !isNote && (
                 <>
-                  <button onClick={() => handleCreateDebitNote(inv)} className="px-4 py-2 text-orange-700 bg-orange-100 hover:bg-orange-200 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2">
+                  <button onClick={() => handleCreateDebitNote(inv)} className="px-4 py-3 md:py-2 text-orange-700 bg-orange-100 hover:bg-orange-200 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2">
                     <RotateCcw size={16} /> Generar Nota Débito
                   </button>
-                  <button onClick={() => handleCreateCreditNote(inv)} className="px-4 py-2 text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2">
+                  <button onClick={() => handleCreateCreditNote(inv)} className="px-4 py-3 md:py-2 text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2">
                     <RotateCcw size={16} /> Generar Nota Crédito
                   </button>
                 </>
@@ -1734,14 +1831,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             </div>
           </div>
 
-          <div className="p-8 space-y-8">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
+          <div className="p-4 sm:p-6 lg:p-8 space-y-6 lg:space-y-8">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm [&_p]:break-words">
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Identificación</p><p className="text-slate-700 font-medium">{inv.customer?.identificationNumber || '-'}</p></div>
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Forma de Pago</p><p className="text-slate-700 font-medium">{formaPagoCatalog.find(c => c.category === inv.paymentMeansType)?.name || '-'}</p></div>
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Orden de Compra</p><p className="text-slate-700 font-medium">{inv.purchaseOrderReference || '-'}</p></div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm [&_p]:break-words">
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Subtotal</p><p className="text-slate-700 font-medium font-mono">${fmt.money((inv.subtotal || 0))}</p></div>
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Impuestos</p><p className="text-slate-700 font-medium font-mono">${fmt.money((inv.taxAmount || 0))}</p></div>
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Retenciones</p><p className="text-rose-600 font-medium font-mono">-${fmt.money(retentionsTotal)}</p></div>
@@ -1751,7 +1848,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             {inv.notes && (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <p className="text-xs font-bold text-slate-500 uppercase mb-1">Observaciones</p>
-                <p className="text-sm text-slate-700 whitespace-pre-wrap">{inv.notes}</p>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{inv.notes}</p>
               </div>
             )}
 
@@ -1760,12 +1857,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 <p className="text-xs font-bold text-slate-500 uppercase mb-2">Documentos Relacionados</p>
                 <div className="space-y-1">
                   {viewingOriginal && (
-                    <button onClick={() => handleViewDetail(viewingOriginal)} className="text-sm text-primary hover:underline block">
+                    <button onClick={() => handleViewDetail(viewingOriginal)} className="py-1.5 text-sm text-primary hover:underline block text-left">
                       ← {isSupport ? 'Ajuste del documento' : 'Nota de la factura'} N° {viewingOriginal.number}
                     </button>
                   )}
                   {viewingRelated.map(r => (
-                    <button key={r.id} onClick={() => handleViewDetail(r)} className="text-sm text-primary hover:underline flex items-center gap-2">
+                    <button key={r.id} onClick={() => handleViewDetail(r)} className="py-1.5 text-sm text-primary hover:underline flex flex-wrap items-center gap-2 text-left">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${(NOTE_BADGES[r.typeCode] || NOTE_BADGES.ND).className}`}>{(NOTE_BADGES[r.typeCode] || NOTE_BADGES.ND).label}</span>
                       {r.number} · ${fmt.number(r.totalAmount, 3)} · {STATUS_LABELS[r.status] || r.status}
                     </button>
@@ -1774,32 +1871,19 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </div>
             )}
 
-            <div className="border border-slate-200 rounded-2xl overflow-hidden">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
-                    <th className="p-3">Producto</th>
-                    <th className="p-3">Cant.</th>
-                    <th className="p-3">Precio unitario</th>
-                    <th className="p-3">Descuento %</th>
-                    <th className="p-3">IVA</th>
-                    <th className="p-3 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {(inv.items || []).map((item: any, idx: number) => (
-                    <tr key={idx}>
-                      <td className="p-3 text-sm text-slate-700">{item.name}</td>
-                      <td className="p-3 text-sm">{item.quantity}</td>
-                      <td className="p-3 text-sm font-mono">${fmt.number(item.unitPrice, 3)}</td>
-                      <td className="p-3 text-sm font-mono">{item.discountRate || 0}%</td>
-                      <td className="p-3 text-sm">{item.ivaTreatment === 'Gravado' ? `${item.taxRate}%` : item.ivaTreatment}</td>
-                      <td className="p-3 text-sm font-mono font-bold text-right">${fmt.number(item.totalAmount, 3)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ResponsiveList
+              rows={(inv.items || []).map((item: any, idx: number) => ({ item, idx }))}
+              rowKey={row => String(row.idx)}
+              tableFrom="xl"
+              columns={[
+                { key: 'name', header: 'Producto', primary: true, cellClassName: 'text-sm text-slate-700', render: (row: any) => row.item.name },
+                { key: 'quantity', header: 'Cant.', cellClassName: 'text-sm', render: (row: any) => row.item.quantity },
+                { key: 'unitPrice', header: 'Precio unitario', cellClassName: 'text-sm font-mono', render: (row: any) => `$${fmt.number(row.item.unitPrice, 3)}` },
+                { key: 'discount', header: 'Descuento %', cellClassName: 'text-sm font-mono', render: (row: any) => `${row.item.discountRate || 0}%` },
+                { key: 'iva', header: 'IVA', cellClassName: 'text-sm', render: (row: any) => (row.item.ivaTreatment === 'Gravado' ? `${row.item.taxRate}%` : row.item.ivaTreatment) },
+                { key: 'total', header: 'Total', align: 'right', cellClassName: 'text-sm font-mono font-bold', render: (row: any) => `$${fmt.number(row.item.totalAmount, 3)}` },
+              ]}
+            />
 
             <div className="flex justify-end">
               <div className="w-full max-w-xs space-y-2 text-sm">
@@ -1832,6 +1916,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   const filteredInvoices = invoices
     .filter(inv => {
+      if (isSupport ? !isSupportDocument(inv.typeCode) : !isInvoiceDocument(inv.typeCode)) return false;
       if (statusFilter && inv.status !== statusFilter) return false;
       if (resolutionFilter && inv.resolution?.id !== resolutionFilter) return false;
       if (!searchTerm.trim()) return true;
@@ -1871,7 +1956,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     filteredInvoices.map(inv => ({
       fecha: new Date(inv.issueDate).toLocaleDateString('es-CO'),
       numero: inv.number || '',
-      resolucion: inv.resolution?.prefix || '',
+      resolucion: inv.prefix || inv.resolution?.prefix || '',
       cliente: inv.customer?.name || 'Consumidor Final',
       identificacion: inv.customer?.identificationNumber || '',
       total: inv.totalAmount || 0,
@@ -1888,14 +1973,84 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     ]
   );
 
+  // Botones de icono de las acciones de fila: 44 px en móvil/tableta, compactos desde lg (donde se ve la tabla).
+  const iconBtn = 'flex h-11 w-11 items-center justify-center rounded-lg transition-colors lg:h-9 lg:w-9';
+
+  const statusBadge = (status: string) => (
+    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+      status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
+      status === 'PROCESSING' ? 'bg-blue-100 text-blue-600' :
+      status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' :
+      'bg-rose-100 text-rose-600'
+    }`}>
+      {STATUS_LABELS[status] || status}
+    </span>
+  );
+
+  const columns: ResponsiveListColumn<any>[] = [
+    { key: 'date', header: 'Fecha', cellClassName: 'text-slate-500 text-sm', render: inv => new Date(inv.issueDate).toLocaleDateString('es-CO') },
+    {
+      key: 'number',
+      header: 'Número',
+      primary: true,
+      cellClassName: 'font-bold text-slate-700',
+      render: inv => (
+        <div className="flex flex-wrap items-center gap-2">
+          {isNoteType(inv.typeCode) && (
+            <span className={`px-2 py-0.5 rounded text-xs font-bold ${NOTE_BADGES[inv.typeCode].className}`}>
+              {NOTE_BADGES[inv.typeCode].label}
+            </span>
+          )}
+          <span>{(inv.prefix || inv.resolution?.prefix) ? `${inv.prefix || inv.resolution?.prefix} ` : ''}{inv.number || '---'}</span>
+          {getRelatedDocs(inv).length > 0 && (
+            <div className="relative" data-related-popover>
+              <button
+                onClick={() => setRelatedOpenId(relatedOpenId === inv.id ? null : inv.id)}
+                title="Documentos relacionados"
+                aria-label="Documentos relacionados"
+                className="flex h-11 w-11 items-center justify-center text-slate-400 hover:text-primary hover:bg-slate-100 rounded-md transition-colors lg:h-7 lg:w-7"
+              >
+                <Link2 size={14} />
+              </button>
+              {relatedOpenId === inv.id && (
+                <div className="absolute z-20 top-full left-0 mt-1 w-64 max-w-[calc(100vw-3rem)] bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                  <p className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100">Documentos relacionados</p>
+                  {getRelatedDocs(inv).map(doc => (
+                    <button
+                      key={doc.id}
+                      onClick={() => { setRelatedOpenId(null); handleViewDetail(doc); }}
+                      className="w-full flex min-h-11 items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 transition-colors"
+                    >
+                      <span className="text-slate-600 font-normal">{doc.relation} · {doc.number || '---'}</span>
+                      <span className="text-xs font-bold text-primary">Ver</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )
+    },
+    { key: 'party', header: cfg.party, cardFullWidth: true, cellClassName: 'text-slate-900 min-w-[180px]', render: inv => inv.customer?.name || 'Consumidor Final' },
+    { key: 'subtotal', header: 'Subtotal', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `$${fmt.money((inv.subtotal || 0))}` },
+    { key: 'tax', header: 'Impuestos', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `$${fmt.money((inv.taxAmount || 0))}` },
+    { key: 'retentions', header: 'Retenciones', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-rose-600', render: inv => `-$${fmt.money(invoiceRetentionsTotal(inv))}` },
+    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-medium', render: inv => `$${fmt.money(invoiceNetTotal(inv))}` },
+    { key: 'status', header: 'Estado', render: inv => statusBadge(inv.status) }
+  ];
+
+  const parsedResponse = responseModalInv ? parseDianResponse(responseModalInv.dianResponseMessage) : null;
+  const responseRejected = responseModalInv?.status === 'REJECTED';
+
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-800">{cfg.title}</h1>
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800">{cfg.title}</h1>
           <p className="text-slate-500 mt-1">Gestión de documentos electrónicos</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {cfg.importExcel && <ImportExcelButton endpoint="/client/invoices/import" templateEndpoint="/client/invoices/template" label="Importar Excel" onDone={loadData} />}
           <button
             onClick={handleCreateNew}
@@ -1906,8 +2061,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 mb-4">
-        <div className="w-52">
+      {/* En móvil los filtros van de a dos por fila (menos alto antes del listado); desde sm vuelven a una fila con salto. */}
+      <div className="grid grid-cols-2 gap-3 mb-4 sm:flex sm:flex-wrap sm:items-end">
+        <div className="w-full sm:w-52">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Resolución</label>
           <SearchableSelect
             value={resolutionFilter}
@@ -1919,7 +2075,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             ]}
           />
         </div>
-        <div className="w-52">
+        <div className="w-full sm:w-52">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Periodo</label>
           <SearchableSelect
             value={datePreset}
@@ -1930,17 +2086,35 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         </div>
         {datePreset === 'custom' && (
           <>
-            <div>
+            <div className="min-w-0 flex-1 sm:flex-none">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Desde</label>
-              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="p-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
+              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1 sm:flex-none">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Hasta</label>
-              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="p-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
+              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!customFrom || !customTo) {
+                  toast.error('Selecciona las fechas Desde y Hasta');
+                  return;
+                }
+                if (customFrom > customTo) {
+                  toast.error('La fecha Desde no puede ser posterior a Hasta');
+                  return;
+                }
+                setAppliedCustomFrom(customFrom);
+                setAppliedCustomTo(customTo);
+              }}
+              className="col-span-2 w-full self-end px-4 py-3 sm:col-auto sm:w-auto sm:py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-bold transition-colors"
+            >
+              Filtrar
+            </button>
           </>
         )}
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
           <SearchableSelect
             value={statusFilter}
@@ -1955,159 +2129,80 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             ]}
           />
         </div>
-        <div className="flex-1 min-w-[220px]">
+        <div className="order-4 col-span-2 min-w-0 flex-1 sm:order-none sm:col-auto sm:basis-auto sm:min-w-[220px]">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Buscar</label>
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder={cfg.searchPlaceholder} className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
         </div>
-        <button onClick={handleExport} disabled={filteredInvoices.length === 0} title="Exportar CSV" className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors disabled:opacity-50">
+        <button onClick={handleExport} disabled={filteredInvoices.length === 0} title="Exportar CSV" aria-label="Exportar CSV" className="order-3 flex h-11 w-11 items-center justify-center self-end bg-slate-100 sm:order-none hover:bg-slate-200 text-slate-600 rounded-xl transition-colors disabled:opacity-50">
           <Download size={16} />
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-sm font-bold text-slate-500 uppercase tracking-wider">
-              <th className="p-4">Fecha</th>
-              <th className="p-4">Número</th>
-              <th className="p-4 min-w-[220px]">{cfg.party}</th>
-              <th className="p-4 text-right">Subtotal</th>
-              <th className="p-4 text-right">Impuestos</th>
-              <th className="p-4 text-right">Retenciones</th>
-              <th className="p-4 text-right">Total</th>
-              <th className="p-4 text-center">Estado</th>
-              <th className="p-4 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {paginatedInvoices.map(inv => (
-              <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="p-4 text-slate-500 text-sm">{new Date(inv.issueDate).toLocaleDateString('es-CO')}</td>
-                <td className="p-4 font-bold text-slate-700">
-                  <div className="flex items-center gap-2">
-                    {isNoteType(inv.typeCode) && (
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${NOTE_BADGES[inv.typeCode].className}`}>
-                        {NOTE_BADGES[inv.typeCode].label}
-                      </span>
-                    )}
-                    {inv.resolution?.prefix ? `${inv.resolution.prefix} ` : ''}{inv.number || '---'}
-                    {getRelatedDocs(inv).length > 0 && (
-                      <div className="relative" data-related-popover>
-                        <button
-                          onClick={() => setRelatedOpenId(relatedOpenId === inv.id ? null : inv.id)}
-                          title="Documentos relacionados"
-                          className="p-1 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-md transition-colors"
-                        >
-                          <Link2 size={14} />
-                        </button>
-                        {relatedOpenId === inv.id && (
-                          <div className="absolute z-20 top-full left-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
-                            <p className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100">Documentos relacionados</p>
-                            {getRelatedDocs(inv).map(doc => (
-                              <button
-                                key={doc.id}
-                                onClick={() => { setRelatedOpenId(null); handleViewDetail(doc); }}
-                                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 transition-colors"
-                              >
-                                <span className="text-slate-600 font-normal">{doc.relation} · {doc.number || '---'}</span>
-                                <span className="text-xs font-bold text-primary">Ver</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </td>
-                <td className="p-4 text-slate-900 min-w-[220px]">{inv.customer?.name || 'Consumidor Final'}</td>
-                <td className="p-4 text-right font-mono text-slate-500">${fmt.money((inv.subtotal || 0))}</td>
-                <td className="p-4 text-right font-mono text-slate-500">${fmt.money((inv.taxAmount || 0))}</td>
-                <td className="p-4 text-right font-mono text-rose-600">-${fmt.money(invoiceRetentionsTotal(inv))}</td>
-                <td className="p-4 text-right font-mono font-medium">${fmt.money(invoiceNetTotal(inv))}</td>
-                <td className="p-4 text-center">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    inv.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
-                    inv.status === 'PROCESSING' ? 'bg-blue-100 text-blue-600' :
-                    inv.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' :
-                    'bg-rose-100 text-rose-600'
-                  }`}>
-                    {STATUS_LABELS[inv.status] || inv.status}
-                  </span>
-                </td>
-                <td className="p-4 flex items-center justify-end gap-2">
-                  {(inv.status === 'DRAFT' || inv.status === 'REJECTED') && (
-                    <>
-                      <button onClick={() => handleEditDraft(inv)} title="Editar" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                        <Edit2 size={16} />
-                      </button>
-                      <button onClick={() => handlePublishInvoice(inv)} disabled={publishingId === inv.id} title="Emitir a la DIAN" className="p-2 text-white bg-primary hover:bg-primary/90 rounded-lg shadow-sm transition-all flex items-center gap-1 text-sm font-bold disabled:opacity-50">
-                        <Send size={16} /> Emitir
-                      </button>
-                      <button onClick={() => handleDeleteDraft(inv.id)} title="Eliminar" className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                        <Trash2 size={16} />
-                      </button>
-                    </>
-                  )}
-                  {(inv.status === 'REJECTED' || inv.status === 'APPROVED') && inv.dianResponseMessage && (
-                    <button
-                      onClick={() => setResponseModalInv(inv)}
-                      title={inv.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
-                      className={`p-2 rounded-lg transition-colors ${inv.status === 'REJECTED' ? 'text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-primary hover:bg-slate-100'}`}
-                    >
-                      {inv.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
-                    </button>
-                  )}
- 
-                  {cfg.resend && inv.status === 'APPROVED' && (
-                    <button onClick={() => openResendModal(inv)} title="Reenviar documento" className="p-2 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors">
-                      <Mail size={16} />
-                    </button>
-                  )}
-                  <button onClick={() => handleViewDetail(inv)} title="Ver detalle" className="p-2 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors">
-                    <Eye size={16} />
-                  </button>
-                  <button onClick={() => handlePreviewPdf(inv)} disabled={previewingId === inv.id} title="Vista previa de impresión" className="p-2 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50">
-                    {previewingId === inv.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {filteredInvoices.length === 0 && (
-              <tr>
-                <td colSpan={9} className="p-8 text-center text-slate-500">No hay documentos que coincidan con el filtro.</td>
-              </tr>
+      <ResponsiveList
+        rows={paginatedInvoices}
+        columns={columns}
+        rowKey={inv => inv.id}
+        tableFrom="wide"
+        emptyMessage="No hay documentos que coincidan con el filtro."
+        actions={inv => (
+          <>
+            {(inv.status === 'DRAFT' || inv.status === 'REJECTED') && (
+              <>
+                <RowIconButton action="edit" label={`Editar ${cfg.singular} ${inv.number || 'borrador'}`} onClick={() => handleEditDraft(inv)} />
+                <button onClick={() => handlePublishInvoice(inv)} disabled={publishingId === inv.id} title="Emitir a la DIAN" className="min-h-11 px-3 text-white bg-primary hover:bg-primary/90 rounded-lg shadow-sm transition-all flex items-center gap-1 text-sm font-bold disabled:opacity-50 lg:min-h-9">
+                  <Send size={16} /> Emitir
+                </button>
+                <RowIconButton action="delete" label={`Eliminar ${cfg.singular} ${inv.number || 'borrador'}`} onClick={() => handleDeleteDraft(inv.id)} />
+              </>
             )}
-          </tbody>
-          {filteredInvoices.length > 0 && (
-            <tfoot>
-              <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-700">
-                <td colSpan={3} className="p-4 text-right">Total del período:</td>
-                <td className="p-4 text-right font-mono text-slate-500">${fmt.money(filteredTotal)}</td>
-                <td className="p-4 text-right font-mono text-slate-500">${fmt.money(filteredTaxTotal)}</td>
-                <td className="p-4 text-right font-mono text-rose-600">-${fmt.money(filteredRetentionsTotal)}</td>
-                <td className="p-4 text-right font-mono">${fmt.money(filteredNetTotal)}</td>
-                <td colSpan={2}></td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
-        </div>
-      </div>
+            {(inv.status === 'REJECTED' || inv.status === 'APPROVED') && inv.dianResponseMessage && (
+              <button
+                onClick={() => setResponseModalInv(inv)}
+                title={inv.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
+                aria-label={inv.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
+                className={`${iconBtn} ${inv.status === 'REJECTED' ? 'text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-primary hover:bg-slate-100'}`}
+              >
+                {inv.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
+              </button>
+            )}
+            {cfg.resend && inv.status === 'APPROVED' && (
+              <button onClick={() => openResendModal(inv)} title="Reenviar documento" aria-label="Reenviar documento" className={`${iconBtn} text-slate-400 hover:text-primary hover:bg-slate-100`}>
+                <Mail size={16} />
+              </button>
+            )}
+            <RowIconButton action="view" label={`Ver detalle de ${cfg.singular} ${inv.number || 'borrador'}`} onClick={() => handleViewDetail(inv)} />
+            <button onClick={() => handlePreviewPdf(inv)} disabled={previewingId === inv.id} title="Vista previa de impresión" aria-label="Vista previa de impresión" className={`${iconBtn} text-slate-400 hover:text-primary hover:bg-slate-100 disabled:opacity-50`}>
+              {previewingId === inv.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+            </button>
+          </>
+        )}
+      />
 
-      <div className="flex justify-between items-center mt-4">
+      {filteredInvoices.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700">
+          <p className="mb-2 font-bold">Total del período</p>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+            <div><dt className="text-xs uppercase text-slate-400">Subtotal</dt><dd className="font-mono font-bold text-slate-500">${fmt.money(filteredTotal)}</dd></div>
+            <div><dt className="text-xs uppercase text-slate-400">Impuestos</dt><dd className="font-mono font-bold text-slate-500">${fmt.money(filteredTaxTotal)}</dd></div>
+            <div><dt className="text-xs uppercase text-slate-400">Retenciones</dt><dd className="font-mono font-bold text-rose-600">-${fmt.money(filteredRetentionsTotal)}</dd></div>
+            <div><dt className="text-xs uppercase text-slate-400">Total</dt><dd className="font-mono font-bold">${fmt.money(filteredNetTotal)}</dd></div>
+          </dl>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-400">{filteredInvoices.length} documento{filteredInvoices.length === 1 ? '' : 's'} en el periodo</p>
         {totalPages > 1 && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-3 sm:justify-end">
             <p className="text-sm text-slate-500">Página {currentPage} de {totalPages}</p>
             <div className="flex gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} aria-label="Página anterior" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors lg:h-9 lg:w-9">
                 <ChevronLeft size={18} />
               </button>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors">
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} aria-label="Página siguiente" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors lg:h-9 lg:w-9">
                 <ChevronRight size={18} />
               </button>
             </div>
@@ -2115,124 +2210,107 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         )}
       </div>
 
-      {responseModalInv && (() => {
-        const parsed = parseDianResponse(responseModalInv.dianResponseMessage);
-        const isRejected = responseModalInv.status === 'REJECTED';
-        return (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setResponseModalInv(null)}>
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    {isRejected ? <AlertCircle size={18} className="text-rose-600" /> : <Info size={18} className="text-primary" />}
-                    {isRejected ? 'Motivo del rechazo' : 'Respuesta de la DIAN'}
-                  </h2>
-                  <p className="text-xs text-slate-400 mt-1">{cfg.singular} {responseModalInv.number || 'Borrador'}</p>
+      {responseModalInv && (
+        <Modal
+          open
+          onOpenChange={open => { if (!open) setResponseModalInv(null); }}
+          title={
+            <span className="flex items-center gap-2">
+              {responseRejected ? <AlertCircle size={18} className="shrink-0 text-rose-600" /> : <Info size={18} className="shrink-0 text-primary" />}
+              {responseRejected ? 'Motivo del rechazo' : 'Respuesta de la DIAN'}
+            </span>
+          }
+          description={`${cfg.singular} ${responseModalInv.number || 'Borrador'}`}
+          size="md"
+          footer={<Button type="button" onClick={() => setResponseModalInv(null)}>Cerrar</Button>}
+        >
+          <div className="space-y-3">
+            {parsedResponse && 'errors' in parsedResponse && parsedResponse.errors ? (
+              parsedResponse.errors.map((e, idx) => (
+                <div key={idx} className="p-3 bg-rose-50 border border-rose-100 rounded-xl">
+                  {e.path && e.path.length > 0 && (
+                    <p className="text-[10px] font-bold text-rose-400 uppercase mb-1 break-words">{e.path.join(' → ')}</p>
+                  )}
+                  <p className="text-sm text-rose-700 break-words">{e.error}</p>
                 </div>
-                <button onClick={() => setResponseModalInv(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="p-6 space-y-3">
-                {parsed && 'errors' in parsed && parsed.errors ? (
-                  parsed.errors.map((e, idx) => (
-                    <div key={idx} className="p-3 bg-rose-50 border border-rose-100 rounded-xl">
-                      {e.path && e.path.length > 0 && (
-                        <p className="text-[10px] font-bold text-rose-400 uppercase mb-1">{e.path.join(' → ')}</p>
-                      )}
-                      <p className="text-sm text-rose-700">{e.error}</p>
+              ))
+            ) : parsedResponse && 'fields' in parsedResponse ? (
+              <>
+                <div className="divide-y divide-slate-100">
+                  {DIAN_RESPONSE_DISPLAY_FIELDS.filter(f => parsedResponse.fields[f.key] != null && parsedResponse.fields[f.key] !== '').map(f => (
+                    <div key={f.key} className="flex justify-between items-start gap-4 py-2 text-sm">
+                      <span className="text-slate-400 font-medium">{f.label}</span>
+                      <span className="text-slate-700 font-medium text-right break-all">
+                        {f.key === 'payment_means_type'
+                          ? (parsedResponse.fields[f.key] === 'CREDITO' ? 'Crédito' : 'Contado')
+                          : String(parsedResponse.fields[f.key])}
+                      </span>
                     </div>
-                  ))
-                ) : parsed && 'fields' in parsed ? (
-                  <>
-                    <div className="divide-y divide-slate-100">
-                      {DIAN_RESPONSE_DISPLAY_FIELDS.filter(f => parsed.fields[f.key] != null && parsed.fields[f.key] !== '').map(f => (
-                        <div key={f.key} className="flex justify-between items-start gap-4 py-2 text-sm">
-                          <span className="text-slate-400 font-medium">{f.label}</span>
-                          <span className="text-slate-700 font-medium text-right break-all">
-                            {f.key === 'payment_means_type'
-                              ? (parsed.fields[f.key] === 'CREDITO' ? 'Crédito' : 'Contado')
-                              : String(parsed.fields[f.key])}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    {parsed.fields.cufe && (
-                      <div className="py-2 border-t border-slate-100">
-                        <p className="text-slate-400 font-medium text-sm mb-1">CUFE</p>
-                        <p className="text-xs font-mono text-slate-600 break-all">{parsed.fields.cufe}</p>
-                      </div>
-                    )}
-                    {(parsed.fields.pdf_url || parsed.fields.xml_url) && (
-                      <div className="flex gap-2 pt-3 border-t border-slate-100">
-                        {parsed.fields.pdf_url && (
-                          <a href={parsed.fields.pdf_url} target="_blank" rel="noreferrer" className="flex-1 text-center px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors">
-                            Ver PDF
-                          </a>
-                        )}
-                        {parsed.fields.xml_url && (
-                          <a href={parsed.fields.xml_url} target="_blank" rel="noreferrer" className="flex-1 text-center px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors">
-                            Descargar XML
-                          </a>
-                        )}
-                      </div>
-                    )}
-                    {parsed.fields.qrcode && (
-                      <div className="pt-3 border-t border-slate-100">
-                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Código QR (contenido)</p>
-                        <pre className="text-[11px] bg-slate-50 border border-slate-200 rounded-xl p-3 whitespace-pre-wrap break-all font-mono text-slate-600 max-h-32 overflow-y-auto">{parsed.fields.qrcode}</pre>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-600 whitespace-pre-wrap">{responseModalInv.dianResponseMessage}</p>
+                  ))}
+                </div>
+                {parsedResponse.fields.cufe && (
+                  <div className="py-2 border-t border-slate-100">
+                    <p className="text-slate-400 font-medium text-sm mb-1">CUFE</p>
+                    <p className="text-xs font-mono text-slate-600 break-all">{parsedResponse.fields.cufe}</p>
+                  </div>
                 )}
-              </div>
-            </div>
+                {(parsedResponse.fields.pdf_url || parsedResponse.fields.xml_url) && (
+                  <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 sm:flex-row">
+                    {parsedResponse.fields.pdf_url && (
+                      <a href={parsedResponse.fields.pdf_url} target="_blank" rel="noreferrer" className="flex-1 text-center px-4 py-3 sm:py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors">
+                        Ver PDF
+                      </a>
+                    )}
+                    {parsedResponse.fields.xml_url && (
+                      <a href={parsedResponse.fields.xml_url} target="_blank" rel="noreferrer" className="flex-1 text-center px-4 py-3 sm:py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors">
+                        Descargar XML
+                      </a>
+                    )}
+                  </div>
+                )}
+                {parsedResponse.fields.qrcode && (
+                  <div className="pt-3 border-t border-slate-100">
+                    <p className="text-xs font-bold text-slate-400 uppercase mb-1">Código QR (contenido)</p>
+                    <pre className="text-[11px] bg-slate-50 border border-slate-200 rounded-xl p-3 whitespace-pre-wrap break-all font-mono text-slate-600 max-h-32 overflow-y-auto">{parsedResponse.fields.qrcode}</pre>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-600 whitespace-pre-wrap break-words">{responseModalInv.dianResponseMessage}</p>
+            )}
           </div>
-        );
-      })()}
+        </Modal>
+      )}
 
       {resendModalInv && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setResendModalInv(null)}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <Mail size={18} className="text-primary" /> Reenviar documento
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">{resendModalInv.resolution?.prefix ? `${resendModalInv.resolution.prefix} ` : ''}{resendModalInv.number || 'Borrador'}</p>
-              </div>
-              <button onClick={() => setResendModalInv(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo de destino</label>
-                <input
-                  type="email"
-                  autoFocus
-                  value={resendEmailDraft}
-                  onChange={e => setResendEmailDraft(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="correo@ejemplo.com"
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setResendModalInv(null)} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-                <button
-                  onClick={handleResend}
-                  disabled={resendingId === resendModalInv.id}
-                  className="px-5 py-2 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50 flex items-center gap-2"
-                >
-                  {resendingId === resendModalInv.id ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                  {resendingId === resendModalInv.id ? 'Enviando...' : 'Reenviar'}
-                </button>
-              </div>
-            </div>
+        <Modal
+          open
+          onOpenChange={open => { if (!open) setResendModalInv(null); }}
+          title={<span className="flex items-center gap-2"><Mail size={18} className="shrink-0 text-primary" /> Reenviar documento</span>}
+          description={`${(resendModalInv.prefix || resendModalInv.resolution?.prefix) ? `${resendModalInv.prefix || resendModalInv.resolution?.prefix} ` : ''}${resendModalInv.number || 'Borrador'}`}
+          size="sm"
+          footer={
+            <>
+              <Button type="button" variant="ghost" onClick={() => setResendModalInv(null)}>Cancelar</Button>
+              <Button type="button" onClick={handleResend} disabled={resendingId === resendModalInv.id}>
+                {resendingId === resendModalInv.id ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                {resendingId === resendModalInv.id ? 'Enviando...' : 'Reenviar'}
+              </Button>
+            </>
+          }
+        >
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo de destino</label>
+            <input
+              type="email"
+              autoFocus
+              value={resendEmailDraft}
+              onChange={e => setResendEmailDraft(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+              placeholder="correo@ejemplo.com"
+            />
           </div>
-        </div>
+        </Modal>
       )}
 
     </div>

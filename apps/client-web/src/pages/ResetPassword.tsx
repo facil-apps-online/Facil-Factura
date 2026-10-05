@@ -40,17 +40,17 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <div className="bg-white border border-slate-200 p-10 rounded-[2rem] shadow-xl w-full max-w-[420px]">
-        <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-2">Crear nueva contraseña</h1>
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 p-4 py-8">
+      <div className="bg-white border border-slate-200 p-6 sm:p-10 rounded-[2rem] shadow-xl w-full max-w-[420px]">
+        <h1 className="text-2xl font-extrabold text-slate-800 text-center mb-2 break-words">Crear nueva contraseña</h1>
 
         {!token ? (
-          <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-4 rounded-xl font-medium">
+          <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-4 px-3 rounded-xl font-medium break-words">
             El enlace no incluye un token válido. Solicita uno nuevo desde "Olvidé mi contraseña".
           </div>
         ) : done ? (
           <div className="space-y-4">
-            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm text-center py-4 rounded-xl font-medium">
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm text-center py-4 px-3 rounded-xl font-medium break-words">
               Tu contraseña fue actualizada correctamente.
             </div>
             <button onClick={() => navigate('/login')} className="w-full bg-primary text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition-all">
@@ -67,6 +67,8 @@ export default function ResetPassword() {
                 type="password"
                 required
                 minLength={8}
+                autoComplete="new-password"
+                aria-label="Nueva contraseña"
                 placeholder="Nueva contraseña"
                 className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
                 value={newPassword}
@@ -82,6 +84,8 @@ export default function ResetPassword() {
                 type="password"
                 required
                 minLength={8}
+                autoComplete="new-password"
+                aria-label="Confirmar contraseña"
                 placeholder="Confirmar contraseña"
                 className="w-full bg-slate-50 border border-slate-200 text-slate-800 pl-12 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
                 value={confirmPassword}
@@ -89,7 +93,7 @@ export default function ResetPassword() {
               />
             </div>
             {error && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-3 rounded-xl font-medium">
+              <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-3 px-3 rounded-xl font-medium break-words">
                 {error}
               </div>
             )}
@@ -104,7 +108,7 @@ export default function ResetPassword() {
         )}
 
         {!done && (
-          <Link to="/login" className="mt-6 block text-center text-sm text-slate-500 hover:text-slate-700 font-medium">
+          <Link to="/login" className="mt-6 block py-2 text-center text-sm text-slate-500 hover:text-slate-700 font-medium">
             Volver al inicio de sesión
           </Link>
         )}

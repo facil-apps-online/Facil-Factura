@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Pruebas e2e: copia temporal de _shared (ver e2e/run.mjs) y resultados
+/_shared
+test-results
+playwright-report

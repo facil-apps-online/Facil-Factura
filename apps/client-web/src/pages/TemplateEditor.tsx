@@ -77,15 +77,23 @@ export default function TemplateEditor() {
     return <div className="p-10 text-slate-500">Falta el identificador de la plantilla.</div>;
   }
 
+  // El alto descuenta el header del portal (h-16). El diseñador de DevExpress no es un formulario móvil:
+  // conserva una superficie mínima de escritorio y, si la pantalla es más chica, se desplaza dentro de su
+  // propio contenedor sin mover la página.
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <div className="p-4 border-b border-slate-200 flex items-center gap-4 bg-white">
-        <Link to="/settings" className="text-primary hover:opacity-80 font-semibold flex items-center gap-1">
+    <div className="h-[calc(100dvh-4rem)] flex flex-col bg-slate-50">
+      <div className="p-3 sm:p-4 border-b border-slate-200 flex flex-wrap items-center gap-x-4 gap-y-1 bg-white">
+        <Link to="/settings" className="py-2 text-primary hover:opacity-80 font-semibold flex items-center gap-1">
           <ArrowLeft className="w-4 h-4" /> Volver
         </Link>
-        <h1 className="text-slate-800 font-bold">Editando: {templateKey}</h1>
+        <h1 className="min-w-0 break-all text-sm sm:text-base text-slate-800 font-bold">Editando: {templateKey}</h1>
       </div>
-      <div className="flex-1" ref={designerRef}></div>
+      <p className="lg:hidden border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+        El diseñador está pensado para pantallas grandes. Puedes desplazarte para usarlo, pero para editar plantillas te recomendamos un computador.
+      </p>
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="h-full min-h-[600px] min-w-[1024px]" ref={designerRef}></div>
+      </div>
     </div>
   );
 }

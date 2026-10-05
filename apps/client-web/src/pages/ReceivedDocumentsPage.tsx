@@ -3,6 +3,7 @@ import { Inbox, Mail, Upload, Loader2, CheckCircle2, XCircle, Send } from 'lucid
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import { useNumberFormat } from '../lib/numberFormat';
+import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
 
 const EVENT_INFO: Record<string, { label: string; description: string }> = {
   acuseRecibo: {
@@ -130,6 +131,44 @@ export default function ReceivedDocumentsPage() {
     }
   };
 
+  const EVENT_BUTTONS = [
+    { code: '030', label: 'Acuse' },
+    { code: '032', label: 'Recibo' },
+    { code: '033', label: 'Aceptación' },
+    { code: '031', label: 'Reclamo' },
+  ] as const;
+
+  const columns: ResponsiveListColumn<any>[] = [
+    { key: 'issuer', header: 'Proveedor', primary: true, cellClassName: 'font-semibold text-slate-700', render: doc => doc.issuerName || doc.issuerTaxId },
+    { key: 'documentId', header: 'Documento', cellClassName: 'font-mono text-sm text-slate-600', render: doc => doc.documentId },
+    { key: 'issueDate', header: 'Fecha', cellClassName: 'text-sm text-slate-500', render: doc => new Date(doc.issueDate).toLocaleDateString() },
+    { key: 'total', header: 'Total', cellClassName: 'font-mono text-sm', render: doc => `${fmt.number(Number(doc.totalAmount), 3)}` },
+    { key: 'source', header: 'Origen', hideBelow: 'ultra', cellClassName: 'text-xs text-slate-400', render: doc => (doc.sourceType === 'Email' ? 'Correo' : 'Manual') },
+    {
+      key: 'events',
+      header: 'Eventos',
+      cardFullWidth: true,
+      render: doc => {
+        const sentCodes = new Set(doc.events.filter((e: any) => e.status === 'SENT').map((e: any) => e.eventCode));
+        return (
+          <div className="flex flex-wrap gap-2 md:gap-1.5">
+            {EVENT_BUTTONS.map(({ code, label }) =>
+              sentCodes.has(code) ? (
+                <span key={code} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold">
+                  <CheckCircle2 size={12} /> {label}
+                </span>
+              ) : (
+                <button key={code} onClick={() => triggerEvent(doc.id, code)} className="inline-flex min-h-11 items-center gap-1 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-colors lg:min-h-0 lg:px-2 lg:py-1">
+                  <Send size={12} /> {label}
+                </button>
+              )
+            )}
+          </div>
+        );
+      }
+    }
+  ];
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -139,14 +178,14 @@ export default function ReceivedDocumentsPage() {
   }
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 lg:space-y-8">
       <div>
-        <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Documentos recibidos</h1>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Documentos recibidos</h1>
         <p className="text-slate-500 mt-2">Consulta documentos de tus proveedores y gestiona sus eventos.</p>
       </div>
 
       {/* Conexión de correo */}
-      <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+      <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 shadow-sm border border-slate-100">
         <div className="flex items-center gap-2 mb-2">
           <Mail className="text-primary" size={20} />
           <h2 className="text-xl font-bold text-slate-800">Correo de Facturación Electrónica</h2>
@@ -196,7 +235,7 @@ export default function ReceivedDocumentsPage() {
           <span className="text-sm text-slate-600">Usar SSL/TLS (recomendado)</span>
         </label>
 
-        <div className="flex gap-3 mt-6">
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <button onClick={saveSettings} disabled={savingSettings} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
             {savingSettings ? 'Guardando...' : 'Guardar configuración'}
           </button>
@@ -207,7 +246,7 @@ export default function ReceivedDocumentsPage() {
       </div>
 
       {/* Eventos automáticos */}
-      <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
+      <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 shadow-sm border border-slate-100">
         <h2 className="text-xl font-bold text-slate-800 mb-2">Eventos automáticos</h2>
         <p className="text-slate-500 mb-6 text-sm">Elige qué eventos se crearán automáticamente al recibir documentos.</p>
 
@@ -234,16 +273,16 @@ export default function ReceivedDocumentsPage() {
       </div>
 
       {/* Documentos recibidos */}
-      <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-        <div className="flex justify-between items-center mb-6">
+      <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 shadow-sm border border-slate-100">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Inbox className="text-primary" size={20} />
             <h2 className="text-xl font-bold text-slate-800">Documentos Recibidos</h2>
           </div>
-          <label className="cursor-pointer bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center gap-2">
+          <label className="cursor-pointer bg-slate-900 hover:bg-black text-white px-5 py-3 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center justify-center gap-2 focus-within:ring-2 focus-within:ring-primary/40">
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload size={16} />}
             {uploading ? 'Cargando...' : 'Cargar ZIP/XML'}
-            <input type="file" accept=".zip,.xml" className="hidden" onChange={handleUpload} disabled={uploading} />
+            <input type="file" accept=".zip,.xml" className="sr-only" onChange={handleUpload} disabled={uploading} />
           </label>
         </div>
 
@@ -253,51 +292,7 @@ export default function ReceivedDocumentsPage() {
             <p className="text-slate-500">Aún no tienes documentos recibidos.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 text-sm border-y border-slate-200">
-                  <th className="font-semibold py-3 px-4 rounded-tl-xl">Proveedor</th>
-                  <th className="font-semibold py-3 px-4">Documento</th>
-                  <th className="font-semibold py-3 px-4">Fecha</th>
-                  <th className="font-semibold py-3 px-4">Total</th>
-                  <th className="font-semibold py-3 px-4">Origen</th>
-                  <th className="font-semibold py-3 px-4 rounded-tr-xl">Eventos</th>
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map(doc => {
-                  const sentCodes = new Set(doc.events.filter((e: any) => e.status === 'SENT').map((e: any) => e.eventCode));
-                  return (
-                    <tr key={doc.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors align-top">
-                      <td className="py-4 px-4 font-semibold text-slate-700">{doc.issuerName || doc.issuerTaxId}</td>
-                      <td className="py-4 px-4 font-mono text-sm text-slate-600">{doc.documentId}</td>
-                      <td className="py-4 px-4 text-sm text-slate-500">{new Date(doc.issueDate).toLocaleDateString()}</td>
-                      <td className="py-4 px-4 font-mono text-sm">${fmt.number(Number(doc.totalAmount), 3)}</td>
-                      <td className="py-4 px-4 text-xs text-slate-400">{doc.sourceType === 'Email' ? 'Correo' : 'Manual'}</td>
-                      <td className="py-4 px-4">
-                        <div className="flex flex-wrap gap-1.5">
-                          {(['030', '032', '033', '031'] as const).map(code => {
-                            const sent = sentCodes.has(code);
-                            const label = { '030': 'Acuse', '032': 'Recibo', '033': 'Aceptación', '031': 'Reclamo' }[code];
-                            return sent ? (
-                              <span key={code} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold">
-                                <CheckCircle2 size={12} /> {label}
-                              </span>
-                            ) : (
-                              <button key={code} onClick={() => triggerEvent(doc.id, code)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-colors">
-                                <Send size={12} /> {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ResponsiveList rows={documents} columns={columns} rowKey={doc => doc.id} tableFrom="2xl" />
         )}
       </div>
     </div>

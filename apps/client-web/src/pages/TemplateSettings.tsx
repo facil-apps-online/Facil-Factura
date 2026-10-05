@@ -4,7 +4,9 @@ import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, 
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { buildNumberFormat, setDecimalSeparator, useNumberFormat } from '../lib/numberFormat';
-import { useConfirm } from '@shared/components/ConfirmDialog';
+import { useConfirm } from '@/components/ConfirmDialog';
+import Modal from '../components/Modal';
+import { Button } from '../components/ui/button';
 
 interface ClientSetting {
   settingId: string;
@@ -263,9 +265,9 @@ export default function TemplateSettings() {
   };
 
   return (
-    <div className="p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="mb-10">
-        <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
+    <div className="p-4 sm:p-6 lg:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="mb-6 sm:mb-10">
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
           <LayoutTemplate className="w-8 h-8 text-primary" />
           Diseño de mis Facturas
         </h1>
@@ -275,7 +277,7 @@ export default function TemplateSettings() {
       </div>
 
       {/* Logo del Cliente (solo para sus comprobantes — el portal usa la marca de tu proveedor) */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
+      <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8">
         <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
           <Image className="w-5 h-5 text-primary" /> Logo de tus documentos
         </h2>
@@ -300,7 +302,7 @@ export default function TemplateSettings() {
       </div>
 
       {/* Formato de la Unidad de Medida en el detalle de la factura */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
+      <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8">
         <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
           <LayoutTemplate className="w-5 h-5 text-primary" /> Unidad de medida en tus facturas
         </h2>
@@ -323,7 +325,7 @@ export default function TemplateSettings() {
       </div>
 
       {/* Formato de números: portal y PDF */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
+      <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8">
         <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
           <LayoutTemplate className="w-5 h-5 text-primary" /> Formato de números
         </h2>
@@ -344,7 +346,7 @@ export default function TemplateSettings() {
       </div>
 
       {/* SMTP propio para reenvío de documentos del flujo nativo DIAN */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-8 mb-8">
+      <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8">
         <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
           <Mail className="w-5 h-5 text-primary" /> Correo para reenvío de documentos
         </h2>
@@ -393,7 +395,7 @@ export default function TemplateSettings() {
           <span className="text-sm text-slate-600">Usar conexión segura (SSL/TLS)</span>
         </label>
 
-        <div className="flex gap-3 mt-6">
+        <div className="flex flex-col gap-3 sm:flex-row mt-6">
           <button onClick={saveSmtp} disabled={savingSmtp} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
             {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
           </button>
@@ -403,9 +405,9 @@ export default function TemplateSettings() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
         {/* Lista de Tipos de Documento */}
-        <div className="md:col-span-1 space-y-4">
+        <div className="min-w-0 md:col-span-1 space-y-4">
           <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Tipos de Comprobante</h2>
           {settings.map(setting => (
             <button
@@ -417,7 +419,7 @@ export default function TemplateSettings() {
                   : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'
               }`}
             >
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 font-bold text-slate-700">
                   <FileText className={`w-4 h-4 ${selectedSetting?.settingId === setting.settingId ? 'text-primary' : 'text-slate-400'}`} />
                   {setting.documentTypeName}
@@ -437,9 +439,9 @@ export default function TemplateSettings() {
         </div>
 
         {/* Catálogo de Plantillas */}
-        <div className="md:col-span-2">
+        <div className="min-w-0 md:col-span-2">
           {selectedSetting ? (
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 animate-in fade-in duration-300 h-full">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-4 sm:p-6 lg:p-8 animate-in fade-in duration-300 h-full">
               <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                 Plantillas para {selectedSetting.documentTypeName}
               </h2>
@@ -450,7 +452,7 @@ export default function TemplateSettings() {
                   return (
                     <div
                       key={tpl.id}
-                      className={`relative p-6 rounded-2xl border-2 transition-all ${
+                      className={`relative p-4 sm:p-6 rounded-2xl border-2 transition-all ${
                         isActive
                           ? 'border-primary bg-blue-50/50 shadow-md shadow-blue-500/10'
                           : 'border-slate-100 bg-white'
@@ -486,19 +488,21 @@ export default function TemplateSettings() {
                           onClick={() => handlePreview(tpl.id)}
                           disabled={previewingId === tpl.id}
                           title="Vista previa"
-                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold rounded-xl transition-colors flex items-center justify-center disabled:opacity-50"
+                          aria-label="Vista previa"
+                          className="min-h-11 min-w-11 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold rounded-xl transition-colors flex items-center justify-center disabled:opacity-50 md:min-h-0 md:min-w-0"
                         >
                           {previewingId === tpl.id ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
                         </button>
                         {!isActive && (
-                          <button onClick={() => handleChooseTemplate(tpl.id)} className="flex-1 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold rounded-xl transition-colors">
+                          <button onClick={() => handleChooseTemplate(tpl.id)} className="min-h-11 flex-1 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold rounded-xl transition-colors md:min-h-0">
                             Aplicar
                           </button>
                         )}
                         <button
                           onClick={() => { setCloneData({ newName: `${tpl.name} (Mi Versión)`, newRepxTemplateKey: '' }); setShowCloneModal({ id: tpl.id, name: tpl.name }); }}
                           title="Clonar y personalizar"
-                          className={`py-2 ${isActive ? 'flex-1' : 'px-3'} bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-1`}
+                          aria-label="Clonar y personalizar"
+                          className={`min-h-11 min-w-11 py-2 md:min-h-0 md:min-w-0 ${isActive ? 'flex-1' : 'px-3'} bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-1`}
                         >
                           <Copy size={14} /> {isActive ? 'Copiar y personalizar' : ''}
                         </button>
@@ -508,7 +512,7 @@ export default function TemplateSettings() {
                 })}
 
                 {availableTemplates.length === 0 && (
-                  <div className="col-span-2 p-12 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100 border-dashed">
+                  <div className="sm:col-span-2 p-8 sm:p-12 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100 border-dashed">
                     No hay plantillas disponibles para este tipo de documento.
                   </div>
                 )}
@@ -519,9 +523,9 @@ export default function TemplateSettings() {
                   <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Mis diseños</h3>
                   <div className="space-y-3">
                     {myTemplates.filter(t => t.documentTypeId === selectedSetting.documentTypeId && t.scope === 'Propio').map(t => (
-                      <div key={t.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                        <div>
-                          <div className="flex items-center gap-2">
+                      <div key={t.id} className="flex flex-col gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-bold text-slate-700 text-sm">{t.name}</span>
                             <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">v{t.versionNumber}</span>
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
@@ -532,8 +536,8 @@ export default function TemplateSettings() {
                               {t.status === 'Published' ? 'Publicado' : t.status === 'Draft' ? 'Borrador' : 'Archivado'}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-400 font-mono mt-1">Key: {t.repxTemplateKey || 'N/A'}</p>
-                          <label className="flex items-center gap-2 mt-2 text-xs font-medium text-slate-600 cursor-pointer w-fit">
+                          <p className="text-xs text-slate-400 font-mono mt-1 break-all">Key: {t.repxTemplateKey || 'N/A'}</p>
+                          <label className="flex items-center gap-2 mt-2 py-1 text-xs font-medium text-slate-600 cursor-pointer w-fit">
                             <input
                               type="checkbox"
                               checked={t.mostrarRetenciones}
@@ -543,22 +547,22 @@ export default function TemplateSettings() {
                             Mostrar retenciones en el pie del documento
                           </label>
                         </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => handlePreview(t.id)} disabled={previewingId === t.id} className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1 disabled:opacity-50">
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => handlePreview(t.id)} disabled={previewingId === t.id} className="min-h-11 px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1 disabled:opacity-50 md:min-h-0">
                             {previewingId === t.id ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />} Vista Previa
                           </button>
                           {t.status === 'Draft' && (
-                            <Link to={`/templates/editor?key=${encodeURIComponent(t.repxTemplateKey)}`} className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg flex items-center gap-1">
+                            <Link to={`/templates/editor?key=${encodeURIComponent(t.repxTemplateKey)}`} className="min-h-11 px-3 py-1.5 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg flex items-center gap-1 md:min-h-0">
                               <Pencil size={14} /> Editar
                             </Link>
                           )}
                           {t.status === 'Draft' && (
-                            <button onClick={() => handlePublishOwn(t.id)} className="px-3 py-1.5 text-xs font-bold text-white bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-1">
+                            <button onClick={() => handlePublishOwn(t.id)} className="min-h-11 px-3 py-1.5 text-xs font-bold text-white bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-1 md:min-h-0">
                               <Upload size={14} /> Publicar
                             </button>
                           )}
                           {t.status === 'Published' && (
-                            <button onClick={() => { setVersionKey(''); setShowVersionModal(t.id); }} className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1">
+                            <button onClick={() => { setVersionKey(''); setShowVersionModal(t.id); }} className="min-h-11 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1 md:min-h-0">
                               <GitBranch size={14} /> Nueva Versión
                             </button>
                           )}
@@ -570,7 +574,7 @@ export default function TemplateSettings() {
               )}
             </div>
           ) : (
-            <div className="h-full min-h-[400px] rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center p-8 text-center">
+            <div className="h-full min-h-[240px] md:min-h-[400px] rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center p-8 text-center">
               <div className="max-w-xs">
                 <Settings className="w-12 h-12 text-slate-300 mx-auto mb-4" />
                 <h3 className="text-lg font-bold text-slate-600 mb-2">Selecciona un documento</h3>
@@ -582,75 +586,75 @@ export default function TemplateSettings() {
       </div>
 
       {showCloneModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Copiar y personalizar</h2>
-            <p className="text-slate-500 mb-6 text-sm">Crea tu propia copia de "{showCloneModal.name}" para personalizarla. Quedará en borrador hasta que la publiques.</p>
-            <form onSubmit={handleClone} className="space-y-5">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Nuevo Nombre</label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                  value={cloneData.newName}
-                  onChange={e => setCloneData({ ...cloneData, newName: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Identificador de plantilla</label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-mono text-sm"
-                  value={cloneData.newRepxTemplateKey}
-                  onChange={e => setCloneData({ ...cloneData, newRepxTemplateKey: e.target.value })}
-                  placeholder="Ej. mi-cliente/factura-v1"
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 mt-6">
-                <button type="button" onClick={() => setShowCloneModal(null)} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
-                  Cancelar
-                </button>
-                <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-md transition-all flex items-center">
-                  <Copy className="w-5 h-5 mr-2" />
-                  Guardar Clon
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <Modal
+          open
+          onOpenChange={open => { if (!open) setShowCloneModal(null); }}
+          title="Copiar y personalizar"
+          description={`Crea tu propia copia de "${showCloneModal.name}" para personalizarla. Quedará en borrador hasta que la publiques.`}
+          size="sm"
+          preventDismiss
+          footer={
+            <>
+              <Button type="button" variant="ghost" onClick={() => setShowCloneModal(null)}>Cancelar</Button>
+              <Button type="submit" form="clone-form"><Copy className="w-5 h-5" /> Guardar Clon</Button>
+            </>
+          }
+        >
+          <form id="clone-form" onSubmit={handleClone} className="space-y-5">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Nuevo Nombre</label>
+              <input
+                type="text"
+                required
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                value={cloneData.newName}
+                onChange={e => setCloneData({ ...cloneData, newName: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Identificador de plantilla</label>
+              <input
+                type="text"
+                required
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-mono text-sm"
+                value={cloneData.newRepxTemplateKey}
+                onChange={e => setCloneData({ ...cloneData, newRepxTemplateKey: e.target.value })}
+                placeholder="Ej. mi-cliente/factura-v1"
+              />
+            </div>
+          </form>
+        </Modal>
       )}
 
       {showVersionModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Nueva Versión</h2>
-            <p className="text-slate-500 mb-6 text-sm">Se creará un borrador; la versión publicada seguirá activa hasta que publiques la nueva.</p>
-            <form onSubmit={handleNewVersion} className="space-y-5">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Nuevo identificador de plantilla</label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-mono text-sm"
-                  value={versionKey}
-                  onChange={e => setVersionKey(e.target.value)}
-                  placeholder="Ej. mi-cliente/factura-v2"
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 mt-6">
-                <button type="button" onClick={() => setShowVersionModal(null)} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
-                  Cancelar
-                </button>
-                <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-md transition-all flex items-center">
-                  <GitBranch className="w-5 h-5 mr-2" />
-                  Crear Versión
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <Modal
+          open
+          onOpenChange={open => { if (!open) setShowVersionModal(null); }}
+          title="Nueva Versión"
+          description="Se creará un borrador; la versión publicada seguirá activa hasta que publiques la nueva."
+          size="sm"
+          preventDismiss
+          footer={
+            <>
+              <Button type="button" variant="ghost" onClick={() => setShowVersionModal(null)}>Cancelar</Button>
+              <Button type="submit" form="version-form"><GitBranch className="w-5 h-5" /> Crear Versión</Button>
+            </>
+          }
+        >
+          <form id="version-form" onSubmit={handleNewVersion} className="space-y-5">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Nuevo identificador de plantilla</label>
+              <input
+                type="text"
+                required
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-mono text-sm"
+                value={versionKey}
+                onChange={e => setVersionKey(e.target.value)}
+                placeholder="Ej. mi-cliente/factura-v2"
+              />
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

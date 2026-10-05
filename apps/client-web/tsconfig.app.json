@@ -24,6 +24,7 @@
     /* Codigo compartido entre portales: vive en apps/_shared y se resuelve igual que en
        vite.config.ts, para que tsc y el bundler vean la misma ruta. */
     "paths": {
+      "@/*": ["./src/*"],
       "@shared/*": ["./_shared/*", "../_shared/*"]
     }
   },

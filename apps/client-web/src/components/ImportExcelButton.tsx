@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Upload, Download, X, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Upload, Download, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import Modal from './Modal';
+import { Button } from './ui/button';
 
 interface ImportRowResult {
   row: number;
@@ -84,35 +86,33 @@ export default function ImportExcelButton({ endpoint, label, onDone, templateEnd
           Descargar plantilla
         </button>
       )}
-      <label className={`px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold flex items-center gap-2 shadow-sm cursor-pointer hover:bg-slate-50 transition-all ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+      <label className={`px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold flex items-center gap-2 shadow-sm cursor-pointer hover:bg-slate-50 transition-all focus-within:ring-2 focus-within:ring-primary/40 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
         {uploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
         {label}
-        <input type="file" accept=".xlsx" className="hidden" onChange={handleFile} disabled={uploading} />
+        <input type="file" accept=".xlsx" className="sr-only" onChange={handleFile} disabled={uploading} />
       </label>
 
       {summary && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-              <h3 className="text-xl font-bold text-slate-800">Resultado de la importación</h3>
-              <button onClick={() => setSummary(null)} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
-            </div>
-            <div className="p-6 overflow-y-auto">
-              <p className="text-sm text-slate-600 mb-4">
-                {summary.succeeded} de {summary.totalRows} filas importadas correctamente
-                {summary.failed > 0 && `, ${summary.failed} con errores`}.
-              </p>
-              <div className="space-y-2">
-                {summary.results.map((r, i) => (
-                  <div key={i} className={`flex items-start gap-2 p-3 rounded-xl text-sm ${r.success ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                    {r.success ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <XCircle size={16} className="mt-0.5 shrink-0" />}
-                    <span>Fila {r.row}: {r.message}</span>
-                  </div>
-                ))}
+        <Modal
+          open
+          onOpenChange={open => { if (!open) setSummary(null); }}
+          title="Resultado de la importación"
+          size="md"
+          footer={<Button type="button" onClick={() => setSummary(null)}>Cerrar</Button>}
+        >
+          <p className="text-sm text-slate-600 mb-4">
+            {summary.succeeded} de {summary.totalRows} filas importadas correctamente
+            {summary.failed > 0 && `, ${summary.failed} con errores`}.
+          </p>
+          <div className="space-y-2">
+            {summary.results.map((r, i) => (
+              <div key={i} className={`flex items-start gap-2 p-3 rounded-xl text-sm ${r.success ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                {r.success ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <XCircle size={16} className="mt-0.5 shrink-0" />}
+                <span className="min-w-0 break-words">Fila {r.row}: {r.message}</span>
               </div>
-            </div>
+            ))}
           </div>
-        </div>
+        </Modal>
       )}
     </>
   );

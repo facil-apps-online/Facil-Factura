@@ -47,7 +47,7 @@ export default function ClientEdit() {
     FE: 'Factura Electrónica (FE)',
     NC: 'Nota Crédito (NC)',
     ND: 'Nota Débito (ND)',
-    POS: 'Documento Soporte / POS',
+    DS: 'Documento Soporte - Adquisiciones a No Obligados (DS)',
     NE: 'Nómina Electrónica (NE)'
   };
   const [certInfo, setCertInfo] = useState<any>(null);
@@ -121,6 +121,7 @@ export default function ClientEdit() {
   const [savingClientIntegratorId, setSavingClientIntegratorId] = useState<string | null>(null);
   const [enabledDocTypes, setEnabledDocTypes] = useState<any[]>([]);
   const [enabledRetentions, setEnabledRetentions] = useState<any[]>([]);
+  const [retentionScope, setRetentionScope] = useState<'Invoice' | 'Support'>('Invoice');
   const [savingDocTypes, setSavingDocTypes] = useState(false);
   const [savingRetentions, setSavingRetentions] = useState(false);
   const [client, setClient] = useState({
@@ -162,8 +163,10 @@ export default function ClientEdit() {
     billingFrequency: 'Monthly',
     liveApiKey: '',
     liveApiSecret: '',
-    testApiKey: '',
-    testApiSecret: ''
+     testApiKey: '',
+     testApiSecret: '',
+     electronicInvoiceLegend: '',
+     supportDocumentLegend: ''
   });
 
   useEffect(() => {
@@ -429,6 +432,11 @@ export default function ClientEdit() {
       clientValues.dnAlternativo2 = client.organizationType || 'RM';
       initial[field.externalName] = clientValues[field.externalName] || fallback;
     }
+    // Viafirma llama "departament" al área/departamento del representante legal.
+    // No confundirlo con "state", que es el departamento geográfico de la dirección.
+    if (!initial.departament) {
+      initial.departament = client.legalRepresentativeOrganizationalArea || 'FACTURACION ELECTRONICA';
+    }
     setCertificateFormValues(initial);
   };
 
@@ -441,7 +449,7 @@ export default function ClientEdit() {
     const missingFields = (profile?.fields || [])
       .filter((field: any) => field.isRequired && !String(certificateFormValues[field.externalName] || '').trim())
       .map((field: any) => field.label);
-    if (profile?.externalType === 'INDIVIDUAL' && !String(certificateFormValues.state || '').trim()) {
+    if (profile?.externalType === 'INDIVIDUAL' && !String(certificateFormValues.departament || '').trim()) {
       missingFields.push('Departamento');
     }
     if (missingFields.length > 0) {
@@ -541,12 +549,16 @@ export default function ClientEdit() {
     if (activeTab === 'templates') loadTemplateSettings();
   }, [activeTab, certificateEnvironment]);
 
+  useEffect(() => {
+    if (activeTab === 'enablements') loadEnabledRetentions();
+  }, [retentionScope]);
+
   const loadEnabledDocTypes = () => {
     api.get(`/tenant/clients/${id}/enabled-document-types`).then(res => setEnabledDocTypes(res.data)).catch(() => {});
   };
 
   const loadEnabledRetentions = () => {
-    api.get(`/tenant/clients/${id}/enabled-retention-concepts`).then(res => setEnabledRetentions(res.data)).catch(() => {});
+    api.get(`/tenant/clients/${id}/enabled-retention-concepts?scope=${retentionScope}`).then(res => setEnabledRetentions(res.data)).catch(() => {});
   };
 
   const toggleDocType = (docTypeId: string) => {
@@ -574,7 +586,7 @@ export default function ClientEdit() {
     setSavingRetentions(true);
     try {
       const ids = enabledRetentions.filter(r => r.enabled).map(r => r.id);
-      await api.put(`/tenant/clients/${id}/enabled-retention-concepts`, { ids });
+      await api.put(`/tenant/clients/${id}/enabled-retention-concepts`, { ids, scope: retentionScope });
       toast.success('Retenciones actualizadas.');
     } catch {
       toast.error('Error al guardar las retenciones.');
@@ -615,10 +627,11 @@ export default function ClientEdit() {
         legalRepresentativeSecondLastName: client.legalRepresentativeSecondLastName,
         legalRepresentativeDocumentType: client.legalRepresentativeDocumentType,
         legalRepresentativeDocumentNumber: client.legalRepresentativeDocumentNumber,
-        legalRepresentativeDocumentCountryCode: client.legalRepresentativeDocumentCountryCode,
-        legalRepresentativeEmail: client.legalRepresentativeEmail,
-        legalRepresentativeRepresentationCode: client.legalRepresentativeRepresentationCode,
-        legalRepresentativeStartDate: client.legalRepresentativeStartDate,
+         legalRepresentativeDocumentCountryCode: client.legalRepresentativeDocumentCountryCode,
+         legalRepresentativeEmail: client.legalRepresentativeEmail,
+         legalRepresentativeRepresentationCode: client.legalRepresentativeRepresentationCode,
+         legalRepresentativeOrganizationalArea: client.legalRepresentativeOrganizationalArea,
+         legalRepresentativeStartDate: client.legalRepresentativeStartDate,
         taxRegime: client.taxRegime,
         economicActivity: client.economicActivity,
         isGranContribuyente: client.isGranContribuyente,
@@ -630,7 +643,9 @@ export default function ClientEdit() {
         latitude: client.latitude,
         longitude: client.longitude,
         subscriptionRate: client.subscriptionRate,
-        billingFrequency: client.billingFrequency
+         billingFrequency: client.billingFrequency
+         ,electronicInvoiceLegend: client.electronicInvoiceLegend || '',
+         supportDocumentLegend: client.supportDocumentLegend || ''
       });
       toast.success("Información del cliente actualizada exitosamente.");
     } catch (err) {
@@ -1210,7 +1225,22 @@ export default function ClientEdit() {
                 <h2 className="text-xl font-bold text-slate-800 mb-6">Información del Emisor</h2>
                 <form onSubmit={handleSave} className="space-y-6">
                   
-                  <ClientFormFields client={client} setClient={setClient} associates={associates} showBillingSection />
+                   <ClientFormFields client={client} setClient={setClient} associates={associates} showBillingSection />
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4">
+                    <div>
+                      <h3 className="font-semibold text-slate-800">Leyendas generales de documentos</h3>
+                      <p className="text-sm text-slate-500 mt-1">Se usan cuando la resolución no tiene una leyenda específica por tipo y prefijo.</p>
+                    </div>
+                    <label className="block text-sm font-medium text-slate-700">
+                      Facturación electrónica
+                      <textarea rows={3} value={client.electronicInvoiceLegend} onChange={e => setClient({ ...client, electronicInvoiceLegend: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 font-normal" placeholder="Ej. Consignar en la cuenta..." />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-700">
+                      Documento soporte
+                      <textarea rows={3} value={client.supportDocumentLegend} onChange={e => setClient({ ...client, supportDocumentLegend: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 font-normal" placeholder="Ej. Consignar en la cuenta..." />
+                    </label>
+                  </div>
 
                   <div className="pt-6 border-t border-slate-100 flex justify-end">
                     <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-transform hover:-translate-y-0.5">
@@ -2053,7 +2083,14 @@ export default function ClientEdit() {
                       {savingRetentions ? 'Guardando...' : 'Guardar'}
                     </button>
                   </div>
-                  <p className="text-slate-500 text-sm mb-6">Retenciones disponibles para este cliente.</p>
+                   <p className="text-slate-500 text-sm mb-6">Retenciones disponibles para este cliente.</p>
+                   <div className="flex gap-2 mb-5">
+                     {(['Invoice', 'Support'] as const).map(scope => (
+                       <button key={scope} type="button" onClick={() => setRetentionScope(scope)} className={`px-4 py-2 rounded-lg text-sm font-semibold ${retentionScope === scope ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                         {scope === 'Invoice' ? 'Facturas' : 'Documentos soporte'}
+                       </button>
+                     ))}
+                   </div>
                   <div className="space-y-4">
                     {Object.entries(
                       enabledRetentions.reduce((groups: Record<string, any[]>, r: any) => {
@@ -2633,7 +2670,7 @@ export default function ClientEdit() {
                       <option value="FE">Factura Electrónica (FE)</option>
                       <option value="NC">Nota Crédito (NC)</option>
                       <option value="ND">Nota Débito (ND)</option>
-                      <option value="POS">Documento Soporte / POS</option>
+                      <option value="DS">Documento Soporte - Adquisiciones a No Obligados (DS)</option>
                       <option value="NE">Nómina Electrónica (NE)</option>
                     </select>
                   )}

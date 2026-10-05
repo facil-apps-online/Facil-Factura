@@ -365,7 +365,7 @@ namespace Fel.Infrastructure.Data
                 entity.HasKey(e => e.Id);
                 
                 entity.Property(e => e.Code).IsRequired().HasMaxLength(50);
-                entity.Property(e => e.Name).IsRequired().HasMaxLength(250);
+                entity.Property(e => e.Name).IsRequired().HasColumnType("nvarchar(max)");
                 
                 entity.Property(e => e.Quantity).HasColumnType("decimal(18,4)");
                 entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,4)");

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Plus, Trash2, FileText, ArrowLeft, Upload, Loader2, Eye, Pencil } from 'lucide-react';
+import { Plus, Trash2, FileText, ArrowLeft, Upload, Loader2, Eye, Pencil, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
 
@@ -126,6 +126,29 @@ export const DocumentTemplates = () => {
     }
   };
 
+  const handleReturnToDraft = async (id: string) => {
+    if (!window.confirm("¿Devolver esta plantilla a Borrador? Dejará de estar disponible como plantilla publicada mientras haces las pruebas.")) return;
+    try {
+      await api.put(`/templates/${id}/status`, { status: 'Draft' });
+      toast.success("Plantilla devuelta a Borrador");
+      loadTemplates();
+    } catch (err: any) {
+      toast.error(err.response?.data || "Error al cambiar el estado");
+    }
+  };
+
+  const handleRename = async (template: DocumentTemplate) => {
+    const name = window.prompt('Nuevo nombre de la plantilla:', template.name);
+    if (name === null || name.trim() === '' || name.trim() === template.name) return;
+    try {
+      await api.put(`/templates/${template.id}/name`, { name: name.trim() });
+      toast.success('Nombre actualizado');
+      loadTemplates();
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al cambiar el nombre');
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!window.confirm("¿Seguro que deseas eliminar esta plantilla?")) return;
     try {
@@ -186,6 +209,9 @@ export const DocumentTemplates = () => {
                   <div className="flex items-center font-bold text-white">
                     <FileText className="w-4 h-4 mr-3 text-indigo-400" />
                     {tpl.name}
+                    <button onClick={() => handleRename(tpl)} className="ml-3 p-1 text-slate-400 hover:text-indigo-300 rounded transition-colors" title="Cambiar nombre">
+                      <Pencil className="w-4 h-4" />
+                    </button>
                   </div>
                 </td>
                 <td className="px-6 py-4">
@@ -215,6 +241,11 @@ export const DocumentTemplates = () => {
                     {tpl.status === 'Draft' && (
                       <button onClick={() => handlePublish(tpl.id)} className="w-28 px-3 py-1.5 text-sm font-bold text-emerald-400 hover:bg-emerald-400/10 rounded-xl transition-all">
                         Publicar
+                      </button>
+                    )}
+                    {tpl.status === 'Published' && (
+                      <button onClick={() => handleReturnToDraft(tpl.id)} className="w-32 px-3 py-1.5 text-sm font-bold text-amber-400 hover:bg-amber-400/10 rounded-xl transition-all inline-flex items-center justify-center gap-1.5">
+                        <Undo2 className="w-4 h-4" /> Borrador
                       </button>
                     )}
                     {tpl.status === 'Published' && (

@@ -1,5 +1,15 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
-import * as AlertDialog from '@radix-ui/react-alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { buttonVariants } from '@/components/ui/button';
 
 interface ConfirmOptions {
   title?: string;
@@ -57,32 +67,23 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
-      <AlertDialog.Root open={state.open} onOpenChange={open => { if (!open) settle(false); }}>
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] data-[state=open]:animate-in data-[state=open]:fade-in" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95">
-            <AlertDialog.Title className="text-lg font-bold text-slate-800">{state.title}</AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-slate-500 mt-2">{state.message}</AlertDialog.Description>
-            <div className="mt-6 flex justify-end gap-3">
-              <AlertDialog.Cancel asChild>
-                <button onClick={() => settle(false)} className="px-5 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">
-                  {state.cancelText}
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  onClick={() => settle(true)}
-                  className={`px-5 py-2 text-white font-bold rounded-xl shadow-md transition-colors ${
-                    state.destructive ? 'bg-rose-600 hover:bg-rose-700' : 'bg-primary hover:bg-primary/90'
-                  }`}
-                >
-                  {state.confirmText}
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+      <AlertDialog open={state.open} onOpenChange={open => { if (!open) settle(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{state.title}</AlertDialogTitle>
+            <AlertDialogDescription>{state.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => settle(false)}>{state.cancelText}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => settle(true)}
+              className={buttonVariants({ variant: state.destructive ? 'destructive' : 'default' })}
+            >
+              {state.confirmText}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ConfirmContext.Provider>
   );
 }

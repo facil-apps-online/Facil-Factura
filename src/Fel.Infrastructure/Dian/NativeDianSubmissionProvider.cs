@@ -105,13 +105,17 @@ namespace Fel.Infrastructure.Dian
                 // y cada nota consumía un número que le correspondía a la siguiente factura real.
                 invoice.Number = invoice.ReferenceDocumentId.HasValue
                     ? (await (documentType?.Code == "ND"
-                        ? Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextDebitNoteNumberAsync(_dbContext, client.Id)
-                        : Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextCreditNoteNumberAsync(_dbContext, client.Id))).ToString()
+                        ? Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote)
+                        : Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote))).Number.ToString()
                     : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
             }
 
             // El prefijo queda guardado en el documento junto con su consecutivo.
-            invoice.Prefix = resolution.Prefix;
+            // Las notas pueden llevar el prefijo de su propia numeración (sucursal con contador propio); sin uno usan el de la resolución.
+            invoice.Prefix = invoice.ReferenceDocumentId.HasValue
+                ? await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, client.Id, invoice.BranchId,
+                    documentType?.Code == "ND" ? Fel.Core.Entities.NoteKind.DebitNote : Fel.Core.Entities.NoteKind.CreditNote) ?? resolution.Prefix
+                : resolution.Prefix;
 
             // La DIAN exige que la fecha de emisión coincida con la fecha de firma (regla FAD09e) —
             // no se puede emitir con fecha anterior a hoy. Se refresca acá, en el momento real de
@@ -120,6 +124,8 @@ namespace Fel.Infrastructure.Dian
             invoice.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
+            // Dirección del emisor en el XML: la de la sucursal que emite (o la del Client si la sucursal no tiene propia).
+            var location = await Fel.Infrastructure.Services.BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
             var paymentMeansDianCodes = await _dbContext.TaxCatalogItems.AsNoTracking()
                 .Where(t => t.Kind == TaxCatalogKind.PaymentMeans && t.DianCode != null)
                 .ToDictionaryAsync(t => t.Category, t => t.DianCode!);
@@ -138,13 +144,13 @@ namespace Fel.Infrastructure.Dian
                     ?? throw new InvalidOperationException("El documento original referenciado por esta nota ya no existe.");
 
                 ublData = documentType.Code == "ND"
-                    ? DianDocumentMapper.BuildDebitNoteData(invoice, originalDocument, customer, items, resolution, client, municipalities, documentType, paymentMeansDianCodes)
-                    : DianDocumentMapper.BuildCreditNoteData(invoice, originalDocument, customer, items, resolution, client, municipalities, documentType, paymentMeansDianCodes);
+                    ? DianDocumentMapper.BuildDebitNoteData(invoice, originalDocument, customer, items, resolution, client, location, municipalities, documentType, paymentMeansDianCodes)
+                    : DianDocumentMapper.BuildCreditNoteData(invoice, originalDocument, customer, items, resolution, client, location, municipalities, documentType, paymentMeansDianCodes);
                 filePrefix = documentType.Code == "ND" ? Fel.Infrastructure.Services.DianFileNaming.NotaDebito : Fel.Infrastructure.Services.DianFileNaming.NotaCredito;
             }
             else
             {
-                ublData = DianDocumentMapper.BuildInvoiceData(invoice, customer, items, resolution, client, municipalities, paymentMeansDianCodes, documentType);
+                ublData = DianDocumentMapper.BuildInvoiceData(invoice, customer, items, resolution, client, location, municipalities, paymentMeansDianCodes, documentType);
                 filePrefix = Fel.Infrastructure.Services.DianFileNaming.FacturaVenta;
             }
 

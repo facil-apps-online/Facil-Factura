@@ -28,7 +28,7 @@ namespace Fel.Infrastructure.Dataico
 
 
         public static Dictionary<string, object?> Build(
-            Document document, Customer employee, Client client,
+            Document document, Customer employee, Client client, EmitterLocation location,
             string prefix, long numeroConsecutivo,
             DateTime initialSettlement, DateTime finalSettlement, DateTime paymentDate,
             IEnumerable<(string? Codigo, string Descripcion, decimal Valor)> devengos,
@@ -65,10 +65,12 @@ namespace Fel.Infrastructure.Dataico
                     ["EmisorLogoUrl"] = client.LogoLightUrl,
                     ["EmisorRazonSocial"] = client.CompanyName,
                     ["EmisorNit"] = client.TaxId,
-                    ["EmisorDireccion"] = client.Address,
-                    ["EmisorCiudad"] = client.City,
-                    ["EmisorTelefono"] = client.Phone,
-                    ["EmisorEmail"] = client.Email,
+                    ["EmisorDireccion"] = location.Address,
+                    ["EmisorCiudad"] = location.City,
+                    ["EmisorTelefono"] = location.Phone,
+                    ["EmisorEmail"] = location.Email,
+                    ["SucursalNombre"] = location.BranchName,
+                    ["SucursalCodigo"] = location.BranchCode,
 
                     // Trabajador
                     ["EmpleadoNombre"] = employee.Name,

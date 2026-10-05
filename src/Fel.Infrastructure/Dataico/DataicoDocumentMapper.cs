@@ -183,7 +183,7 @@ namespace Fel.Infrastructure.Dataico
                 // Dataico no maneja numeración registrada para notas: a diferencia de las facturas,
                 // acá solo se envía el prefijo (confirmado contra la integración de escritorio ya en
                 // producción, que nunca incluye resolution_number para notas).
-                numbering = new DataicoNumbering { prefix = resolution.Prefix, flexible = true },
+                numbering = new DataicoNumbering { prefix = string.IsNullOrWhiteSpace(document.Prefix) ? resolution.Prefix : document.Prefix, flexible = true },
                 charges = BuildCharges(document)
             };
 
@@ -226,7 +226,7 @@ namespace Fel.Infrastructure.Dataico
                 number = document.Number,
                 // Ver comentario equivalente en BuildCreditNoteRequest: las notas no llevan
                 // resolution_number en Dataico.
-                numbering = new DataicoNumbering { prefix = resolution.Prefix, flexible = true },
+                numbering = new DataicoNumbering { prefix = string.IsNullOrWhiteSpace(document.Prefix) ? resolution.Prefix : document.Prefix, flexible = true },
                 charges = BuildCharges(document)
             };
 

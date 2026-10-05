@@ -1,6 +1,6 @@
 # Plan: sucursales en el portal del cliente
 
-Estado: **propuesta, pendiente de aprobación**. No se ha tocado código.
+Estado: **fases 1 y 2 en producción (5 de octubre de 2026); fase 3 implementada, pendiente de desplegar.** Ver la sección 14.
 
 ## 1. Objetivo
 
@@ -164,8 +164,20 @@ Ninguno por ahora.
 
 ## 14. Estado
 
-- **Fase 2 (sucursal en el backend, llaves y roles):** implementada y probada contra una base local de prueba; **pendiente de
-  desplegar junto con la fase 1** (un servicio a la vez: migrador, API del cliente, del tenant, de integración, de superadmin y Worker).
+- **Fase 3 (dirección de la sucursal y numeración de notas):** implementada y probada contra una base local de prueba; **pendiente de
+  desplegar** (mismo esquema, un servicio a la vez).
+  - `Branch` gana `Address`, `City`, `CityCode`, `Phone` y `Email`, todos opcionales: sin dirección propia la sucursal hereda la del
+    Client (no se copia nada, así no se desactualiza). `EmitterLocation.For(client, branch)` usa dirección, ciudad y código de ciudad
+    juntos y deja teléfono y correo caer al Client. Los mappers de la DIAN (`DianDocumentMapper`, `PayrollDocumentMapper`) y de PDF
+    reciben la ubicación como parámetro obligatorio; los PDF agregan `SucursalNombre` y `SucursalCodigo`. Con Dataico no se manda
+    dirección del emisor (la toma la cuenta de Dataico); en el XML de la DIAN solo cambia `PhysicalLocation`.
+  - `NoteNumbering (ClientId, BranchId?, Kind, Prefix?, NextNumber?)` reemplaza los contadores de notas de `Client`: una fila compartida por
+    cliente y tipo (BranchId nulo) y, si una sucursal lo necesita, una propia con su prefijo (único por cliente y tipo).
+    `ResolutionNumbering.ClaimNextNoteAsync` usa la fila de la sucursal si existe y si no la compartida; `note-counters` (portal y tenant)
+    conserva su respuesta y escribe en las filas compartidas. Las columnas viejas de `Client` quedan marcadas obsoletas hasta la fase 7.
+  - **Despliegue:** tras el último servicio hay que sincronizar los contadores (dejar en `NoteNumberings` el mayor entre la fila y la
+    columna vieja de `Client`), porque un servicio viejo que emita una nota durante el despliegue solo incrementa la columna vieja.
+- **Fase 2 (sucursal en el backend, llaves y roles):** implementada, probada y **desplegada en producción junto con la fase 1** (un servicio a la vez: migrador, API del cliente, del tenant, de integración, de superadmin y Worker).
   - `BranchContext` + `ClientPortalFilter` + `ClientPortalControllerBase`: cliente, sucursal (`x-branch-id`, `all` solo lectura) y rol
     por petición; los 14 controladores del portal dejan de repetir `GetCurrentClientId()`.
   - Roles exigidos por endpoint con `[ClientRole]` (Administrador / Facturador).
@@ -177,7 +189,7 @@ Ninguno por ahora.
     propiedades secretas de `Client`, `Branch` y `ClientUser` no se serializan.
   - Las columnas viejas de llaves de `Client` siguen hasta la fase 7 (idénticas a las de la sucursal principal).
   - Pendiente para la fase 4: el dashboard del Facturador no recibe el consumo (el portal ya tolera `consumption: null`).
-- **Fase 1 (modelo y migración):** implementada y probada en una base local de prueba; **pendiente de desplegar**.
+- **Fase 1 (modelo y migración):** implementada, probada y **desplegada en producción**.
   Migración `AddBranches`: crea `Branches`, `ResolutionBranches` y `ClientUserBranches`; agrega `ClientUsers.Role` y
   `AllBranches`, y `BranchId` (nulable) en `Documents` y `ReceivedDocuments`; rellena de forma idempotente la sucursal
   principal por cliente y asigna a ella documentos, recibidos, resoluciones y usuarios.

@@ -63,7 +63,7 @@ namespace Fel.Api.Integration.Controllers
 
             var resolution = resolved.Resolution ?? ResolucionDeRelleno(resolved.Client!.Id, "DS", request.Prefix, request.DocumentNumber);
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-            var ublData = DianDocumentMapper.BuildSupportDocumentDataFromRequest(request, resolved.Client!, resolution, municipalities);
+            var ublData = DianDocumentMapper.BuildSupportDocumentDataFromRequest(request, resolved.Client!, resolved.Location!, resolution, municipalities);
 
             return await SignAndSendAsync(ublData, resolved.Certificate, resolved.CertificateChain, $"DS{request.Prefix}{request.DocumentNumber}.xml", resolved.EsSandbox);
         }
@@ -93,7 +93,7 @@ namespace Fel.Api.Integration.Controllers
 
             var resolution = resolved.Resolution ?? ResolucionDeRelleno(resolved.Client!.Id, "DS-AJUSTE", request.Prefix, request.DocumentNumber);
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-            var ublData = DianDocumentMapper.BuildSupportDocumentAdjustmentDataFromRequest(request, resolved.Client!, resolution, municipalities);
+            var ublData = DianDocumentMapper.BuildSupportDocumentAdjustmentDataFromRequest(request, resolved.Client!, resolved.Location!, resolution, municipalities);
 
             return await SignAndSendAsync(ublData, resolved.Certificate, resolved.CertificateChain, $"DSAJ{request.Prefix}{request.DocumentNumber}.xml", resolved.EsSandbox);
         }

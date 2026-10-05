@@ -292,7 +292,7 @@ namespace Fel.Api.Client.Controllers
 
         // Consecutivo interno de Notas Crédito/Débito — separado del NextNumber de cualquier
         // Resolution porque las notas no tienen rango autorizado propio ante la DIAN (ver
-        // ResolutionNumbering.ClaimNextCreditNoteNumberAsync/ClaimNextDebitNoteNumberAsync). Ruta
+        // ResolutionNumbering.ClaimNextNoteAsync). Ruta
         // bajo /resolutions a propósito: HmacAuthenticationMiddleware ya exime ese prefijo para
         // que el portal de cliente use su sesión (x-client-id) en vez de HMAC.
         public class DocumentLegendRequest
@@ -343,18 +343,16 @@ namespace Fel.Api.Client.Controllers
         [HttpGet("note-counters")]
         public async Task<IActionResult> GetNoteCounters()
         {
-            var clientId = GetCurrentClientId();
-            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);
-            if (client == null) return NotFound();
-
-            return Ok(new
-            {
-                nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
-                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1,
-                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1,
-                supportAdjustmentPrefix = client.SupportAdjustmentPrefix ?? string.Empty
-            });
+            return Ok(ToNoteCountersResponse(await NoteNumberingService.GetSharedAsync(_dbContext, GetCurrentClientId())));
         }
+
+        private static object ToNoteCountersResponse(NoteNumberingService.SharedCounters counters) => new
+        {
+            nextCreditNoteNumber = counters.NextCreditNoteNumber,
+            nextDebitNoteNumber = counters.NextDebitNoteNumber,
+            nextSupportAdjustmentNumber = counters.NextSupportAdjustmentNumber,
+            supportAdjustmentPrefix = counters.SupportAdjustmentPrefix
+        };
 
         public class UpdateNoteCountersRequest
         {
@@ -370,41 +368,27 @@ namespace Fel.Api.Client.Controllers
         public async Task<IActionResult> UpdateNoteCounters([FromBody] UpdateNoteCountersRequest request)
         {
             var clientId = GetCurrentClientId();
-            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);
-            if (client == null) return NotFound();
 
-            if (request.NextCreditNoteNumber.HasValue)
-            {
-                if (request.NextCreditNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Crédito debe ser mayor a 0.");
-                client.NextCreditNoteNumber = request.NextCreditNoteNumber.Value;
-            }
-            if (request.NextDebitNoteNumber.HasValue)
-            {
-                if (request.NextDebitNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Débito debe ser mayor a 0.");
-                client.NextDebitNoteNumber = request.NextDebitNoteNumber.Value;
-            }
-            if (request.NextSupportAdjustmentNumber.HasValue)
-            {
-                if (request.NextSupportAdjustmentNumber.Value < 1) return BadRequest("El consecutivo de Nota de Ajuste debe ser mayor a 0.");
-                client.NextSupportAdjustmentNumber = request.NextSupportAdjustmentNumber.Value;
-            }
+            if (request.NextCreditNoteNumber is < 1) return BadRequest("El consecutivo de Nota Crédito debe ser mayor a 0.");
+            if (request.NextDebitNoteNumber is < 1) return BadRequest("El consecutivo de Nota Débito debe ser mayor a 0.");
+            if (request.NextSupportAdjustmentNumber is < 1) return BadRequest("El consecutivo de Nota de Ajuste debe ser mayor a 0.");
+
+            string? prefix = null;
             if (request.SupportAdjustmentPrefix != null)
             {
-                var prefix = request.SupportAdjustmentPrefix.Trim().ToUpperInvariant();
+                prefix = request.SupportAdjustmentPrefix.Trim().ToUpperInvariant();
                 if (prefix.Length > 10) return BadRequest("El prefijo de Nota de Ajuste no puede tener más de 10 caracteres.");
                 if (prefix.Length > 0 && !prefix.All(char.IsLetterOrDigit)) return BadRequest("El prefijo de Nota de Ajuste solo puede tener letras y números.");
-                client.SupportAdjustmentPrefix = prefix.Length == 0 ? null : prefix;
             }
+
+            // Son los contadores compartidos del cliente; la numeración propia de una sucursal se administra aparte.
+            var error = await NoteNumberingService.UpdateSharedAsync(_dbContext, clientId,
+                request.NextCreditNoteNumber, request.NextDebitNoteNumber, request.NextSupportAdjustmentNumber, prefix);
+            if (error != null) return BadRequest(error);
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(new
-            {
-                nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
-                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1,
-                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1,
-                supportAdjustmentPrefix = client.SupportAdjustmentPrefix ?? string.Empty
-            });
+            return Ok(ToNoteCountersResponse(await NoteNumberingService.GetSharedAsync(_dbContext, clientId)));
         }
     }
 }

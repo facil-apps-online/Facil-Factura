@@ -59,7 +59,7 @@ namespace Fel.Api.Integration.Controllers
             var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(this, _dbContext, _cryptoVault);
             if (resolved.Error != null) return resolved.Error;
 
-            var ublData = PayrollDocumentMapper.BuildPayrollDataFromRequest(request, resolved.Client!);
+            var ublData = PayrollDocumentMapper.BuildPayrollDataFromRequest(request, resolved.Client!, resolved.Location!);
             var cune = _ublGenerator.CalculateCune(ublData);
             var xml = _ublGenerator.GeneratePayrollXml(ublData, cune);
 
@@ -112,7 +112,7 @@ namespace Fel.Api.Integration.Controllers
             var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(this, _dbContext, _cryptoVault);
             if (resolved.Error != null) return resolved.Error;
 
-            var ublData = PayrollDocumentMapper.BuildPayrollVoidDataFromRequest(request, resolved.Client!);
+            var ublData = PayrollDocumentMapper.BuildPayrollVoidDataFromRequest(request, resolved.Client!, resolved.Location!);
             var cune = _ublGenerator.CalculateVoidCune(ublData);
             var xml = _ublGenerator.GeneratePayrollVoidXml(ublData, cune);
 

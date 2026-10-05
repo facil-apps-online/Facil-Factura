@@ -205,6 +205,7 @@ namespace Fel.Api.Tenant.Controllers
             };
             _dbContext.Clients.Add(sandboxClient);
             _dbContext.Branches.Add(BranchProvisioning.CreateMain(sandboxClient));
+            _dbContext.NoteNumberings.AddRange(BranchProvisioning.CreateSharedNoteNumberings(sandboxClient.Id));
 
             _dbContext.ClientIntegratorAssignments.Add(new ClientIntegratorAssignment
             {

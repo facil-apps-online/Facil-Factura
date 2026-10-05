@@ -169,7 +169,7 @@ namespace Fel.Api.Client.Controllers
                 }
 
                 var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
-                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode));
+                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId), document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode));
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {
@@ -361,7 +361,7 @@ namespace Fel.Api.Client.Controllers
                     try
                     {
                         document.Number = document.TypeCode == AdjustmentTypeCode
-                            ? (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextSupportAdjustmentNumberAsync(_dbContext, clientId)).ToString()
+                            ? (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, clientId, document.BranchId, NoteKind.SupportAdjustment)).Number.ToString()
                             : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
                     }
                     catch (Fel.Infrastructure.Services.ResolutionExhaustedException ex)
@@ -376,7 +376,7 @@ namespace Fel.Api.Client.Controllers
                 // numeración de ajustes de Dataico es distinta de la del soporte); sin uno configurado conserva el que
                 // ya tenga el documento y, si no tiene, el de la resolución.
                 document.Prefix = document.TypeCode == AdjustmentTypeCode
-                    ? (!string.IsNullOrWhiteSpace(client.SupportAdjustmentPrefix) ? client.SupportAdjustmentPrefix : (document.Prefix ?? resolution.Prefix))
+                    ? (await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, clientId, document.BranchId, NoteKind.SupportAdjustment) ?? document.Prefix ?? resolution.Prefix)
                     : resolution.Prefix;
 
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
@@ -415,9 +415,10 @@ namespace Fel.Api.Client.Controllers
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
                     var leyenda = await _legendService.ResolveAsync(client, resolution, document.TypeCode);
+                    var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
-                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda),
+                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda),
                         credentials);
                 }
 

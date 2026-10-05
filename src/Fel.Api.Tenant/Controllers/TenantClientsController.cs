@@ -267,6 +267,7 @@ namespace Fel.Api.Tenant.Controllers
 
             _dbContext.Clients.Add(client);
             _dbContext.Branches.Add(BranchProvisioning.CreateMain(client));
+            _dbContext.NoteNumberings.AddRange(BranchProvisioning.CreateSharedNoteNumberings(client.Id));
             _dbContext.ClientIntegratorAssignments.Add(new ClientIntegratorAssignment
             {
                 Id = Guid.NewGuid(),
@@ -656,54 +657,40 @@ namespace Fel.Api.Tenant.Controllers
 
         // Consecutivo interno de Notas Crédito/Débito — separado del NextNumber de cualquier
         // Resolution porque las notas no tienen rango autorizado propio ante la DIAN (ver
-        // ResolutionNumbering.ClaimNextCreditNoteNumberAsync/ClaimNextDebitNoteNumberAsync). Antes
+        // ResolutionNumbering.ClaimNextNoteAsync). Antes
         // no había forma de verlo ni ajustarlo salvo por SQL directo.
         [HttpGet("{id}/note-counters")]
         public async Task<IActionResult> GetNoteCounters(Guid id)
         {
             var tenantId = GetCurrentTenantId();
-            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
-            if (client == null) return NotFound();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
 
-            return Ok(new
-            {
-                nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
-                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1,
-                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1
-            });
+            return Ok(ToNoteCountersResponse(await NoteNumberingService.GetSharedAsync(_dbContext, id)));
         }
+
+        private static object ToNoteCountersResponse(NoteNumberingService.SharedCounters counters) => new
+        {
+            nextCreditNoteNumber = counters.NextCreditNoteNumber,
+            nextDebitNoteNumber = counters.NextDebitNoteNumber,
+            nextSupportAdjustmentNumber = counters.NextSupportAdjustmentNumber
+        };
 
         [HttpPut("{id}/note-counters")]
         public async Task<IActionResult> UpdateNoteCounters(Guid id, [FromBody] UpdateNoteCountersRequest request)
         {
             var tenantId = GetCurrentTenantId();
-            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
-            if (client == null) return NotFound();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
 
-            if (request.NextCreditNoteNumber.HasValue)
-            {
-                if (request.NextCreditNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Crédito debe ser mayor a 0.");
-                client.NextCreditNoteNumber = request.NextCreditNoteNumber.Value;
-            }
-            if (request.NextDebitNoteNumber.HasValue)
-            {
-                if (request.NextDebitNoteNumber.Value < 1) return BadRequest("El consecutivo de Nota Débito debe ser mayor a 0.");
-                client.NextDebitNoteNumber = request.NextDebitNoteNumber.Value;
-            }
-            if (request.NextSupportAdjustmentNumber.HasValue)
-            {
-                if (request.NextSupportAdjustmentNumber.Value < 1) return BadRequest("El consecutivo de Nota de Ajuste debe ser mayor a 0.");
-                client.NextSupportAdjustmentNumber = request.NextSupportAdjustmentNumber.Value;
-            }
+            if (request.NextCreditNoteNumber is < 1) return BadRequest("El consecutivo de Nota Crédito debe ser mayor a 0.");
+            if (request.NextDebitNoteNumber is < 1) return BadRequest("El consecutivo de Nota Débito debe ser mayor a 0.");
+            if (request.NextSupportAdjustmentNumber is < 1) return BadRequest("El consecutivo de Nota de Ajuste debe ser mayor a 0.");
 
+            // Contadores compartidos del cliente (el prefijo de ajuste lo administra el cliente en su portal).
+            await NoteNumberingService.UpdateSharedAsync(_dbContext, id,
+                request.NextCreditNoteNumber, request.NextDebitNoteNumber, request.NextSupportAdjustmentNumber, null);
             await _dbContext.SaveChangesAsync();
 
-            return Ok(new
-            {
-                nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
-                nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1,
-                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1
-            });
+            return Ok(ToNoteCountersResponse(await NoteNumberingService.GetSharedAsync(_dbContext, id)));
         }
 
         /// <summary>

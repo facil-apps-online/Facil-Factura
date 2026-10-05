@@ -149,7 +149,7 @@ namespace Fel.Api.Integration.Controllers
                 long.TryParse(request.DocumentNumber, out var numeroDoc) ? numeroDoc : 1);
 
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-            var ublData = DianDocumentMapper.BuildEquivalentDocumentDataFromRequest(request, client, resolution, municipalities, dianCode, onSite);
+            var ublData = DianDocumentMapper.BuildEquivalentDocumentDataFromRequest(request, client, resolved.Location!, resolution, municipalities, dianCode, onSite);
 
             var cufe = _ublGenerator.CalculateEquivalentDocumentCufe(ublData);
             var xml = _ublGenerator.GenerateInvoiceXml(ublData);

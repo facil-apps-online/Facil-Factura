@@ -1,5 +1,6 @@
 using Fel.Core.Entities;
 using Fel.Core.Models;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dian
 {
@@ -8,7 +9,7 @@ namespace Fel.Infrastructure.Dian
     // nunca de lo que declare el caller.
     public static class PayrollDocumentMapper
     {
-        public static UblPayrollData BuildPayrollDataFromRequest(PayrollRequest request, Client client)
+        public static UblPayrollData BuildPayrollDataFromRequest(PayrollRequest request, Client client, EmitterLocation location)
         {
             return new UblPayrollData
             {
@@ -20,7 +21,7 @@ namespace Fel.Infrastructure.Dian
                 SoftwarePin = client.SoftwarePin,
                 Environment = client.DianHabilitationStatus == "Production" ? "1" : "2",
                 DianCode = "102",
-                Employer = BuildEmployer(client),
+                Employer = BuildEmployer(client, location),
                 Worker = request.Worker,
                 Period = request.Period,
                 Payment = request.Payment,
@@ -35,7 +36,7 @@ namespace Fel.Infrastructure.Dian
             };
         }
 
-        public static UblPayrollVoidData BuildPayrollVoidDataFromRequest(PayrollVoidRequest request, Client client)
+        public static UblPayrollVoidData BuildPayrollVoidDataFromRequest(PayrollVoidRequest request, Client client, EmitterLocation location)
         {
             return new UblPayrollVoidData
             {
@@ -46,7 +47,7 @@ namespace Fel.Infrastructure.Dian
                 SoftwareId = client.SoftwareId,
                 SoftwarePin = client.SoftwarePin,
                 Environment = client.DianHabilitationStatus == "Production" ? "1" : "2",
-                Employer = BuildEmployer(client),
+                Employer = BuildEmployer(client, location),
                 PredecessorNumber = request.PredecessorNumber,
                 PredecessorCune = request.PredecessorCune,
                 PredecessorIssueDate = request.PredecessorIssueDate,
@@ -54,15 +55,15 @@ namespace Fel.Infrastructure.Dian
             };
         }
 
-        private static PayrollPartyData BuildEmployer(Client client) => new PayrollPartyData
+        private static PayrollPartyData BuildEmployer(Client client, EmitterLocation location) => new PayrollPartyData
         {
             TaxId = client.TaxId,
             VerificationDigit = client.VerificationDigit,
             CompanyName = client.CompanyName,
             CountryCode = "CO",
-            DepartmentCode = DianDocumentMapper.DeriveDepartmentCode(client.CityCode),
-            CityCode = client.CityCode ?? string.Empty,
-            Address = client.Address
+            DepartmentCode = DianDocumentMapper.DeriveDepartmentCode(location.CityCode),
+            CityCode = location.CityCode ?? string.Empty,
+            Address = location.Address
         };
     }
 }

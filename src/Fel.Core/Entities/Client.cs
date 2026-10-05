@@ -224,6 +224,8 @@ namespace Fel.Core.Entities
         public string? SmtpFromEmail { get; set; }
         public string? SmtpFromName { get; set; }
 
+        // OBSOLETO: los contadores de notas y el prefijo de ajuste viven ahora en NoteNumbering (compartidos por Client o propios de
+        // una sucursal). Estas columnas ya no las lee ni las escribe nada; se eliminan en la limpieza final de las sucursales.
         // Consecutivo interno de Notas Crédito/Débito — separado del NextNumber de la Resolución
         // de Factura porque las notas no tienen rango autorizado propio ante la DIAN (solo
         // reutilizan el Prefix de la resolución "FE", ver DianDocumentMapper.BuildCreditNoteData).

@@ -28,6 +28,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<TenantUserAssignment> TenantUserAssignments => Set<TenantUserAssignment>();
         public DbSet<ClientUser> ClientUsers { get; set; }
         public DbSet<Branch> Branches => Set<Branch>();
+        public DbSet<NoteNumbering> NoteNumberings => Set<NoteNumbering>();
         public DbSet<ResolutionBranch> ResolutionBranches => Set<ResolutionBranch>();
         public DbSet<ClientUserBranch> ClientUserBranches => Set<ClientUserBranch>();
         public DbSet<TenantBilling> TenantBillings => Set<TenantBilling>();
@@ -146,6 +147,11 @@ namespace Fel.Infrastructure.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
                 entity.Property(e => e.Code).IsRequired().HasMaxLength(30);
+                entity.Property(e => e.Address).HasMaxLength(250);
+                entity.Property(e => e.City).HasMaxLength(100);
+                entity.Property(e => e.CityCode).HasMaxLength(10);
+                entity.Property(e => e.Phone).HasMaxLength(40);
+                entity.Property(e => e.Email).HasMaxLength(150);
                 entity.HasIndex(e => new { e.ClientId, e.Code }).IsUnique();
                 entity.Property(e => e.LiveApiKey).HasMaxLength(100);
                 entity.HasIndex(e => e.LiveApiKey).IsUnique();
@@ -156,6 +162,25 @@ namespace Fel.Infrastructure.Data
                 entity.HasOne(e => e.Client)
                       .WithMany(c => c.Branches)
                       .HasForeignKey(e => e.ClientId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<NoteNumbering>(entity =>
+            {
+                entity.ToTable("NoteNumberings");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Prefix).HasMaxLength(10);
+                // Un contador por Client, sucursal (o compartido, con BranchId nulo) y tipo de nota.
+                entity.HasIndex(e => new { e.ClientId, e.BranchId, e.Kind }).IsUnique().HasFilter(null); // sin filtro: los compartidos (BranchId nulo) también son únicos
+                // El prefijo es único por Client y tipo: dos contadores nunca comparten prefijo.
+                entity.HasIndex(e => new { e.ClientId, e.Kind, e.Prefix }).IsUnique().HasFilter("[Prefix] IS NOT NULL");
+                entity.HasOne(e => e.Client)
+                      .WithMany()
+                      .HasForeignKey(e => e.ClientId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Branch)
+                      .WithMany()
+                      .HasForeignKey(e => e.BranchId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 

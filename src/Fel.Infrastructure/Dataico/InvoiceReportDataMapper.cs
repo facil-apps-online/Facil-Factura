@@ -87,7 +87,7 @@ namespace Fel.Infrastructure.Dataico
         // resuelta para este documento — decide si las filas de retención entran a "Impuestos" y
         // si se calcula "NetoAPagar". El IVA discriminado se arma siempre, independiente de este
         // flag.
-        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null)
+        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -214,10 +214,12 @@ namespace Fel.Infrastructure.Dataico
                     ["EmisorNombreComercial"] = client.CommercialName,
                     ["EmisorNit"] = client.TaxId,
                     ["EmisorDv"] = client.VerificationDigit,
-                    ["EmisorDireccion"] = client.Address,
-                    ["EmisorCiudad"] = client.City,
-                    ["EmisorTelefono"] = client.Phone,
-                    ["EmisorEmail"] = client.Email,
+                    ["EmisorDireccion"] = location.Address,
+                    ["EmisorCiudad"] = location.City,
+                    ["EmisorTelefono"] = location.Phone,
+                    ["EmisorEmail"] = location.Email,
+                    ["SucursalNombre"] = location.BranchName,
+                    ["SucursalCodigo"] = location.BranchCode,
                     ["EmisorCalidadTributaria"] = CalidadTributaria(client.TaxRegime),
                     ["EmisorActividadEconomica"] = client.EconomicActivity,
                     ["EmisorGranContribuyente"] = ResponsabilidadTexto(client.IsGranContribuyente, "Gran Contribuyente"),

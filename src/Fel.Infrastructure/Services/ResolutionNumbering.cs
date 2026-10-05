@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +18,9 @@ namespace Fel.Infrastructure.Services
     {
         public ResolutionExhaustedException(string message) : base(message) { }
     }
+
+    // Consecutivo asignado a una nota y el prefijo propio de su numeración (null = usa el de su resolución).
+    public sealed record NoteClaim(long Number, string? Prefix);
 
     public static class ResolutionNumbering
     {
@@ -60,83 +64,66 @@ namespace Fel.Infrastructure.Services
             }
         }
 
-        // Mismo patrón optimista que ClaimNextNumberAsync, pero sobre el consecutivo interno de
-        // Client (NextCreditNoteNumber/NextDebitNoteNumber) en vez del de una Resolución — las
-        // Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que este
-        // consecutivo no compite con el de Factura.
-        public static async Task<long> ClaimNextCreditNoteNumberAsync(FelDbContext dbContext, Guid clientId)
+        // Numeración que le corresponde a una nota: la propia de la sucursal si la tiene y, si no, la compartida del Client.
+        // Las Notas Crédito/Débito y de Ajuste no tienen rango autorizado propio ante la DIAN, así que su consecutivo es
+        // interno y no compite con el de Factura.
+        private static IQueryable<NoteNumbering> EffectiveNumbering(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind) =>
+            dbContext.NoteNumberings.AsNoTracking()
+                .Where(n => n.ClientId == clientId && n.Kind == kind && (n.BranchId == branchId || n.BranchId == null))
+                .OrderByDescending(n => n.BranchId != null);
+
+        // Prefijo propio de la numeración de la nota (null = el documento usa el de su resolución).
+        public static async Task<string?> GetNotePrefixAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind)
+        {
+            var prefix = await EffectiveNumbering(dbContext, clientId, branchId, kind).Select(n => n.Prefix).FirstOrDefaultAsync();
+            return string.IsNullOrWhiteSpace(prefix) ? null : prefix;
+        }
+
+        // Mismo patrón optimista que ClaimNextNumberAsync, pero sobre el contador de NoteNumbering.
+        public static async Task<NoteClaim> ClaimNextNoteAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind)
         {
             while (true)
             {
-                var client = await dbContext.Clients.AsNoTracking()
-                    .Where(c => c.Id == clientId)
-                    .Select(c => new { c.NextCreditNoteNumber })
+                var row = await EffectiveNumbering(dbContext, clientId, branchId, kind)
+                    .Select(n => new { n.Id, n.Prefix, n.NextNumber })
                     .FirstOrDefaultAsync();
 
-                if (client == null)
+                if (row == null)
                 {
-                    throw new InvalidOperationException("No se encontró el Client al asignar el consecutivo de la nota crédito.");
+                    await CreateSharedNumberingAsync(dbContext, clientId, kind);
+                    continue;
                 }
 
-                var current = client.NextCreditNoteNumber ?? 1;
+                var current = row.NextNumber ?? 1;
                 var next = current + 1;
 
-                var affected = await dbContext.Clients
-                    .Where(c => c.Id == clientId && c.NextCreditNoteNumber == client.NextCreditNoteNumber)
-                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.NextCreditNoteNumber, next));
+                var affected = await dbContext.NoteNumberings
+                    .Where(n => n.Id == row.Id && n.NextNumber == row.NextNumber)
+                    .ExecuteUpdateAsync(s => s.SetProperty(n => n.NextNumber, next));
 
-                if (affected > 0) return current;
+                if (affected > 0) return new NoteClaim(current, string.IsNullOrWhiteSpace(row.Prefix) ? null : row.Prefix);
             }
         }
 
-        public static async Task<long> ClaimNextDebitNoteNumberAsync(FelDbContext dbContext, Guid clientId)
+        // Por si a un Client le falta su contador compartido. Va por SQL directo para no guardar de paso los cambios
+        // pendientes del contexto (el documento que se está publicando); si dos peticiones lo crean a la vez, el índice
+        // único deja pasar una y la otra solo vuelve a leer.
+        private static async Task CreateSharedNumberingAsync(FelDbContext dbContext, Guid clientId, NoteKind kind)
         {
-            while (true)
+            var kindValue = (int)kind;
+            try
             {
-                var client = await dbContext.Clients.AsNoTracking()
-                    .Where(c => c.Id == clientId)
-                    .Select(c => new { c.NextDebitNoteNumber })
-                    .FirstOrDefaultAsync();
-
-                if (client == null)
-                {
-                    throw new InvalidOperationException("No se encontró el Client al asignar el consecutivo de la nota débito.");
-                }
-
-                var current = client.NextDebitNoteNumber ?? 1;
-                var next = current + 1;
-
-                var affected = await dbContext.Clients
-                    .Where(c => c.Id == clientId && c.NextDebitNoteNumber == client.NextDebitNoteNumber)
-                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.NextDebitNoteNumber, next));
-
-                if (affected > 0) return current;
+                await dbContext.Database.ExecuteSqlInterpolatedAsync($@"
+                    INSERT INTO NoteNumberings (Id, ClientId, BranchId, Kind, Prefix, NextNumber)
+                    SELECT {Guid.NewGuid()}, {clientId}, NULL, {kindValue}, NULL, NULL
+                    WHERE NOT EXISTS (SELECT 1 FROM NoteNumberings WHERE ClientId = {clientId} AND BranchId IS NULL AND Kind = {kindValue})");
             }
-        }
-
-        // Notas de Ajuste del Documento Soporte (DS-AJUSTE): mismo patrón, consecutivo propio del Client.
-        public static async Task<long> ClaimNextSupportAdjustmentNumberAsync(FelDbContext dbContext, Guid clientId)
-        {
-            while (true)
+            catch (Exception)
             {
-                var client = await dbContext.Clients.AsNoTracking()
-                    .Where(c => c.Id == clientId)
-                    .Select(c => new { c.NextSupportAdjustmentNumber })
-                    .FirstOrDefaultAsync();
-
-                if (client == null)
-                {
-                    throw new InvalidOperationException("No se encontró el Client al asignar el consecutivo de la nota de ajuste.");
-                }
-
-                var current = client.NextSupportAdjustmentNumber ?? 1;
-                var next = current + 1;
-
-                var affected = await dbContext.Clients
-                    .Where(c => c.Id == clientId && c.NextSupportAdjustmentNumber == client.NextSupportAdjustmentNumber)
-                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.NextSupportAdjustmentNumber, next));
-
-                if (affected > 0) return current;
+                // Si falló porque otra petición la creó en el mismo instante, basta con volver a leer; si no, es un error real.
+                var exists = await dbContext.NoteNumberings.AsNoTracking()
+                    .AnyAsync(n => n.ClientId == clientId && n.BranchId == null && n.Kind == kind);
+                if (!exists) throw;
             }
         }
     }

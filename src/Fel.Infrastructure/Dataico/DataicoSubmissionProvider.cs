@@ -6,6 +6,7 @@ using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dataico
 {
@@ -60,13 +61,19 @@ namespace Fel.Infrastructure.Dataico
                 // y cada nota consumía un número que le correspondía a la siguiente factura real.
                 invoice.Number = invoice.TypeCode switch
                 {
-                    "NC" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextCreditNoteNumberAsync(_dbContext, client.Id)).ToString(),
-                    "ND" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextDebitNoteNumberAsync(_dbContext, client.Id)).ToString(),
+                    "NC" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote)).Number.ToString(),
+                    "ND" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote)).Number.ToString(),
                     _ => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString()
                 };
             }
             // El prefijo queda guardado en el documento junto con su consecutivo.
-            invoice.Prefix = resolution.Prefix;
+            // Las notas pueden llevar el prefijo de su propia numeración (sucursal con contador propio); sin uno usan el de la resolución.
+            invoice.Prefix = invoice.TypeCode switch
+            {
+                "NC" => await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote) ?? resolution.Prefix,
+                "ND" => await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote) ?? resolution.Prefix,
+                _ => resolution.Prefix
+            };
 
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
 
@@ -125,9 +132,10 @@ namespace Fel.Infrastructure.Dataico
             if (result.Success)
             {
                 var leyenda = await _legendService.ResolveAsync(client, resolution, invoice.TypeCode);
+                var location = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
                 await _customPdfService.TrySendCustomPdfAsync(
                     invoice, customer?.Email, client,
-                    template => InvoiceReportDataMapper.Build(invoice, customer, client, resolution, items.ToList(), originalInvoiceForPdf, template.MostrarRetenciones, leyenda: leyenda),
+                    template => InvoiceReportDataMapper.Build(invoice, customer, client, location, resolution, items.ToList(), originalInvoiceForPdf, template.MostrarRetenciones, leyenda: leyenda),
                     credentials);
             }
 

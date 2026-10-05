@@ -19,6 +19,8 @@ namespace Fel.Api.Integration.Security
     {
         public Client? Client { get; init; }
         public Resolution? Resolution { get; init; }
+        // Dónde emite: la ubicación de la sucursal dueña de la llave de API (o la del Client si la sucursal no tiene propia).
+        public EmitterLocation? Location { get; init; }
         public X509Certificate2? Certificate { get; init; }
         public X509Certificate2Collection? CertificateChain { get; init; }
         public IActionResult? Error { get; init; }
@@ -29,11 +31,11 @@ namespace Fel.Api.Integration.Security
         /// </summary>
         public bool EsSandbox { get; init; }
 
-        public static ResultadoEmisor Ok(Client client, Resolution? resolution, X509Certificate2 certificate, X509Certificate2Collection certificateChain) =>
-            new() { Client = client, Resolution = resolution, Certificate = certificate, CertificateChain = certificateChain };
+        public static ResultadoEmisor Ok(Client client, EmitterLocation location, Resolution? resolution, X509Certificate2 certificate, X509Certificate2Collection certificateChain) =>
+            new() { Client = client, Location = location, Resolution = resolution, Certificate = certificate, CertificateChain = certificateChain };
 
-        public static ResultadoEmisor Sandbox(Client client, Resolution? resolution) =>
-            new() { Client = client, Resolution = resolution, EsSandbox = true };
+        public static ResultadoEmisor Sandbox(Client client, EmitterLocation location, Resolution? resolution) =>
+            new() { Client = client, Location = location, Resolution = resolution, EsSandbox = true };
 
         public static ResultadoEmisor Fail(IActionResult error) => new() { Error = error };
     }
@@ -81,6 +83,8 @@ namespace Fel.Api.Integration.Security
                 }));
             }
 
+            var location = await BranchProvisioning.LocationAsync(dbContext, client, controlador.HttpContext.GetBranchId());
+
             Resolution? resolution = null;
             if (documentTypeCode != null)
             {
@@ -106,7 +110,7 @@ namespace Fel.Api.Integration.Security
                 // respuesta, igual que hacen los RIPS (ver Fel.Infrastructure SandboxSimulation).
                 if (client.IsDeveloperSandbox)
                 {
-                    return ResultadoEmisor.Sandbox(client, resolution);
+                    return ResultadoEmisor.Sandbox(client, location, resolution);
                 }
 
                 return ResultadoEmisor.Fail(controlador.UnprocessableEntity(new
@@ -126,7 +130,7 @@ namespace Fel.Api.Integration.Security
             }
 
             var certChain = cryptoVault.GetCertificateChain(certificate.FileName, certificate.EncryptedPassword);
-            return ResultadoEmisor.Ok(client, resolution, cert, certChain);
+            return ResultadoEmisor.Ok(client, location, resolution, cert, certChain);
         }
     }
 }

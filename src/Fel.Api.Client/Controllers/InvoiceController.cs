@@ -234,7 +234,8 @@ namespace Fel.Api.Client.Controllers
                     : null;
 
                 var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
-                var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode));
+                var previewLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
+                var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, previewLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode));
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {
@@ -772,9 +773,10 @@ namespace Fel.Api.Client.Controllers
                     }
 
                     var (resendPaymentMeansCatalog, resendFormaPagoCatalog) = await GetPaymentCatalogsAsync();
+                    var resendLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
                     var leyenda = await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode);
                     Dictionary<string, object?> BuildReportData(DocumentTemplate template) =>
-                        InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, resendPaymentMeansCatalog, resendFormaPagoCatalog, leyenda);
+                        InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, resendLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, resendPaymentMeansCatalog, resendFormaPagoCatalog, leyenda);
 
                     var (pdfBytes, _) = await _customPdfService.ResolveCustomPdfAsync(invoice, client, BuildReportData);
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
@@ -813,10 +815,11 @@ namespace Fel.Api.Client.Controllers
                     }
 
                     var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
+                    var xmlLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
                     var resendDocType = invoice.DocumentTypeId.HasValue
                         ? await _dbContext.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == invoice.DocumentTypeId.Value)
                         : null;
-                    var ublData = DianDocumentMapper.BuildInvoiceData(invoice, invoice.Customer, invoice.Items, invoice.Resolution, client, municipalities, null, resendDocType);
+                    var ublData = DianDocumentMapper.BuildInvoiceData(invoice, invoice.Customer, invoice.Items, invoice.Resolution, client, xmlLocation, municipalities, null, resendDocType);
                     var xml = _ublGenerator.GenerateInvoiceXml(ublData);
                     var recalculatedCufe = _ublGenerator.CalculateCufe(ublData);
 
@@ -842,7 +845,8 @@ namespace Fel.Api.Client.Controllers
                     }
 
                     var (publishPaymentMeansCatalog, publishFormaPagoCatalog) = await GetPaymentCatalogsAsync();
-                    var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, publishPaymentMeansCatalog, publishFormaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode));
+                    var publishLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
+                    var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, publishLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, publishPaymentMeansCatalog, publishFormaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode));
                     var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                     if (pdfBytes == null)
                     {

@@ -65,7 +65,7 @@ namespace Fel.Infrastructure.Dataico
             };
         }
 
-        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null)
+        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -139,10 +139,12 @@ namespace Fel.Infrastructure.Dataico
                     ["EmisorNombreComercial"] = client.CommercialName,
                     ["EmisorNit"] = client.TaxId,
                     ["EmisorDv"] = client.VerificationDigit,
-                    ["EmisorDireccion"] = client.Address,
-                    ["EmisorCiudad"] = client.City,
-                    ["EmisorTelefono"] = client.Phone,
-                    ["EmisorEmail"] = client.Email,
+                    ["EmisorDireccion"] = location.Address,
+                    ["EmisorCiudad"] = location.City,
+                    ["EmisorTelefono"] = location.Phone,
+                    ["EmisorEmail"] = location.Email,
+                    ["SucursalNombre"] = location.BranchName,
+                    ["SucursalCodigo"] = location.BranchCode,
                     ["EmisorCalidadTributaria"] = CalidadTributaria(client.TaxRegime),
                     ["EmisorActividadEconomica"] = client.EconomicActivity,
                     ["EmisorGranContribuyente"] = ResponsabilidadTexto(client.IsGranContribuyente, "Gran Contribuyente"),

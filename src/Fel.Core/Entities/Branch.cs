@@ -18,6 +18,14 @@ namespace Fel.Core.Entities
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; }
 
+        // Ubicación del emisor para los documentos de esta sucursal. Todo opcional: sin Address la sucursal usa la del Client
+        // (la principal hereda, así no se desactualiza cuando se edita la dirección del Client). Ver EmitterLocation.
+        public string? Address { get; set; }
+        public string? City { get; set; }
+        public string? CityCode { get; set; } // Código DANE del municipio (5 dígitos)
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+
         // --- API de integración (HMAC): las llaves son de la sucursal, no del Client ---
         [System.Text.Json.Serialization.JsonIgnore]
         public string LiveApiKey { get; set; } = Guid.NewGuid().ToString("N");

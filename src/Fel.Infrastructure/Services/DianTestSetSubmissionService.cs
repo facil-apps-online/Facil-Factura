@@ -232,17 +232,17 @@ namespace Fel.Infrastructure.Services
             {
                 case DocumentKind.CreditNote:
                     var creditRequest = BuildSyntheticCreditNoteRequest(number, resolution.Prefix, client);
-                    ublData = DianDocumentMapper.BuildCreditNoteDataFromRequest(creditRequest, client, resolution, municipalities);
+                    ublData = DianDocumentMapper.BuildCreditNoteDataFromRequest(creditRequest, client, EmitterLocation.ForClient(client), resolution, municipalities);
                     filePrefix = DianFileNaming.NotaCredito;
                     break;
                 case DocumentKind.DebitNote:
                     var debitRequest = BuildSyntheticDebitNoteRequest(number, resolution.Prefix, client);
-                    ublData = DianDocumentMapper.BuildDebitNoteDataFromRequest(debitRequest, client, resolution, municipalities);
+                    ublData = DianDocumentMapper.BuildDebitNoteDataFromRequest(debitRequest, client, EmitterLocation.ForClient(client), resolution, municipalities);
                     filePrefix = DianFileNaming.NotaDebito;
                     break;
                 default:
                     var invoiceRequest = BuildSyntheticInvoiceRequest(number, resolution.Prefix);
-                    ublData = DianDocumentMapper.BuildInvoiceDataFromRequest(invoiceRequest, client, resolution, municipalities);
+                    ublData = DianDocumentMapper.BuildInvoiceDataFromRequest(invoiceRequest, client, EmitterLocation.ForClient(client), resolution, municipalities);
                     filePrefix = DianFileNaming.FacturaVenta;
                     break;
             }

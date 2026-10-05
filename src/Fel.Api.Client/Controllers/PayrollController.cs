@@ -313,10 +313,11 @@ namespace Fel.Api.Client.Controllers
                     document.IntegratorId = client.IntegratorId;
 
                     var pdfCredentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
+                    var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
                         _ => NominaReportDataMapper.Build(
-                            document, document.Customer!, client, draft.Prefix, documentNumber,
+                            document, document.Customer!, client, pdfLocation, draft.Prefix, documentNumber,
                             draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
                             draft.Accruals.Select(c => (c.Code, c.Description, c.Amount ?? 0m)),
                             draft.Deductions.Select(c => (c.Code, c.Description, c.Amount ?? 0m))),

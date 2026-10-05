@@ -93,7 +93,7 @@ namespace Fel.Api.Integration.Controllers
             }
 
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-            var ublData = DianDocumentMapper.BuildInvoiceDataFromRequest(request, client, resolution, municipalities);
+            var ublData = DianDocumentMapper.BuildInvoiceDataFromRequest(request, client, await BranchProvisioning.LocationAsync(_dbContext, client, HttpContext.GetBranchId()), resolution, municipalities);
 
             ublData.BranchId = HttpContext.GetBranchId();
             await _messageQueue.EnqueueAsync(QueueName, ublData);

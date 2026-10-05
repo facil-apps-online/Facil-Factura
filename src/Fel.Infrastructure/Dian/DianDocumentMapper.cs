@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Fel.Core.Entities;
 using Fel.Core.Models;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dian
 {
@@ -26,6 +27,7 @@ namespace Fel.Infrastructure.Dian
             IEnumerable<DocumentItem> items,
             Resolution resolution,
             Client client,
+            EmitterLocation location,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
             IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null,
             DocumentType? documentType = null,
@@ -38,13 +40,13 @@ namespace Fel.Infrastructure.Dian
             var aiu = AiuContractData.TryRead((aiuSource ?? document).SectorExtensionData);
             var isAiu = aiu != null && (documentType?.OperationType == "09" || aiuSource != null);
 
-            municipalitiesByCode.TryGetValue(client.CityCode ?? string.Empty, out var issuerMuni);
+            municipalitiesByCode.TryGetValue(location.CityCode ?? string.Empty, out var issuerMuni);
             municipalitiesByCode.TryGetValue(customer.CityCode ?? string.Empty, out var customerMuni);
 
             var data = new UblInvoiceData
             {
                 DocumentNumber = document.Number,
-                Prefix = resolution.Prefix,
+                Prefix = string.IsNullOrWhiteSpace(document.Prefix) ? resolution.Prefix : document.Prefix,
                 IssueDate = document.IssueDate,
                 IssueTime = document.IssueDate,
                 TechnicalKey = resolution.TechnicalKey,
@@ -73,12 +75,12 @@ namespace Fel.Infrastructure.Dian
                     TaxId = client.TaxId,
                     IdentificationCode = "31",
                     Name = client.CompanyName,
-                    DepartmentCode = issuerMuni?.DepartmentCode ?? DeriveDepartmentCode(client.CityCode),
+                    DepartmentCode = issuerMuni?.DepartmentCode ?? DeriveDepartmentCode(location.CityCode),
                     DepartmentName = issuerMuni?.DepartmentName ?? string.Empty,
-                    CityCode = client.CityCode ?? string.Empty,
-                    CityName = issuerMuni?.Name ?? client.City,
-                    Address = client.Address,
-                    Email = client.Email
+                    CityCode = location.CityCode ?? string.Empty,
+                    CityName = issuerMuni?.Name ?? location.City,
+                    Address = location.Address,
+                    Email = location.Email
                 },
                 Customer = new CustomerData
                 {
@@ -234,11 +236,12 @@ namespace Fel.Infrastructure.Dian
             IEnumerable<DocumentItem> items,
             Resolution resolution,
             Client client,
+            EmitterLocation location,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
             DocumentType documentType,
             IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null)
         {
-            var data = BuildInvoiceData(document, customer, items, resolution, client, municipalitiesByCode, paymentMeansDianCodes, documentType, originalDocument);
+            var data = BuildInvoiceData(document, customer, items, resolution, client, location, municipalitiesByCode, paymentMeansDianCodes, documentType, originalDocument);
             data.DiscrepancyResponseCode = document.DiscrepancyResponseCode ?? string.Empty;
             data.DiscrepancyDescription = document.ReferenceConcept;
             data.BillingReferenceCufe = originalDocument.Cufe ?? string.Empty;
@@ -256,11 +259,12 @@ namespace Fel.Infrastructure.Dian
             IEnumerable<DocumentItem> items,
             Resolution resolution,
             Client client,
+            EmitterLocation location,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
             DocumentType documentType,
             IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null)
         {
-            return BuildCreditNoteData(document, originalDocument, customer, items, resolution, client, municipalitiesByCode, documentType, paymentMeansDianCodes);
+            return BuildCreditNoteData(document, originalDocument, customer, items, resolution, client, location, municipalitiesByCode, documentType, paymentMeansDianCodes);
         }
 
         // Equivalente de BuildInvoiceData para el API B2B (Fel.Api.Integration): el caller externo ya
@@ -271,10 +275,11 @@ namespace Fel.Infrastructure.Dian
         public static UblInvoiceData BuildInvoiceDataFromRequest(
             InvoiceRequest request,
             Client client,
+            EmitterLocation location,
             Resolution resolution,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
         {
-            municipalitiesByCode.TryGetValue(client.CityCode ?? string.Empty, out var issuerMuni);
+            municipalitiesByCode.TryGetValue(location.CityCode ?? string.Empty, out var issuerMuni);
 
             var lineExtension = request.Lines.Sum(l => l.LineExtensionAmount);
             var totalTax = request.Taxes.Sum(t => t.TaxAmount);
@@ -303,12 +308,12 @@ namespace Fel.Infrastructure.Dian
                     TaxId = client.TaxId,
                     IdentificationCode = "31",
                     Name = client.CompanyName,
-                    DepartmentCode = issuerMuni?.DepartmentCode ?? DeriveDepartmentCode(client.CityCode),
+                    DepartmentCode = issuerMuni?.DepartmentCode ?? DeriveDepartmentCode(location.CityCode),
                     DepartmentName = issuerMuni?.DepartmentName ?? string.Empty,
-                    CityCode = client.CityCode ?? string.Empty,
-                    CityName = issuerMuni?.Name ?? client.City,
-                    Address = client.Address,
-                    Email = client.Email
+                    CityCode = location.CityCode ?? string.Empty,
+                    CityName = issuerMuni?.Name ?? location.City,
+                    Address = location.Address,
+                    Email = location.Email
                 },
                 Customer = request.Customer,
                 PaymentMeans = request.PaymentMeans,
@@ -328,10 +333,11 @@ namespace Fel.Infrastructure.Dian
         public static UblInvoiceData BuildCreditNoteDataFromRequest(
             CreditNoteRequest request,
             Client client,
+            EmitterLocation location,
             Resolution resolution,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
         {
-            var data = BuildInvoiceDataFromRequest(request, client, resolution, municipalitiesByCode);
+            var data = BuildInvoiceDataFromRequest(request, client, location, resolution, municipalitiesByCode);
             data.DianCode = "91";
             data.DiscrepancyResponseCode = request.DiscrepancyResponseCode;
             data.DiscrepancyDescription = request.DiscrepancyDescription;
@@ -351,10 +357,11 @@ namespace Fel.Infrastructure.Dian
         public static UblInvoiceData BuildDebitNoteDataFromRequest(
             DebitNoteRequest request,
             Client client,
+            EmitterLocation location,
             Resolution resolution,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
         {
-            var data = BuildInvoiceDataFromRequest(request, client, resolution, municipalitiesByCode);
+            var data = BuildInvoiceDataFromRequest(request, client, location, resolution, municipalitiesByCode);
             data.DianCode = "92";
             data.DiscrepancyResponseCode = request.DiscrepancyResponseCode;
             data.DiscrepancyDescription = request.DiscrepancyDescription;
@@ -375,12 +382,13 @@ namespace Fel.Infrastructure.Dian
         public static UblInvoiceData BuildEquivalentDocumentDataFromRequest(
             InvoiceRequest request,
             Client client,
+            EmitterLocation location,
             Resolution resolution,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
             string dianCode,
             bool onSite = false)
         {
-            var data = BuildInvoiceDataFromRequest(request, client, resolution, municipalitiesByCode);
+            var data = BuildInvoiceDataFromRequest(request, client, location, resolution, municipalitiesByCode);
             data.DianCode = dianCode;
             data.OperationType = dianCode == "20" ? (onSite ? "602" : "601") : "10";
             return data;
@@ -392,10 +400,11 @@ namespace Fel.Infrastructure.Dian
         public static UblInvoiceData BuildSupportDocumentDataFromRequest(
             SupportDocumentRequest request,
             Client client,
+            EmitterLocation location,
             Resolution resolution,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
         {
-            municipalitiesByCode.TryGetValue(client.CityCode ?? string.Empty, out var clientMuni);
+            municipalitiesByCode.TryGetValue(location.CityCode ?? string.Empty, out var clientMuni);
 
             var lineExtension = request.Lines.Sum(l => l.LineExtensionAmount);
             var totalTax = request.Taxes.Sum(t => t.TaxAmount);
@@ -424,12 +433,12 @@ namespace Fel.Infrastructure.Dian
                     TaxId = client.TaxId,
                     IdentificationCode = "31",
                     Name = client.CompanyName,
-                    DepartmentCode = clientMuni?.DepartmentCode ?? DeriveDepartmentCode(client.CityCode),
+                    DepartmentCode = clientMuni?.DepartmentCode ?? DeriveDepartmentCode(location.CityCode),
                     DepartmentName = clientMuni?.DepartmentName ?? string.Empty,
-                    CityCode = client.CityCode ?? string.Empty,
-                    CityName = clientMuni?.Name ?? client.City,
-                    Address = client.Address,
-                    Email = client.Email
+                    CityCode = location.CityCode ?? string.Empty,
+                    CityName = clientMuni?.Name ?? location.City,
+                    Address = location.Address,
+                    Email = location.Email
                 },
                 PaymentMeans = request.PaymentMeans,
                 AllowanceCharges = request.AllowanceCharges,
@@ -445,10 +454,11 @@ namespace Fel.Infrastructure.Dian
         public static UblInvoiceData BuildSupportDocumentAdjustmentDataFromRequest(
             SupportDocumentAdjustmentRequest request,
             Client client,
+            EmitterLocation location,
             Resolution resolution,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
         {
-            var data = BuildSupportDocumentDataFromRequest(request, client, resolution, municipalitiesByCode);
+            var data = BuildSupportDocumentDataFromRequest(request, client, location, resolution, municipalitiesByCode);
             data.DianCode = "95";
             data.DiscrepancyResponseCode = request.DiscrepancyResponseCode;
             data.DiscrepancyDescription = request.DiscrepancyDescription;
@@ -471,10 +481,11 @@ namespace Fel.Infrastructure.Dian
         public static UblInvoiceData BuildTransportInvoiceDataFromRequest(
             TransportInvoiceRequest request,
             Client client,
+            EmitterLocation location,
             Resolution resolution,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
         {
-            var data = BuildInvoiceDataFromRequest(request, client, resolution, municipalitiesByCode);
+            var data = BuildInvoiceDataFromRequest(request, client, location, resolution, municipalitiesByCode);
             data.OperationType = "12";
             return data;
         }

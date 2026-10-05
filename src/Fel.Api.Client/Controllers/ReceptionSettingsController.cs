@@ -17,6 +17,7 @@ namespace Fel.Api.Client.Controllers
     [ApiController]
     [Route("api/client/reception-settings")]
     [ClientRole(ClientUserRoles.Administrator)]
+    [AllowAllBranches]
     public class ReceptionSettingsController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;

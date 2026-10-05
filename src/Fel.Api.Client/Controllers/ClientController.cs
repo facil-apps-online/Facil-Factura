@@ -12,6 +12,7 @@ namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [AllowAllBranches]
     public class ClientController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;

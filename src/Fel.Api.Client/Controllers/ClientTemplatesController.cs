@@ -13,6 +13,7 @@ namespace Fel.Api.Client.Controllers
     [ApiController]
     [Route("api/client/templates")]
     [ClientRole(ClientUserRoles.Administrator)]
+    [AllowAllBranches]
     public class ClientTemplatesController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;

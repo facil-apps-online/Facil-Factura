@@ -15,7 +15,7 @@ const VIEWPORTS = [
 ];
 
 const PUBLIC_ROUTES = ['/login?tenant=demo', '/forgot-password?tenant=demo', '/reset-password?token=abc'];
-const PORTAL_ROUTES = ['/', '/invoices', '/support-documents', '/payroll', '/received-documents', '/customers', '/products', '/payments', '/resolutions', '/settings'];
+const PORTAL_ROUTES = ['/', '/invoices', '/support-documents', '/payroll', '/received-documents', '/customers', '/products', '/payments', '/resolutions', '/settings', '/users'];
 
 // Falla si la página (o el contenedor con scroll del shell) es más ancha que la pantalla. El scroll
 // horizontal solo se admite dentro de tablas o del lienzo del diseñador, nunca en la página.
@@ -130,6 +130,28 @@ for (const vp of VIEWPORTS) {
         await page.locator('button', { hasText: /^\s*Nuevo\s/ }).first().click();
         await expectDialogInsideViewport(page, `${vp.name} modal de producto`);
         await expectNoHorizontalOverflow(page, `${vp.name} modal de producto`);
+      });
+
+      test('modal de usuario', async ({ page }) => {
+        await load(page, '/users');
+        await page.getByRole('button', { name: 'Nuevo usuario' }).click();
+        await page.getByLabel('Todas las sucursales').uncheck();
+        await expectDialogInsideViewport(page, `${vp.name} modal de usuario`);
+        await expectNoHorizontalOverflow(page, `${vp.name} modal de usuario`);
+      });
+
+      test('modal de sucursales de una resolución', async ({ page }) => {
+        await load(page, '/resolutions');
+        await page.getByRole('button', { name: /Sucursales de la resolución/ }).first().click();
+        await expectDialogInsideViewport(page, `${vp.name} modal de sucursales de la resolución`);
+        await expectNoHorizontalOverflow(page, `${vp.name} modal de sucursales de la resolución`);
+      });
+
+      test('modal de numeración propia por sucursal', async ({ page }) => {
+        await load(page, '/resolutions');
+        await page.getByRole('button', { name: 'Agregar numeración' }).click();
+        await expectDialogInsideViewport(page, `${vp.name} modal de numeración propia`);
+        await expectNoHorizontalOverflow(page, `${vp.name} modal de numeración propia`);
       });
 
       test('modal de resolución', async ({ page }) => {

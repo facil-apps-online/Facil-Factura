@@ -139,7 +139,8 @@ namespace Fel.Api.Tenant.Controllers
                         // Estado del acceso al portal — para la columna de invitación y para que
                         // el envío masivo sepa a quién ya no hace falta invitarle.
                         PortalUserStatus = _dbContext.ClientUsers
-                            .Where(u => u.ClientId == c.Id)
+                            .Where(u => u.ClientId == c.Id && u.Role == ClientUserRoles.Administrator)
+                            .OrderBy(u => u.CreatedAt)
                             .Select(u => u.IsActive ? "Active" : "Revoked")
                             .FirstOrDefault() ?? "NotInvited"
                     })
@@ -373,6 +374,14 @@ namespace Fel.Api.Tenant.Controllers
             return NoContent();
         }
 
+        // El cliente puede tener varios usuarios (los crea su Administrador desde el portal); este acceso es el del titular: el Administrador
+        // más antiguo. Es determinista, así que invitar, reenviar, revocar y reactivar siempre actúan sobre la misma persona.
+        private Task<ClientUser?> OwnerPortalUserAsync(Guid clientId) =>
+            _dbContext.ClientUsers
+                .Where(u => u.ClientId == clientId && u.Role == ClientUserRoles.Administrator)
+                .OrderBy(u => u.CreatedAt)
+                .FirstOrDefaultAsync();
+
         [HttpGet("{id}/portal-user")]
         public async Task<IActionResult> GetPortalUser(Guid id)
         {
@@ -380,7 +389,7 @@ namespace Fel.Api.Tenant.Controllers
             var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
             if (client == null) return NotFound();
 
-            var user = await _dbContext.ClientUsers.FirstOrDefaultAsync(u => u.ClientId == id);
+            var user = await OwnerPortalUserAsync(id);
             if (user == null) return Ok(null);
 
             return Ok(new { user.Id, user.Name, user.Email, user.IsActive, user.CreatedAt });
@@ -393,12 +402,13 @@ namespace Fel.Api.Tenant.Controllers
             var client = await _dbContext.Clients.Include(c => c.Tenant).FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
             if (client == null) return NotFound();
 
-            if (await _dbContext.ClientUsers.AnyAsync(u => u.Email == request.Email && u.ClientId != id))
+            var ownerId = (await OwnerPortalUserAsync(id))?.Id;
+            if (await _dbContext.ClientUsers.AnyAsync(u => u.Email == request.Email && u.Id != ownerId))
             {
                 return BadRequest("Ese email ya está en uso por otro acceso de cliente.");
             }
 
-            var user = await _dbContext.ClientUsers.FirstOrDefaultAsync(u => u.ClientId == id);
+            var user = await OwnerPortalUserAsync(id);
             var isNew = user == null;
             if (isNew)
             {
@@ -456,7 +466,7 @@ namespace Fel.Api.Tenant.Controllers
             var client = await _dbContext.Clients.Include(c => c.Tenant).FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
             if (client == null) return NotFound();
 
-            var user = await _dbContext.ClientUsers.FirstOrDefaultAsync(u => u.ClientId == id);
+            var user = await OwnerPortalUserAsync(id);
             if (user == null) return NotFound("Este cliente todavía no tiene un acceso de portal invitado.");
 
             if (!user.IsActive)
@@ -485,7 +495,7 @@ namespace Fel.Api.Tenant.Controllers
             var tenantId = GetCurrentTenantId();
             if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
 
-            var user = await _dbContext.ClientUsers.FirstOrDefaultAsync(u => u.ClientId == id);
+            var user = await OwnerPortalUserAsync(id);
             if (user == null) return NotFound("Este cliente todavía no tiene un acceso de portal invitado.");
 
             user.IsActive = false;
@@ -500,7 +510,7 @@ namespace Fel.Api.Tenant.Controllers
             var tenantId = GetCurrentTenantId();
             if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
 
-            var user = await _dbContext.ClientUsers.FirstOrDefaultAsync(u => u.ClientId == id);
+            var user = await OwnerPortalUserAsync(id);
             if (user == null) return NotFound("Este cliente todavía no tiene un acceso de portal invitado.");
 
             user.IsActive = true;

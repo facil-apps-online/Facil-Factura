@@ -1,9 +1,11 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { Home, FileText, Settings, CreditCard, LogOut, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight, Menu, X, CheckCircle2, Clock, AlertTriangle, DollarSign, ArrowRight, Wallet } from 'lucide-react';
+import { Home, FileText, Settings, CreditCard, LogOut, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight, Menu, X, CheckCircle2, Clock, AlertTriangle, DollarSign, ArrowRight, Wallet, UserCog } from 'lucide-react';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { ConfirmDialogProvider } from '@/components/ConfirmDialog';
-import { api } from './lib/api';
+import { api, BRANCH_STORAGE_KEY } from './lib/api';
+import { SessionProvider, useSession } from './context/SessionContext';
+import BranchSelector from './components/BranchSelector';
 import { setDecimalSeparator, useNumberFormat } from './lib/numberFormat';
 
 import TemplateSettings from './pages/TemplateSettings';
@@ -15,6 +17,7 @@ import InvoicesPage from './pages/InvoicesPage';
 import SupportDocumentsPage from './pages/SupportDocumentsPage';
 import PayrollPage from './pages/PayrollPage';
 import ReceivedDocumentsPage from './pages/ReceivedDocumentsPage';
+import UsersPage from './pages/UsersPage';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -98,18 +101,21 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed, isDesktop, mobileOpen
   const logo = branding?.logoLightUrl || '/brand/isotipo-blanco.png';
   const name = branding?.companyName || 'Facil Factura';
 
-  const links = [
+  const { isAdministrator } = useSession();
+  const allLinks: Array<{ to: string; icon: React.ReactNode; label: string; adminOnly?: boolean }> = [
     { to: "/", icon: <Home size={20} />, label: "Inicio" },
     { to: "/invoices", icon: <FileText size={20} />, label: "Mis Facturas" },
     { to: "/support-documents", icon: <Receipt size={20} />, label: "Documentos Soporte" },
     { to: "/payroll", icon: <Banknote size={20} />, label: "Nómina electrónica" },
-    { to: "/received-documents", icon: <Inbox size={20} />, label: "Documentos recibidos" },
+    { to: "/received-documents", icon: <Inbox size={20} />, label: "Documentos recibidos", adminOnly: true },
     { to: "/customers", icon: <Users size={20} />, label: "Terceros" },
     { to: "/products", icon: <Package size={20} />, label: "Productos y servicios" },
-    { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos" },
-    { to: "/resolutions", icon: <FileSignature size={20} />, label: "Resoluciones DIAN" },
-    { to: "/settings", icon: <Settings size={20} />, label: "Diseño y Ajustes" },
+    { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos", adminOnly: true },
+    { to: "/resolutions", icon: <FileSignature size={20} />, label: "Resoluciones DIAN", adminOnly: true },
+    { to: "/settings", icon: <Settings size={20} />, label: "Diseño y Ajustes", adminOnly: true },
+    { to: "/users", icon: <UserCog size={20} />, label: "Usuarios", adminOnly: true },
   ];
+  const links = allLinks.filter(l => !l.adminOnly || isAdministrator);
 
   return (
     <aside
@@ -191,6 +197,7 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed, isDesktop, mobileOpen
 function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: () => void }) {
   const branding = useContext(BrandingContext);
   const name = branding?.companyName || 'Facil Factura';
+  const { selectedBranchId } = useSession();
   const location = useLocation();
   const isDesktop = useIsDesktop();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -258,6 +265,7 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
             </div>
           </div>
           <div className="flex items-center gap-4 shrink-0">
+            <BranchSelector />
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm shadow-md">
               {name.substring(0, 2).toUpperCase()}
             </div>
@@ -266,7 +274,8 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
 
         <div className="flex-1 overflow-auto bg-slate-50/50">
           <div className="max-w-screen-2xl mx-auto">
-            {children}
+            {/* La clave por sucursal vuelve a montar la pantalla al cambiar de sucursal, así recarga sus datos. */}
+            <React.Fragment key={selectedBranchId}>{children}</React.Fragment>
           </div>
         </div>
       </main>
@@ -306,6 +315,7 @@ const Dashboard = () => {
   const money = (value: number) => `$${fmt.number(Math.round(value), 3)}`;
   const navigate = useNavigate();
   const branding = useContext(BrandingContext);
+  const { isAdministrator } = useSession();
   const [summary, setSummary] = React.useState<DashboardSummary | null>(null);
 
   React.useEffect(() => {
@@ -382,7 +392,7 @@ const Dashboard = () => {
                   return (
                     <div key={item} className="flex items-center gap-3 flex-wrap">
                       <p className="text-amber-700 font-medium flex items-center gap-2"><AlertTriangle size={18} /> {setup.text}</p>
-                      {setup.actionTo && (
+                      {setup.actionTo && isAdministrator && (
                         <button onClick={() => navigate(setup.actionTo!)} className="text-sm font-bold text-amber-700 underline hover:text-amber-900">
                           {setup.actionLabel}
                         </button>
@@ -461,6 +471,12 @@ const Dashboard = () => {
   );
 };
 
+// Pantallas de administración: el Facturador no las ve en el menú y, si entra por la URL, vuelve al inicio.
+function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const { isAdministrator } = useSession();
+  return isAdministrator ? <>{children}</> : <Navigate to="/" replace />;
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(
     !!localStorage.getItem('fel_client_auth')
@@ -469,6 +485,7 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('fel_client_auth');
     localStorage.removeItem('fel_client_id');
+    localStorage.removeItem(BRANCH_STORAGE_KEY);
     setIsAuthenticated(false);
   };
 
@@ -487,24 +504,27 @@ function App() {
             path="/*"
             element={
               isAuthenticated ? (
-                <BrandingProvider>
-                  <Layout onLogout={handleLogout}>
-                    <Routes>
-                      <Route path="/" element={<Dashboard />} />
-                      <Route path="/settings" element={<TemplateSettings />} />
-                      <Route path="/templates/editor" element={<TemplateEditor />} />
-                      <Route path="/resolutions" element={<ResolutionsSettings />} />
-                      <Route path="/customers" element={<CustomersPage />} />
-                      <Route path="/products" element={<ProductsPage />} />
-                      <Route path="/invoices" element={<InvoicesPage />} />
-                      <Route path="/support-documents" element={<SupportDocumentsPage />} />
-                      <Route path="/payroll" element={<PayrollPage />} />
-                      <Route path="/received-documents" element={<ReceivedDocumentsPage />} />
-                      {/* Rutas ficticias para completar el sidebar */}
-                      <Route path="/payments" element={<div className="p-8">Esta sección estará disponible próximamente.</div>} />
-                    </Routes>
-                  </Layout>
-                </BrandingProvider>
+                <SessionProvider>
+                  <BrandingProvider>
+                    <Layout onLogout={handleLogout}>
+                      <Routes>
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/settings" element={<RequireAdmin><TemplateSettings /></RequireAdmin>} />
+                        <Route path="/templates/editor" element={<RequireAdmin><TemplateEditor /></RequireAdmin>} />
+                        <Route path="/resolutions" element={<RequireAdmin><ResolutionsSettings /></RequireAdmin>} />
+                        <Route path="/customers" element={<CustomersPage />} />
+                        <Route path="/products" element={<ProductsPage />} />
+                        <Route path="/invoices" element={<InvoicesPage />} />
+                        <Route path="/support-documents" element={<SupportDocumentsPage />} />
+                        <Route path="/payroll" element={<PayrollPage />} />
+                        <Route path="/received-documents" element={<RequireAdmin><ReceivedDocumentsPage /></RequireAdmin>} />
+                        <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
+                        {/* Rutas ficticias para completar el sidebar */}
+                        <Route path="/payments" element={<RequireAdmin><div className="p-8">Esta sección estará disponible próximamente.</div></RequireAdmin>} />
+                      </Routes>
+                    </Layout>
+                  </BrandingProvider>
+                </SessionProvider>
               ) : (
                 <Navigate to={`/login${localStorage.getItem('fel_client_tenant') ? `?tenant=${localStorage.getItem('fel_client_tenant')}` : ''}`} />
               )

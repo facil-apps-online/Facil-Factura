@@ -21,6 +21,12 @@ namespace Fel.Api.Security
         }
     }
 
+    // Marca el controlador o la acción como configuración del Client (usuarios, resoluciones, terceros, productos, ajustes): se puede
+    // guardar aunque esté elegida "todas las sucursales". Sin él, solo se permite consultar con "todas": crear o editar datos que
+    // pertenecen a una sucursal (documentos) exige una concreta.
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = false)]
+    public sealed class AllowAllBranchesAttribute : Attribute { }
+
     // Resuelve cliente, sucursal y rol antes de cada acción de ClientPortalControllerBase y hace cumplir los roles:
     // responde 401/403 sin llegar a la acción cuando la sesión, la sucursal o el rol no corresponden.
     public sealed class ClientPortalFilter : IAsyncActionFilter
@@ -53,14 +59,20 @@ namespace Fel.Api.Security
             }
 
             // "Todas las sucursales" es solo para consultar: crear, editar o eliminar exige una sucursal concreta.
-            if (branch.BranchId == null && !HttpMethods.IsGet(context.HttpContext.Request.Method) && !HttpMethods.IsHead(context.HttpContext.Request.Method))
+            if (branch.BranchId == null && !HttpMethods.IsGet(context.HttpContext.Request.Method) && !HttpMethods.IsHead(context.HttpContext.Request.Method)
+                && !context.ActionDescriptor.EndpointMetadata.OfType<AllowAllBranchesAttribute>().Any())
             {
                 context.Result = new ObjectResult(new { message = "Selecciona una sucursal para esta operación." }) { StatusCode = StatusCodes.Status400BadRequest };
                 return;
             }
 
             context.HttpContext.Items[BranchContext.ItemKey] = branch;
-            await next();
+            var executed = await next();
+            if (executed.Exception is BranchAccessException accessError)
+            {
+                executed.Result = new ObjectResult(new { message = accessError.Message }) { StatusCode = accessError.StatusCode };
+                executed.ExceptionHandled = true;
+            }
         }
     }
 }

@@ -13,6 +13,7 @@ namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/v1/branding")]
+    [AllowAllBranches]
     public class ClientBrandingController : ClientPortalControllerBase
     {
         private const string ApiBaseUrl = "https://api.facil-factura.pro";

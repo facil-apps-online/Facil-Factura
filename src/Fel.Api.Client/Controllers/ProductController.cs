@@ -9,11 +9,13 @@ using Microsoft.EntityFrameworkCore;
 using Fel.Api.Client.Models;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
+using Fel.Api.Security;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/products")]
+    [AllowAllBranches]
     public class ProductController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;

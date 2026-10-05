@@ -9,11 +9,13 @@ using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Services;
 using Fel.Api.Security;
+using System.Collections.Generic;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/resolutions")]
+    [AllowAllBranches]
     public class ClientResolutionsController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
@@ -47,7 +49,8 @@ namespace Fel.Api.Client.Controllers
                         r.TechnicalKey,
                         r.DocumentType,
                         r.NextNumber,
-                        r.IsDefault
+                        r.IsDefault,
+                        BranchIds = _dbContext.ResolutionBranches.Where(rb => rb.ResolutionId == r.Id).Select(rb => rb.BranchId).ToList()
                     })
                     .ToListAsync();
 
@@ -99,6 +102,8 @@ namespace Fel.Api.Client.Controllers
             public DateTime ValidTo { get; set; }
             public string TechnicalKey { get; set; } = string.Empty;
             public string DocumentType { get; set; } = string.Empty;
+            // Sucursales donde se usará. Sin elegir: las de la resolución que reemplaza o, si no hay, la sucursal activa.
+            public List<Guid>? BranchIds { get; set; }
         }
 
         [ClientRole(ClientUserRoles.Administrator)]
@@ -108,6 +113,9 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
+
+                var (resolutionBranchIds, branchError) = await ResolveResolutionBranchesAsync(clientId, request.BranchIds, request.DocumentType, request.Prefix);
+                if (branchError != null) return BadRequest(branchError);
 
                 // Desactivar las anteriores del mismo tipo y prefijo
                 var existingActive = await _dbContext.Resolutions
@@ -145,7 +153,8 @@ namespace Fel.Api.Client.Controllers
                 };
 
                 _dbContext.Resolutions.Add(resolution);
-                _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, GetCurrentBranchId()));
+                foreach (var branchId in resolutionBranchIds)
+                    _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, branchId));
                 await _dbContext.SaveChangesAsync();
 
                 return Ok(new {
@@ -337,6 +346,59 @@ namespace Fel.Api.Client.Controllers
             }
             await _dbContext.SaveChangesAsync();
             return Ok(new { documentType = type, prefix = resolution.Prefix, text });
+        }
+
+        public class SetResolutionBranchesRequest
+        {
+            public List<Guid> BranchIds { get; set; } = new List<Guid>();
+        }
+
+        // Reemplaza las sucursales donde se usa la resolución. Debe quedar al menos una: sin sucursal nadie podría emitir con ella.
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpPut("{id:guid}/branches")]
+        public async Task<IActionResult> SetBranches(Guid id, [FromBody] SetResolutionBranchesRequest request)
+        {
+            var clientId = GetCurrentClientId();
+            if (!await _dbContext.Resolutions.AnyAsync(r => r.Id == id && r.ClientId == clientId)) return NotFound();
+
+            var requested = request.BranchIds.Distinct().ToList();
+            if (requested.Count == 0) return BadRequest("La resolución debe estar disponible en al menos una sucursal.");
+
+            var (valid, error) = await ValidBranchesAsync(clientId, requested);
+            if (error != null) return BadRequest(error);
+
+            var current = await _dbContext.ResolutionBranches.Where(rb => rb.ResolutionId == id).ToListAsync();
+            _dbContext.ResolutionBranches.RemoveRange(current.Where(rb => !valid.Contains(rb.BranchId)));
+            foreach (var branchId in valid.Where(b => current.All(rb => rb.BranchId != b)))
+                _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(id, branchId));
+
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { branchIds = valid });
+        }
+
+        // Sucursales donde se usará una resolución nueva: las elegidas; si no se eligió ninguna, las de la resolución que reemplaza
+        // (mismo tipo y prefijo, para no dejar sin ella a las demás sucursales) y, si no hay, la sucursal activa.
+        private async Task<(List<Guid> Ids, string? Error)> ResolveResolutionBranchesAsync(Guid clientId, List<Guid>? requested, string documentType, string prefix)
+        {
+            var ids = (requested ?? new List<Guid>()).Distinct().ToList();
+            if (ids.Count == 0)
+            {
+                ids = await _dbContext.ResolutionBranches
+                    .Where(rb => rb.Resolution.ClientId == clientId && rb.Resolution.DocumentType == documentType && rb.Resolution.Prefix == prefix && rb.Resolution.IsActive)
+                    .Select(rb => rb.BranchId).Distinct().ToListAsync();
+                if (ids.Count == 0 && CurrentBranchScope is Guid current) ids.Add(current);
+                if (ids.Count == 0) return (ids, "Elige las sucursales donde se usará la resolución.");
+            }
+            return await ValidBranchesAsync(clientId, ids);
+        }
+
+        // Las sucursales deben ser del Client y estar activas.
+        private async Task<(List<Guid> Ids, string? Error)> ValidBranchesAsync(Guid clientId, List<Guid> ids)
+        {
+            var valid = await _dbContext.Branches.AsNoTracking()
+                .Where(b => b.ClientId == clientId && b.IsActive && ids.Contains(b.Id))
+                .Select(b => b.Id).ToListAsync();
+            return valid.Count == ids.Count ? (valid, null) : (valid, "Alguna de las sucursales elegidas no existe o está inactiva.");
         }
 
         [ClientRole(ClientUserRoles.Administrator)]

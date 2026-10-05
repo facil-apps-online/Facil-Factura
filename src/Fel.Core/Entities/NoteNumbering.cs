@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Fel.Core.Entities
 {
@@ -7,6 +8,17 @@ namespace Fel.Core.Entities
         CreditNote = 1,
         DebitNote = 2,
         SupportAdjustment = 3
+    }
+
+    public static class NoteKinds
+    {
+        // Etiqueta de cada tipo de nota: la API la expone para que el portal no la escriba a mano.
+        public static readonly IReadOnlyList<(NoteKind Kind, string Label)> All = new[]
+        {
+            (NoteKind.CreditNote, "Nota crédito"),
+            (NoteKind.DebitNote, "Nota débito"),
+            (NoteKind.SupportAdjustment, "Nota de ajuste")
+        };
     }
 
     // Consecutivo (y prefijo) de un tipo de nota. Por defecto es uno solo por Client (BranchId nulo); una sucursal que necesite

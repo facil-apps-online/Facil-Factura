@@ -7,6 +7,9 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import Modal from '../components/Modal';
 import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
 import RowIconButton from '../components/RowIconButton';
+import ResolutionBranchesModal from '../components/ResolutionBranchesModal';
+import BranchNoteNumberings from '../components/BranchNoteNumberings';
+import { ALL_BRANCHES, useSession } from '../context/SessionContext';
 import { Button } from '../components/ui/button';
 import { todayColombia } from '../lib/colombiaTime';
 
@@ -22,6 +25,9 @@ const NOTE_COUNTER_BADGE: Record<NoteCounterType, string> = {
 
 export default function ResolutionsSettings() {
   const confirm = useConfirm();
+  const { branches, hasMultipleBranches, selectedBranchId } = useSession();
+  const [branchesFor, setBranchesFor] = useState<any | null>(null);
+  const branchNames = (ids: string[] = []) => ids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ');
   const [loading, setLoading] = useState(true);
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [legends, setLegends] = useState({ electronicInvoiceLegend: '', supportDocumentLegend: '' });
@@ -38,7 +44,8 @@ export default function ResolutionsSettings() {
     validFrom: '',
     validTo: '',
     technicalKey: '',
-    documentType: 'FE'
+    documentType: 'FE',
+    branchIds: [] as string[]
   });
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -153,7 +160,8 @@ export default function ResolutionsSettings() {
               validFrom: parsed.validFrom ? parsed.validFrom.split('T')[0] : '',
               validTo: parsed.validTo ? parsed.validTo.split('T')[0] : '',
               technicalKey: '',
-              documentType: parsed.documentType || 'FE'
+              documentType: parsed.documentType || 'FE',
+              branchIds: newRes.branchIds
             });
             created++;
           } catch {
@@ -196,12 +204,15 @@ export default function ResolutionsSettings() {
       validFrom: '',
       validTo: '',
       technicalKey: '',
-      documentType: 'FE'
+      documentType: 'FE',
+      branchIds: []
     });
   };
 
   const openCreateModal = () => {
     setEditingId(null);
+    // Con una sucursal elegida, la resolución se usa en ella por defecto; con "Todas" se eligen en el formulario.
+    setNewRes(prev => ({ ...prev, branchIds: hasMultipleBranches && selectedBranchId !== ALL_BRANCHES ? [selectedBranchId] : [] }));
     setShowResModal(true);
   };
 
@@ -215,7 +226,8 @@ export default function ResolutionsSettings() {
       validFrom: r.validFrom ? r.validFrom.split('T')[0] : '',
       validTo: r.validTo ? r.validTo.split('T')[0] : '',
       technicalKey: r.technicalKey || '',
-      documentType: r.documentType
+      documentType: r.documentType,
+      branchIds: r.branchIds || []
     });
     setShowResModal(true);
   };
@@ -465,6 +477,12 @@ export default function ResolutionsSettings() {
       cellClassName: 'text-sm text-slate-500',
       render: r => (r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} — ${new Date(r.validTo).toLocaleDateString()}`)
     },
+    ...(hasMultipleBranches ? [{
+      key: 'branches',
+      header: 'Sucursales',
+      cellClassName: 'text-sm text-slate-600',
+      render: (r: any) => branchNames(r.branchIds) || '—'
+    }] : []),
     {
       key: 'default',
       header: 'Predeterminada',
@@ -709,6 +727,9 @@ export default function ResolutionsSettings() {
             actions={r => (
               <>
                 <RowIconButton action="edit" label={`Editar resolución ${r.prefix || ''} ${r.resolutionNumber || ''}`.trim()} onClick={() => startEditResolution(r)} />
+                {hasMultipleBranches && (
+                  <RowIconButton action="branches" label={`Sucursales de la resolución ${r.prefix || ''} ${r.resolutionNumber || ''}`.trim()} onClick={() => setBranchesFor(r)} />
+                )}
                 <button onClick={() => startEditLegend(r)} className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-primary/5 hover:text-primary md:h-9 md:w-9" title="Editar leyenda" aria-label="Editar leyenda del prefijo">
                   <span className="text-xs font-bold">L</span>
                 </button>
@@ -924,8 +945,33 @@ export default function ResolutionsSettings() {
               <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none transition-all font-mono text-sm" placeholder="Pega aquí el hash técnico de la DIAN..." value={newRes.technicalKey} onChange={e => setNewRes({...newRes, technicalKey: e.target.value})} />
             </div>
           )}
+          {hasMultipleBranches && !editingId && (
+            <fieldset className="space-y-2">
+              <legend className="block text-sm font-bold text-slate-700 mb-1.5">Se usa en</legend>
+              {branches.map(b => (
+                <label key={b.id} className="flex min-h-11 items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox" className="h-4 w-4 accent-primary"
+                    checked={newRes.branchIds.includes(b.id)}
+                    onChange={() => setNewRes(prev => ({ ...prev, branchIds: prev.branchIds.includes(b.id) ? prev.branchIds.filter(x => x !== b.id) : [...prev.branchIds, b.id] }))}
+                  />
+                  {b.name}
+                </label>
+              ))}
+            </fieldset>
+          )}
         </form>
       </Modal>
+
+      {hasMultipleBranches && <BranchNoteNumberings />}
+
+      {branchesFor && (
+        <ResolutionBranchesModal
+          resolution={branchesFor}
+          onClose={() => setBranchesFor(null)}
+          onSaved={() => { setBranchesFor(null); loadResolutions(); }}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,8 @@
 import axios from 'axios';
 
+// Sucursal elegida en el portal: el id de una sucursal o 'all' (solo consultas, para quien puede ver todas).
+export const BRANCH_STORAGE_KEY = 'fel_client_branch';
+
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
   headers: {
@@ -19,6 +22,10 @@ api.interceptors.request.use(config => {
   if (clientId) {
     config.headers['x-client-id'] = clientId;
   }
+  const branchId = localStorage.getItem(BRANCH_STORAGE_KEY);
+  if (branchId) {
+    config.headers['x-branch-id'] = branchId;
+  }
   return config;
 });
 
@@ -29,6 +36,7 @@ api.interceptors.response.use(
       const tenantSlug = localStorage.getItem('fel_client_tenant');
       localStorage.removeItem('fel_client_auth');
       localStorage.removeItem('fel_client_id');
+      localStorage.removeItem(BRANCH_STORAGE_KEY);
       if (!window.location.pathname.startsWith('/login')) {
         window.location.href = tenantSlug ? `/login?tenant=${tenantSlug}` : '/login';
       }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Fel.Core.Entities
 {
@@ -10,7 +11,14 @@ namespace Fel.Core.Entities
         public const string Administrator = "Administrador";
         public const string Invoicer = "Facturador";
 
-        public static bool IsValid(string? role) => role == Administrator || role == Invoicer;
+        // Catálogo único de roles (valor y etiqueta): la API lo expone para que el portal no los escriba a mano.
+        public static readonly IReadOnlyList<(string Value, string Label)> All = new[]
+        {
+            (Administrator, "Administrador"),
+            (Invoicer, "Facturador")
+        };
+
+        public static bool IsValid(string? role) => All.Any(r => r.Value == role);
     }
 
     public class ClientUser

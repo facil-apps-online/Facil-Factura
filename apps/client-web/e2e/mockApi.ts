@@ -40,7 +40,7 @@ const product = (i: number) => ({
 
 const resolution = (i: number) => ({
   id: `r${i}`, resolutionNumber: '18760000001', prefix: i === 0 ? 'SETP' : 'FEV', numberStart: 1, numberEnd: 5000, nextNumber: 10,
-  validFrom: '2026-01-01T00:00:00', validTo: '2027-01-01T00:00:00', documentType: i === 0 ? 'FE' : 'DS', isDefault: i === 0,
+  validFrom: '2026-01-01T00:00:00', validTo: '2027-01-01T00:00:00', documentType: i === 0 ? 'FE' : 'DS', isDefault: i === 0, branchIds: ['b1', 'b2'],
 });
 
 const payroll = (i: number) => ({
@@ -67,6 +67,33 @@ const summary = {
   consumption: { mode: 'Standard', pricePerDocument: 450 }, pendingSetupItems: ['no-resolution'],
 };
 
+export const BRANCH_MAIN = { id: 'b1', name: 'Principal', code: 'PRINCIPAL', isMain: true };
+export const BRANCH_NORTH = { id: 'b2', name: `Sucursal ${LONG_NAME}`, code: 'NORTE', isMain: false };
+
+export type MockSession = {
+  role: string; isAdministrator: boolean; allBranches: boolean;
+  branches: Array<{ id: string; name: string; code: string; isMain: boolean }>;
+};
+
+const sessionCatalogs = {
+  roles: [{ value: 'Administrador', label: 'Administrador' }, { value: 'Facturador', label: 'Facturador' }],
+  noteKinds: [{ value: 'CreditNote', label: 'Nota crédito' }, { value: 'DebitNote', label: 'Nota débito' }, { value: 'SupportAdjustment', label: 'Nota de ajuste' }],
+};
+
+export const ADMIN_SESSION: MockSession = { role: 'Administrador', isAdministrator: true, allBranches: true, branches: [BRANCH_MAIN, BRANCH_NORTH] };
+export const INVOICER_SESSION: MockSession = { role: 'Facturador', isAdministrator: false, allBranches: false, branches: [BRANCH_NORTH] };
+
+const users = [
+  { id: 'u1', name: 'Administradora Principal', email: 'admin@empresa.com', role: 'Administrador', allBranches: true, branchIds: [], isActive: true, isSelf: true },
+  { id: 'u2', name: LONG_NAME, email: LONG_EMAIL, role: 'Facturador', allBranches: false, branchIds: ['b1', 'b2'], isActive: true, isSelf: false },
+  { id: 'u3', name: 'Usuario desactivado', email: 'inactivo@empresa.com', role: 'Facturador', allBranches: false, branchIds: ['b2'], isActive: false, isSelf: false },
+];
+
+const noteNumberings = [
+  { branchId: 'b2', branchName: BRANCH_NORTH.name, kind: 'CreditNote', kindLabel: 'Nota crédito', prefix: 'NCN', nextNumber: 50 },
+  { branchId: 'b2', branchName: BRANCH_NORTH.name, kind: 'SupportAdjustment', kindLabel: 'Nota de ajuste', prefix: 'NAJN', nextNumber: 1 },
+];
+
 const list = <T,>(n: number, make: (i: number) => T) => Array.from({ length: n }, (_, i) => make(i));
 
 // Soporte aprobado con retenciones por ítem y generales, para probar que la nota de ajuste las copia.
@@ -77,7 +104,10 @@ const supportWithRetentions = {
 };
 
 // Devuelve la respuesta simulada para una petición, o [] si el endpoint no está en la tabla.
-function respond(pathname: string, search: string): unknown {
+function respond(pathname: string, search: string, session: MockSession): unknown {
+  if (pathname.endsWith('/client/session')) return { ...session, ...sessionCatalogs };
+  if (pathname.endsWith('/client/users')) return users;
+  if (pathname.endsWith('/client/note-numberings')) return noteNumberings;
   if (pathname.endsWith('/v1/branding/my-branding')) return branding;
   if (pathname.endsWith('/v1/dashboard/summary')) return summary;
   if (pathname.endsWith('/tenant/branding/demo')) return { commercialName: LONG_NAME, logoLightUrl: '', primaryColorLight: '#2563eb' };
@@ -111,11 +141,11 @@ function respond(pathname: string, search: string): unknown {
 }
 
 // Intercepta toda petición a /api y la responde con datos simulados. Debe llamarse antes de page.goto.
-export async function mockApi(page: Page) {
+export async function mockApi(page: Page, session: MockSession = ADMIN_SESSION) {
   await page.route('**/api/**', route => {
     const url = new URL(route.request().url());
     const method = route.request().method();
-    const body = method === 'GET' ? respond(url.pathname, url.search) : {};
+    const body = method === 'GET' ? respond(url.pathname, url.search, session) : {};
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
 }

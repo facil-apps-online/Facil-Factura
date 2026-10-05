@@ -1,14 +1,18 @@
 import React from 'react';
-import { Edit2, Eye, Trash2 } from 'lucide-react';
+import { Building2, Edit2, Eye, Mail, Trash2, UserCheck, UserX } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-const ICONS = { edit: Edit2, view: Eye, delete: Trash2 } as const;
+const ICONS = { edit: Edit2, view: Eye, delete: Trash2, resend: Mail, deactivate: UserX, reactivate: UserCheck, branches: Building2 } as const;
 
 const TONES = {
   edit: 'hover:bg-blue-50 hover:text-blue-600',
   view: 'hover:bg-slate-100 hover:text-primary',
   delete: 'hover:bg-rose-50 hover:text-rose-600',
+  resend: 'hover:bg-slate-100 hover:text-primary',
+  deactivate: 'hover:bg-rose-50 hover:text-rose-600',
+  reactivate: 'hover:bg-emerald-50 hover:text-emerald-600',
+  branches: 'hover:bg-slate-100 hover:text-primary',
 } as const;
 
 interface RowIconButtonProps {

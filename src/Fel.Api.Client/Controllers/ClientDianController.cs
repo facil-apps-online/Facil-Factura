@@ -13,6 +13,7 @@ namespace Fel.Api.Client.Controllers
     [ApiController]
     [Route("api/client/dian")]
     [ClientRole(ClientUserRoles.Administrator)]
+    [AllowAllBranches]
     public class ClientDianController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;

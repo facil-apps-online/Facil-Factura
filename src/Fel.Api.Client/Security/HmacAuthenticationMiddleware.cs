@@ -55,7 +55,10 @@ namespace Fel.Api.Security
                 path.StartsWithSegments("/api/client/received-documents") ||
                 path.StartsWithSegments("/api/client/smtp-settings") ||
                 path.StartsWithSegments("/api/client/document-legends") ||
-                path.StartsWithSegments("/api/client/me");
+                path.StartsWithSegments("/api/client/me") ||
+                path.StartsWithSegments("/api/client/session") ||
+                path.StartsWithSegments("/api/client/users") ||
+                path.StartsWithSegments("/api/client/note-numberings");
 
             // El portal de developers se autentica con su propia sesión x-developer-id, igual
             // que el resto de portales de este proyecto — no con HMAC (ver DeveloperAuthController

@@ -1,6 +1,6 @@
 # Plan: sucursales en el portal del cliente
 
-Estado: **fases 1 y 2 en producción (5 de octubre de 2026); fase 3 implementada, pendiente de desplegar.** Ver la sección 14.
+Estado: **fases 1, 2 y 3 en producción (5 de octubre de 2026); fase 4 implementada, pendiente de desplegar.** Ver la sección 14.
 
 ## 1. Objetivo
 
@@ -164,8 +164,15 @@ Ninguno por ahora.
 
 ## 14. Estado
 
-- **Fase 3 (dirección de la sucursal y numeración de notas):** implementada y probada contra una base local de prueba; **pendiente de
-  desplegar** (mismo esquema, un servicio a la vez).
+- **Fase 4 (portal con sucursal, usuarios y rol Facturador):** implementada y probada; **pendiente de desplegar** (sin migración: API del cliente, API del tenant y client-web).
+  - Backend: `GET /client/session` (rol, sucursales y catálogos de roles y tipos de nota), `ClientUsersController` (crear con invitación, editar, reenviar, desactivar y reactivar,
+    con las salvaguardas de no desactivarse a uno mismo y de que siempre quede un Administrador con acceso a todas las sucursales), sucursales por resolución (`PUT {id}/branches`),
+    numeración propia por sucursal (`note-numberings`) y `[AllowAllBranches]` para que la configuración del cliente se pueda guardar con "Todas" elegido. Las rutas nuevas
+    se agregaron a las del portal en el middleware HMAC. El "usuario del portal" del tenant pasa a ser el Administrador más antiguo.
+  - Portal: `SessionContext`, selector de sucursal en el header (`x-branch-id`), menú y rutas por rol, pantalla Usuarios, y sucursales y numeración propia en Resoluciones.
+  - Migración `AddDocumentLegends` restaurada (registrada ante EF y con las columnas de Clients que le faltaban): una base nueva construida solo con migraciones queda
+    idéntica al esquema de producción (733 columnas, 111 índices, 58 tablas).
+- **Fase 3 (dirección de la sucursal y numeración de notas):** implementada, probada y **desplegada en producción** (mismo esquema, un servicio a la vez).
   - `Branch` gana `Address`, `City`, `CityCode`, `Phone` y `Email`, todos opcionales: sin dirección propia la sucursal hereda la del
     Client (no se copia nada, así no se desactualiza). `EmitterLocation.For(client, branch)` usa dirección, ciudad y código de ciudad
     juntos y deja teléfono y correo caer al Client. Los mappers de la DIAN (`DianDocumentMapper`, `PayrollDocumentMapper`) y de PDF

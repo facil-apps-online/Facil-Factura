@@ -8,11 +8,13 @@ using Microsoft.EntityFrameworkCore;
 using Fel.Api.Client.Models;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
+using Fel.Api.Security;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/customers")]
+    [AllowAllBranches]
     public class CustomerController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;

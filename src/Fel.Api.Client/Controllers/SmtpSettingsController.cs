@@ -21,6 +21,7 @@ namespace Fel.Api.Client.Controllers
     [ApiController]
     [Route("api/client/smtp-settings")]
     [ClientRole(ClientUserRoles.Administrator)]
+    [AllowAllBranches]
     public class SmtpSettingsController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;

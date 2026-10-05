@@ -164,7 +164,8 @@ namespace Fel.Infrastructure.Dataico
                 {
                     Success = response.IsSuccessStatusCode,
                     StatusCode = (int)response.StatusCode,
-                    RawResponse = content
+                    RawResponse = content,
+                    RequestBody = json
                 };
 
                 TryExtractIdentifiers(content, result);

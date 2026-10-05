@@ -29,7 +29,8 @@ namespace Fel.Infrastructure.Dataico
         };
 
         // Retenciones por ítem (las que se eligen a mano en cada línea): solo categoría y tarifa, Dataico
-        // calcula base y valor. "extra" solo lo usa el documento soporte (ver BuildGeneralRetentionsPerItem).
+        // calcula base y valor. "extra" solo lo usa el documento soporte: las retenciones generales del
+        // documento, que se agregan a cada ítem (ver BuildSupportDocumentRequest).
         private static List<DataicoTax>? BuildRetentions(IEnumerable<DocumentRetention> retentions, IEnumerable<DataicoTax>? extra = null)
         {
             var list = retentions.Select(r => new DataicoTax { tax_category = r.TaxCategory, tax_rate = r.Rate }).ToList();
@@ -49,76 +50,6 @@ namespace Fel.Infrastructure.Dataico
                 .Select(r => new DataicoTax { tax_category = r.TaxCategory, tax_rate = r.Rate })
                 .ToList();
             return list.Count > 0 ? list : null;
-        }
-
-        // Retenciones definidas una sola vez para todo el documento (ReteICA, ReteIVA, u otras —
-        // lista libre de agregar/quitar, no solo esas dos) en vez de por línea, pero Dataico exige
-        // las retenciones por ítem en su API. Se reparte cada una entre los ítems según su peso en
-        // la base correspondiente — RET_IVA sobre el IVA generado de cada línea (es una retención
-        // sobre el impuesto, no sobre la venta); cualquier otra categoría sobre la base gravable
-        // (subtotal) de cada línea.
-        //
-        // SOLO LO USA EL DOCUMENTO SOPORTE: su ejemplo oficial de Dataico envía la retención con tarifa,
-        // base y valor. Factura, nota crédito y nota débito usan BuildDocumentRetentions (sin valores).
-        private static Dictionary<Guid, List<DataicoTax>> BuildGeneralRetentionsPerItem(Document document, IReadOnlyList<DocumentItem> items)
-        {
-            var result = items.ToDictionary(i => i.Id, i => new List<DataicoTax>());
-            if (items.Count == 0) return result;
-
-            decimal LineBase(DocumentItem i) => i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100);
-
-            // IVA de la línea como lo calcula Dataico: la base ya redondeada por la tarifa, redondeado.
-            decimal LineIva(DocumentItem i) => i.IvaTreatment == IvaTreatment.Gravado && i.TaxRate > 0
-                ? DianRounding.Round2(DianRounding.Round2(LineBase(i)) * i.TaxRate / 100)
-                : 0m;
-
-            foreach (var generalRetention in document.GeneralRetentions)
-            {
-                if (generalRetention.TaxCategory == "RET_IVA")
-                {
-                    AddProrated(result, items, generalRetention.TaxCategory, generalRetention.Rate, LineIva);
-                }
-                else
-                {
-                    AddProrated(result, items, generalRetention.TaxCategory, generalRetention.Rate, LineBase);
-                }
-            }
-
-            return result;
-        }
-
-        // Redondeo a 2 decimales según el Anexo Técnico de la DIAN (ver DianRounding). Antes se truncaba
-        // por un rechazo real (116250 * 0.414% = 481.275 debía ser 481.27), pero truncar solo coincide
-        // con la regla cuando el tercer decimal es 0-4; con 6-9 Dataico espera el centavo siguiente.
-        // Cada ítem calcula su propio tax_amount directamente sobre su propio base_amount, ambos ya
-        // redondeados a 2 decimales (regla DIAN) antes de multiplicar — no se reparte un monto global prorrateado
-        // (eso hacía que tax_rate * base_amount no cuadrara exacto con el tax_amount enviado, y
-        // Dataico rechaza el documento por esa inconsistencia). La pequeña diferencia de centavos
-        // que esto puede dejar entre la suma por ítem y el monto global calculado sobre el
-        // documento completo es aceptada por Dataico porque valida cada línea de retención por
-        // separado, no el total.
-        private static void AddProrated(
-            Dictionary<Guid, List<DataicoTax>> result,
-            IReadOnlyList<DocumentItem> items,
-            string category,
-            decimal rate,
-            Func<DocumentItem, decimal> weightOf)
-        {
-            if (string.IsNullOrWhiteSpace(category) || rate <= 0) return;
-
-            foreach (var item in items)
-            {
-                var baseAmount = DianRounding.Round2(weightOf(item));
-                if (baseAmount <= 0) continue;
-
-                result[item.Id].Add(new DataicoTax
-                {
-                    tax_category = category,
-                    tax_rate = rate,
-                    base_amount = baseAmount,
-                    tax_amount = DianRounding.Round2(baseAmount * rate / 100)
-                });
-            }
         }
 
         // Descuento y cargo general del documento completo (ej. "Pronto pago" / "Flete"),
@@ -339,7 +270,9 @@ namespace Fel.Infrastructure.Dataico
                 payment_date = BuildPaymentDate(document),
                 payment_means = ResolvePaymentMeans(paymentMeans, paymentMeansType),
                 payment_means_type = paymentMeansType,
-                numbering = new DataicoNumbering { prefix = resolution.Prefix, resolution_number = resolution.ResolutionNumber, flexible = true },
+                // Prefijo del documento (ya fijado al publicarlo): para la nota de ajuste es el de la numeración de ajustes
+                // de la cuenta de Dataico, configurable por Client. Sin resolution_number, como las notas.
+                numbering = new DataicoNumbering { prefix = string.IsNullOrWhiteSpace(document.Prefix) ? resolution.Prefix : document.Prefix, flexible = true },
                 discrepancy_description = string.IsNullOrWhiteSpace(document.ReferenceConcept) ? "Ajuste de precio" : document.ReferenceConcept,
                 source_document_cuds = originalDocument.Cufe ?? string.Empty,
                 source_document_issue_date = originalDocument.IssueDate.ToString("dd/MM/yyyy"),
@@ -347,17 +280,33 @@ namespace Fel.Infrastructure.Dataico
                 customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides)
             };
 
-            foreach (var item in items)
+            // La nota de ajuste es el reflejo del documento soporte que ajusta (como la nota crédito con la
+            // factura): IVA y retenciones por ítem, descuento/cargo generales y ReteICA, con la misma lógica.
+            var itemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();
+            var generalRetentions = BuildSupportGeneralRetentions(document);
+
+            foreach (var item in itemsList)
             {
-                request.items.Add(new DataicoInvoiceItem
+                var adjustmentItem = new DataicoInvoiceItem
                 {
                     sku = item.Code,
                     quantity = item.Quantity,
                     description = item.Name,
                     price = item.UnitPrice,
-                    discount_rate = item.DiscountRate
-                });
+                    discount_rate = item.DiscountRate,
+                    retentions = BuildSupportItemRetentions(item, generalRetentions)
+                };
+
+                var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);
+                if (ivaTax != null)
+                {
+                    adjustmentItem.taxes.Add(ivaTax);
+                }
+
+                request.items.Add(adjustmentItem);
             }
+
+            request.charges = BuildSupportCharges(document, itemsList);
 
             return request;
         }
@@ -383,16 +332,24 @@ namespace Fel.Infrastructure.Dataico
                 payment_means_type = paymentMeansType,
                 numbering = new DataicoNumbering
                 {
-                    prefix = resolution.Prefix,
+                    prefix = string.IsNullOrWhiteSpace(document.Prefix) ? resolution.Prefix : document.Prefix,
                     resolution_number = resolution.ResolutionNumber,
                     flexible = true
                 },
-                customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides),
-                charges = BuildCharges(document)
+                customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides)
             };
 
             var itemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();
-            var generalRetentions = BuildGeneralRetentionsPerItem(document, itemsList);
+
+            // Dataico y la app de escritorio anterior (FEL, en producción) reciben las retenciones del documento soporte
+            // por ítem, solo con categoría y tarifa: las del propio ítem más las generales del documento,
+            // que aplican a todas las líneas. Verificado contra Dataico en un envío real (octubre 2026):
+            // este formato fue aceptado.
+            //
+            // RET_ICA es la excepción: Dataico la rechaza como retención en cualquier posición ("No se
+            // puede usar RET_ICA en Documentos de Soporte") y, según Dataico, en el soporte la ReteICA va
+            // como un charge a nivel de documento (ver BuildReteIcaCharge). Por eso se saca de las retenciones.
+            var generalRetentions = BuildSupportGeneralRetentions(document);
 
             foreach (var item in itemsList)
             {
@@ -403,7 +360,7 @@ namespace Fel.Infrastructure.Dataico
                     description = item.Name,
                     price = item.UnitPrice,
                     discount_rate = item.DiscountRate,
-                    retentions = BuildRetentions(item.Retentions, generalRetentions[item.Id])
+                    retentions = BuildSupportItemRetentions(item, generalRetentions)
                 };
 
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);
@@ -415,7 +372,64 @@ namespace Fel.Infrastructure.Dataico
                 request.items.Add(dataicoItem);
             }
 
+            request.charges = BuildSupportCharges(document, itemsList);
+
             return request;
+        }
+
+        // Retenciones y cargos del documento soporte y de su nota de ajuste: la nota es el reflejo del
+        // documento, así que las dos usan exactamente la misma lógica.
+        private static List<DataicoTax>? BuildSupportGeneralRetentions(Document document) =>
+            BuildDocumentRetentions(document)?.Where(t => !IsReteIca(t.tax_category)).ToList();
+
+        private static List<DataicoTax>? BuildSupportItemRetentions(DocumentItem item, IEnumerable<DataicoTax>? generalRetentions) =>
+            BuildRetentions(item.Retentions.Where(r => !IsReteIca(r.TaxCategory)), generalRetentions);
+
+        // Descuento y cargo generales más la ReteICA (que Dataico no admite como retención en el soporte).
+        private static List<DataicoCharge>? BuildSupportCharges(Document document, IReadOnlyList<DocumentItem> items)
+        {
+            var charges = BuildCharges(document);
+            var reteIca = BuildReteIcaCharge(document, items);
+            if (reteIca != null)
+            {
+                (charges ??= new List<DataicoCharge>()).Add(reteIca);
+            }
+            return charges;
+        }
+
+        private static bool IsReteIca(string? taxCategory) =>
+            string.Equals(taxCategory, "RET_ICA", StringComparison.OrdinalIgnoreCase);
+
+        // La ReteICA del documento soporte viaja como un descuento a nivel de documento (charge con
+        // discount=true y reason RETEICA). La ReteICA general del documento se calcula UNA vez sobre el
+        // subtotal del documento (suma de las bases de las líneas: cantidad x precio menos el descuento del
+        // ítem), igual que el formulario del portal; la que se eligió en un ítem concreto se calcula sobre
+        // la base de esa línea. Se redondea según la DIAN (DianRounding).
+        // SUPUESTO por confirmar con Dataico: que base_amount sea el VALOR en pesos de la retención —los
+        // charges no tienen campo de tarifa— y no el subtotal sobre el que se calcula.
+        private static DataicoCharge? BuildReteIcaCharge(Document document, IReadOnlyList<DocumentItem> items)
+        {
+            decimal LineBase(DocumentItem i) => DianRounding.Round2(i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100));
+
+            var total = 0m;
+
+            var subtotal = items.Sum(LineBase);
+            foreach (var general in document.GeneralRetentions.Where(r => IsReteIca(r.TaxCategory) && r.Rate > 0))
+            {
+                total += DianRounding.Round2(subtotal * general.Rate / 100);
+            }
+
+            foreach (var item in items)
+            {
+                foreach (var retention in item.Retentions.Where(r => IsReteIca(r.TaxCategory) && r.Rate > 0))
+                {
+                    total += DianRounding.Round2(LineBase(item) * retention.Rate / 100);
+                }
+            }
+
+            return total > 0
+                ? new DataicoCharge { reason = "RETEICA", base_amount = total, discount = true }
+                : null;
         }
 
         // Entrada genérica de un concepto de nómina (devengo o deducción), usada tanto por la

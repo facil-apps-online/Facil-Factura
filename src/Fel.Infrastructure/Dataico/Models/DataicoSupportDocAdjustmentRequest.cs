@@ -43,6 +43,9 @@ namespace Fel.Infrastructure.Dataico.Models
         [JsonPropertyName("payment_means_type")]
         public string payment_means_type { get; set; } = string.Empty;
 
+        // Igual que las notas crédito y débito: solo prefijo y flexible, SIN número de resolución. Verificado
+        // contra Dataico (octubre 2026): con resolution_number responde "No se encuentra numeración" y sin
+        // prefijo responde "Esta cuenta tiene más de una numeración ... se debe especificar el prefix".
         public DataicoNumbering numbering { get; set; } = new();
 
         // Solo "AJUSTE_PRECIO" está confirmado contra un ejemplo real — el catálogo completo de
@@ -64,5 +67,9 @@ namespace Fel.Infrastructure.Dataico.Models
 
         public DataicoParty customer { get; set; } = new();
         public List<DataicoInvoiceItem> items { get; set; } = new();
+
+        // Descuento/cargo generales y ReteICA, igual que en el documento soporte al que ajusta.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<DataicoCharge>? charges { get; set; }
     }
 }

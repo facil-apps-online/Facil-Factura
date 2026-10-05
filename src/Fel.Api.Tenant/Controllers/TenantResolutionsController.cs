@@ -126,6 +126,7 @@ namespace Fel.Api.Tenant.Controllers
             };
 
             _dbContext.Set<Resolution>().Add(resolution);
+            _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, await BranchProvisioning.MainBranchIdAsync(_dbContext, clientId)));
             await _dbContext.SaveChangesAsync();
 
             return Ok(new {
@@ -322,6 +323,40 @@ namespace Fel.Api.Tenant.Controllers
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { resolution.Id, resolution.TechnicalKey });
+        }
+
+        public class DocumentLegendRequest
+        {
+            public string? Text { get; set; }
+        }
+
+        [HttpGet("{id}/legend")]
+        public async Task<IActionResult> GetLegend(Guid clientId, Guid id)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId)) return StatusCode(StatusCodes.Status403Forbidden);
+            var resolution = await _dbContext.Resolutions.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId);
+            if (resolution == null) return NotFound();
+            var type = Fel.Infrastructure.Services.DocumentLegendType.Normalize(resolution.DocumentType);
+            var legend = await _dbContext.DocumentLegendByPrefixes.AsNoTracking().FirstOrDefaultAsync(x => x.ClientId == clientId && x.DocumentType == type && x.Prefix == resolution.Prefix);
+            return Ok(new { documentType = type, prefix = resolution.Prefix, text = legend?.Text ?? string.Empty });
+        }
+
+        [HttpPut("{id}/legend")]
+        public async Task<IActionResult> UpdateLegend(Guid clientId, Guid id, [FromBody] DocumentLegendRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId)) return StatusCode(StatusCodes.Status403Forbidden);
+            var resolution = await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId);
+            if (resolution == null) return NotFound();
+            var type = Fel.Infrastructure.Services.DocumentLegendType.Normalize(resolution.DocumentType);
+            var legend = await _dbContext.DocumentLegendByPrefixes.FirstOrDefaultAsync(x => x.ClientId == clientId && x.DocumentType == type && x.Prefix == resolution.Prefix);
+            var text = request.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(text)) { if (legend != null) _dbContext.DocumentLegendByPrefixes.Remove(legend); }
+            else if (legend == null) _dbContext.DocumentLegendByPrefixes.Add(new Fel.Core.Entities.DocumentLegendByPrefix { Id = Guid.NewGuid(), ClientId = clientId, DocumentType = type, Prefix = resolution.Prefix.Trim(), Text = text, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            else { legend.Text = text; legend.UpdatedAt = DateTime.UtcNow; }
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { documentType = type, prefix = resolution.Prefix, text });
         }
 
         [HttpDelete("{id}")]

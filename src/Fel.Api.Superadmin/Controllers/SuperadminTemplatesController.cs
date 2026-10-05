@@ -391,6 +391,88 @@ namespace Fel.Api.Superadmin.Controllers
             public bool MostrarRetenciones { get; set; }
         }
 
+        public class SetTemplateStatusRequest
+        {
+            public string Status { get; set; } = string.Empty;
+        }
+
+        public class RenameTemplateRequest
+        {
+            public string Name { get; set; } = string.Empty;
+        }
+
+        // PUT: api/superadmin/templates/{id}/name
+        // El nombre es metadato administrativo: puede cambiarse sin crear una nueva versión
+        // ni modificar el diseño REPX, su estado o su clave en Facil Reports.
+        [HttpPut("{id:guid}/name")]
+        public async Task<IActionResult> RenameTemplate(Guid id, [FromBody] RenameTemplateRequest request)
+        {
+            try
+            {
+                var name = request.Name?.Trim();
+                if (string.IsNullOrWhiteSpace(name))
+                    return BadRequest("El nombre de la plantilla es obligatorio.");
+                if (name.Length > 150)
+                    return BadRequest("El nombre de la plantilla no puede superar 150 caracteres.");
+
+                var template = await _dbContext.DocumentTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == null && t.ClientId == null);
+
+                if (template == null)
+                    return NotFound("Plantilla global no encontrada.");
+
+                template.Name = name;
+                template.UpdatedAt = DateTime.UtcNow;
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { message = "Nombre de plantilla actualizado.", name = template.Name });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        // PUT: api/superadmin/templates/{id}/status
+        // Permite devolver una plantilla publicada a borrador durante pruebas.
+        [HttpPut("{id:guid}/status")]
+        public async Task<IActionResult> SetTemplateStatus(Guid id, [FromBody] SetTemplateStatusRequest request)
+        {
+            try
+            {
+                var template = await _dbContext.DocumentTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == null && t.ClientId == null);
+
+                if (template == null)
+                    return NotFound("Plantilla global no encontrada.");
+
+                if (!Enum.TryParse<TemplateStatus>(request.Status, true, out var newStatus) ||
+                    newStatus is not (TemplateStatus.Draft or TemplateStatus.Published))
+                {
+                    return BadRequest("El estado debe ser Draft o Published.");
+                }
+
+                if (template.Status == TemplateStatus.Archived)
+                    return BadRequest("Una plantilla archivada no puede reactivarse desde aquí.");
+
+                if (template.Status == newStatus)
+                    return Ok(new { message = "El estado ya estaba configurado.", status = template.Status.ToString() });
+
+                if (newStatus == TemplateStatus.Published)
+                    return BadRequest("Para publicar usa la acción Publicar, que controla las versiones anteriores.");
+
+                template.Status = TemplateStatus.Draft;
+                template.UpdatedAt = DateTime.UtcNow;
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { message = "Plantilla devuelta a Borrador.", status = template.Status.ToString() });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         // PUT: api/superadmin/templates/{id}/mostrar-retenciones
         [HttpPut("{id:guid}/mostrar-retenciones")]
         public async Task<IActionResult> SetMostrarRetenciones(Guid id, [FromBody] SetMostrarRetencionesRequest request)

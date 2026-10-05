@@ -7,12 +7,13 @@ using Microsoft.EntityFrameworkCore;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Services;
+using Fel.Api.Security;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/v1/dashboard")]
-    public class ClientDashboardController : ControllerBase
+    public class ClientDashboardController : ClientPortalControllerBase
     {
         private readonly BillingMetricsService _billingService;
         private readonly FelDbContext _dbContext;
@@ -23,16 +24,7 @@ namespace Fel.Api.Client.Controllers
             _dbContext = dbContext;
         }
 
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
-        }
-
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpGet("metrics")]
         public async Task<IActionResult> GetBillingMetrics([FromQuery] int? year, [FromQuery] int? month)
         {
@@ -65,13 +57,13 @@ namespace Fel.Api.Client.Controllers
                 var periodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
                 var periodEnd = periodStart.AddMonths(1);
 
-                var periodDocs = await _dbContext.Documents.AsNoTracking()
+                var periodDocs = await _dbContext.Documents.AsNoTracking().ForBranch(CurrentBranchScope)
                     .Where(d => d.ClientId == clientId && d.IssueDate >= periodStart && d.IssueDate < periodEnd)
                     // TotalAmount es el bruto (subtotal + IVA): el total del documento aplica además el descuento y el cargo general.
                     .Select(d => new { d.Status, d.TypeCode, TotalAmount = d.TotalAmount - (d.GeneralDiscountAmount ?? 0) + (d.GeneralChargeAmount ?? 0) })
                     .ToListAsync();
 
-                var recentDocuments = await _dbContext.Documents.AsNoTracking()
+                var recentDocuments = await _dbContext.Documents.AsNoTracking().ForBranch(CurrentBranchScope)
                     .Where(d => d.ClientId == clientId && d.Status == "APPROVED")
                     .OrderByDescending(d => d.ProcessedAt)
                     .Take(10)
@@ -110,7 +102,7 @@ namespace Fel.Api.Client.Controllers
                 }
 
                 var pendingSetupItems = new List<string>();
-                var hasActiveResolution = await _dbContext.Resolutions.AnyAsync(r => r.ClientId == clientId && r.IsActive);
+                var hasActiveResolution = await _dbContext.Resolutions.ForBranch(_dbContext, CurrentBranchScope).AnyAsync(r => r.ClientId == clientId && r.IsActive);
                 if (!hasActiveResolution) pendingSetupItems.Add("no-resolution");
                 var hasActiveCertificate = await _dbContext.Certificates.AnyAsync(c => c.ClientId == clientId && c.IsActive && c.ExpirationDate > now);
                 if (!hasActiveCertificate) pendingSetupItems.Add("no-certificate");
@@ -126,7 +118,7 @@ namespace Fel.Api.Client.Controllers
                     // el resto (facturas, notas débito) suma — mismo criterio que InvoicesPage.tsx.
                     TotalBilled = periodDocs.Sum(d => (d.TypeCode == "NC" ? -1 : 1) * d.TotalAmount),
                     RecentDocuments = recentDocuments,
-                    Consumption = consumption,
+                    Consumption = Branch.IsAdministrator ? consumption : null,
                     PendingSetupItems = pendingSetupItems
                 });
             }

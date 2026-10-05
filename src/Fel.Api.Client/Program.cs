@@ -170,6 +170,8 @@ builder.Services.AddHttpClient<Fel.Infrastructure.Services.DianHabilitationScrap
 builder.Services.AddScoped<Fel.Infrastructure.Services.DianTestSetSubmissionService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.BillingMetricsService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.RetentionCalculationService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.DocumentLegendService>();
+builder.Services.AddScoped<ClientPortalFilter>();
 
 // Proveedores de emisión de documentos (uno por Client.DocumentProvider). InvoiceController
 // resuelve cuál usar en tiempo de ejecución, así se agrega un integrador nuevo sin tocarlo.

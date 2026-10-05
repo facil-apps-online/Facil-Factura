@@ -87,7 +87,7 @@ namespace Fel.Infrastructure.Dataico
         // resuelta para este documento — decide si las filas de retención entran a "Impuestos" y
         // si se calcula "NetoAPagar". El IVA discriminado se arma siempre, independiente de este
         // flag.
-        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null)
+        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -235,11 +235,10 @@ namespace Fel.Infrastructure.Dataico
 
                     // Documento
                     ["DocumentoTipo"] = documentoTipo,
-                    ["DocumentoNumero"] = $"{resolution?.Prefix} {invoice.Number}".Trim(),
+                    ["DocumentoNumero"] = $"{(string.IsNullOrWhiteSpace(invoice.Prefix) ? resolution?.Prefix : invoice.Prefix)} {invoice.Number}".Trim(),
                     ["NotaReferencia"] = notaReferencia,
                     ["ResolucionTexto"] = resolution == null ? null :
-                        $"Resolución DIAN {resolution.ResolutionNumber} · Rango {resolution.Prefix} {resolution.NumberStart}-{resolution.NumberEnd}" +
-                        $" · Vigente hasta {resolution.ValidTo:dd/MM/yyyy}",
+                        $"Resolución de facturación: {resolution.ResolutionNumber} vigente desde {resolution.ValidFrom:dd/MM/yyyy} hasta: {resolution.ValidTo:dd/MM/yyyy}. Del {resolution.Prefix} {resolution.NumberStart} al {resolution.Prefix} {resolution.NumberEnd}.",
                     ["FechaGeneracion"] = Fel.Core.Models.ColombiaTime.FromUtc(invoice.CreatedAt).ToString("dd/MM/yyyy HH:mm:ss"),
                     ["FechaVencimiento"] = invoice.PaymentTermDays.HasValue ? invoice.IssueDate.AddDays(invoice.PaymentTermDays.Value).ToString("dd/MM/yyyy") : null,
                     ["Cufe"] = invoice.Cufe,
@@ -251,11 +250,12 @@ namespace Fel.Infrastructure.Dataico
                     // URL ya lista para el XRPictureBox del QR — se arma aquí (no en la
                     // plantilla) porque el contenido del QR trae saltos de línea y otros
                     // caracteres que romperían el query string si se concatenan sin escapar.
-                    ["QrImageUrl"] = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + Uri.EscapeDataString(invoice.QrCode ?? invoice.Cufe ?? string.Empty),
+                    ["QrImageUrl"] = QrImageDataUri.FromText(invoice.QrCode ?? invoice.Cufe),
                     ["MedioPago"] = CatalogLabel(invoice.PaymentMeans, paymentMeansCatalog),
                     ["FormaPago"] = CatalogLabel(invoice.PaymentMeansType, formaPagoCatalog),
                     ["OrdenCompra"] = invoice.PurchaseOrderReference,
                     ["Notas"] = invoice.Notes,
+                    ["Leyenda"] = leyenda,
 
                     // Totales — ya formateados como texto (separadores según Client.DecimalSeparator, 2 decimales).
                     ["Subtotal"] = Money(invoice.Subtotal),

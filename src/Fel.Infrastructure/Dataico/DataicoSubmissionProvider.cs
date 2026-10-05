@@ -21,17 +21,19 @@ namespace Fel.Infrastructure.Dataico
         private readonly ICryptoService _cryptoService;
         private readonly FelDbContext _dbContext;
         private readonly DataicoCustomPdfService _customPdfService;
+        private readonly Fel.Infrastructure.Services.DocumentLegendService _legendService;
 
         public string IntegratorCode => "DATAICO";
 
         public DataicoSubmissionProvider(
             IDataicoApiService dataicoApiService, ICryptoService cryptoService, FelDbContext dbContext,
-            DataicoCustomPdfService customPdfService)
+            DataicoCustomPdfService customPdfService, Fel.Infrastructure.Services.DocumentLegendService legendService)
         {
             _dataicoApiService = dataicoApiService;
             _cryptoService = cryptoService;
             _dbContext = dbContext;
             _customPdfService = customPdfService;
+            _legendService = legendService;
         }
 
         public async Task<DocumentSubmissionResult> SubmitAsync(
@@ -63,6 +65,9 @@ namespace Fel.Infrastructure.Dataico
                     _ => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString()
                 };
             }
+            // El prefijo queda guardado en el documento junto con su consecutivo.
+            invoice.Prefix = resolution.Prefix;
+
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
 
             Fel.Infrastructure.Dataico.Models.DataicoResult result;
@@ -119,9 +124,10 @@ namespace Fel.Infrastructure.Dataico
 
             if (result.Success)
             {
+                var leyenda = await _legendService.ResolveAsync(client, resolution, invoice.TypeCode);
                 await _customPdfService.TrySendCustomPdfAsync(
                     invoice, customer?.Email, client,
-                    template => InvoiceReportDataMapper.Build(invoice, customer, client, resolution, items.ToList(), originalInvoiceForPdf, template.MostrarRetenciones),
+                    template => InvoiceReportDataMapper.Build(invoice, customer, client, resolution, items.ToList(), originalInvoiceForPdf, template.MostrarRetenciones, leyenda: leyenda),
                     credentials);
             }
 

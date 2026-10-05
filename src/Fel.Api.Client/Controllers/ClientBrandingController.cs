@@ -6,12 +6,14 @@ using Fel.Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Fel.Api.Security;
+using Fel.Core.Entities;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/v1/branding")]
-    public class ClientBrandingController : ControllerBase
+    public class ClientBrandingController : ClientPortalControllerBase
     {
         private const string ApiBaseUrl = "https://api.facil-factura.pro";
         private readonly FelDbContext _dbContext;
@@ -21,16 +23,6 @@ namespace Fel.Api.Client.Controllers
         {
             _dbContext = dbContext;
             _fileStorage = fileStorage;
-        }
-
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
         }
 
         [HttpGet("my-branding")]
@@ -66,6 +58,9 @@ namespace Fel.Api.Client.Controllers
                     // Para el header del portal: identifica al Client (no al Tenant, que ya
                     // aparece en el sidebar) cuando no tiene logo propio cargado.
                     ClientName = string.IsNullOrWhiteSpace(client.CommercialName) ? client.CompanyName : client.CommercialName,
+                    // NIT + DV del Client, que el header muestra debajo del nombre.
+                    TaxId = client.TaxId,
+                    VerificationDigit = client.VerificationDigit,
                     UnitOfMeasureDisplayOverride = client.UnitOfMeasureDisplayOverride,
                     // Formato numérico del portal y de los PDF de este cliente: "." (punto decimal) o ",".
                     DecimalSeparator = client.DecimalSeparator
@@ -79,6 +74,7 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpPost("logo")]
         public async Task<IActionResult> UploadLogo(IFormFile file)
         {
@@ -118,6 +114,7 @@ namespace Fel.Api.Client.Controllers
 
         // El cliente ya no tiene esquema de colores propio (ver comentario en GetMyBranding) — este
         // endpoint solo actualiza el logo que usan sus facturas, no hay campo de color que aceptar.
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpPut("my-branding")]
         public async Task<IActionResult> UpdateMyBranding([FromBody] UpdateClientBrandingRequest request)
         {

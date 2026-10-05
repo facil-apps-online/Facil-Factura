@@ -43,6 +43,9 @@ namespace Fel.Api.Client.Controllers
 
                 if (developer == null) return NotFound();
 
+                var sandboxBranch = developer.ClientId == null ? null : await _dbContext.Branches.AsNoTracking()
+                    .FirstOrDefaultAsync(b => b.ClientId == developer.ClientId && b.IsMain);
+
                 return Ok(new
                 {
                     developer.Id,
@@ -53,8 +56,8 @@ namespace Fel.Api.Client.Controllers
                     {
                         developer.Client.Id,
                         developer.Client.CompanyName,
-                        developer.Client.TestApiKey,
-                        developer.Client.TestApiSecret,
+                        sandboxBranch?.TestApiKey,
+                        sandboxBranch?.TestApiSecret,
                         developer.Client.DataicoEnvironment
                     }
                 });

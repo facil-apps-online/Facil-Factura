@@ -31,7 +31,7 @@ namespace Fel.Infrastructure.Services
         private static readonly (string Match, string DocumentType)[] ModalityMap =
         {
             ("FACTURA ELECTR", "FE"),
-            ("DOCUMENTO SOPORTE", "POS"),
+            ("DOCUMENTO SOPORTE", "DS"),
             ("N[OÓ]MINA", "NE"),
             ("NOTA CR[EÉ]DITO", "NC"),
             ("NOTA D[EÉ]BITO", "ND")

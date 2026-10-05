@@ -34,6 +34,15 @@ namespace Fel.Infrastructure.Dataico
             ["49"] = "No responsable de IVA"
         };
 
+        private static readonly Dictionary<string, string> RetentionCategoryLabels = new()
+        {
+            ["RET_FUENTE"] = "RETE FUENTE",
+            ["RET_ICA"] = "RETE ICA",
+            ["RET_IVA"] = "RETE IVA"
+        };
+
+        private static string RetentionLabel(string category) => RetentionCategoryLabels.GetValueOrDefault(category, category);
+
         private static string CalidadTributaria(string? code) =>
             code != null && CalidadTributariaLabels.TryGetValue(code, out var label) ? label : code ?? string.Empty;
 
@@ -56,16 +65,35 @@ namespace Fel.Infrastructure.Dataico
             };
         }
 
-        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null)
+        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
-            string Money(decimal value) => value.ToString("N0", nf);
+            string Money(decimal value) => value.ToString("N2", nf);
             string Qty(decimal value) => value.ToString("0.##", nf);
             string Pct(decimal value) => value.ToString("0.##", nf) + "%";
             var totalNeto = document.TotalAmount - (document.GeneralDiscountAmount ?? 0) + (document.GeneralChargeAmount ?? 0);
             var esIntegradorExterno = client.Integrator.Kind == IntegratorKind.ThirdPartyIntegrator;
             var esAjuste = document.TypeCode == "DS-AJUSTE";
+
+            var retencionesPorCategoria = new Dictionary<(string Categoria, decimal Tarifa), decimal>();
+            foreach (var item in items)
+            {
+                foreach (var retention in item.Retentions)
+                {
+                    var key = (retention.TaxCategory, retention.Rate);
+                    retencionesPorCategoria[key] = retencionesPorCategoria.GetValueOrDefault(key)
+                        + DianRounding.Round2(DianRounding.Round2(retention.BaseAmount) * retention.Rate / 100);
+                }
+            }
+            foreach (var retention in document.GeneralRetentions)
+            {
+                var baseAmount = retention.TaxCategory == "RET_IVA" ? document.TaxAmount : document.Subtotal;
+                var key = (retention.TaxCategory, retention.Rate);
+                retencionesPorCategoria[key] = retencionesPorCategoria.GetValueOrDefault(key)
+                    + DianRounding.Round2(DianRounding.Round2(baseAmount) * retention.Rate / 100);
+            }
+            var totalRetenciones = retencionesPorCategoria.Values.Sum();
 
             // IVA discriminado por tarifa + descuento/cargo general con su motivo, en la misma tabla
             // del pie que usa la factura (subreporte "Impuestos"). Retenciones: este documento no las
@@ -79,6 +107,13 @@ namespace Fel.Infrastructure.Dataico
             var impuestos = new List<Dictionary<string, object?>>();
             foreach (var kv in ivaPorTarifa.OrderBy(kv => kv.Key))
                 impuestos.Add(new Dictionary<string, object?> { ["Concepto"] = $"IVA {Pct(kv.Key)}", ["Valor"] = Money(kv.Value), ["Tipo"] = "Iva" });
+            foreach (var kv in retencionesPorCategoria)
+                impuestos.Add(new Dictionary<string, object?>
+                {
+                    ["Concepto"] = $"{RetentionLabel(kv.Key.Categoria)} {kv.Key.Tarifa.ToString("0.###", nf)}%",
+                    ["Valor"] = Money(kv.Value),
+                    ["Tipo"] = "Retencion"
+                });
             if ((document.GeneralDiscountAmount ?? 0) > 0)
                 impuestos.Add(new Dictionary<string, object?>
                 {
@@ -123,31 +158,39 @@ namespace Fel.Infrastructure.Dataico
                     ["ProveedorTelefono"] = proveedor?.Phone,
                     ["ProveedorEmail"] = proveedor?.Email,
 
+                    ["AdquirenteNombre"] = proveedor?.Name,
+                    ["AdquirenteTipoIdentificacion"] = proveedor?.IdentificationType,
+                    ["AdquirenteIdentificacion"] = proveedor?.IdentificationNumber,
+                    ["AdquirenteDireccion"] = proveedor?.Address,
+                    ["AdquirenteCiudad"] = proveedor?.CityName,
+                    ["AdquirenteTelefono"] = proveedor?.Phone,
+                    ["AdquirenteEmail"] = proveedor?.Email,
+
                     // Documento ("DocumentoTipo", no "DocumentoTitulo": mismo nombre que Factura)
                     ["DocumentoTipo"] = esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO",
-                    ["DocumentoNumero"] = $"{resolution?.Prefix} {document.Number}".Trim(),
+                    ["DocumentoNumero"] = $"{(string.IsNullOrWhiteSpace(document.Prefix) ? resolution?.Prefix : document.Prefix)} {document.Number}".Trim(),
                     ["NotaReferencia"] = esAjuste && !string.IsNullOrWhiteSpace(document.ReferenceConcept) ? $"Motivo del ajuste: {document.ReferenceConcept}" : null,
                     ["ResolucionTexto"] = resolution == null ? null :
-                        $"Resolución DIAN {resolution.ResolutionNumber} · Rango {resolution.Prefix} {resolution.NumberStart}-{resolution.NumberEnd}" +
-                        $" · Vigente hasta {resolution.ValidTo:dd/MM/yyyy}",
+                        $"Resolución de facturación: {resolution.ResolutionNumber} vigente desde {resolution.ValidFrom:dd/MM/yyyy} hasta: {resolution.ValidTo:dd/MM/yyyy}. Del {resolution.Prefix} {resolution.NumberStart} al {resolution.Prefix} {resolution.NumberEnd}.",
                     ["FechaGeneracion"] = Fel.Core.Models.ColombiaTime.FromUtc(document.CreatedAt).ToString("dd/MM/yyyy HH:mm:ss"),
                     ["FechaVencimiento"] = document.PaymentTermDays.HasValue ? document.IssueDate.AddDays(document.PaymentTermDays.Value).ToString("dd/MM/yyyy") : null,
                     ["Cufe"] = document.Cufe,
                     ["QrCode"] = document.QrCode ?? document.Cufe,
                     // URL del QR (ver InvoiceReportDataMapper): Facil Reports la reconoce y genera el QR
                     // localmente; con el motor DevExpress se descarga de ese servicio.
-                    ["QrImageUrl"] = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + Uri.EscapeDataString(document.QrCode ?? document.Cufe ?? string.Empty),
+                    ["QrImageUrl"] = QrImageDataUri.FromText(document.QrCode ?? document.Cufe),
                     ["MedioPago"] = CatalogLabel(document.PaymentMeans, paymentMeansCatalog),
                     ["FormaPago"] = CatalogLabel(document.PaymentMeansType, formaPagoCatalog),
                     ["OrdenCompra"] = document.PurchaseOrderReference,
                     ["Notas"] = document.Notes,
+                    ["Leyenda"] = leyenda,
 
                     ["Subtotal"] = Money(document.Subtotal),
                     ["Iva"] = Money(document.TaxAmount),
                     ["Descuento"] = Money(document.GeneralDiscountAmount ?? 0),
                     ["Cargo"] = Money(document.GeneralChargeAmount ?? 0),
-                    ["TotalRetenciones"] = null,
-                    ["NetoAPagar"] = null,
+                    ["TotalRetenciones"] = totalRetenciones > 0 ? Money(totalRetenciones) : null,
+                    ["NetoAPagar"] = totalRetenciones > 0 ? Money(totalNeto - totalRetenciones) : null,
                     // TotalAmount es el bruto (subtotal + IVA); el total a pagar aplica descuento y cargo general.
                     ["Total"] = Money(totalNeto),
                     ["TotalEnLetras"] = NumberToWordsEs.ConvertirPesos(totalNeto),

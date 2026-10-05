@@ -4,8 +4,7 @@ using System.Text;
 namespace Fel.Infrastructure.Services
 {
     // Convierte un valor monetario a su representación en letras, en español, con la fórmula
-    // colombiana usual para el total en palabras de una factura ("... PESOS M/CTE"). Soporta hasta
-    // billones (10^12), más que suficiente para cualquier documento real.
+    // colombiana usual para el total en palabras de una factura.
     public static class NumberToWordsEs
     {
         private static readonly string[] Unidades =
@@ -36,34 +35,40 @@ namespace Fel.Infrastructure.Services
         {
             if (numero == 0) return "CERO";
 
+            // Cada escala se descompone en grupos de 1 a 999. Así, por ejemplo,
+            // 2.749 millones se procesa como grupos independientes y nunca se
+            // envía 2749 a ConvertirGrupo.
+            var partes = new StringBuilder();
             var billones = numero / 1_000_000_000_000;
-            var millones = numero % 1_000_000_000_000 / 1_000_000;
+            var milesDeMillones = numero % 1_000_000_000_000 / 1_000_000_000;
+            var millones = numero % 1_000_000_000 / 1_000_000;
             var miles = numero % 1_000_000 / 1_000;
             var resto = numero % 1_000;
 
-            var sb = new StringBuilder();
-
             if (billones > 0)
-            {
-                sb.Append(billones == 1 ? "UN BILLÓN" : $"{ConvertirGrupo(billones)} BILLONES");
-                sb.Append(' ');
-            }
-            if (millones > 0)
-            {
-                sb.Append(millones == 1 ? "UN MILLÓN" : $"{ConvertirGrupo(millones)} MILLONES");
-                sb.Append(' ');
-            }
-            if (miles > 0)
-            {
-                sb.Append(miles == 1 ? "MIL" : $"{ConvertirGrupo(miles)} MIL");
-                sb.Append(' ');
-            }
-            if (resto > 0)
-            {
-                sb.Append(ConvertirGrupo(resto));
-            }
+                AgregarParte(partes, billones == 1 ? "UN BILLÓN" : $"{ConvertirGrupo(billones)} BILLONES");
 
-            return sb.ToString().Trim();
+            if (milesDeMillones > 0)
+                AgregarParte(partes, milesDeMillones == 1
+                    ? "MIL MILLONES"
+                    : $"{ConvertirGrupo(milesDeMillones)} MIL MILLONES");
+
+            if (millones > 0)
+                AgregarParte(partes, millones == 1 ? "UN MILLÓN" : $"{ConvertirGrupo(millones)} MILLONES");
+
+            if (miles > 0)
+                AgregarParte(partes, miles == 1 ? "MIL" : $"{ConvertirGrupo(miles)} MIL");
+
+            if (resto > 0)
+                AgregarParte(partes, ConvertirGrupo(resto));
+
+            return partes.ToString();
+        }
+
+        private static void AgregarParte(StringBuilder texto, string parte)
+        {
+            if (texto.Length > 0) texto.Append(' ');
+            texto.Append(parte);
         }
 
         // Convierte un número de 1 a 999.

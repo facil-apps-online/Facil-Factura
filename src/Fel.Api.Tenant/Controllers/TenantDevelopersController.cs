@@ -204,6 +204,7 @@ namespace Fel.Api.Tenant.Controllers
                 IsDeveloperSandbox = true
             };
             _dbContext.Clients.Add(sandboxClient);
+            _dbContext.Branches.Add(BranchProvisioning.CreateMain(sandboxClient));
 
             _dbContext.ClientIntegratorAssignments.Add(new ClientIntegratorAssignment
             {

@@ -80,6 +80,7 @@ namespace Fel.Core.Entities
 
         // --- DIAN Habilitation & Software Propio ---
         public string SoftwareId { get; set; } = string.Empty;
+        [System.Text.Json.Serialization.JsonIgnore]
         public string SoftwarePin { get; set; } = string.Empty;
         public string TestSetId { get; set; } = string.Empty;
         public string DianHabilitationStatus { get; set; } = "Pending"; // Pending, InProgress, Passed, Production
@@ -127,6 +128,7 @@ namespace Fel.Core.Entities
         // LoginSISPRO de cualquier prestador que no fuera persona natural con cédula.
         public string? MinSaludIdentificationType { get; set; }
         public string? MinSaludIdentificationNumber { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
         public string? MinSaludPasswordEncrypted { get; set; }
 
         /// <summary>
@@ -146,6 +148,7 @@ namespace Fel.Core.Entities
 
         public string? MinSaludTestIdentificationType { get; set; }
         public string? MinSaludTestIdentificationNumber { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
         public string? MinSaludTestPasswordEncrypted { get; set; }
 
         // La URL del contenedor FEV-RIPS NO vive acá ni en el Tenant: es configuración de la
@@ -162,16 +165,22 @@ namespace Fel.Core.Entities
         // configurar/probar la integración en su nombre. Mismo patrón que SoftwareId/SoftwarePin
         // de la DIAN o las credenciales de MinSalud arriba.
         public string? IhceClientId { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
         public string? IhceClientSecretEncrypted { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
         public string? IhceApimSubscriptionKey { get; set; }
         public string? IhceTenantId { get; set; }
         public string? IhceEndpoint { get; set; }
         public string IhceEnvironment { get; set; } = "Sandbox"; // Sandbox (Preproducción) o Production
 
         // --- API Integration (HMAC) ---
+        [System.Text.Json.Serialization.JsonIgnore]
         public string LiveApiKey { get; set; } = Guid.NewGuid().ToString("N");
+        [System.Text.Json.Serialization.JsonIgnore]
         public string LiveApiSecret { get; set; } = Guid.NewGuid().ToString("N");
+        [System.Text.Json.Serialization.JsonIgnore]
         public string TestApiKey { get; set; } = "test_" + Guid.NewGuid().ToString("N");
+        [System.Text.Json.Serialization.JsonIgnore]
         public string TestApiSecret { get; set; } = Guid.NewGuid().ToString("N");
         
         // --- Billing ---
@@ -186,10 +195,16 @@ namespace Fel.Core.Entities
         public Guid IntegratorId { get; set; }
         public Integrator Integrator { get; set; } = null!;
         public string DataicoApiUser { get; set; } = string.Empty;
+        [System.Text.Json.Serialization.JsonIgnore]
         public string DataicoApiPasswordEncrypted { get; set; } = string.Empty;
+        [System.Text.Json.Serialization.JsonIgnore]
         public string DataicoAuthTokenEncrypted { get; set; } = string.Empty;
         public string DataicoAccountId { get; set; } = string.Empty;
         public string DataicoEnvironment { get; set; } = "PRUEBAS"; // PRUEBAS o PRODUCCION
+
+        // Leyendas generales usadas cuando no existe una leyenda específica para el tipo y prefijo.
+        public string ElectronicInvoiceLegend { get; set; } = string.Empty;
+        public string SupportDocumentLegend { get; set; } = string.Empty;
         
         // --- Branding (White Label, con fallback al branding del Tenant) ---
         public string LogoLightUrl { get; set; } = string.Empty;
@@ -203,6 +218,7 @@ namespace Fel.Core.Entities
         public string? SmtpHost { get; set; }
         public int? SmtpPort { get; set; }
         public string? SmtpUser { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
         public string? SmtpPasswordEncrypted { get; set; }
         public bool SmtpUseSsl { get; set; } = true;
         public string? SmtpFromEmail { get; set; }
@@ -219,6 +235,10 @@ namespace Fel.Core.Entities
         // Consecutivo de las Notas de Ajuste del Documento Soporte (DS-AJUSTE), igual que el de las
         // notas crédito/débito: propio del Client, no compite con el de la resolución del DS.
         public long? NextSupportAdjustmentNumber { get; set; }
+        // Prefijo de la numeración de Notas de Ajuste registrada en la cuenta de Dataico del Client (ej. "DSA").
+        // Dataico exige que la numeración de estas notas exista en la cuenta y es distinta de la del Documento
+        // Soporte (prefijo "DS"), por eso no se puede derivar de la resolución. Null = usar el de la resolución.
+        public string? SupportAdjustmentPrefix { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
@@ -240,6 +260,7 @@ namespace Fel.Core.Entities
         public int ReceptionEmailPort { get; set; } = 993;
         public bool ReceptionEmailUseSsl { get; set; } = true;
         public string ReceptionEmailUser { get; set; } = string.Empty;
+        [System.Text.Json.Serialization.JsonIgnore]
         public string ReceptionEmailPasswordEncrypted { get; set; } = string.Empty;
 
         // Cuáles eventos RADIAN se disparan automáticamente al recibir un documento (por correo o
@@ -253,6 +274,7 @@ namespace Fel.Core.Entities
         public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
         public ICollection<Document> Documents { get; set; } = new List<Document>();
         public ICollection<ClientUser> Users { get; set; } = new List<ClientUser>();
+        public ICollection<Branch> Branches { get; set; } = new List<Branch>();
         public ICollection<Customer> Customers { get; set; } = new List<Customer>();
         public ICollection<Product> Products { get; set; } = new List<Product>();
     }

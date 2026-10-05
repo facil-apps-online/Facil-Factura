@@ -161,6 +161,10 @@ namespace Fel.Api.Tenant.Controllers
                 .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
                 
             if (client == null) return NotFound();
+            var mainBranchKeys = await _dbContext.Branches.AsNoTracking()
+                .Where(b => b.ClientId == client.Id && b.IsMain)
+                .Select(b => new { b.LiveApiKey, b.LiveApiSecret, b.TestApiKey, b.TestApiSecret })
+                .FirstAsync();
             return Ok(new {
                  client.Id,
                  client.CompanyName,
@@ -191,7 +195,9 @@ namespace Fel.Api.Tenant.Controllers
                 client.IsGranContribuyente,
                 client.IsAgenteRetenedorIva,
                 client.IsAutorretenedorRenta,
-                client.DecimalSeparator,
+                 client.DecimalSeparator,
+                 client.ElectronicInvoiceLegend,
+                 client.SupportDocumentLegend,
                 client.AppliesRetentions,
                 client.AssociateId,
                 client.Latitude,
@@ -199,10 +205,10 @@ namespace Fel.Api.Tenant.Controllers
                 client.IsActive,
                 client.SubscriptionRate,
                 BillingFrequency = client.BillingFrequency.ToString(),
-                client.LiveApiKey,
-                client.LiveApiSecret,
-                client.TestApiKey,
-                client.TestApiSecret
+                mainBranchKeys.LiveApiKey,
+                mainBranchKeys.LiveApiSecret,
+                mainBranchKeys.TestApiKey,
+                mainBranchKeys.TestApiSecret
             });
         }
 
@@ -260,6 +266,7 @@ namespace Fel.Api.Tenant.Controllers
             };
 
             _dbContext.Clients.Add(client);
+            _dbContext.Branches.Add(BranchProvisioning.CreateMain(client));
             _dbContext.ClientIntegratorAssignments.Add(new ClientIntegratorAssignment
             {
                 Id = Guid.NewGuid(),
@@ -332,7 +339,9 @@ namespace Fel.Api.Tenant.Controllers
             client.IsAgenteRetenedorIva = request.IsAgenteRetenedorIva;
             client.IsAutorretenedorRenta = request.IsAutorretenedorRenta;
             // Solo se cambia si viene un valor válido: un portal con una versión anterior del formulario no lo envía.
-            if (DecimalSeparators.IsValid(request.DecimalSeparator)) client.DecimalSeparator = request.DecimalSeparator!;
+             if (DecimalSeparators.IsValid(request.DecimalSeparator)) client.DecimalSeparator = request.DecimalSeparator!;
+             client.ElectronicInvoiceLegend = request.ElectronicInvoiceLegend?.Trim() ?? string.Empty;
+             client.SupportDocumentLegend = request.SupportDocumentLegend?.Trim() ?? string.Empty;
             client.AppliesRetentions = request.AppliesRetentions;
             client.AssociateId = request.AssociateId;
             client.Latitude = request.Latitude;
@@ -795,19 +804,20 @@ namespace Fel.Api.Tenant.Controllers
             var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
             
             if (client == null) return NotFound();
+            var branch = await _dbContext.Branches.FirstAsync(b => b.ClientId == client.Id && b.IsMain);
 
             var newKey = $"sk_{env.ToLower()}_{Guid.NewGuid().ToString("N")}";
             var newSecret = Guid.NewGuid().ToString("N");
 
             if (env.Equals("live", StringComparison.OrdinalIgnoreCase))
             {
-                client.LiveApiKey = newKey;
-                client.LiveApiSecret = newSecret;
+                branch.LiveApiKey = newKey;
+                branch.LiveApiSecret = newSecret;
             }
             else if (env.Equals("test", StringComparison.OrdinalIgnoreCase))
             {
-                client.TestApiKey = newKey;
-                client.TestApiSecret = newSecret;
+                branch.TestApiKey = newKey;
+                branch.TestApiSecret = newSecret;
             }
             else
             {
@@ -864,13 +874,14 @@ namespace Fel.Api.Tenant.Controllers
         // Compras/Servicios generales y Honorarios (ver DefaultCatalogSets); ReteIVA y el resto del
         // catálogo quedan disponibles para que el Tenant los habilite solo donde aplique.
         [HttpGet("{id}/enabled-retention-concepts")]
-        public async Task<IActionResult> GetEnabledRetentionConcepts(Guid id)
+        public async Task<IActionResult> GetEnabledRetentionConcepts(Guid id, [FromQuery] ProductScope scope = ProductScope.Invoice)
         {
             var tenantId = GetCurrentTenantId();
             if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
 
             var enabledIds = await _dbContext.ClientEnabledRetentionConcepts
                 .Where(e => e.ClientId == id)
+                .Where(e => e.Scope == scope)
                 .Select(e => e.RetentionConceptId)
                 .ToListAsync();
 
@@ -889,12 +900,13 @@ namespace Fel.Api.Tenant.Controllers
             var tenantId = GetCurrentTenantId();
             if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
 
-            var existing = await _dbContext.ClientEnabledRetentionConcepts.Where(e => e.ClientId == id).ToListAsync();
+            var scope = request.Scope;
+            var existing = await _dbContext.ClientEnabledRetentionConcepts.Where(e => e.ClientId == id && e.Scope == scope).ToListAsync();
             _dbContext.ClientEnabledRetentionConcepts.RemoveRange(existing);
 
             foreach (var retentionConceptId in request.Ids.Distinct())
             {
-                _dbContext.ClientEnabledRetentionConcepts.Add(new ClientEnabledRetentionConcept { Id = Guid.NewGuid(), ClientId = id, RetentionConceptId = retentionConceptId });
+                _dbContext.ClientEnabledRetentionConcepts.Add(new ClientEnabledRetentionConcept { Id = Guid.NewGuid(), ClientId = id, RetentionConceptId = retentionConceptId, Scope = scope });
             }
 
             await _dbContext.SaveChangesAsync();
@@ -905,6 +917,7 @@ namespace Fel.Api.Tenant.Controllers
     public class SetEnabledIdsRequest
     {
         public List<Guid> Ids { get; set; } = new();
+        public ProductScope Scope { get; set; } = ProductScope.Invoice;
     }
 
     public class CreateClientRequest
@@ -938,7 +951,9 @@ namespace Fel.Api.Tenant.Controllers
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
-        public string? DecimalSeparator { get; set; }
+         public string? DecimalSeparator { get; set; }
+         public string? ElectronicInvoiceLegend { get; set; }
+         public string? SupportDocumentLegend { get; set; }
         public Guid? AssociateId { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
@@ -1030,6 +1045,8 @@ namespace Fel.Api.Tenant.Controllers
         public decimal SubscriptionRate { get; set; }
         public string BillingFrequency { get; set; } = "Monthly";
         public bool AppliesRetentions { get; set; } = true;
+        public string? ElectronicInvoiceLegend { get; set; }
+        public string? SupportDocumentLegend { get; set; }
         public Guid? AssociateId { get; set; }
     }
 }

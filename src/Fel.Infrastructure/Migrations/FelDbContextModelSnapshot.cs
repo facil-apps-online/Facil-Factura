@@ -56,6 +56,71 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("Associates");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.Branch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsMain")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LiveApiKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("LiveApiSecret")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("TestApiKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("TestApiSecret")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Branches_ClientId_Main")
+                        .HasFilter("[IsMain] = 1");
+
+                    b.HasIndex("LiveApiKey")
+                        .IsUnique();
+
+                    b.HasIndex("TestApiKey")
+                        .IsUnique();
+
+                    b.HasIndex("ClientId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("Branches", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Certificate", b =>
                 {
                     b.Property<Guid>("Id")
@@ -876,6 +941,11 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("ElectronicInvoiceLegend")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -1097,6 +1167,15 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<decimal>("SubscriptionRate")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("SupportAdjustmentPrefix")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("SupportDocumentLegend")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<string>("TaxId")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -1242,11 +1321,14 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<Guid>("RetentionConceptId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("Scope")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("RetentionConceptId");
 
-                    b.HasIndex("ClientId", "RetentionConceptId")
+                    b.HasIndex("ClientId", "RetentionConceptId", "Scope")
                         .IsUnique();
 
                     b.ToTable("ClientEnabledRetentionConcepts", (string)null);
@@ -1397,6 +1479,9 @@ namespace Fel.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("AllBranches")
+                        .HasColumnType("bit");
+
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1418,11 +1503,31 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ClientId");
 
                     b.ToTable("ClientUsers");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientUserBranch", b =>
+                {
+                    b.Property<Guid>("ClientUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BranchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ClientUserId", "BranchId");
+
+                    b.HasIndex("BranchId");
+
+                    b.ToTable("ClientUserBranches", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Customer", b =>
@@ -1553,7 +1658,7 @@ namespace Fel.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ClientId", "IdentificationNumber")
+                    b.HasIndex("ClientId", "IdentificationNumber", "PartyType")
                         .IsUnique();
 
                     b.ToTable("Customers", (string)null);
@@ -1635,6 +1740,9 @@ namespace Fel.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("BranchId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1704,6 +1812,10 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("PdfUrl")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Prefix")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<decimal>("PriceCharged")
                         .HasColumnType("decimal(18,2)");
 
@@ -1760,6 +1872,8 @@ namespace Fel.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BranchId");
 
                     b.HasIndex("ClientId");
 
@@ -1873,6 +1987,44 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("DocumentItems", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentLegendByPrefix", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "DocumentType", "Prefix")
+                        .IsUnique();
+
+                    b.ToTable("DocumentLegendByPrefixes", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentRetention", b =>
@@ -2570,6 +2722,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("RetentionGroupKey")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("Scope")
+                        .HasColumnType("int");
+
                     b.Property<string>("StandardCode")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -2587,7 +2742,7 @@ namespace Fel.Infrastructure.Migrations
 
                     b.HasIndex("UnitOfMeasureId");
 
-                    b.HasIndex("ClientId", "Code")
+                    b.HasIndex("ClientId", "Scope", "Code")
                         .IsUnique();
 
                     b.ToTable("Products", (string)null);
@@ -2621,6 +2776,9 @@ namespace Fel.Infrastructure.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("BranchId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("ClientId")
@@ -2664,6 +2822,8 @@ namespace Fel.Infrastructure.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BranchId");
 
                     b.HasIndex("ClientId");
 
@@ -2755,6 +2915,21 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("ClientId");
 
                     b.ToTable("Resolutions", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ResolutionBranch", b =>
+                {
+                    b.Property<Guid>("ResolutionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BranchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ResolutionId", "BranchId");
+
+                    b.HasIndex("BranchId");
+
+                    b.ToTable("ResolutionBranches", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.RetentionConcept", b =>
@@ -4776,6 +4951,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.Branch", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany("Branches")
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Certificate", b =>
                 {
                     b.HasOne("Fel.Core.Entities.CertificateRequest", "CertificateRequest")
@@ -5127,6 +5313,25 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Client");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.ClientUserBranch", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.ClientUser", "ClientUser")
+                        .WithMany("Branches")
+                        .HasForeignKey("ClientUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Branch");
+
+                    b.Navigation("ClientUser");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.Customer", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Client", "Client")
@@ -5157,6 +5362,11 @@ namespace Fel.Infrastructure.Migrations
 
             modelBuilder.Entity("Fel.Core.Entities.Document", b =>
                 {
+                    b.HasOne("Fel.Core.Entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Fel.Core.Entities.Client", "Client")
                         .WithMany("Documents")
                         .HasForeignKey("ClientId")
@@ -5192,6 +5402,8 @@ namespace Fel.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("UsedTemplateId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Branch");
 
                     b.Navigation("Client");
 
@@ -5235,6 +5447,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Document");
 
                     b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentLegendByPrefix", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Client");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentRetention", b =>
@@ -5329,11 +5552,18 @@ namespace Fel.Infrastructure.Migrations
 
             modelBuilder.Entity("Fel.Core.Entities.ReceivedDocument", b =>
                 {
+                    b.HasOne("Fel.Core.Entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Fel.Core.Entities.Client", "Client")
                         .WithMany()
                         .HasForeignKey("ClientId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Branch");
 
                     b.Navigation("Client");
                 });
@@ -5358,6 +5588,25 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Client");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ResolutionBranch", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.Resolution", "Resolution")
+                        .WithMany()
+                        .HasForeignKey("ResolutionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Branch");
+
+                    b.Navigation("Resolution");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.TariffTier", b =>
@@ -5539,6 +5788,8 @@ namespace Fel.Infrastructure.Migrations
 
             modelBuilder.Entity("Fel.Core.Entities.Client", b =>
                 {
+                    b.Navigation("Branches");
+
                     b.Navigation("Certificates");
 
                     b.Navigation("Customers");
@@ -5555,6 +5806,11 @@ namespace Fel.Infrastructure.Migrations
             modelBuilder.Entity("Fel.Core.Entities.ClientPrepaidPackage", b =>
                 {
                     b.Navigation("Bags");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientUser", b =>
+                {
+                    b.Navigation("Branches");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Document", b =>

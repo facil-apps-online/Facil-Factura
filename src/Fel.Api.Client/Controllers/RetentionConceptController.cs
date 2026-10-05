@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,7 @@ namespace Fel.Api.Client.Controllers
     // de persona ni mínimo en UVT).
     [ApiController]
     [Route("api/client/retention-concepts")]
-    public class RetentionConceptController : ControllerBase
+    public class RetentionConceptController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
 
@@ -24,25 +25,17 @@ namespace Fel.Api.Client.Controllers
             _dbContext = dbContext;
         }
 
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr) && Guid.TryParse(clientIdStr, out var clientId))
-            {
-                return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
-        }
-
         // Solo las variantes habilitadas para este Client, para que el cliente elija manualmente
         // por línea de factura cuál retención aplica — sin ninguna resolución automática (ver
         // InvoicesPage.tsx).
         [HttpGet("catalog")]
-        public async Task<IActionResult> GetCatalog()
+        public async Task<IActionResult> GetCatalog([FromQuery] ProductScope scope = ProductScope.Invoice)
         {
             var clientId = GetCurrentClientId();
 
             var enabledIds = await _dbContext.ClientEnabledRetentionConcepts
                 .Where(e => e.ClientId == clientId)
+                .Where(e => e.Scope == scope)
                 .Select(e => e.RetentionConceptId)
                 .ToListAsync();
 

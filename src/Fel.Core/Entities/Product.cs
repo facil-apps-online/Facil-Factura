@@ -9,6 +9,8 @@ namespace Fel.Core.Entities
         public Guid ClientId { get; set; }
         public Client? Client { get; set; }
 
+        public ProductScope Scope { get; set; } = ProductScope.Invoice;
+
         public string Code { get; set; } = string.Empty; // SKU o Referencia interna
         public string StandardCode { get; set; } = string.Empty; // Ej: UNSPSC (Obligatorio en algunos sectores)
         public string Name { get; set; } = string.Empty;

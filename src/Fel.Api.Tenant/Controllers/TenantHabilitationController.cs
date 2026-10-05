@@ -143,6 +143,7 @@ namespace Fel.Api.Tenant.Controllers
             {
                 testResolution = new Fel.Core.Entities.Resolution { Id = Guid.NewGuid(), ClientId = client.Id, DocumentType = "FE-TEST" };
                 _dbContext.Resolutions.Add(testResolution);
+                _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(testResolution.Id, await BranchProvisioning.MainBranchIdAsync(_dbContext, client.Id)));
             }
 
             testResolution.Prefix = scrapeResult.Prefix;

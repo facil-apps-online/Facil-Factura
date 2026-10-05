@@ -92,5 +92,7 @@ namespace Fel.Infrastructure.Dataico.Models
         public string? PdfUrl { get; set; }
         public string? QrCode { get; set; }
         public string? ErrorMessage { get; set; }
+        // Cuerpo JSON exacto que se envió a Dataico; sirve para diagnosticar rechazos poco claros.
+        public string? RequestBody { get; set; }
     }
 }

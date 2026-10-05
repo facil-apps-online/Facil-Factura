@@ -14,7 +14,7 @@ namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/products")]
-    public class ProductController : ControllerBase
+    public class ProductController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
 
@@ -23,18 +23,8 @@ namespace Fel.Api.Client.Controllers
             _dbContext = dbContext;
         }
 
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
-        }
-
         [HttpGet]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] ProductScope? scope = null)
         {
             try
             {
@@ -42,7 +32,7 @@ namespace Fel.Api.Client.Controllers
                 var products = await _dbContext.Products
                     .Include(p => p.Taxes)
                     .Include(p => p.UnitOfMeasure)
-                    .Where(p => p.ClientId == clientId)
+                    .Where(p => p.ClientId == clientId && (!scope.HasValue || p.Scope == scope.Value))
                     .OrderByDescending(p => p.CreatedAt)
                     .ToListAsync();
 
@@ -83,16 +73,23 @@ namespace Fel.Api.Client.Controllers
                 
                 // Validar si ya existe
                 var existing = await _dbContext.Products
-                    .FirstOrDefaultAsync(p => p.ClientId == clientId && p.Code == product.Code);
+                    .FirstOrDefaultAsync(p => p.ClientId == clientId && p.Scope == product.Scope && p.Code == product.Code);
                     
                 if (existing != null)
                     return BadRequest("Ya existe un producto con este código/SKU.");
 
                 product.Id = Guid.NewGuid();
                 product.ClientId = clientId;
+                if (!Enum.IsDefined(product.Scope)) return BadRequest("La familia del producto no es válida.");
                 product.CreatedAt = DateTime.UtcNow;
                 product.UpdatedAt = DateTime.UtcNow;
-                if (product.IvaTreatment != IvaTreatment.Gravado) product.IvaRate = 0;
+                if (product.Scope == ProductScope.Support)
+                {
+                    product.IvaTreatment = IvaTreatment.Exento;
+                    product.IvaRate = 0;
+                    product.Taxes.Clear();
+                }
+                else if (product.IvaTreatment != IvaTreatment.Gravado) product.IvaRate = 0;
                 if (string.IsNullOrWhiteSpace(product.RetentionGroupKey)) product.RetentionGroupKey = null;
 
                 foreach (var tax in product.Taxes)
@@ -124,13 +121,16 @@ namespace Fel.Api.Client.Controllers
 
                 if (product == null) return NotFound("Producto no encontrado.");
 
+                if (!Enum.IsDefined(updateData.Scope)) return BadRequest("La familia del producto no es válida.");
+
                 product.Code = updateData.Code;
+                product.Scope = updateData.Scope;
                 product.StandardCode = updateData.StandardCode;
                 product.Name = updateData.Name;
                 product.UnitPrice = updateData.UnitPrice;
                 product.UnitOfMeasureId = updateData.UnitOfMeasureId;
-                product.IvaTreatment = updateData.IvaTreatment;
-                product.IvaRate = updateData.IvaTreatment == IvaTreatment.Gravado ? updateData.IvaRate : 0;
+                product.IvaTreatment = product.Scope == ProductScope.Support ? IvaTreatment.Exento : updateData.IvaTreatment;
+                product.IvaRate = product.Scope == ProductScope.Support ? 0 : updateData.IvaTreatment == IvaTreatment.Gravado ? updateData.IvaRate : 0;
                 product.RetentionGroupKey = string.IsNullOrWhiteSpace(updateData.RetentionGroupKey) ? null : updateData.RetentionGroupKey;
                 product.UpdatedAt = DateTime.UtcNow;
 
@@ -141,7 +141,7 @@ namespace Fel.Api.Client.Controllers
                 // al guardar — mismo patrón ya resuelto en InvoiceController para los ítems.
                 _dbContext.ProductTaxes.RemoveRange(product.Taxes);
                 product.Taxes.Clear();
-                foreach (var t in updateData.Taxes)
+                foreach (var t in product.Scope == ProductScope.Support ? Enumerable.Empty<ProductTax>() : updateData.Taxes)
                 {
                     _dbContext.ProductTaxes.Add(new ProductTax
                     {
@@ -231,7 +231,9 @@ namespace Fel.Api.Client.Controllers
                             continue;
                         }
 
-                        if (await _dbContext.Products.AnyAsync(p => p.ClientId == clientId && p.Code == code))
+                        var scope = ParseScope(Request.Query["scope"]);
+
+                        if (await _dbContext.Products.AnyAsync(p => p.ClientId == clientId && p.Scope == scope && p.Code == code))
                         {
                             summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = $"Ya existe un producto con código {code}." });
                             summary.Failed++;
@@ -247,18 +249,19 @@ namespace Fel.Api.Client.Controllers
                         {
                             Id = Guid.NewGuid(),
                             ClientId = clientId,
+                            Scope = scope,
                             Code = code,
                             Name = name,
                             StandardCode = row.Cell(3).GetString().Trim(),
                             UnitPrice = row.Cell(4).GetValue<decimal>(),
                             UnitOfMeasureId = unitsByDianCode.TryGetValue(row.Cell(5).GetString().Trim(), out var uomId) ? uomId : Fel.Core.Entities.UnitOfMeasure.DefaultUnidadId,
-                            IvaTreatment = ivaTreatment,
-                            IvaRate = ivaTreatment == IvaTreatment.Gravado && !row.Cell(7).IsEmpty() ? row.Cell(7).GetValue<decimal>() : 0,
+                            IvaTreatment = scope == ProductScope.Support ? IvaTreatment.Exento : ivaTreatment,
+                            IvaRate = scope == ProductScope.Support ? 0 : ivaTreatment == IvaTreatment.Gravado && !row.Cell(7).IsEmpty() ? row.Cell(7).GetValue<decimal>() : 0,
                             CreatedAt = DateTime.UtcNow,
                             UpdatedAt = DateTime.UtcNow
                         };
 
-                        var taxCategory = row.Cell(8).GetString().Trim();
+                        var taxCategory = scope == ProductScope.Support ? string.Empty : row.Cell(8).GetString().Trim();
                         var taxRateCell = row.Cell(9);
                         if (!string.IsNullOrWhiteSpace(taxCategory) && !taxRateCell.IsEmpty())
                         {
@@ -290,6 +293,11 @@ namespace Fel.Api.Client.Controllers
                 return Unauthorized(ex.Message);
             }
         }
+
+        private static ProductScope ParseScope(string? value) =>
+            !string.IsNullOrWhiteSpace(value) && Enum.TryParse<ProductScope>(value, true, out var scope)
+                ? scope
+                : ProductScope.Invoice;
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)

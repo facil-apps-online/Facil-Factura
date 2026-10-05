@@ -6,12 +6,14 @@ using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
+using Fel.Api.Security;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/dian")]
-    public class ClientDianController : ControllerBase
+    [ClientRole(ClientUserRoles.Administrator)]
+    public class ClientDianController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
         private readonly DianHabilitationScraperService _scraperService;
@@ -24,16 +26,6 @@ namespace Fel.Api.Client.Controllers
             _scraperService = scraperService;
             _submissionService = submissionService;
             _logger = logger;
-        }
-
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
         }
 
         // El nombre y el PIN del software propio nunca vienen del caller — los genera/lee el
@@ -90,6 +82,7 @@ namespace Fel.Api.Client.Controllers
                 {
                     testResolution = new Resolution { Id = Guid.NewGuid(), ClientId = client.Id, DocumentType = "FE-TEST" };
                     _dbContext.Resolutions.Add(testResolution);
+                    _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(testResolution.Id, GetCurrentBranchId()));
                 }
 
                 testResolution.Prefix = result.Prefix;

@@ -8,6 +8,8 @@ namespace Fel.Core.Models
     {
         public string DocumentNumber { get; set; } = string.Empty;
         public string Prefix { get; set; } = string.Empty;
+        // Sucursal dueña de la llave de API con la que se envió el documento (la API de integración la resuelve; el Worker la guarda).
+        public Guid? BranchId { get; set; }
         public DateTime IssueDate { get; set; }
         public DateTime IssueTime { get; set; }
         

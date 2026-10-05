@@ -7,6 +7,7 @@ using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Dian;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Api.Integration.Security
 {
@@ -83,7 +84,7 @@ namespace Fel.Api.Integration.Security
             Resolution? resolution = null;
             if (documentTypeCode != null)
             {
-                resolution = await dbContext.Resolutions.FirstOrDefaultAsync(
+                resolution = await dbContext.Resolutions.ForBranch(dbContext, controlador.HttpContext.GetBranchId()).FirstOrDefaultAsync(
                     r => r.ClientId == clientId && r.IsActive && r.DocumentType == documentTypeCode && r.Prefix == prefix);
 
                 // A un Client de prueba tampoco se le exige tener resolución cargada: si no la

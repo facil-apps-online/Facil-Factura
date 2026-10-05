@@ -12,12 +12,13 @@ using Fel.Infrastructure.Dataico;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/payroll")]
-    public class PayrollController : ControllerBase
+    public class PayrollController : ClientPortalControllerBase
     {
         private const string TypeCode = "NE";
         // No corresponden a filas propias del catálogo DocumentTypes (ambas caen bajo el mismo
@@ -43,16 +44,6 @@ namespace Fel.Api.Client.Controllers
             _customPdfService = customPdfService;
         }
 
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
-        }
-
         // Sin from/to, el rango por defecto cubre el mes calendario en curso más el anterior (los
         // 1-2 meses que se suelen revisar juntos en nómina), no días corridos — misma razón que en
         // InvoiceController.GetAll.
@@ -65,7 +56,7 @@ namespace Fel.Api.Client.Controllers
                 var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1).AddMonths(-1)).Date;
                 var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
-                var entries = await _dbContext.Documents
+                var entries = await BranchDocuments
                     .Include(d => d.Customer)
                     .Where(d => d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode) && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
                     .OrderByDescending(d => d.IssueDate)
@@ -107,7 +98,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var document = await _dbContext.Documents
+                var document = await BranchDocuments
                     .Include(d => d.Customer)
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode));
 
@@ -151,7 +142,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var related = await _dbContext.Documents
+                var related = await BranchDocuments
                     .Where(d => d.ClientId == clientId && d.ReferenceDocumentId == id)
                     .OrderByDescending(d => d.IssueDate)
                     .Select(d => new { d.Id, d.Number, d.TypeCode, d.Status, d.TotalAmount, d.IssueDate })
@@ -175,7 +166,7 @@ namespace Fel.Api.Client.Controllers
                 var employee = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == request.EmployeeId && c.ClientId == clientId && c.PartyType == PartyType.Empleado);
                 if (employee == null) return BadRequest("El empleado seleccionado no existe.");
 
-                var document = BuildDraftDocument(clientId, employee.Id, request);
+                var document = BuildDraftDocument(clientId, GetCurrentBranchId(), employee.Id, request);
                 document.Status = "DRAFT";
 
                 _dbContext.Documents.Add(document);
@@ -195,14 +186,14 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var document = await _dbContext.Documents.FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode));
+                var document = await BranchDocuments.FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode));
                 if (document == null) return NotFound("Nómina no encontrada.");
                 if (!IsEditable(document.Status)) return BadRequest("Solo se pueden modificar borradores o nóminas rechazadas.");
 
                 var employee = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == request.EmployeeId && c.ClientId == clientId && c.PartyType == PartyType.Empleado);
                 if (employee == null) return BadRequest("El empleado seleccionado no existe.");
 
-                var updated = BuildDraftDocument(clientId, employee.Id, request);
+                var updated = BuildDraftDocument(clientId, GetCurrentBranchId(), employee.Id, request);
                 document.CustomerId = employee.Id;
                 document.Subtotal = updated.Subtotal;
                 document.TaxAmount = updated.TaxAmount;
@@ -224,7 +215,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var document = await _dbContext.Documents
+                var document = await BranchDocuments
                     .Include(d => d.Customer)
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode));
 
@@ -245,7 +236,7 @@ namespace Fel.Api.Client.Controllers
                 // NextNumber, con el mismo mecanismo atómico que ya usan las facturas.
                 if (!document.ResolutionId.HasValue)
                 {
-                    var payrollResolution = await _dbContext.Resolutions
+                    var payrollResolution = await _dbContext.Resolutions.ForBranch(_dbContext, document.BranchId)
                         .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "NE")
                         .OrderByDescending(r => r.IsDefault)
                         .ThenByDescending(r => r.ValidTo)
@@ -263,6 +254,8 @@ namespace Fel.Api.Client.Controllers
                 var documentNumber = long.Parse(document.Number);
 
                 var draft = DeserializeDraft(document.SectorExtensionData);
+                // El prefijo queda guardado en el documento (la nómina lo lleva en su borrador).
+                document.Prefix = draft.Prefix;
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
 
                 if (document.TypeCode == DeletionTypeCode || document.TypeCode == ReplacementTypeCode)
@@ -351,7 +344,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var document = await _dbContext.Documents.FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode));
+                var document = await BranchDocuments.FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode));
                 if (document == null) return NotFound("Nómina no encontrada.");
                 if (!IsEditable(document.Status)) return BadRequest("Solo se pueden eliminar borradores o nóminas rechazadas.");
 
@@ -642,6 +635,7 @@ namespace Fel.Api.Client.Controllers
                         {
                             Id = Guid.NewGuid(),
                             ClientId = clientId,
+                            BranchId = GetCurrentBranchId(),
                             CustomerId = employee.Id,
                             Customer = employee,
                             TypeCode = "NE",
@@ -689,7 +683,10 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
-        private static Document BuildDraftDocument(Guid clientId, Guid employeeId, CreatePayrollRequest request)
+        // Documentos de la sucursal activa (todas las del usuario si eligió "todas"), para consultar.
+        private IQueryable<Document> BranchDocuments => _dbContext.Documents.ForBranch(CurrentBranchScope);
+
+        private static Document BuildDraftDocument(Guid clientId, Guid branchId, Guid employeeId, CreatePayrollRequest request)
         {
             var accruals = request.Accruals ?? new List<PayrollConceptItem>();
             var deductions = request.Deductions ?? new List<PayrollConceptItem>();
@@ -710,6 +707,7 @@ namespace Fel.Api.Client.Controllers
             {
                 Id = Guid.NewGuid(),
                 ClientId = clientId,
+                BranchId = branchId,
                 CustomerId = employeeId,
                 TypeCode = request.NoteType == "ELIMINACION" ? DeletionTypeCode : request.NoteType == "REEMPLAZO" ? ReplacementTypeCode : TypeCode,
                 Number = DateTime.UtcNow.Ticks.ToString(),

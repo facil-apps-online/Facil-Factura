@@ -89,7 +89,7 @@ namespace Fel.Infrastructure.Dataico
                     ["QrCode"] = document.QrCode ?? document.Cufe,
                     // URL del QR (ver InvoiceReportDataMapper): Facil Reports la reconoce y genera el QR
                     // localmente; con el motor DevExpress se descarga de ese servicio.
-                    ["QrImageUrl"] = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + Uri.EscapeDataString(document.QrCode ?? document.Cufe ?? string.Empty),
+                    ["QrImageUrl"] = QrImageDataUri.FromText(document.QrCode ?? document.Cufe),
 
                     ["TotalDevengado"] = Money(totalDevengado),
                     ["TotalDeduccion"] = Money(totalDeduccion),

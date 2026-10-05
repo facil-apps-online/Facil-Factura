@@ -8,12 +8,13 @@ using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Dataico;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/support-documents")]
-    public class SupportDocumentController : ControllerBase
+    public class SupportDocumentController : ClientPortalControllerBase
     {
         private const string TypeCode = "DS";
         private const string AdjustmentTypeCode = "DS-AJUSTE";
@@ -45,24 +46,16 @@ namespace Fel.Api.Client.Controllers
         private readonly IDataicoApiService _dataicoApiService;
         private readonly DataicoCustomPdfService _customPdfService;
         private readonly IFacilReportsClient _facilReportsClient;
+        private readonly Fel.Infrastructure.Services.DocumentLegendService _legendService;
 
-        public SupportDocumentController(FelDbContext dbContext, ICryptoService cryptoService, IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, IFacilReportsClient facilReportsClient)
+        public SupportDocumentController(FelDbContext dbContext, ICryptoService cryptoService, IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, IFacilReportsClient facilReportsClient, Fel.Infrastructure.Services.DocumentLegendService legendService)
         {
             _facilReportsClient = facilReportsClient;
             _dbContext = dbContext;
             _cryptoService = cryptoService;
             _dataicoApiService = dataicoApiService;
             _customPdfService = customPdfService;
-        }
-
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
+            _legendService = legendService;
         }
 
         // Ver el comentario equivalente en InvoiceController.
@@ -88,7 +81,7 @@ namespace Fel.Api.Client.Controllers
                 var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1)).Date;
                 var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
-                var docs = await _dbContext.Documents
+                var docs = await BranchDocuments
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Where(d => d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode) && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
@@ -109,7 +102,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var document = await _dbContext.Documents
+                var document = await BranchDocuments
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
@@ -132,7 +125,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var related = await _dbContext.Documents
+                var related = await BranchDocuments
                     .Where(d => d.ClientId == clientId && d.ReferenceDocumentId == id)
                     .OrderByDescending(d => d.IssueDate)
                     .Select(d => new { d.Id, d.Number, d.TypeCode, d.Status, d.TotalAmount, d.IssueDate })
@@ -154,7 +147,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var document = await _dbContext.Documents
+                var document = await BranchDocuments
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
@@ -176,7 +169,7 @@ namespace Fel.Api.Client.Controllers
                 }
 
                 var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
-                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog);
+                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode));
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {
@@ -209,7 +202,7 @@ namespace Fel.Api.Client.Controllers
                 var dateError = ValidateIssueDate(request.IssueDate);
                 if (dateError != null) return BadRequest(dateError);
 
-                var document = BuildDocument(clientId, provider.Id, request);
+                var document = BuildDocument(clientId, GetCurrentBranchId(), provider.Id, request);
                 document.DocumentTypeId = await GetDocumentTypeIdAsync(document.TypeCode);
                 document.Status = "DRAFT";
 
@@ -234,7 +227,7 @@ namespace Fel.Api.Client.Controllers
                 // completos) y si quedan trackeadas, EF genera un DELETE explícito para ellas que
                 // choca con el ON DELETE CASCADE de la FK, tirando DbUpdateConcurrencyException
                 // (la fila ya no existe porque la BD la borró en cascada al borrar el ítem padre).
-                var document = await _dbContext.Documents
+                var document = await BranchDocuments
                     .Include(d => d.Items.OrderBy(i => i.LineNumber))
                     .Include(d => d.GeneralRetentions)
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode));
@@ -248,7 +241,7 @@ namespace Fel.Api.Client.Controllers
                 var dateError = ValidateIssueDate(request.IssueDate);
                 if (dateError != null) return BadRequest(dateError);
 
-                var updated = BuildDocument(clientId, provider.Id, request);
+                var updated = BuildDocument(clientId, GetCurrentBranchId(), provider.Id, request);
 
                 document.CustomerId = provider.Id;
                 document.IssueDate = updated.IssueDate;
@@ -309,7 +302,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var document = await _dbContext.Documents
+                var document = await BranchDocuments
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
                     .Include(d => d.Customer)
@@ -331,9 +324,9 @@ namespace Fel.Api.Client.Controllers
                 // predeterminada, y si ninguna lo está, se cae al comportamiento anterior (la más
                 // reciente por vigencia) para no romper clientes que aún no eligieron default.
                 var resolution = document.ResolutionId.HasValue
-                    ? await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == document.ResolutionId.Value && r.ClientId == clientId && r.IsActive)
-                    : await _dbContext.Resolutions
-                        .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == TypeCode)
+                    ? await _dbContext.Resolutions.ForBranch(_dbContext, document.BranchId).FirstOrDefaultAsync(r => r.Id == document.ResolutionId.Value && r.ClientId == clientId && r.IsActive)
+                    : await _dbContext.Resolutions.ForBranch(_dbContext, document.BranchId)
+                        .Where(r => r.ClientId == clientId && r.IsActive && (r.DocumentType == TypeCode || r.DocumentType == "POS"))
                         .OrderByDescending(r => r.IsDefault)
                         .ThenByDescending(r => r.ValidTo)
                         .FirstOrDefaultAsync();
@@ -378,6 +371,14 @@ namespace Fel.Api.Client.Controllers
                     }
                 }
 
+                // Prefijo del documento: se guarda en el propio documento y es el mismo que se envía a Dataico. El del
+                // soporte es el de su resolución. La nota de ajuste usa el configurado en Consecutivos de Notas (la
+                // numeración de ajustes de Dataico es distinta de la del soporte); sin uno configurado conserva el que
+                // ya tenga el documento y, si no tiene, el de la resolución.
+                document.Prefix = document.TypeCode == AdjustmentTypeCode
+                    ? (!string.IsNullOrWhiteSpace(client.SupportAdjustmentPrefix) ? client.SupportAdjustmentPrefix : (document.Prefix ?? resolution.Prefix))
+                    : resolution.Prefix;
+
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
                 if (document.TypeCode == AdjustmentTypeCode)
                 {
@@ -413,9 +414,10 @@ namespace Fel.Api.Client.Controllers
 
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
+                    var leyenda = await _legendService.ResolveAsync(client, resolution, document.TypeCode);
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
-                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog),
+                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda),
                         credentials);
                 }
 
@@ -423,7 +425,14 @@ namespace Fel.Api.Client.Controllers
 
                 if (!result.Success)
                 {
-                    return BadRequest(new { message = "Dataico rechazó el documento soporte.", detail = document.DianResponseMessage });
+                    // `sent` es el JSON exacto enviado a Dataico, para comparar contra un envío que sí se aceptó.
+                    object? sent = null;
+                    if (!string.IsNullOrWhiteSpace(result.RequestBody))
+                    {
+                        try { sent = System.Text.Json.JsonDocument.Parse(result.RequestBody).RootElement.Clone(); }
+                        catch (System.Text.Json.JsonException) { sent = result.RequestBody; }
+                    }
+                    return BadRequest(new { message = "Dataico rechazó el documento soporte.", detail = document.DianResponseMessage, sent });
                 }
 
                 return Ok(new { message = "Documento soporte emitido correctamente.", document });
@@ -440,7 +449,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var document = await _dbContext.Documents
+                var document = await BranchDocuments
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode));
 
                 if (document == null) return NotFound("Documento soporte no encontrado.");
@@ -456,15 +465,19 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
-        private static Document BuildDocument(Guid clientId, Guid providerId, CreateSupportDocumentRequest request)
+        // Documentos de la sucursal activa (todas las del usuario si eligió "todas"), para consultar.
+        private IQueryable<Document> BranchDocuments => _dbContext.Documents.ForBranch(CurrentBranchScope);
+
+        private static Document BuildDocument(Guid clientId, Guid branchId, Guid providerId, CreateSupportDocumentRequest request)
         {
-            decimal EffectiveRate(CreateSupportDocumentItem i) => i.IvaTreatment == IvaTreatment.Gravado ? i.TaxRate : 0;
+            decimal EffectiveRate(CreateSupportDocumentItem i) => 0;
             decimal LineBase(CreateSupportDocumentItem i) => i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100);
 
             var document = new Document
             {
                 Id = Guid.NewGuid(),
                 ClientId = clientId,
+                BranchId = branchId,
                 CustomerId = providerId,
                 TypeCode = request.ReferenceDocumentId.HasValue ? AdjustmentTypeCode : TypeCode,
                 // Sin número hasta publicar: ahí se reclama el consecutivo de la resolución/contador.
@@ -508,14 +521,14 @@ namespace Fel.Api.Client.Controllers
                     UnitOfMeasureDisplayFormat = string.IsNullOrWhiteSpace(item.UnitOfMeasureDisplayFormat) ? "Combined" : item.UnitOfMeasureDisplayFormat,
                     Quantity = item.Quantity,
                     UnitPrice = item.UnitPrice,
-                    IvaTreatment = item.IvaTreatment,
+                    IvaTreatment = IvaTreatment.Exento,
                     TaxRate = rate,
                     DiscountRate = item.DiscountRate,
                     TaxAmount = lineBase * rate / 100,
                     TotalAmount = lineBase * (1 + rate / 100)
                 };
 
-                foreach (var retention in item.Retentions ?? new())
+                foreach (var retention in (item.Retentions ?? new()).Where(r => !string.Equals(r.TaxCategory, "RET_IVA", StringComparison.OrdinalIgnoreCase)))
                 {
                     documentItem.Retentions.Add(new DocumentRetention
                     {
@@ -531,7 +544,7 @@ namespace Fel.Api.Client.Controllers
                 document.Items.Add(documentItem);
             }
 
-            foreach (var generalRetention in request.GeneralRetentions ?? new())
+            foreach (var generalRetention in (request.GeneralRetentions ?? new()).Where(r => !string.Equals(r.TaxCategory, "RET_IVA", StringComparison.OrdinalIgnoreCase)))
             {
                 document.GeneralRetentions.Add(new DocumentGeneralRetention
                 {

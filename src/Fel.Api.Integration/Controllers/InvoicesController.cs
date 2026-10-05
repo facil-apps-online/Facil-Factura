@@ -6,6 +6,8 @@ using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Dian;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Fel.Api.Integration.Security;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Api.Integration.Controllers
 {
@@ -70,7 +72,7 @@ namespace Fel.Api.Integration.Controllers
                 return UnprocessableEntity(new { message = $"Este emisor tiene configurado el proveedor '{client.Integrator.Code}', no emisión directa a la DIAN (NATIVE)." });
             }
 
-            var resolution = await _dbContext.Resolutions.FirstOrDefaultAsync(
+            var resolution = await _dbContext.Resolutions.ForBranch(_dbContext, HttpContext.GetBranchId()).FirstOrDefaultAsync(
                 r => r.ClientId == clientId && r.IsActive && r.DocumentType == "FE" && r.Prefix == request.Prefix);
             if (resolution == null)
             {
@@ -93,6 +95,7 @@ namespace Fel.Api.Integration.Controllers
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
             var ublData = DianDocumentMapper.BuildInvoiceDataFromRequest(request, client, resolution, municipalities);
 
+            ublData.BranchId = HttpContext.GetBranchId();
             await _messageQueue.EnqueueAsync(QueueName, ublData);
 
             return Accepted(new

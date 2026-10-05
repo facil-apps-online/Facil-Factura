@@ -13,7 +13,7 @@ namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/customers")]
-    public class CustomerController : ControllerBase
+    public class CustomerController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
         private readonly Fel.Infrastructure.Services.DianRutParserService _rutParser;
@@ -22,16 +22,6 @@ namespace Fel.Api.Client.Controllers
         {
             _dbContext = dbContext;
             _rutParser = rutParser;
-        }
-
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
         }
 
         // Lee un RUT (Formulario 001 de la DIAN) y devuelve sus datos para prellenar el alta de un
@@ -143,10 +133,12 @@ namespace Fel.Api.Client.Controllers
                 
                 // Validar si ya existe
                 var existing = await _dbContext.Customers
-                    .FirstOrDefaultAsync(c => c.ClientId == clientId && c.IdentificationNumber == customer.IdentificationNumber);
+                    .FirstOrDefaultAsync(c => c.ClientId == clientId &&
+                                              c.IdentificationNumber == customer.IdentificationNumber &&
+                                              c.PartyType == customer.PartyType);
                     
                 if (existing != null)
-                    return BadRequest("Ya existe un cliente con este número de identificación.");
+                    return BadRequest($"Ya existe un tercero con esta identificación para el rol {customer.PartyType}.");
 
                 customer.Id = Guid.NewGuid();
                 customer.ClientId = clientId;
@@ -174,6 +166,13 @@ namespace Fel.Api.Client.Controllers
                     .FirstOrDefaultAsync(c => c.Id == id && c.ClientId == clientId);
 
                 if (customer == null) return NotFound("Cliente no encontrado.");
+
+                var duplicate = await _dbContext.Customers.AnyAsync(c => c.ClientId == clientId &&
+                    c.Id != id &&
+                    c.IdentificationNumber == updateData.IdentificationNumber &&
+                    c.PartyType == updateData.PartyType);
+                if (duplicate)
+                    return BadRequest($"Ya existe un tercero con esta identificación para el rol {updateData.PartyType}.");
 
                 customer.Name = updateData.Name;
                 customer.FirstName = updateData.FirstName;
@@ -284,17 +283,18 @@ namespace Fel.Api.Client.Controllers
                             continue;
                         }
 
-                        if (await _dbContext.Customers.AnyAsync(c => c.ClientId == clientId && c.IdentificationNumber == identificationNumber))
-                        {
-                            summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = $"Ya existe un tercero con identificación {identificationNumber}." });
-                            summary.Failed++;
-                            continue;
-                        }
-
                         var partyTypeText = row.Cell(5).GetString().Trim();
                         if (!Enum.TryParse<PartyType>(partyTypeText, true, out var partyType))
                         {
                             partyType = PartyType.Cliente;
+                        }
+
+                        if (await _dbContext.Customers.AnyAsync(c => c.ClientId == clientId &&
+                            c.IdentificationNumber == identificationNumber && c.PartyType == partyType))
+                        {
+                            summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = $"Ya existe un tercero con identificación {identificationNumber}." });
+                            summary.Failed++;
+                            continue;
                         }
 
                         var customer = new Customer

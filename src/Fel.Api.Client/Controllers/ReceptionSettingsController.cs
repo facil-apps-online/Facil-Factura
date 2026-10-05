@@ -5,6 +5,8 @@ using Fel.Infrastructure.Data;
 using MailKit.Net.Imap;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Fel.Api.Security;
+using Fel.Core.Entities;
 
 namespace Fel.Api.Client.Controllers
 {
@@ -14,7 +16,8 @@ namespace Fel.Api.Client.Controllers
     /// </summary>
     [ApiController]
     [Route("api/client/reception-settings")]
-    public class ReceptionSettingsController : ControllerBase
+    [ClientRole(ClientUserRoles.Administrator)]
+    public class ReceptionSettingsController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
         private readonly ICryptoService _cryptoService;
@@ -23,16 +26,6 @@ namespace Fel.Api.Client.Controllers
         {
             _dbContext = dbContext;
             _cryptoService = cryptoService;
-        }
-
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
         }
 
         [HttpGet]

@@ -21,6 +21,10 @@ namespace Fel.Core.Entities
         public Guid Id { get; set; }
         public Guid ClientId { get; set; }
         public Client? Client { get; set; }
+
+        // Sucursal con la que se emitió el documento. Nulo solo mientras no se asigne (borradores antiguos).
+        public Guid? BranchId { get; set; }
+        public Branch? Branch { get; set; }
         
         public Guid? CustomerId { get; set; }
         public Customer? Customer { get; set; }
@@ -28,6 +32,10 @@ namespace Fel.Core.Entities
         public string TrackingId { get; set; } = string.Empty; // Transaction ID for Webhook
         public string TypeCode { get; set; } = string.Empty;
         public string Number { get; set; } = string.Empty;
+        // Prefijo con el que se numeró y se envió el documento. Es parte del documento y no se deriva de la
+        // resolución ni de la configuración actual: un documento emitido no puede cambiar de prefijo. Se fija al
+        // publicarlo (junto con el consecutivo). Null solo en borradores que aún no se publican.
+        public string? Prefix { get; set; }
         public string? Cufe { get; set; }
 
         // Contenido completo del código QR de la representación gráfica (Anexo Técnico Factura

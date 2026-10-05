@@ -6,12 +6,14 @@ using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Fel.Api.Security;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/templates")]
-    public class ClientTemplatesController : ControllerBase
+    [ClientRole(ClientUserRoles.Administrator)]
+    public class ClientTemplatesController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
         private readonly IFacilReportsClient _reportsClient;
@@ -20,16 +22,6 @@ namespace Fel.Api.Client.Controllers
         {
             _dbContext = dbContext;
             _reportsClient = reportsClient;
-        }
-
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
         }
 
         // GET: api/client/templates/available/{documentTypeId}

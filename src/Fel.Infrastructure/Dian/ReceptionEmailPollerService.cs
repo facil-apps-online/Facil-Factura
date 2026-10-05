@@ -13,6 +13,7 @@ using MailKit.Search;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MimeKit;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dian
 {
@@ -142,6 +143,7 @@ namespace Fel.Infrastructure.Dian
                 {
                     Id = Guid.NewGuid(),
                     ClientId = client.Id,
+                    BranchId = await BranchProvisioning.MainBranchIdAsync(_dbContext, client.Id),
                     SourceType = "Email",
                     RawXml = xml,
                     Cufe = parsed.Cufe,

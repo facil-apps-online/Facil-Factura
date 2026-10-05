@@ -13,13 +13,19 @@ using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Dataico;
 using Fel.Infrastructure.Dian;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/invoices")]
-    public class InvoiceController : ControllerBase
+    public class InvoiceController : ClientPortalControllerBase
     {
+        // Facturas y notas tienen esta pantalla; documento soporte y nómina tienen endpoints propios.
+        private static IQueryable<Document> InvoiceDocuments(IQueryable<Document> query, Guid clientId, Guid? branchScope) =>
+            query.Where(d => d.ClientId == clientId &&
+                ((d.TypeCode.StartsWith("FE") && d.TypeCode != "FE-TEST") || d.TypeCode == "NC" || d.TypeCode == "ND")).ForBranch(branchScope);
+
         // Editable/publicable/eliminable mientras no haya llegado exitosamente a Dataico/DIAN:
         // un DRAFT nunca se envió, y un REJECTED fue rechazado por Dataico, así que tampoco llegó.
         private static bool IsEditable(string status) => status == "DRAFT" || status == "REJECTED";
@@ -34,11 +40,12 @@ namespace Fel.Api.Client.Controllers
         private readonly IUblGenerator _ublGenerator;
         private readonly IXmlSigner _xmlSigner;
         private readonly IEmailSender _emailSender;
+        private readonly Fel.Infrastructure.Services.DocumentLegendService _legendService;
 
         public InvoiceController(
             FelDbContext dbContext, IEnumerable<IDocumentSubmissionProvider> submissionProviders, IFacilReportsClient facilReportsClient,
             IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, ICryptoService cryptoService,
-            ICryptoVault cryptoVault, IUblGenerator ublGenerator, IXmlSigner xmlSigner, IEmailSender emailSender)
+            ICryptoVault cryptoVault, IUblGenerator ublGenerator, IXmlSigner xmlSigner, IEmailSender emailSender, Fel.Infrastructure.Services.DocumentLegendService legendService)
         {
             _dbContext = dbContext;
             _submissionProviders = submissionProviders;
@@ -50,16 +57,7 @@ namespace Fel.Api.Client.Controllers
             _ublGenerator = ublGenerator;
             _xmlSigner = xmlSigner;
             _emailSender = emailSender;
-        }
-
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
+            _legendService = legendService;
         }
 
         // Medio de Pago y Forma de Pago los administra Superadmin en el mismo catálogo global que
@@ -113,7 +111,7 @@ namespace Fel.Api.Client.Controllers
                 var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1)).Date;
                 var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
-                var invoices = await _dbContext.Documents
+                var invoices = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.ReferenceDocument)
@@ -128,7 +126,8 @@ namespace Fel.Api.Client.Controllers
                 // /related por cada factura del listado (N+1).
                 var listIds = invoices.Select(i => i.Id).ToList();
                 var childNotes = await _dbContext.Documents
-                    .Where(d => d.ClientId == clientId && d.ReferenceDocumentId != null && listIds.Contains(d.ReferenceDocumentId.Value))
+                    .ForBranch(CurrentBranchScope)
+                    .Where(d => d.ClientId == clientId && (d.TypeCode == "NC" || d.TypeCode == "ND") && d.ReferenceDocumentId != null && listIds.Contains(d.ReferenceDocumentId.Value))
                     .Select(d => new { d.Id, d.Number, d.TypeCode, d.Status, d.TotalAmount, ReferenceDocumentId = d.ReferenceDocumentId!.Value })
                     .ToListAsync();
 
@@ -162,12 +161,12 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var invoice = await _dbContext.Documents
+                var invoice = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
-                    .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+                    .FirstOrDefaultAsync(d => d.Id == id);
 
                 if (invoice == null) return NotFound("Factura no encontrada.");
                 return Ok(invoice);
@@ -188,7 +187,8 @@ namespace Fel.Api.Client.Controllers
             {
                 var clientId = GetCurrentClientId();
                 var related = await _dbContext.Documents
-                    .Where(d => d.ClientId == clientId && d.ReferenceDocumentId == id)
+                    .ForBranch(CurrentBranchScope)
+                    .Where(d => d.ClientId == clientId && (d.TypeCode == "NC" || d.TypeCode == "ND") && d.ReferenceDocumentId == id)
                     .OrderByDescending(d => d.IssueDate)
                     .Select(d => new { d.Id, d.Number, d.TypeCode, d.Status, d.TotalAmount, d.IssueDate })
                     .ToListAsync();
@@ -210,12 +210,12 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var invoice = await _dbContext.Documents
+                var invoice = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
-                    .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+                    .FirstOrDefaultAsync(d => d.Id == id);
 
                 if (invoice == null) return NotFound("Factura no encontrada.");
                 if (!invoice.DocumentTypeId.HasValue) return BadRequest("El documento no tiene un tipo asignado.");
@@ -234,7 +234,7 @@ namespace Fel.Api.Client.Controllers
                     : null;
 
                 var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
-                var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, paymentMeansCatalog, formaPagoCatalog);
+                var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode));
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {
@@ -267,6 +267,7 @@ namespace Fel.Api.Client.Controllers
                 
                 invoice.Id = Guid.NewGuid();
                 invoice.ClientId = clientId;
+                invoice.BranchId = GetCurrentBranchId();
                 invoice.Status = "DRAFT";
                 invoice.CreatedAt = DateTime.UtcNow;
                 if (invoice.IssueDate == default) invoice.IssueDate = Fel.Core.Models.ColombiaTime.Now;
@@ -318,10 +319,10 @@ namespace Fel.Api.Client.Controllers
                 // completos) y si quedan trackeadas, EF genera un DELETE explícito para ellas que
                 // choca con el ON DELETE CASCADE de la FK, tirando DbUpdateConcurrencyException
                 // (la fila ya no existe porque la BD la borró en cascada al borrar el ítem padre).
-                var invoice = await _dbContext.Documents
+                var invoice = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber))
                     .Include(d => d.GeneralRetentions)
-                    .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+                    .FirstOrDefaultAsync(d => d.Id == id);
 
                 if (invoice == null) return NotFound("Factura no encontrada.");
                 if (!IsEditable(invoice.Status)) return BadRequest("Solo se pueden modificar borradores o facturas rechazadas.");
@@ -401,11 +402,11 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var invoice = await _dbContext.Documents
+                var invoice = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
                     .Include(d => d.Customer)
-                    .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+                    .FirstOrDefaultAsync(d => d.Id == id);
 
                 if (invoice == null) return NotFound("Factura no encontrada.");
 
@@ -436,8 +437,8 @@ namespace Fel.Api.Client.Controllers
                 // resolución de facturas del emisor solo presta su Prefijo (CorporateRegistrationScheme),
                 // no un rango autorizado.
                 var resolution = invoice.ResolutionId.HasValue
-                    ? await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == invoice.ResolutionId.Value && r.ClientId == clientId && r.IsActive)
-                    : await _dbContext.Resolutions
+                    ? await _dbContext.Resolutions.ForBranch(_dbContext, invoice.BranchId).FirstOrDefaultAsync(r => r.Id == invoice.ResolutionId.Value && r.ClientId == clientId && r.IsActive)
+                    : await _dbContext.Resolutions.ForBranch(_dbContext, invoice.BranchId)
                         .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
                         .OrderByDescending(r => r.IsDefault)
                         .ThenByDescending(r => r.ValidTo)
@@ -445,7 +446,7 @@ namespace Fel.Api.Client.Controllers
 
                 if (resolution == null)
                 {
-                    return BadRequest("No hay una resolución de facturación activa registrada para este emisor.");
+                    return BadRequest("No hay una resolución de facturación activa disponible para esta sucursal.");
                 }
 
                 var paymentMeans = string.IsNullOrWhiteSpace(request?.PaymentMeans) ? invoice.PaymentMeans : request.PaymentMeans;
@@ -505,8 +506,8 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var invoice = await _dbContext.Documents
-                    .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+                var invoice = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
+                    .FirstOrDefaultAsync(d => d.Id == id);
 
                 if (invoice == null) return NotFound("Factura no encontrada.");
                 if (!IsEditable(invoice.Status)) return BadRequest("Solo se pueden eliminar borradores o facturas rechazadas.");
@@ -568,7 +569,7 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");
                 }
 
-                var resolution = await _dbContext.Resolutions
+                var resolution = await _dbContext.Resolutions.ForBranch(_dbContext, CurrentBranchScope)
                     .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
                     .OrderByDescending(r => r.IsDefault)
                     .ThenByDescending(r => r.ValidTo)
@@ -576,7 +577,7 @@ namespace Fel.Api.Client.Controllers
 
                 if (resolution == null)
                 {
-                    return BadRequest("No hay una resolución de facturación activa registrada para este emisor.");
+                    return BadRequest("No hay una resolución de facturación activa disponible para esta sucursal.");
                 }
 
                 if (file == null || file.Length == 0)
@@ -603,7 +604,10 @@ namespace Fel.Api.Client.Controllers
                         var paymentMeans = headerRow.Cell(3).GetString().Trim().ToUpperInvariant();
                         var paymentMeansType = headerRow.Cell(4).GetString().Trim().ToUpperInvariant();
 
-                        var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.ClientId == clientId && c.IdentificationNumber == identification);
+                        // Esta importación no trae rol: seleccionar explícitamente el Cliente evita
+                        // ambigüedad cuando la identificación también existe como Proveedor/Empleado.
+                        var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.ClientId == clientId &&
+                            c.IdentificationNumber == identification && c.PartyType == PartyType.Cliente);
                         if (customer == null)
                         {
                             summary.Results.Add(new Fel.Api.Client.Models.ImportRowResult { Row = rowNumber, Success = false, Message = $"No existe un tercero con identificación {identification}." });
@@ -638,6 +642,7 @@ namespace Fel.Api.Client.Controllers
                         {
                             Id = Guid.NewGuid(),
                             ClientId = clientId,
+                            BranchId = GetCurrentBranchId(),
                             CustomerId = customer.Id,
                             Customer = customer,
                             TypeCode = "FE",
@@ -732,12 +737,12 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Debes indicar un correo de destino.");
                 }
 
-                var invoice = await _dbContext.Documents
+                var invoice = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
-                    .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+                    .FirstOrDefaultAsync(d => d.Id == id);
 
                 if (invoice == null) return NotFound("Factura no encontrada.");
                 if (invoice.Status != "APPROVED")
@@ -767,8 +772,9 @@ namespace Fel.Api.Client.Controllers
                     }
 
                     var (resendPaymentMeansCatalog, resendFormaPagoCatalog) = await GetPaymentCatalogsAsync();
+                    var leyenda = await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode);
                     Dictionary<string, object?> BuildReportData(DocumentTemplate template) =>
-                        InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, resendPaymentMeansCatalog, resendFormaPagoCatalog);
+                        InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, resendPaymentMeansCatalog, resendFormaPagoCatalog, leyenda);
 
                     var (pdfBytes, _) = await _customPdfService.ResolveCustomPdfAsync(invoice, client, BuildReportData);
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
@@ -836,7 +842,7 @@ namespace Fel.Api.Client.Controllers
                     }
 
                     var (publishPaymentMeansCatalog, publishFormaPagoCatalog) = await GetPaymentCatalogsAsync();
-                    var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, publishPaymentMeansCatalog, publishFormaPagoCatalog);
+                    var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, publishPaymentMeansCatalog, publishFormaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode));
                     var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                     if (pdfBytes == null)
                     {

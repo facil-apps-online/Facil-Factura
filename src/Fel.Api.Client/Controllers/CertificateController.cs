@@ -32,6 +32,13 @@ namespace Fel.Api.Client.Controllers
                 return BadRequest(new { Message = "Archivo .p12 es requerido." });
             }
 
+            // El middleware HMAC dejó el cliente dueño de la llave: solo puede cargar el certificado de su propio cliente
+            // (antes cualquier llave válida podía cargarlo para cualquier clientId del formulario).
+            if (HttpContext.Items["ClientId"] is not string authenticatedClientId || !Guid.TryParse(authenticatedClientId, out var authenticatedId) || authenticatedId != clientId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { Message = "La llave de API no corresponde a este cliente." });
+            }
+
             var client = await _dbContext.Clients.FindAsync(clientId);
             if (client == null)
             {

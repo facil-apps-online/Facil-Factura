@@ -8,12 +8,13 @@ using Microsoft.AspNetCore.Http;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Services;
+using Fel.Api.Security;
 
 namespace Fel.Api.Client.Controllers
 {
     [ApiController]
     [Route("api/client/resolutions")]
-    public class ClientResolutionsController : ControllerBase
+    public class ClientResolutionsController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
         private readonly DianResolutionParserService _parserService;
@@ -24,16 +25,6 @@ namespace Fel.Api.Client.Controllers
             _parserService = parserService;
         }
 
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
-        }
-
         [HttpGet]
         public async Task<IActionResult> GetResolutions()
         {
@@ -41,7 +32,7 @@ namespace Fel.Api.Client.Controllers
             {
                 var clientId = GetCurrentClientId();
 
-                var resolutions = await _dbContext.Resolutions
+                var resolutions = await _dbContext.Resolutions.ForBranch(_dbContext, CurrentBranchScope)
                     .Where(r => r.ClientId == clientId && r.IsActive)
                     .OrderByDescending(r => r.ValidFrom)
                     .Select(r => new
@@ -68,6 +59,7 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpPost("parse")]
         public async Task<IActionResult> ParsePdf(IFormFile file)
         {
@@ -109,6 +101,7 @@ namespace Fel.Api.Client.Controllers
             public string DocumentType { get; set; } = string.Empty;
         }
 
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpPost]
         public async Task<IActionResult> CreateResolution([FromBody] CreateResolutionRequest request)
         {
@@ -152,6 +145,7 @@ namespace Fel.Api.Client.Controllers
                 };
 
                 _dbContext.Resolutions.Add(resolution);
+                _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, GetCurrentBranchId()));
                 await _dbContext.SaveChangesAsync();
 
                 return Ok(new {
@@ -185,6 +179,7 @@ namespace Fel.Api.Client.Controllers
 
         // No incluye DocumentType a propósito: cambiar el tipo de una resolución ya en uso arrastra
         // la numeración y el default por tipo. Si hace falta otro tipo, se crea una resolución nueva.
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> UpdateResolution(Guid id, [FromBody] UpdateResolutionRequest request)
         {
@@ -234,6 +229,7 @@ namespace Fel.Api.Client.Controllers
 
         // Permite fijar manualmente el próximo consecutivo a usar — ej. al migrar desde otro
         // sistema donde ya se emitieron facturas hasta cierto número.
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpPut("{id:guid}/next-number")]
         public async Task<IActionResult> SetNextNumber(Guid id, [FromBody] SetNextNumberRequest request)
         {
@@ -255,6 +251,7 @@ namespace Fel.Api.Client.Controllers
 
         // Marca esta resolución como la predeterminada de su tipo de documento, desmarcando
         // cualquier otra resolución activa del mismo ClientId+DocumentType.
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpPut("{id:guid}/set-default")]
         public async Task<IActionResult> SetDefault(Guid id)
         {
@@ -278,6 +275,7 @@ namespace Fel.Api.Client.Controllers
             return Ok(new { resolution.Id, resolution.IsDefault });
         }
 
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteResolution(Guid id)
         {
@@ -297,6 +295,51 @@ namespace Fel.Api.Client.Controllers
         // ResolutionNumbering.ClaimNextCreditNoteNumberAsync/ClaimNextDebitNoteNumberAsync). Ruta
         // bajo /resolutions a propósito: HmacAuthenticationMiddleware ya exime ese prefijo para
         // que el portal de cliente use su sesión (x-client-id) en vez de HMAC.
+        public class DocumentLegendRequest
+        {
+            public string? Text { get; set; }
+        }
+
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpGet("{id:guid}/legend")]
+        public async Task<IActionResult> GetLegend(Guid id)
+        {
+            var clientId = GetCurrentClientId();
+            var resolution = await _dbContext.Resolutions.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId);
+            if (resolution == null) return NotFound();
+            var type = Fel.Infrastructure.Services.DocumentLegendType.Normalize(resolution.DocumentType);
+            var legend = await _dbContext.DocumentLegendByPrefixes.AsNoTracking().FirstOrDefaultAsync(x => x.ClientId == clientId && x.DocumentType == type && x.Prefix == resolution.Prefix);
+            return Ok(new { documentType = type, prefix = resolution.Prefix, text = legend?.Text ?? string.Empty });
+        }
+
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpPut("{id:guid}/legend")]
+        public async Task<IActionResult> UpdateLegend(Guid id, [FromBody] DocumentLegendRequest request)
+        {
+            var clientId = GetCurrentClientId();
+            var resolution = await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId);
+            if (resolution == null) return NotFound();
+            var type = Fel.Infrastructure.Services.DocumentLegendType.Normalize(resolution.DocumentType);
+            var legend = await _dbContext.DocumentLegendByPrefixes.FirstOrDefaultAsync(x => x.ClientId == clientId && x.DocumentType == type && x.Prefix == resolution.Prefix);
+            var text = request.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                if (legend != null) _dbContext.DocumentLegendByPrefixes.Remove(legend);
+            }
+            else if (legend == null)
+            {
+                _dbContext.DocumentLegendByPrefixes.Add(new DocumentLegendByPrefix { Id = Guid.NewGuid(), ClientId = clientId, DocumentType = type, Prefix = resolution.Prefix.Trim(), Text = text, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            }
+            else
+            {
+                legend.Text = text;
+                legend.UpdatedAt = DateTime.UtcNow;
+            }
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { documentType = type, prefix = resolution.Prefix, text });
+        }
+
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpGet("note-counters")]
         public async Task<IActionResult> GetNoteCounters()
         {
@@ -308,7 +351,8 @@ namespace Fel.Api.Client.Controllers
             {
                 nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
                 nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1,
-                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1
+                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1,
+                supportAdjustmentPrefix = client.SupportAdjustmentPrefix ?? string.Empty
             });
         }
 
@@ -317,8 +361,11 @@ namespace Fel.Api.Client.Controllers
             public long? NextCreditNoteNumber { get; set; }
             public long? NextDebitNoteNumber { get; set; }
             public long? NextSupportAdjustmentNumber { get; set; }
+            // null = no cambiar; cadena vacía = quitar el prefijo configurado.
+            public string? SupportAdjustmentPrefix { get; set; }
         }
 
+        [ClientRole(ClientUserRoles.Administrator)]
         [HttpPut("note-counters")]
         public async Task<IActionResult> UpdateNoteCounters([FromBody] UpdateNoteCountersRequest request)
         {
@@ -341,6 +388,13 @@ namespace Fel.Api.Client.Controllers
                 if (request.NextSupportAdjustmentNumber.Value < 1) return BadRequest("El consecutivo de Nota de Ajuste debe ser mayor a 0.");
                 client.NextSupportAdjustmentNumber = request.NextSupportAdjustmentNumber.Value;
             }
+            if (request.SupportAdjustmentPrefix != null)
+            {
+                var prefix = request.SupportAdjustmentPrefix.Trim().ToUpperInvariant();
+                if (prefix.Length > 10) return BadRequest("El prefijo de Nota de Ajuste no puede tener más de 10 caracteres.");
+                if (prefix.Length > 0 && !prefix.All(char.IsLetterOrDigit)) return BadRequest("El prefijo de Nota de Ajuste solo puede tener letras y números.");
+                client.SupportAdjustmentPrefix = prefix.Length == 0 ? null : prefix;
+            }
 
             await _dbContext.SaveChangesAsync();
 
@@ -348,7 +402,8 @@ namespace Fel.Api.Client.Controllers
             {
                 nextCreditNoteNumber = client.NextCreditNoteNumber ?? 1,
                 nextDebitNoteNumber = client.NextDebitNoteNumber ?? 1,
-                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1
+                nextSupportAdjustmentNumber = client.NextSupportAdjustmentNumber ?? 1,
+                supportAdjustmentPrefix = client.SupportAdjustmentPrefix ?? string.Empty
             });
         }
     }

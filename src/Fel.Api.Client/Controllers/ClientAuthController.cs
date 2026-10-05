@@ -60,6 +60,22 @@ namespace Fel.Api.Client.Controllers
                 return Unauthorized("Credenciales incorrectas.");
             }
 
+            // Sucursales a las que puede entrar el usuario (la principal primero). Sin ninguna activa no hay sesión útil.
+            var branchesQuery = _dbContext.Branches.AsNoTracking().Where(b => b.ClientId == user.ClientId && b.IsActive);
+            if (!user.AllBranches)
+            {
+                var assigned = await _dbContext.ClientUserBranches.Where(ub => ub.ClientUserId == user.Id).Select(ub => ub.BranchId).ToListAsync();
+                branchesQuery = branchesQuery.Where(b => assigned.Contains(b.Id));
+            }
+            var branches = await branchesQuery
+                .OrderByDescending(b => b.IsMain).ThenBy(b => b.Name)
+                .Select(b => new { b.Id, b.Name, b.Code, b.IsMain })
+                .ToListAsync();
+            if (branches.Count == 0)
+            {
+                return Unauthorized("No tienes sucursales activas asignadas. Contacta a tu administrador.");
+            }
+
             var token = _sessionTokenService.GenerateToken(new[]
             {
                 ("ClientId", user.ClientId.ToString()),
@@ -74,7 +90,10 @@ namespace Fel.Api.Client.Controllers
                 name = user.Name,
                 email = user.Email,
                 companyName = user.Client.CommercialName,
-                tenantSlug = tenant.Slug
+                tenantSlug = tenant.Slug,
+                role = user.Role,
+                allBranches = user.AllBranches,
+                branches
             });
         }
         [HttpPost("forgot-password")]

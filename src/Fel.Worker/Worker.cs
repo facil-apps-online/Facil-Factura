@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Worker
 {
@@ -112,9 +113,11 @@ namespace Fel.Worker
                         {
                             Id = Guid.NewGuid(),
                             ClientId = emisor.Id,
+                            BranchId = invoiceData.BranchId ?? await BranchProvisioning.MainBranchIdAsync(dbContext, emisor.Id),
                             TrackingId = $"{invoiceData.Prefix}{invoiceData.DocumentNumber}",
                             TypeCode = docType?.Code ?? "UNKNOWN",
                             Number = invoiceData.DocumentNumber,
+                            Prefix = invoiceData.Prefix,
                             Status = "PROCESSING",
                             DocumentTypeId = docType?.Id,
                             Cufe = ublGenerator.CalculateCufe(invoiceData),

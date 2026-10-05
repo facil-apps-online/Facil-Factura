@@ -10,6 +10,8 @@ using Fel.Infrastructure.Dian;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Fel.Api.Security;
+using Fel.Infrastructure.Services;
 
 namespace Fel.Api.Client.Controllers
 {
@@ -19,7 +21,8 @@ namespace Fel.Api.Client.Controllers
     /// </summary>
     [ApiController]
     [Route("api/client/received-documents")]
-    public class ReceivedDocumentsController : ControllerBase
+    [ClientRole(ClientUserRoles.Administrator)]
+    public class ReceivedDocumentsController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
         private readonly IReceptionEventService _eventService;
@@ -30,23 +33,13 @@ namespace Fel.Api.Client.Controllers
             _eventService = eventService;
         }
 
-        private Guid GetCurrentClientId()
-        {
-            if (Request.Headers.TryGetValue("x-client-id", out var clientIdStr))
-            {
-                if (Guid.TryParse(clientIdStr, out var clientId))
-                    return clientId;
-            }
-            throw new UnauthorizedAccessException("x-client-id Header is missing");
-        }
-
         [HttpGet]
         public async Task<IActionResult> GetReceivedDocuments()
         {
             try
             {
                 var clientId = GetCurrentClientId();
-                var documents = await _dbContext.ReceivedDocuments
+                var documents = await _dbContext.ReceivedDocuments.ForBranch(CurrentBranchScope)
                     .Where(d => d.ClientId == clientId)
                     .Include(d => d.Events)
                     .OrderByDescending(d => d.ReceivedAt)
@@ -126,6 +119,7 @@ namespace Fel.Api.Client.Controllers
             {
                 Id = Guid.NewGuid(),
                 ClientId = clientId,
+                BranchId = GetCurrentBranchId(),
                 SourceType = "Manual",
                 RawXml = xml,
                 Cufe = parsed.Cufe,
@@ -166,7 +160,7 @@ namespace Fel.Api.Client.Controllers
                 return Unauthorized(ex.Message);
             }
 
-            var received = await _dbContext.ReceivedDocuments.FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+            var received = await _dbContext.ReceivedDocuments.ForBranch(CurrentBranchScope).FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
             if (received == null) return NotFound();
 
             var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);

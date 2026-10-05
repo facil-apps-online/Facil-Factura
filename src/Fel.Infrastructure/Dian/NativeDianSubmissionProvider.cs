@@ -110,6 +110,9 @@ namespace Fel.Infrastructure.Dian
                     : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
             }
 
+            // El prefijo queda guardado en el documento junto con su consecutivo.
+            invoice.Prefix = resolution.Prefix;
+
             // La DIAN exige que la fecha de emisión coincida con la fecha de firma (regla FAD09e) —
             // no se puede emitir con fecha anterior a hoy. Se refresca acá, en el momento real de
             // envío/firma, en vez de dejar la fecha en que el borrador se creó (que puede ser de

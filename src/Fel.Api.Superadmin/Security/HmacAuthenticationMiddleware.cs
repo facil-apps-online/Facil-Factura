@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Fel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Fel.Core.Entities;
+using Fel.Infrastructure.Security;
 
 namespace Fel.Api.Security
 {
@@ -67,26 +68,19 @@ namespace Fel.Api.Security
 
             // 2. Cargar el API Secret conectando a la base de datos (EF Core) y determinar el entorno
             var apiKeyStr = extractedApiKey.ToString();
-            bool isSandbox = apiKeyStr.StartsWith("test_");
-            
-            Client client = null;
-            if (isSandbox)
-            {
-                client = await dbContext.Clients.FirstOrDefaultAsync(c => c.TestApiKey == apiKeyStr && c.IsActive);
-            }
-            else
-            {
-                client = await dbContext.Clients.FirstOrDefaultAsync(c => c.LiveApiKey == apiKeyStr && c.IsActive);
-            }
-            
-            if (client == null)
+            // Las llaves son de la sucursal: de ahí salen el cliente, la sucursal y el entorno (llaves "test_" = sandbox).
+            var credentials = await ApiCredentialResolver.ResolveAsync(dbContext, apiKeyStr);
+
+            if (credentials == null)
             {
                 context.Response.StatusCode = 401;
-                await context.Response.WriteAsync("API Key no válida o el Cliente está inactivo.");
+                await context.Response.WriteAsync("API Key no válida, o el cliente o la sucursal están inactivos.");
                 return;
             }
-            
-            string clientSecret = isSandbox ? client.TestApiSecret : client.LiveApiSecret;
+
+            var client = credentials.Client;
+            bool isSandbox = credentials.IsSandbox;
+            string clientSecret = credentials.Secret;
 
             // 3. Leer el cuerpo de la petición JSON
             context.Request.EnableBuffering();
@@ -115,6 +109,7 @@ namespace Fel.Api.Security
 
             // 6. Autorizado: Guardar info del cliente y del entorno en el contexto de la request
             context.Items["ClientId"] = client.Id.ToString();
+            context.Items["BranchId"] = credentials.Branch.Id.ToString();
             context.Items["TenantId"] = client.TenantId.ToString();
             context.Items["IsSandbox"] = isSandbox;
 

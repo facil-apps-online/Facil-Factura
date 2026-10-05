@@ -16,11 +16,16 @@ using System.IO;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 builder.Services.AddScoped<Fel.Core.Interfaces.ISessionTokenService, Fel.Infrastructure.Security.SessionTokenService>();
 
@@ -184,6 +189,7 @@ builder.Services.AddHttpClient<Fel.Infrastructure.Services.DianHabilitationScrap
 
 builder.Services.AddScoped<Fel.Infrastructure.Services.DianTestSetSubmissionService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.BillingMetricsService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.DocumentLegendService>();
 
 var app = builder.Build();
 

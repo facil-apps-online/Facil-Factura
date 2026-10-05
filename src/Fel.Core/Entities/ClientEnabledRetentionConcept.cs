@@ -15,5 +15,7 @@ namespace Fel.Core.Entities
 
         public Guid RetentionConceptId { get; set; }
         public RetentionConcept? RetentionConcept { get; set; }
+
+        public ProductScope Scope { get; set; } = ProductScope.Invoice;
     }
 }

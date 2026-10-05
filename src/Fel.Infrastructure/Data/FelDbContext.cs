@@ -10,6 +10,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<Tenant> Tenants => Set<Tenant>();
         public DbSet<Client> Clients => Set<Client>();
         public DbSet<Resolution> Resolutions => Set<Resolution>();
+        public DbSet<DocumentLegendByPrefix> DocumentLegendByPrefixes => Set<DocumentLegendByPrefix>();
         public DbSet<Certificate> Certificates => Set<Certificate>();
         public DbSet<CertificateProvider> CertificateProviders => Set<CertificateProvider>();
         public DbSet<CertificateProfile> CertificateProfiles => Set<CertificateProfile>();
@@ -26,6 +27,9 @@ namespace Fel.Infrastructure.Data
         public DbSet<TenantUser> TenantUsers { get; set; }
         public DbSet<TenantUserAssignment> TenantUserAssignments => Set<TenantUserAssignment>();
         public DbSet<ClientUser> ClientUsers { get; set; }
+        public DbSet<Branch> Branches => Set<Branch>();
+        public DbSet<ResolutionBranch> ResolutionBranches => Set<ResolutionBranch>();
+        public DbSet<ClientUserBranch> ClientUserBranches => Set<ClientUserBranch>();
         public DbSet<TenantBilling> TenantBillings => Set<TenantBilling>();
         public DbSet<SuperadminUser> SuperadminUsers => Set<SuperadminUser>();
         public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
@@ -136,6 +140,81 @@ namespace Fel.Infrastructure.Data
                       .OnDelete(DeleteBehavior.Restrict);
             });
 
+            modelBuilder.Entity<Branch>(entity =>
+            {
+                entity.ToTable("Branches");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+                entity.Property(e => e.Code).IsRequired().HasMaxLength(30);
+                entity.HasIndex(e => new { e.ClientId, e.Code }).IsUnique();
+                entity.Property(e => e.LiveApiKey).HasMaxLength(100);
+                entity.HasIndex(e => e.LiveApiKey).IsUnique();
+                entity.Property(e => e.TestApiKey).HasMaxLength(100);
+                entity.HasIndex(e => e.TestApiKey).IsUnique();
+                // Una sola sucursal principal por Client.
+                entity.HasIndex(e => e.ClientId).IsUnique().HasFilter("[IsMain] = 1").HasDatabaseName("IX_Branches_ClientId_Main");
+                entity.HasOne(e => e.Client)
+                      .WithMany(c => c.Branches)
+                      .HasForeignKey(e => e.ClientId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<ResolutionBranch>(entity =>
+            {
+                entity.ToTable("ResolutionBranches");
+                entity.HasKey(e => new { e.ResolutionId, e.BranchId });
+                entity.HasOne(e => e.Resolution)
+                      .WithMany()
+                      .HasForeignKey(e => e.ResolutionId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Branch)
+                      .WithMany()
+                      .HasForeignKey(e => e.BranchId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<ClientUser>(entity =>
+            {
+                entity.Property(e => e.Role).IsRequired().HasMaxLength(20);
+            });
+
+            modelBuilder.Entity<ClientUserBranch>(entity =>
+            {
+                entity.ToTable("ClientUserBranches");
+                entity.HasKey(e => new { e.ClientUserId, e.BranchId });
+                entity.HasOne(e => e.ClientUser)
+                      .WithMany(u => u.Branches)
+                      .HasForeignKey(e => e.ClientUserId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(e => e.Branch)
+                      .WithMany()
+                      .HasForeignKey(e => e.BranchId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<ReceivedDocument>(entity =>
+            {
+                entity.HasOne(e => e.Branch)
+                      .WithMany()
+                      .HasForeignKey(e => e.BranchId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                entity.HasIndex(e => e.BranchId);
+            });
+
+            modelBuilder.Entity<DocumentLegendByPrefix>(entity =>
+            {
+                entity.ToTable("DocumentLegendByPrefixes");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.DocumentType).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.Prefix).IsRequired().HasMaxLength(30);
+                entity.Property(e => e.Text).IsRequired().HasMaxLength(2000);
+                entity.HasIndex(e => new { e.ClientId, e.DocumentType, e.Prefix }).IsUnique();
+                entity.HasOne(e => e.Client)
+                    .WithMany()
+                    .HasForeignKey(e => e.ClientId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
             modelBuilder.Entity<Certificate>(entity =>
             {
                 entity.ToTable("Certificates");
@@ -190,6 +269,7 @@ namespace Fel.Infrastructure.Data
             {
                 entity.Property(e => e.OrganizationDepartment).HasMaxLength(100);
                 entity.Property(e => e.OrganizationType).HasMaxLength(30);
+                entity.Property(e => e.SupportAdjustmentPrefix).HasMaxLength(10);
                 entity.Property(e => e.PersonType).HasMaxLength(2).IsRequired();
                 entity.Property(e => e.DecimalSeparator).HasMaxLength(1).IsRequired().HasDefaultValue(".");
                 entity.Property(e => e.LegalRepresentativeFirstName).HasMaxLength(100);
@@ -201,6 +281,8 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.LegalRepresentativeDocumentCountryCode).HasMaxLength(10);
                 entity.Property(e => e.LegalRepresentativeEmail).HasMaxLength(320);
                 entity.Property(e => e.LegalRepresentativeRepresentationCode).HasMaxLength(20);
+                entity.Property(e => e.ElectronicInvoiceLegend).HasMaxLength(2000);
+                entity.Property(e => e.SupportDocumentLegend).HasMaxLength(2000);
             });
 
             modelBuilder.Entity<CertificateProfile>(entity =>
@@ -313,6 +395,12 @@ namespace Fel.Infrastructure.Data
             {
                 entity.ToTable("Documents");
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.Prefix).HasMaxLength(20);
+                entity.HasOne(e => e.Branch)
+                      .WithMany()
+                      .HasForeignKey(e => e.BranchId)
+                      .OnDelete(DeleteBehavior.Restrict);
+                entity.HasIndex(e => e.BranchId);
                 entity.HasOne(e => e.Client)
                       .WithMany(c => c.Documents)
                       .HasForeignKey(e => e.ClientId)
@@ -730,13 +818,15 @@ namespace Fel.Infrastructure.Data
                       .HasForeignKey(e => e.ClientId)
                       .OnDelete(DeleteBehavior.Restrict);
                       
-                entity.HasIndex(e => new { e.ClientId, e.IdentificationNumber }).IsUnique();
+                // La identificación es única por rol: una persona puede ser Cliente y Proveedor.
+                entity.HasIndex(e => new { e.ClientId, e.IdentificationNumber, e.PartyType }).IsUnique();
             });
 
             modelBuilder.Entity<Product>(entity =>
             {
                 entity.ToTable("Products");
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.Scope).HasColumnType("int");
                 entity.Property(e => e.Code).IsRequired().HasMaxLength(50);
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(250);
                 entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,4)");
@@ -752,7 +842,7 @@ namespace Fel.Infrastructure.Data
                       .HasForeignKey(e => e.UnitOfMeasureId)
                       .OnDelete(DeleteBehavior.Restrict);
 
-                entity.HasIndex(e => new { e.ClientId, e.Code }).IsUnique();
+                entity.HasIndex(e => new { e.ClientId, e.Scope, e.Code }).IsUnique();
             });
 
             modelBuilder.Entity<ProductTax>(entity =>
@@ -922,7 +1012,8 @@ namespace Fel.Infrastructure.Data
                       .HasForeignKey(e => e.RetentionConceptId)
                       .OnDelete(DeleteBehavior.Restrict);
 
-                entity.HasIndex(e => new { e.ClientId, e.RetentionConceptId }).IsUnique();
+                entity.Property(e => e.Scope).HasColumnType("int");
+                entity.HasIndex(e => new { e.ClientId, e.RetentionConceptId, e.Scope }).IsUnique();
             });
 
             modelBuilder.Entity<DeveloperUser>(entity =>

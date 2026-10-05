@@ -8,11 +8,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Tenant.Controllers
 {
-    // Tarifa que un Tenant le cobra a uno de sus Clients por UN integrador en particular (Fase
-    // 3c/3e): override opcional sobre Client.PricePerDocument — si no hay fila aquí para un
-    // integrador dado, ese integrador sigue usando la tarifa plana de siempre.
+    // Tarifa que un Tenant le cobra a una de las sucursales de su Client por UN integrador en particular: override opcional sobre
+    // Branch.PricePerDocument — si no hay fila aquí para un integrador dado, ese integrador sigue usando la tarifa plana de la sucursal.
     [ApiController]
-    [Route("api/tenant/clients/{clientId}/integrator-billing")]
+    [Route("api/tenant/clients/{clientId}/branches/{branchId}/integrator-billing")]
     public class TenantClientIntegratorBillingController : ControllerBase
     {
         private readonly FelDbContext _dbContext;
@@ -31,22 +30,24 @@ namespace Fel.Api.Tenant.Controllers
             throw new UnauthorizedAccessException("x-tenant-id Header is missing");
         }
 
-        private async Task<Client?> GetOwnedClientAsync(Guid clientId)
+        // La sucursal debe ser de un Client del tenant.
+        private async Task<Branch?> GetOwnedBranchAsync(Guid clientId, Guid branchId)
         {
             var tenantId = GetCurrentTenantId();
-            return await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId && c.TenantId == tenantId);
+            return await _dbContext.Branches.AsNoTracking()
+                .FirstOrDefaultAsync(b => b.Id == branchId && b.ClientId == clientId && b.Client.TenantId == tenantId);
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetIntegratorBilling(Guid clientId)
+        public async Task<IActionResult> GetIntegratorBilling(Guid clientId, Guid branchId)
         {
             try
             {
-                var client = await GetOwnedClientAsync(clientId);
-                if (client == null) return NotFound();
+                var branch = await GetOwnedBranchAsync(clientId, branchId);
+                if (branch == null) return NotFound();
 
                 var overrides = await _dbContext.ClientIntegratorBillings
-                    .Where(b => b.ClientId == clientId)
+                    .Where(b => b.BranchId == branchId)
                     .ToDictionaryAsync(b => b.IntegratorId, b => b);
 
                 var integrators = await _dbContext.Integrators
@@ -56,7 +57,7 @@ namespace Fel.Api.Tenant.Controllers
 
                 var result = integrators.Select(i => overrides.TryGetValue(i.Id, out var over)
                     ? new { i.Id, i.Code, i.Name, HasOverride = true, Mode = over.Mode.ToString(), over.PricePerDocument, over.PricePerUser }
-                    : new { i.Id, i.Code, i.Name, HasOverride = false, Mode = "PerDocument", PricePerDocument = client.PricePerDocument, PricePerUser = 0m });
+                    : new { i.Id, i.Code, i.Name, HasOverride = false, Mode = "PerDocument", PricePerDocument = branch.PricePerDocument, PricePerUser = 0m });
 
                 return Ok(result);
             }
@@ -67,12 +68,11 @@ namespace Fel.Api.Tenant.Controllers
         }
 
         [HttpPut("{integratorId}")]
-        public async Task<IActionResult> SetIntegratorBilling(Guid clientId, Guid integratorId, [FromBody] SetClientIntegratorBillingRequest request)
+        public async Task<IActionResult> SetIntegratorBilling(Guid clientId, Guid branchId, Guid integratorId, [FromBody] SetClientIntegratorBillingRequest request)
         {
             try
             {
-                var client = await GetOwnedClientAsync(clientId);
-                if (client == null) return NotFound();
+                if (await GetOwnedBranchAsync(clientId, branchId) == null) return NotFound();
 
                 if (!await _dbContext.Integrators.AnyAsync(i => i.Id == integratorId)) return NotFound("Integrador no existe.");
 
@@ -80,13 +80,14 @@ namespace Fel.Api.Tenant.Controllers
                 {
                     return BadRequest("Modo de facturación inválido.");
                 }
+                if (request.PricePerDocument < 0 || request.PricePerUser < 0) return BadRequest("Las tarifas no pueden ser negativas.");
 
                 var row = await _dbContext.ClientIntegratorBillings
-                    .FirstOrDefaultAsync(b => b.ClientId == clientId && b.IntegratorId == integratorId);
+                    .FirstOrDefaultAsync(b => b.BranchId == branchId && b.IntegratorId == integratorId);
 
                 if (row == null)
                 {
-                    row = new ClientIntegratorBilling { Id = Guid.NewGuid(), ClientId = clientId, IntegratorId = integratorId };
+                    row = new ClientIntegratorBilling { Id = Guid.NewGuid(), ClientId = clientId, BranchId = branchId, IntegratorId = integratorId };
                     _dbContext.ClientIntegratorBillings.Add(row);
                 }
 
@@ -103,22 +104,21 @@ namespace Fel.Api.Tenant.Controllers
             }
         }
 
-        // Borra el override: el integrador vuelve a Client.PricePerDocument de siempre.
+        // Borra el override: el integrador vuelve a la tarifa plana de la sucursal.
         [HttpDelete("{integratorId}")]
-        public async Task<IActionResult> DeleteIntegratorBilling(Guid clientId, Guid integratorId)
+        public async Task<IActionResult> DeleteIntegratorBilling(Guid clientId, Guid branchId, Guid integratorId)
         {
             try
             {
-                var client = await GetOwnedClientAsync(clientId);
-                if (client == null) return NotFound();
+                if (await GetOwnedBranchAsync(clientId, branchId) == null) return NotFound();
 
                 var row = await _dbContext.ClientIntegratorBillings
-                    .FirstOrDefaultAsync(b => b.ClientId == clientId && b.IntegratorId == integratorId);
+                    .FirstOrDefaultAsync(b => b.BranchId == branchId && b.IntegratorId == integratorId);
                 if (row == null) return NotFound();
 
                 _dbContext.ClientIntegratorBillings.Remove(row);
                 await _dbContext.SaveChangesAsync();
-                return Ok(new { message = "Override eliminado, vuelve a la tarifa plana del Client." });
+                return Ok(new { message = "Override eliminado, vuelve a la tarifa plana de la sucursal." });
             }
             catch (UnauthorizedAccessException ex)
             {

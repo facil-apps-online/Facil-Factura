@@ -131,6 +131,8 @@ builder.Services.AddSingleton<Fel.Core.Interfaces.IMessageQueue, Fel.Infrastruct
 builder.Services.AddHttpClient<Fel.Core.Interfaces.ICoreApiClient, Fel.Infrastructure.Services.CoreApiClient>();
 builder.Services.AddHttpClient<Fel.Core.Interfaces.IFacilReportsClient, Fel.Infrastructure.Services.FacilReportsClient>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.PasswordResetService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.ClientUserAdminService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.ResolutionBranchService>();
 // WCF SOAP Client
 builder.Services.AddScoped<Fel.Core.Interfaces.IDianSoapClient, Fel.Infrastructure.Dian.DianSoapClient>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IReceptionEventService, Fel.Infrastructure.Dian.ReceptionEventService>();

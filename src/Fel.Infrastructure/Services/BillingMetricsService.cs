@@ -35,33 +35,114 @@ namespace Fel.Infrastructure.Services
             return tier?.PricePerDocument ?? 70m; // Default to highest if not found
         }
 
-        // Cuánto le cobra el Tenant al Client por 'documentCount' documentos de un integrador dado
-        // este período: primero se descuentan del saldo de sus bolsas prepago activas de ESE
-        // integrador (FIFO, a su tarifa preferencial — ver ComputeBagConsumption), y lo que sobra
-        // se cobra a la tarifa estándar (el override de ClientIntegratorBilling si existe y está
-        // en modo PerDocument, si no Client.PricePerDocument de siempre). Solo lectura: no
-        // descuenta las bolsas de verdad, eso lo hace el corte real cuando exista (como
-        // SuperadminBillingController.ConsumeBagBalanceAsync para las bolsas de Tenant).
-        private async Task<decimal> GetClientDocumentChargeAsync(Guid clientId, int documentCount, decimal defaultPricePerDocument, Guid integratorId)
+        // Resultado de cubrir con bolsas los documentos de un Client: lo que se cobra en total y la parte que corresponde a cada
+        // documento (en el mismo orden en que se recibieron las tarifas).
+        public sealed record DocumentChargeResult(decimal Total, IReadOnlyList<decimal> PerDocument);
+
+        // Cobro de los documentos de un Client entre sus bolsas prepago (FIFO) y la tarifa estándar de cada documento. Los documentos
+        // vienen ordenados por fecha y cada uno trae SU tarifa (la de su sucursal): la bolsa cubre primero los más antiguos, sea cual sea
+        // la sucursal, y lo que no cubre se cobra a la tarifa de la sucursal que lo emitió. Con una sola tarifa da exactamente el mismo
+        // total que ComputeBagConsumption.
+        public static DocumentChargeResult ComputeBagConsumptionPerDocument(
+            IReadOnlyList<decimal> standardRates,
+            IEnumerable<(Guid Id, decimal RemainingBalance, decimal DiscountedPricePerDocument)> bagsFifo)
         {
-            if (documentCount <= 0) return 0m;
+            var count = standardRates.Count;
 
-            var over = await _dbContext.ClientIntegratorBillings.AsNoTracking()
-                .FirstOrDefaultAsync(b => b.ClientId == clientId && b.IntegratorId == integratorId);
-            var standardRate = over != null && over.Mode == TenantBillingMode.PerDocument ? over.PricePerDocument : defaultPricePerDocument;
+            // 1) Lo que cubren las bolsas, bolsa por bolsa (igual que ComputeBagConsumption): documentos cubiertos y su costo.
+            decimal remainingFraction = count;
+            decimal bagsTotal = 0;
+            var segments = new List<(decimal Fraction, decimal Price)>();
+            foreach (var bag in bagsFifo)
+            {
+                if (remainingFraction <= 0) break;
+                if (bag.RemainingBalance <= 0 || bag.DiscountedPricePerDocument <= 0) continue;
 
-            var bags = await _dbContext.ClientPrepaidBags.AsNoTracking()
-                .Where(b => b.ClientId == clientId && b.IntegratorId == integratorId && b.Status == PrepaidBagStatus.Active && b.RemainingBalance > 0)
-                .OrderBy(b => b.PurchasedAt)
-                .Select(b => new { b.Id, b.RemainingBalance, b.DiscountedPricePerDocument })
+                var fraction = Math.Min(remainingFraction, bag.RemainingBalance / bag.DiscountedPricePerDocument);
+                bagsTotal += Math.Round(fraction * bag.DiscountedPricePerDocument, 2);
+                segments.Add((fraction, bag.DiscountedPricePerDocument));
+                remainingFraction -= fraction;
+            }
+
+            // 2) Qué parte de cada documento cubre la bolsa y a qué tarifa se cobra el resto.
+            var perDocument = new decimal[count];
+            decimal uncoveredAtRates = 0;
+            var segment = 0;
+            var segmentLeft = segments.Count > 0 ? segments[0].Fraction : 0m;
+            for (var i = 0; i < count; i++)
+            {
+                decimal docLeft = 1m;
+                decimal cost = 0;
+                while (docLeft > 0 && segment < segments.Count)
+                {
+                    var take = Math.Min(docLeft, segmentLeft);
+                    cost += take * segments[segment].Price;
+                    docLeft -= take;
+                    segmentLeft -= take;
+                    if (segmentLeft <= 0)
+                    {
+                        segment++;
+                        segmentLeft = segment < segments.Count ? segments[segment].Fraction : 0m;
+                    }
+                }
+                cost += docLeft * standardRates[i];
+                uncoveredAtRates += docLeft * standardRates[i];
+                perDocument[i] = cost;
+            }
+
+            return new DocumentChargeResult(bagsTotal + Math.Round(uncoveredAtRates, 2), perDocument);
+        }
+
+        // Reparte un total ya redondeado entre sucursales según lo que costó cada documento: cada una redondea a centavos y la
+        // diferencia de redondeo se la lleva la que más pesa, así la suma siempre es exactamente el total.
+        private static Dictionary<Guid, decimal> AllocateByBranch(decimal total, IReadOnlyList<decimal> perDocument, IReadOnlyList<Guid> branchOfDocument)
+        {
+            var raw = new Dictionary<Guid, decimal>();
+            for (var i = 0; i < perDocument.Count; i++)
+                raw[branchOfDocument[i]] = raw.GetValueOrDefault(branchOfDocument[i]) + perDocument[i];
+            if (raw.Count == 0) return new Dictionary<Guid, decimal>();
+
+            var rounded = raw.ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value, 2));
+            var heaviest = raw.OrderByDescending(kv => kv.Value).First().Key;
+            rounded[heaviest] += total - rounded.Values.Sum();
+            return rounded;
+        }
+
+        // Cobro por documentos de UN Client este período: agrupa por integrador (cada uno con sus bolsas y su tarifa) y devuelve lo que
+        // le corresponde a cada sucursal. La tarifa estándar de un documento es la de su sucursal, o el override de esa sucursal para ese
+        // integrador si existe y está en modo PerDocument. Solo lectura: no descuenta las bolsas, eso lo hace el corte real.
+        private async Task<Dictionary<Guid, decimal>> ComputeClientDocumentChargesAsync(
+            Guid clientId,
+            IReadOnlyList<(Guid BranchId, Guid IntegratorId, DateTime CreatedAt)> documents,
+            IReadOnlyDictionary<Guid, decimal> branchPrices)
+        {
+            var charges = new Dictionary<Guid, decimal>();
+            if (documents.Count == 0) return charges;
+
+            var overrides = await _dbContext.ClientIntegratorBillings.AsNoTracking()
+                .Where(b => b.ClientId == clientId && b.Mode == TenantBillingMode.PerDocument)
                 .ToListAsync();
 
-            var (totalDue, _) = ComputeBagConsumption(
-                documentCount,
-                standardRate,
-                bags.Select(b => (b.Id, b.RemainingBalance, b.DiscountedPricePerDocument)));
+            foreach (var group in documents.GroupBy(d => d.IntegratorId))
+            {
+                var ordered = group.OrderBy(d => d.CreatedAt).ToList();
+                var rates = ordered
+                    .Select(d => overrides.FirstOrDefault(o => o.BranchId == d.BranchId && o.IntegratorId == group.Key)?.PricePerDocument
+                                 ?? branchPrices.GetValueOrDefault(d.BranchId))
+                    .ToList();
 
-            return totalDue;
+                var bags = await _dbContext.ClientPrepaidBags.AsNoTracking()
+                    .Where(b => b.ClientId == clientId && b.IntegratorId == group.Key && b.Status == PrepaidBagStatus.Active && b.RemainingBalance > 0)
+                    .OrderBy(b => b.PurchasedAt)
+                    .Select(b => new { b.Id, b.RemainingBalance, b.DiscountedPricePerDocument })
+                    .ToListAsync();
+
+                var result = ComputeBagConsumptionPerDocument(rates, bags.Select(b => (b.Id, b.RemainingBalance, b.DiscountedPricePerDocument)));
+                foreach (var (branchId, amount) in AllocateByBranch(result.Total, result.PerDocument, ordered.Select(d => d.BranchId).ToList()))
+                    charges[branchId] = charges.GetValueOrDefault(branchId) + amount;
+            }
+
+            return charges;
         }
 
         // --- 1. Client Level Metrics ---
@@ -73,32 +154,34 @@ namespace Fel.Infrastructure.Services
             var client = await _dbContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == clientId);
             if (client == null) throw new Exception("Client not found");
 
+            var branches = await _dbContext.Branches.AsNoTracking().Where(b => b.ClientId == clientId).ToListAsync();
+            var mainBranchId = branches.FirstOrDefault(b => b.IsMain)?.Id ?? Guid.Empty;
+
             // Los documentos de Clients sandbox quedan en "APPROVED" pero nunca se transmitieron a
             // la DIAN: son respuestas simuladas para developers (ver SandboxSimulation), así que no
             // se cobran. Se guardan igual para que el developer los vea en su portal.
-            var docsByIntegrator = await _dbContext.Documents.AsNoTracking()
+            var docs = await _dbContext.Documents.AsNoTracking()
                 .Where(d => d.ClientId == clientId && d.CreatedAt >= startDate && d.CreatedAt < endDate && d.Status == "APPROVED"
                     && !d.Client.IsDeveloperSandbox)
-                .GroupBy(d => d.IntegratorId)
-                .Select(g => new { IntegratorId = g.Key, Count = g.Count() })
+                .Select(d => new { d.BranchId, d.IntegratorId, d.CreatedAt })
                 .ToListAsync();
 
-            var totalDocs = docsByIntegrator.Sum(g => g.Count);
-            var amountDue = client.SubscriptionRate;
-            foreach (var g in docsByIntegrator)
-            {
-                // Documentos emitidos antes de la Fase 3a no tienen IntegratorId propio — se
-                // asumen del integrador actual del Client, la mejor aproximación disponible.
-                var integratorId = g.IntegratorId ?? client.IntegratorId;
-                amountDue += await GetClientDocumentChargeAsync(client.Id, g.Count, client.PricePerDocument, integratorId);
-            }
+            // Documentos emitidos antes de la Fase 3a no tienen IntegratorId propio — se asumen del integrador
+            // actual del Client, la mejor aproximación disponible; los que no traen sucursal van a la principal.
+            var charges = await ComputeClientDocumentChargesAsync(
+                clientId,
+                docs.Select(d => (d.BranchId ?? mainBranchId, d.IntegratorId ?? client.IntegratorId, d.CreatedAt)).ToList(),
+                branches.ToDictionary(b => b.Id, b => b.PricePerDocument));
+
+            // La cuota fija mensual la paga cada sucursal activa.
+            var amountDue = charges.Values.Sum() + branches.Where(b => b.IsActive).Sum(b => b.SubscriptionRate);
 
             return new ClientBillingMetrics
             {
                 ClientId = clientId,
                 Year = year,
                 Month = month,
-                TotalDocuments = totalDocs,
+                TotalDocuments = docs.Count,
                 AmountDueToTenant = amountDue
             };
         }
@@ -140,13 +223,12 @@ namespace Fel.Infrastructure.Services
         }
 
         // --- 1b. Per-user (tenant de marca blanca) ---
-        // Cobro diario prorrateado por Client activo, en fracciones de "usuario-mes"
-        // (1.0 = 1 cliente activo todo el mes). Antes de cobrar a tarifa estándar, ese uso se
-        // descuenta primero del saldo de las bolsas prepago activas del tenant (a la tarifa
-        // con descuento de cada bolsa) — la bolsa no es por tiempo ni por cliente, es un pool
-        // de dinero compartido. Esta función es de solo lectura: no descuenta las bolsas, el
-        // corte mensual (SuperadminBillingController.CalculateBilling) es quien aplica el
-        // descuento real una sola vez.
+        // Cobro diario prorrateado por SUCURSAL activa, en fracciones de "usuario-mes" (1.0 = 1 sucursal activa todo el mes). Cada sucursal
+        // cuenta desde su fecha de creación y, si se desactivó, hasta su fecha de desactivación (si se reactiva vuelve a contar completa).
+        // La principal hereda la fecha de creación del Client, así que un Client con una sola sucursal da lo mismo que antes. Antes de cobrar
+        // a tarifa estándar, ese uso se descuenta primero del saldo de las bolsas prepago activas del tenant (a la tarifa con descuento
+        // de cada bolsa) — la bolsa no es por tiempo ni por cliente, es un pool de dinero compartido. Esta función es de solo lectura: no
+        // descuenta las bolsas, el corte mensual (SuperadminBillingController.CalculateBilling) es quien aplica el descuento real una sola vez.
         public async Task<TenantBillingMetrics> GetTenantPerUserMetricsAsync(Guid tenantId, int year, int month)
         {
             var startDate = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -156,22 +238,28 @@ namespace Fel.Infrastructure.Services
             var pricing = await _dbContext.TenantUserPricings.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId);
             var pricePerUser = pricing?.PricePerUser ?? 0m;
 
-            var clients = await _dbContext.Clients.AsNoTracking()
-                .Where(c => c.TenantId == tenantId && c.IsActive)
+            var branches = await _dbContext.Branches.AsNoTracking()
+                .Include(b => b.Client)
+                .Where(b => b.Client.TenantId == tenantId && b.Client.IsActive)
                 .ToListAsync();
 
-            // Fracción de usuario-mes que necesita cada cliente este mes, antes de aplicar bolsa.
-            var rawFractionByClient = new Dictionary<Guid, decimal>();
-            foreach (var client in clients)
-            {
-                var coverageStart = client.CreatedAt > startDate ? client.CreatedAt.Date : startDate;
-                if (coverageStart >= endDate) continue; // se activó después de este mes
+            var branchCountByClient = branches.GroupBy(b => b.ClientId).ToDictionary(g => g.Key, g => g.Count());
 
-                var billableDays = (endDate - coverageStart).Days;
-                rawFractionByClient[client.Id] = (decimal)billableDays / daysInMonth;
+            // Fracción de usuario-mes que necesita cada sucursal este mes, antes de aplicar bolsa.
+            var rawFractionByBranch = new Dictionary<Guid, decimal>();
+            foreach (var branch in branches)
+            {
+                // Una sucursal inactiva sin fecha de desactivación no cuenta; con fecha, cuenta hasta ella.
+                if (!branch.IsActive && branch.DeactivatedAt == null) continue;
+
+                var coverageStart = branch.CreatedAt > startDate ? branch.CreatedAt.Date : startDate;
+                var coverageEnd = branch.DeactivatedAt.HasValue && branch.DeactivatedAt.Value.Date < endDate ? branch.DeactivatedAt.Value.Date : endDate;
+                if (coverageStart >= endDate || coverageEnd <= coverageStart) continue; // se activó después de este mes o se desactivó antes
+
+                rawFractionByBranch[branch.Id] = (decimal)(coverageEnd - coverageStart).Days / daysInMonth;
             }
 
-            var monthFractionNeeded = rawFractionByClient.Values.Sum();
+            var monthFractionNeeded = rawFractionByBranch.Values.Sum();
 
             var bags = await _dbContext.TenantPrepaidBags.AsNoTracking()
                 .Where(b => b.TenantId == tenantId && b.Status == PrepaidBagStatus.Active && b.RemainingBalance > 0)
@@ -184,20 +272,22 @@ namespace Fel.Infrastructure.Services
                 pricePerUser,
                 bags.Select(b => (b.Id, b.RemainingBalance, b.DiscountedPricePerUser)));
 
-            // Reparto proporcional del total (ya con descuento aplicado) entre clientes, solo
+            // Reparto proporcional del total (ya con descuento aplicado) entre sucursales, solo
             // para el desglose informativo — el cobro real a Superadmin es el TotalDue global.
             var breakdown = new List<ClientUsageBreakdown>();
-            foreach (var client in clients)
+            foreach (var branch in branches)
             {
-                if (!rawFractionByClient.TryGetValue(client.Id, out var rawFraction)) continue;
+                if (!rawFractionByBranch.TryGetValue(branch.Id, out var rawFraction)) continue;
 
                 var share = monthFractionNeeded > 0 ? rawFraction / monthFractionNeeded : 0m;
                 var due = Math.Round(totalDue * share, 2);
 
                 breakdown.Add(new ClientUsageBreakdown
                 {
-                    ClientId = client.Id,
-                    ClientName = !string.IsNullOrEmpty(client.CompanyName) ? client.CompanyName : client.CommercialName,
+                    ClientId = branch.ClientId,
+                    ClientName = BreakdownName(branch.Client, branch, branchCountByClient[branch.ClientId] > 1),
+                    BranchId = branch.Id,
+                    BranchName = branch.Name,
                     DocumentsEmitted = 0,
                     PriceApplied = pricePerUser,
                     AmountDueToTenant = due
@@ -210,13 +300,20 @@ namespace Fel.Infrastructure.Services
                 Year = year,
                 Month = month,
                 TotalDocuments = 0,
-                TotalUsers = clients.Count,
+                TotalUsers = rawFractionByBranch.Count,
                 MonthFractionNeeded = monthFractionNeeded,
                 AmountDueToSuperadmin = totalDue,
                 SuperadminTariffApplied = pricePerUser,
-                AmountDueFromClients = 0, // La tarifa del tenant hacia sus clientes es independiente (Client.SubscriptionRate)
+                AmountDueFromClients = 0, // La tarifa del tenant hacia sus clientes es independiente (Branch.SubscriptionRate)
                 ClientBreakdown = breakdown.OrderByDescending(x => x.AmountDueToTenant).ToList()
             };
+        }
+
+        // Nombre con el que se muestra una fila del desglose: el del cliente, y la sucursal además cuando el cliente tiene más de una.
+        private static string BreakdownName(Client client, Branch branch, bool clientHasSeveralBranches)
+        {
+            var clientName = !string.IsNullOrEmpty(client.CompanyName) ? client.CompanyName : client.CommercialName;
+            return clientHasSeveralBranches ? $"{clientName} — {branch.Name}" : clientName;
         }
 
         // --- 2. Tenant Level Metrics ---
@@ -233,20 +330,18 @@ namespace Fel.Infrastructure.Services
 
             // Documentos aprobados del período, con el integrador que realmente los procesó
             // (Document.IntegratorId, o el integrador actual del Client para documentos previos a
-            // la Fase 3a que no quedaron marcados).
+            // la Fase 3a que no quedaron marcados) y la sucursal que los emitió.
             var rows = await _dbContext.Documents.AsNoTracking()
-                .Include(d => d.Client)
                 // Sin los sandbox de developers: son documentos simulados, no se cobran.
                 .Where(d => d.Client.TenantId == tenantId && d.CreatedAt >= startDate && d.CreatedAt < endDate && d.Status == "APPROVED"
                     && !d.Client.IsDeveloperSandbox)
                 .Select(d => new
                 {
                     d.ClientId,
-                    ClientName = d.Client.CompanyName != "" ? d.Client.CompanyName : d.Client.CommercialName,
-                    d.Client.PricePerDocument,
-                    d.Client.SubscriptionRate,
+                    d.BranchId,
                     ClientDefaultIntegratorId = d.Client.IntegratorId,
-                    DocumentIntegratorId = d.IntegratorId
+                    DocumentIntegratorId = d.IntegratorId,
+                    d.CreatedAt
                 })
                 .ToListAsync();
 
@@ -263,53 +358,54 @@ namespace Fel.Infrastructure.Services
                 amountDueToSuperadmin += integratorGroup.Count() * tariff;
             }
 
-            // Cuánto le deben los clientes al tenant: documentos del período (a la tarifa de su
-            // propio integrador, si el Client tiene un override para ese integrador) + suscripción
-            // fija.
-            var breakdown = new List<ClientUsageBreakdown>();
-            decimal amountDueFromClients = 0;
-            var clientIdsWithDocs = new HashSet<Guid>();
-
-            foreach (var clientGroup in rows.GroupBy(r => r.ClientId))
-            {
-                clientIdsWithDocs.Add(clientGroup.Key);
-                var first = clientGroup.First();
-                decimal due = first.SubscriptionRate;
-
-                foreach (var integratorGroup in clientGroup.GroupBy(r => r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId))
-                {
-                    due += await GetClientDocumentChargeAsync(clientGroup.Key, integratorGroup.Count(), first.PricePerDocument, integratorGroup.Key);
-                }
-
-                amountDueFromClients += due;
-
-                breakdown.Add(new ClientUsageBreakdown
-                {
-                    ClientId = clientGroup.Key,
-                    ClientName = first.ClientName,
-                    DocumentsEmitted = clientGroup.Count(),
-                    PriceApplied = first.PricePerDocument,
-                    AmountDueToTenant = due
-                });
-            }
-
-            // Clientes con suscripción fija que no emitieron ningún documento este período: sin
-            // esto, se les dejaba de cobrar la suscripción los meses en que no facturaban.
-            var subscriptionOnlyClients = await _dbContext.Clients.AsNoTracking()
-                .Where(c => c.TenantId == tenantId && c.IsActive && c.SubscriptionRate > 0 && !clientIdsWithDocs.Contains(c.Id))
+            // Sucursales que entran al cálculo: las de los Clients con documentos este período (aunque ya no estén activas) y las activas
+            // con cuota fija que no emitieron nada (sin esto, se les dejaba de cobrar la cuota los meses en que no facturaban).
+            var clientIdsWithDocs = rows.Select(r => r.ClientId).Distinct().ToList();
+            var branches = await _dbContext.Branches.AsNoTracking()
+                .Include(b => b.Client)
+                .Where(b => b.Client.TenantId == tenantId && !b.Client.IsDeveloperSandbox
+                    && (clientIdsWithDocs.Contains(b.ClientId) || (b.Client.IsActive && b.IsActive && b.SubscriptionRate > 0)))
                 .ToListAsync();
 
-            foreach (var c in subscriptionOnlyClients)
+            var branchCountByClient = await _dbContext.Branches.AsNoTracking()
+                .Where(b => b.Client.TenantId == tenantId)
+                .GroupBy(b => b.ClientId)
+                .Select(g => new { ClientId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.ClientId, x => x.Count);
+
+            // Cuánto le deben los clientes al tenant: documentos del período (a la tarifa de su sucursal o su override por integrador, con
+            // las bolsas del cliente por delante) + la cuota fija de cada sucursal activa.
+            var breakdown = new List<ClientUsageBreakdown>();
+            decimal amountDueFromClients = 0;
+
+            foreach (var clientBranches in branches.GroupBy(b => b.ClientId))
             {
-                amountDueFromClients += c.SubscriptionRate;
-                breakdown.Add(new ClientUsageBreakdown
+                var clientRows = rows.Where(r => r.ClientId == clientBranches.Key).ToList();
+                var mainBranchId = clientBranches.FirstOrDefault(b => b.IsMain)?.Id ?? clientBranches.First().Id;
+
+                var charges = await ComputeClientDocumentChargesAsync(
+                    clientBranches.Key,
+                    clientRows.Select(r => (r.BranchId ?? mainBranchId, r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId, r.CreatedAt)).ToList(),
+                    clientBranches.ToDictionary(b => b.Id, b => b.PricePerDocument));
+
+                foreach (var branch in clientBranches)
                 {
-                    ClientId = c.Id,
-                    ClientName = !string.IsNullOrEmpty(c.CompanyName) ? c.CompanyName : c.CommercialName,
-                    DocumentsEmitted = 0,
-                    PriceApplied = c.PricePerDocument,
-                    AmountDueToTenant = c.SubscriptionRate
-                });
+                    var documents = clientRows.Count(r => (r.BranchId ?? mainBranchId) == branch.Id);
+                    var due = charges.GetValueOrDefault(branch.Id) + (branch.IsActive ? branch.SubscriptionRate : 0m);
+                    if (documents == 0 && due == 0) continue;
+
+                    amountDueFromClients += due;
+                    breakdown.Add(new ClientUsageBreakdown
+                    {
+                        ClientId = branch.ClientId,
+                        ClientName = BreakdownName(branch.Client, branch, branchCountByClient.GetValueOrDefault(branch.ClientId) > 1),
+                        BranchId = branch.Id,
+                        BranchName = branch.Name,
+                        DocumentsEmitted = documents,
+                        PriceApplied = branch.PricePerDocument,
+                        AmountDueToTenant = due
+                    });
+                }
             }
 
             return new TenantBillingMetrics
@@ -445,6 +541,8 @@ namespace Fel.Infrastructure.Services
     {
         public Guid ClientId { get; set; }
         public string ClientName { get; set; } = string.Empty;
+        public Guid? BranchId { get; set; }
+        public string? BranchName { get; set; }
         public int DocumentsEmitted { get; set; }
         public decimal PriceApplied { get; set; }
         public decimal AmountDueToTenant { get; set; }

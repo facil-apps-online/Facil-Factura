@@ -1,6 +1,6 @@
 # Plan: sucursales en el portal del cliente
 
-Estado: **fases 1, 2 y 3 en producción (5 de octubre de 2026); fase 4 implementada, pendiente de desplegar.** Ver la sección 14.
+Estado: **fases 1 a 4 en producción (5 de octubre de 2026); fase 5 implementada y probada, pendiente de desplegar.** Ver la sección 14.
 
 ## 1. Objetivo
 
@@ -163,6 +163,13 @@ Orden de despliegue con migraciones: `fel-migrator`, luego APIs, luego el resto.
 Ninguno por ahora.
 
 ## 14. Estado
+
+- **Fase 5 (tenant-web: sucursales y usuarios, y cobro por sucursal):** implementada y probada; **pendiente de desplegar** (con migración `AddBranchBilling`: respaldo de FelDb antes; orden fel-migrator, fel-api-tenant, fel-api-client, fel-api-superadmin, fel-worker, tenant-web).
+  - Migración: `Branch` gana `SubscriptionRate`, `PricePerDocument` y `DeactivatedAt`; la principal recibe la tarifa del Client (idempotente) y `ClientIntegratorBilling` pasa a `(BranchId, IntegratorId)` con las filas existentes ligadas a la principal. Reversible y sin cambios de modelo pendientes.
+  - Servicios compartidos `ClientUserAdminService` y `ResolutionBranchService` (portal y tenant aplican las mismas reglas). El tenant gestiona sucursales (`TenantBranchesController`: crear, editar, desactivar, reactivar, llaves por sucursal), usuarios (`TenantClientUsersController`) y resoluciones por sucursal; la tarifa por integrador es por sucursal. Salen del tenant: `portal-user`, `generate-key`, llaves y cuota mensual del cliente.
+  - Cobro: modo por usuario cuenta sucursales activas de clientes activos, prorrateadas por días hasta `DeactivatedAt`; modo por documento cobra cada documento a la tarifa de su sucursal (o su override de integrador) con las bolsas del cliente cubriendo primero los documentos más antiguos (`ComputeBagConsumptionPerDocument`, idéntica a la anterior con tarifas iguales). `PriceCharged` al emitir y el inicio del portal usan la tarifa de la sucursal. Reactivar una sucursal limpia `DeactivatedAt` y vuelve a cobrar desde su fecha de creación (no hay descuento por el tramo inactivo).
+  - tenant-web: pestañas Sucursales (con llaves y tarifas por integrador) y Usuarios del portal, sucursales en Resoluciones; se retiran la cuota mensual y los bloques de llaves, usuario único y tarifa por integrador de las pestañas anteriores.
+  - Pruebas: 26 de cobro con cifras a mano, 91 de la API del tenant, regresión t-api/t-hmac/t-create/t4 y 226 e2e del portal; verificado en el navegador.
 
 - **Fase 4 (portal con sucursal, usuarios y rol Facturador):** implementada y probada; **pendiente de desplegar** (sin migración: API del cliente, API del tenant y client-web).
   - Backend: `GET /client/session` (rol, sucursales y catálogos de roles y tipos de nota), `ClientUsersController` (crear con invitación, editar, reenviar, desactivar y reactivar,

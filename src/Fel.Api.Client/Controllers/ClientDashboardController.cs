@@ -97,8 +97,8 @@ namespace Fel.Api.Client.Controllers
                 }
                 else
                 {
-                    var client = await _dbContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == clientId);
-                    consumption = new { Mode = "Standard", PricePerDocument = client?.PricePerDocument ?? 0 };
+                    var priceBranchId = CurrentBranchScope ?? await BranchProvisioning.MainBranchIdAsync(_dbContext, clientId);
+                    consumption = new { Mode = "Standard", PricePerDocument = await BranchProvisioning.PricePerDocumentAsync(_dbContext, priceBranchId) };
                 }
 
                 var pendingSetupItems = new List<string>();

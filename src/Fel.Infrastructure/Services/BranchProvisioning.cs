@@ -34,6 +34,12 @@ namespace Fel.Infrastructure.Services
         public static Task<Guid> MainBranchIdAsync(FelDbContext dbContext, Guid clientId) =>
             dbContext.Branches.Where(b => b.ClientId == clientId && b.IsMain).Select(b => b.Id).FirstAsync();
 
+        // Precio por documento que el Tenant le cobra al Client por una sucursal (0 si el documento no tiene sucursal).
+        public static async Task<decimal> PricePerDocumentAsync(FelDbContext dbContext, Guid? branchId) =>
+            branchId.HasValue
+                ? await dbContext.Branches.AsNoTracking().Where(b => b.Id == branchId.Value).Select(b => b.PricePerDocument).FirstOrDefaultAsync()
+                : 0m;
+
         // Deja una resolución disponible en una sucursal.
         public static ResolutionBranch LinkResolution(Guid resolutionId, Guid branchId) =>
             new ResolutionBranch { ResolutionId = resolutionId, BranchId = branchId };

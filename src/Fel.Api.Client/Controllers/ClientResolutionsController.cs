@@ -20,11 +20,13 @@ namespace Fel.Api.Client.Controllers
     {
         private readonly FelDbContext _dbContext;
         private readonly DianResolutionParserService _parserService;
+        private readonly ResolutionBranchService _resolutionBranches;
 
-        public ClientResolutionsController(FelDbContext dbContext, DianResolutionParserService parserService)
+        public ClientResolutionsController(FelDbContext dbContext, DianResolutionParserService parserService, ResolutionBranchService resolutionBranches)
         {
             _dbContext = dbContext;
             _parserService = parserService;
+            _resolutionBranches = resolutionBranches;
         }
 
         [HttpGet]
@@ -114,7 +116,7 @@ namespace Fel.Api.Client.Controllers
             {
                 var clientId = GetCurrentClientId();
 
-                var (resolutionBranchIds, branchError) = await ResolveResolutionBranchesAsync(clientId, request.BranchIds, request.DocumentType, request.Prefix);
+                var (resolutionBranchIds, branchError) = await _resolutionBranches.ResolveForNewAsync(clientId, request.BranchIds, request.DocumentType, request.Prefix, CurrentBranchScope);
                 if (branchError != null) return BadRequest(branchError);
 
                 // Desactivar las anteriores del mismo tipo y prefijo
@@ -358,47 +360,10 @@ namespace Fel.Api.Client.Controllers
         [HttpPut("{id:guid}/branches")]
         public async Task<IActionResult> SetBranches(Guid id, [FromBody] SetResolutionBranchesRequest request)
         {
-            var clientId = GetCurrentClientId();
-            if (!await _dbContext.Resolutions.AnyAsync(r => r.Id == id && r.ClientId == clientId)) return NotFound();
-
-            var requested = request.BranchIds.Distinct().ToList();
-            if (requested.Count == 0) return BadRequest("La resolución debe estar disponible en al menos una sucursal.");
-
-            var (valid, error) = await ValidBranchesAsync(clientId, requested);
+            var (ids, error) = await _resolutionBranches.SetBranchesAsync(GetCurrentClientId(), id, request.BranchIds);
+            if (ids == null) return NotFound();
             if (error != null) return BadRequest(error);
-
-            var current = await _dbContext.ResolutionBranches.Where(rb => rb.ResolutionId == id).ToListAsync();
-            _dbContext.ResolutionBranches.RemoveRange(current.Where(rb => !valid.Contains(rb.BranchId)));
-            foreach (var branchId in valid.Where(b => current.All(rb => rb.BranchId != b)))
-                _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(id, branchId));
-
-            await _dbContext.SaveChangesAsync();
-            return Ok(new { branchIds = valid });
-        }
-
-        // Sucursales donde se usará una resolución nueva: las elegidas; si no se eligió ninguna, las de la resolución que reemplaza
-        // (mismo tipo y prefijo, para no dejar sin ella a las demás sucursales) y, si no hay, la sucursal activa.
-        private async Task<(List<Guid> Ids, string? Error)> ResolveResolutionBranchesAsync(Guid clientId, List<Guid>? requested, string documentType, string prefix)
-        {
-            var ids = (requested ?? new List<Guid>()).Distinct().ToList();
-            if (ids.Count == 0)
-            {
-                ids = await _dbContext.ResolutionBranches
-                    .Where(rb => rb.Resolution.ClientId == clientId && rb.Resolution.DocumentType == documentType && rb.Resolution.Prefix == prefix && rb.Resolution.IsActive)
-                    .Select(rb => rb.BranchId).Distinct().ToListAsync();
-                if (ids.Count == 0 && CurrentBranchScope is Guid current) ids.Add(current);
-                if (ids.Count == 0) return (ids, "Elige las sucursales donde se usará la resolución.");
-            }
-            return await ValidBranchesAsync(clientId, ids);
-        }
-
-        // Las sucursales deben ser del Client y estar activas.
-        private async Task<(List<Guid> Ids, string? Error)> ValidBranchesAsync(Guid clientId, List<Guid> ids)
-        {
-            var valid = await _dbContext.Branches.AsNoTracking()
-                .Where(b => b.ClientId == clientId && b.IsActive && ids.Contains(b.Id))
-                .Select(b => b.Id).ToListAsync();
-            return valid.Count == ids.Count ? (valid, null) : (valid, "Alguna de las sucursales elegidas no existe o está inactiva.");
+            return Ok(new { branchIds = ids });
         }
 
         [ClientRole(ClientUserRoles.Administrator)]

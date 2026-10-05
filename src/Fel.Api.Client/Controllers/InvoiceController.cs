@@ -482,7 +482,7 @@ namespace Fel.Api.Client.Controllers
                     // Tarifa vigente al momento de emitir, para que el corte mensual
                     // (SuperadminBillingController.CalculateBilling) tenga con qué facturar — antes
                     // quedaba en 0 y el corte real generaba cobros en $0 sin importar el volumen.
-                    invoice.PriceCharged = client.PricePerDocument;
+                    invoice.PriceCharged = await BranchProvisioning.PricePerDocumentAsync(_dbContext, invoice.BranchId);
                     invoice.IntegratorId = client.IntegratorId;
                 }
 

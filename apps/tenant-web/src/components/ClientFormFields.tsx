@@ -360,10 +360,6 @@ export default function ClientFormFields({ client, setClient, associates, showBi
           <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Tarifa para este cliente</h3>
           <div className="grid grid-cols-2 gap-4 max-w-md">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Valor a Cobrar</label>
-              <input type="number" min="0" step="0.01" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono" value={client.subscriptionRate} onChange={e => setClient({ ...client, subscriptionRate: parseFloat(e.target.value) || 0 })} />
-            </div>
-            <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Frecuencia</label>
               <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.billingFrequency} onChange={e => setClient({ ...client, billingFrequency: e.target.value })}>
                 <option value="Monthly">Mensual</option>
@@ -371,7 +367,7 @@ export default function ClientFormFields({ client, setClient, associates, showBi
               </select>
             </div>
           </div>
-          <p className="text-xs text-slate-500 mt-2">Valor que cobras a este cliente por el servicio.</p>
+          <p className="text-xs text-slate-500 mt-2">La cuota mensual y el precio por documento se fijan por sucursal, en la pestaña Sucursales.</p>
         </div>
       )}
     </>

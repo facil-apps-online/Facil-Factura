@@ -162,10 +162,6 @@ namespace Fel.Api.Tenant.Controllers
                 .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
                 
             if (client == null) return NotFound();
-            var mainBranchKeys = await _dbContext.Branches.AsNoTracking()
-                .Where(b => b.ClientId == client.Id && b.IsMain)
-                .Select(b => new { b.LiveApiKey, b.LiveApiSecret, b.TestApiKey, b.TestApiSecret })
-                .FirstAsync();
             return Ok(new {
                  client.Id,
                  client.CompanyName,
@@ -204,12 +200,7 @@ namespace Fel.Api.Tenant.Controllers
                 client.Latitude,
                 client.Longitude,
                 client.IsActive,
-                client.SubscriptionRate,
-                BillingFrequency = client.BillingFrequency.ToString(),
-                mainBranchKeys.LiveApiKey,
-                mainBranchKeys.LiveApiSecret,
-                mainBranchKeys.TestApiKey,
-                mainBranchKeys.TestApiSecret
+                BillingFrequency = client.BillingFrequency.ToString()
             });
         }
 
@@ -348,7 +339,6 @@ namespace Fel.Api.Tenant.Controllers
             client.AssociateId = request.AssociateId;
             client.Latitude = request.Latitude;
             client.Longitude = request.Longitude;
-            client.SubscriptionRate = request.SubscriptionRate;
             if (Enum.TryParse<BillingFrequency>(request.BillingFrequency, out var frequency))
             {
                 client.BillingFrequency = frequency;
@@ -372,151 +362,6 @@ namespace Fel.Api.Tenant.Controllers
             await _dbContext.SaveChangesAsync();
 
             return NoContent();
-        }
-
-        // El cliente puede tener varios usuarios (los crea su Administrador desde el portal); este acceso es el del titular: el Administrador
-        // más antiguo. Es determinista, así que invitar, reenviar, revocar y reactivar siempre actúan sobre la misma persona.
-        private Task<ClientUser?> OwnerPortalUserAsync(Guid clientId) =>
-            _dbContext.ClientUsers
-                .Where(u => u.ClientId == clientId && u.Role == ClientUserRoles.Administrator)
-                .OrderBy(u => u.CreatedAt)
-                .FirstOrDefaultAsync();
-
-        [HttpGet("{id}/portal-user")]
-        public async Task<IActionResult> GetPortalUser(Guid id)
-        {
-            var tenantId = GetCurrentTenantId();
-            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
-            if (client == null) return NotFound();
-
-            var user = await OwnerPortalUserAsync(id);
-            if (user == null) return Ok(null);
-
-            return Ok(new { user.Id, user.Name, user.Email, user.IsActive, user.CreatedAt });
-        }
-
-        [HttpPut("{id}/portal-user")]
-        public async Task<IActionResult> UpsertPortalUser(Guid id, [FromBody] UpsertPortalUserRequest request)
-        {
-            var tenantId = GetCurrentTenantId();
-            var client = await _dbContext.Clients.Include(c => c.Tenant).FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
-            if (client == null) return NotFound();
-
-            var ownerId = (await OwnerPortalUserAsync(id))?.Id;
-            if (await _dbContext.ClientUsers.AnyAsync(u => u.Email == request.Email && u.Id != ownerId))
-            {
-                return BadRequest("Ese email ya está en uso por otro acceso de cliente.");
-            }
-
-            var user = await OwnerPortalUserAsync(id);
-            var isNew = user == null;
-            if (isNew)
-            {
-                // Sin contraseña manual: se crea con un hash aleatorio inutilizable (nadie la
-                // conoce) y se invita al cliente a que la establezca él mismo desde el enlace.
-                user = new ClientUser
-                {
-                    Id = Guid.NewGuid(),
-                    ClientId = id,
-                    Name = request.Name,
-                    Email = request.Email,
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _dbContext.ClientUsers.Add(user);
-            }
-            else
-            {
-                // La contraseña no se toca acá: solo se cambia desde "Olvidé mi contraseña" o
-                // reenviando la invitación, nunca escribiéndola en este formulario.
-                user.Name = request.Name;
-                user.Email = request.Email;
-            }
-
-            await _dbContext.SaveChangesAsync();
-
-            bool? invitationSent = null;
-            string? invitationError = null;
-            if (isNew)
-            {
-                var coreResult = await _passwordResetService.RequestAsync(
-                    PortalUserType.Client, user.Id, user.Email, user.Name, _clientPortalUrl, "invitation", client.Tenant?.CoreTenantId,
-                    client.Tenant?.LogoLightUrl, client.Tenant?.CommercialName);
-                invitationSent = coreResult.IsSuccess;
-                if (!coreResult.IsSuccess)
-                {
-                    invitationError = coreResult.IsNotConfigured
-                        ? "El servicio de correo no está configurado."
-                        : (coreResult.Error ?? "No se pudo enviar la invitación.");
-                }
-            }
-
-            return Ok(new { user.Id, user.Name, user.Email, user.IsActive, invitationSent, invitationError });
-        }
-
-        // Mismo patrón que TenantDevelopersController y SuperadminTenantsController: reenviar,
-        // revocar y reactivar. Va sobre /portal-user/... (no DELETE /{id}) porque ese verbo ya
-        // significa "desactivar la empresa Client completa" — aquí solo se toca el login del
-        // portal, no el Client dueño de la facturación.
-        [HttpPost("{id}/portal-user/resend-invitation")]
-        public async Task<IActionResult> ResendPortalUserInvitation(Guid id)
-        {
-            var tenantId = GetCurrentTenantId();
-            var client = await _dbContext.Clients.Include(c => c.Tenant).FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
-            if (client == null) return NotFound();
-
-            var user = await OwnerPortalUserAsync(id);
-            if (user == null) return NotFound("Este cliente todavía no tiene un acceso de portal invitado.");
-
-            if (!user.IsActive)
-            {
-                return BadRequest("Este acceso fue revocado; reactívalo antes de reenviar la invitación.");
-            }
-
-            var coreResult = await _passwordResetService.RequestAsync(
-                PortalUserType.Client, user.Id, user.Email, user.Name, _clientPortalUrl, "invitation", client.Tenant?.CoreTenantId,
-                client.Tenant?.LogoLightUrl, client.Tenant?.CommercialName);
-
-            if (!coreResult.IsSuccess)
-            {
-                var detail = coreResult.IsNotConfigured
-                    ? "El servicio de correo no está configurado."
-                    : (coreResult.Error ?? "No se pudo enviar la invitación.");
-                return Ok(new { message = "No se pudo enviar el correo de invitación.", sent = false, detail });
-            }
-
-            return Ok(new { message = "Invitación reenviada.", sent = true, sentAt = DateTime.UtcNow });
-        }
-
-        [HttpPost("{id}/portal-user/revoke")]
-        public async Task<IActionResult> RevokePortalUser(Guid id)
-        {
-            var tenantId = GetCurrentTenantId();
-            if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
-
-            var user = await OwnerPortalUserAsync(id);
-            if (user == null) return NotFound("Este cliente todavía no tiene un acceso de portal invitado.");
-
-            user.IsActive = false;
-            await _dbContext.SaveChangesAsync();
-
-            return Ok(new { user.Id, user.Name, user.Email, user.IsActive });
-        }
-
-        [HttpPost("{id}/portal-user/reactivate")]
-        public async Task<IActionResult> ReactivatePortalUser(Guid id)
-        {
-            var tenantId = GetCurrentTenantId();
-            if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
-
-            var user = await OwnerPortalUserAsync(id);
-            if (user == null) return NotFound("Este cliente todavía no tiene un acceso de portal invitado.");
-
-            user.IsActive = true;
-            await _dbContext.SaveChangesAsync();
-
-            return Ok(new { user.Id, user.Name, user.Email, user.IsActive });
         }
 
         // Envío masivo: invita de una sola vez a todos los Clients señalados que todavía no
@@ -794,38 +639,6 @@ namespace Fel.Api.Tenant.Controllers
             return Ok(new { Message = "Configuración de MinSalud (RIPS) actualizada." });
         }
 
-        [HttpPost("{id}/generate-key")]
-        public async Task<IActionResult> GenerateApiKey(Guid id, [FromQuery] string env)
-        {
-            var tenantId = GetCurrentTenantId();
-            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
-            
-            if (client == null) return NotFound();
-            var branch = await _dbContext.Branches.FirstAsync(b => b.ClientId == client.Id && b.IsMain);
-
-            var newKey = $"sk_{env.ToLower()}_{Guid.NewGuid().ToString("N")}";
-            var newSecret = Guid.NewGuid().ToString("N");
-
-            if (env.Equals("live", StringComparison.OrdinalIgnoreCase))
-            {
-                branch.LiveApiKey = newKey;
-                branch.LiveApiSecret = newSecret;
-            }
-            else if (env.Equals("test", StringComparison.OrdinalIgnoreCase))
-            {
-                branch.TestApiKey = newKey;
-                branch.TestApiSecret = newSecret;
-            }
-            else
-            {
-                return BadRequest("Invalid environment. Use 'live' or 'test'.");
-            }
-
-            await _dbContext.SaveChangesAsync();
-
-            return Ok(new { key = newKey, secret = newSecret });
-        }
-
         // Tipos de documento que este Client puede emitir desde su formulario de facturación —
         // por defecto solo el set estándar (Factura/NC/ND, ver DefaultCatalogSets), el Tenant
         // amplía o reduce esto según lo que ese Client realmente necesite.
@@ -993,12 +806,6 @@ namespace Fel.Api.Tenant.Controllers
         public string? MinSaludTestPassword { get; set; }
     }
 
-    public class UpsertPortalUserRequest
-    {
-        public string Name { get; set; } = string.Empty;
-        public string Email { get; set; } = string.Empty;
-    }
-
     public class BulkInviteClientsRequest
     {
         // Vacío o null = todos los clientes activos del Tenant que aún no tengan acceso de portal.
@@ -1039,7 +846,6 @@ namespace Fel.Api.Tenant.Controllers
         public string? DecimalSeparator { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
-        public decimal SubscriptionRate { get; set; }
         public string BillingFrequency { get; set; } = "Monthly";
         public bool AppliesRetentions { get; set; } = true;
         public string? ElectronicInvoiceLegend { get; set; }

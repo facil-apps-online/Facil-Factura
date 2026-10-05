@@ -152,6 +152,8 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.CityCode).HasMaxLength(10);
                 entity.Property(e => e.Phone).HasMaxLength(40);
                 entity.Property(e => e.Email).HasMaxLength(150);
+                entity.Property(e => e.SubscriptionRate).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.PricePerDocument).HasColumnType("decimal(18,2)");
                 entity.HasIndex(e => new { e.ClientId, e.Code }).IsUnique();
                 entity.Property(e => e.LiveApiKey).HasMaxLength(100);
                 entity.HasIndex(e => e.LiveApiKey).IsUnique();
@@ -958,7 +960,12 @@ namespace Fel.Infrastructure.Data
                       .HasForeignKey(e => e.IntegratorId)
                       .OnDelete(DeleteBehavior.Restrict);
 
-                entity.HasIndex(e => new { e.ClientId, e.IntegratorId }).IsUnique();
+                entity.HasOne(e => e.Branch)
+                      .WithMany()
+                      .HasForeignKey(e => e.BranchId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.BranchId, e.IntegratorId }).IsUnique();
             });
 
             modelBuilder.Entity<ClientPrepaidPackage>(entity =>

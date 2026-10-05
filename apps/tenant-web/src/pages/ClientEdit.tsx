@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, UserRound } from 'lucide-react';
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import ClientFormFields from '../components/ClientFormFields';
+import BranchesTab from '../components/BranchesTab';
+import ClientUsersTab from '../components/ClientUsersTab';
 
 // Consecutivos internos de notas: crédito y débito (facturas) y ajuste (documento soporte).
 type NoteCounterType = 'credit' | 'debit' | 'adjustment';
@@ -29,6 +31,9 @@ export default function ClientEdit() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'info');
   const [resolutions, setResolutions] = useState<any[]>([]);
+  const [branches, setBranches] = useState<{ id: string; name: string; isActive: boolean; isMain: boolean }[]>([]);
+  // Sucursales elegidas en el modal; vacío al crear = las de la resolución que reemplaza o la principal.
+  const [resBranchIds, setResBranchIds] = useState<string[]>([]);
   const [associates, setAssociates] = useState<{ id: string, name: string, isActive: boolean }[]>([]);
   const [showResModal, setShowResModal] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
@@ -74,11 +79,6 @@ export default function ClientEdit() {
   const [manualTrackId, setManualTrackId] = useState('');
   const [checkingManualTrackId, setCheckingManualTrackId] = useState(false);
   const [manualTrackIdOutcome, setManualTrackIdOutcome] = useState<any>(null);
-  const [portalUser, setPortalUser] = useState({ name: '', email: '' });
-  const [hasPortalUser, setHasPortalUser] = useState(false);
-  const [invitationStatus, setInvitationStatus] = useState<{ sent: boolean; at: string; detail?: string } | null>(null);
-  const [portalUserActive, setPortalUserActive] = useState(true);
-  const [savingPortalUser, setSavingPortalUser] = useState(false);
   const [docProvider, setDocProvider] = useState({
     documentProvider: 'Native',
     dataicoApiUser: '',
@@ -117,8 +117,6 @@ export default function ClientEdit() {
   const [packageForm, setPackageForm] = useState({ name: '', totalPrice: 0, discountedPricePerDocument: 0, integratorId: '', isActive: true });
   const [savingPackage, setSavingPackage] = useState(false);
   const [activatingBagPackageId, setActivatingBagPackageId] = useState<string | null>(null);
-  const [clientIntegratorBilling, setClientIntegratorBilling] = useState<any[]>([]);
-  const [savingClientIntegratorId, setSavingClientIntegratorId] = useState<string | null>(null);
   const [enabledDocTypes, setEnabledDocTypes] = useState<any[]>([]);
   const [enabledRetentions, setEnabledRetentions] = useState<any[]>([]);
   const [retentionScope, setRetentionScope] = useState<'Invoice' | 'Support'>('Invoice');
@@ -159,12 +157,7 @@ export default function ClientEdit() {
     latitude: null as number | null,
     longitude: null as number | null,
     isActive: true,
-    subscriptionRate: 0,
     billingFrequency: 'Monthly',
-    liveApiKey: '',
-    liveApiSecret: '',
-     testApiKey: '',
-     testApiSecret: '',
      electronicInvoiceLegend: '',
      supportDocumentLegend: ''
   });
@@ -189,6 +182,7 @@ export default function ClientEdit() {
   }, [id]);
 
   const loadResolutions = () => {
+    api.get(`/tenant/clients/${id}/branches`).then(res => setBranches(res.data)).catch(() => {});
     api.get(`/tenant/clients/${id}/resolutions`)
       .then(res => setResolutions(res.data))
       .catch(() => toast.error("Error al cargar resoluciones"));
@@ -481,20 +475,6 @@ export default function ClientEdit() {
       .catch(() => setHabilitationStatus(null));
   };
 
-  const loadPortalUser = () => {
-    api.get(`/tenant/clients/${id}/portal-user`)
-      .then(res => {
-        if (res.data) {
-          setPortalUser({ name: res.data.name, email: res.data.email });
-          setHasPortalUser(true);
-          setPortalUserActive(res.data.isActive);
-        } else {
-          setHasPortalUser(false);
-        }
-      })
-      .catch(() => setHasPortalUser(false));
-  };
-
   const loadDocProvider = () => {
     api.get(`/tenant/clients/${id}/document-provider`)
       .then(res => setDocProvider(prev => ({ ...prev, ...res.data, dataicoApiPassword: '', dataicoAuthToken: '' })))
@@ -533,15 +513,11 @@ export default function ClientEdit() {
     api.get('/tenant/integrators').then(res => setIntegrators(res.data)).catch(() => {});
   };
 
-  const loadClientIntegratorBilling = () => {
-    api.get(`/tenant/clients/${id}/integrator-billing`).then(res => setClientIntegratorBilling(res.data)).catch(() => {});
-  };
-
   useEffect(() => {
     if (activeTab === 'resolutions') { loadResolutions(); loadNoteCounters(); }
     if (activeTab === 'certificate') loadCertificate();
     if (activeTab === 'dian') loadHabilitationStatus();
-    if (activeTab === 'credentials') { loadPortalUser(); loadDocProvider(); loadIntegrators(); loadClientIntegratorBilling(); loadMinSaludCatalogs(); loadMinSaludConfig(); }
+    if (activeTab === 'credentials') { loadDocProvider(); loadIntegrators(); loadMinSaludCatalogs(); loadMinSaludConfig(); }
     if (activeTab === 'prepaid') { loadPrepaid(); loadIntegrators(); }
     if (activeTab === 'enablements') { loadEnabledDocTypes(); loadEnabledRetentions(); }
     if (activeTab === 'reception') loadReceptionSettings();
@@ -642,7 +618,6 @@ export default function ClientEdit() {
         associateId: client.associateId || null,
         latitude: client.latitude,
         longitude: client.longitude,
-        subscriptionRate: client.subscriptionRate,
          billingFrequency: client.billingFrequency
          ,electronicInvoiceLegend: client.electronicInvoiceLegend || '',
          supportDocumentLegend: client.supportDocumentLegend || ''
@@ -650,58 +625,6 @@ export default function ClientEdit() {
       toast.success("Información del cliente actualizada exitosamente.");
     } catch (err) {
       toast.error("Error al actualizar la información.");
-    }
-  };
-
-  const handleSavePortalUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingPortalUser(true);
-    try {
-      const wasNew = !hasPortalUser;
-      const res = await api.put(`/tenant/clients/${id}/portal-user`, portalUser);
-      toast.success(hasPortalUser ? 'Acceso al portal actualizado.' : 'Acceso al portal creado exitosamente.');
-      setHasPortalUser(true);
-      setPortalUserActive(true);
-      if (wasNew && res.data.invitationSent !== null && res.data.invitationSent !== undefined) {
-        setInvitationStatus({ sent: res.data.invitationSent, at: new Date().toISOString(), detail: res.data.invitationError });
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data || 'Error al guardar el acceso al portal.');
-    } finally {
-      setSavingPortalUser(false);
-    }
-  };
-
-  const handleResendPortalInvitation = async () => {
-    try {
-      const res = await api.post(`/tenant/clients/${id}/portal-user/resend-invitation`);
-      setInvitationStatus({ sent: res.data.sent, at: new Date().toISOString(), detail: res.data.detail });
-      if (res.data.sent) toast.success('Invitación reenviada.');
-      else toast.error(res.data.message || 'No se pudo enviar el correo.');
-    } catch (err: any) {
-      setInvitationStatus({ sent: false, at: new Date().toISOString(), detail: err.response?.data });
-      toast.error(err.response?.data || 'Error al reenviar la invitación.');
-    }
-  };
-
-  const handleRevokePortalUser = async () => {
-    if (!window.confirm('¿Revocar el acceso de este cliente al portal?')) return;
-    try {
-      await api.post(`/tenant/clients/${id}/portal-user/revoke`);
-      toast.success('Acceso revocado.');
-      setPortalUserActive(false);
-    } catch {
-      toast.error('Error al revocar el acceso.');
-    }
-  };
-
-  const handleReactivatePortalUser = async () => {
-    try {
-      await api.post(`/tenant/clients/${id}/portal-user/reactivate`);
-      toast.success('Acceso reactivado.');
-      setPortalUserActive(true);
-    } catch {
-      toast.error('Error al reactivar el acceso.');
     }
   };
 
@@ -789,59 +712,10 @@ export default function ClientEdit() {
     }
   };
 
-  const updateClientIntegratorRow = (integratorId: string, patch: any) => {
-    setClientIntegratorBilling(prev => prev.map(row => row.id === integratorId ? { ...row, ...patch } : row));
-  };
-
-  const handleSaveClientIntegratorBilling = async (row: any) => {
-    setSavingClientIntegratorId(row.id);
-    try {
-      await api.put(`/tenant/clients/${id}/integrator-billing/${row.id}`, { mode: row.mode, pricePerDocument: row.pricePerDocument, pricePerUser: row.pricePerUser });
-      toast.success(`Tarifa de ${row.name} actualizada.`);
-      loadClientIntegratorBilling();
-    } catch (err: any) {
-      toast.error(err.response?.data || 'Error al guardar la tarifa.');
-    } finally {
-      setSavingClientIntegratorId(null);
-    }
-  };
-
-  const handleClearClientIntegratorBilling = async (row: any) => {
-    try {
-      await api.delete(`/tenant/clients/${id}/integrator-billing/${row.id}`);
-      toast.success(`${row.name} vuelve a la tarifa plana del Client.`);
-      loadClientIntegratorBilling();
-    } catch {
-      toast.error('Error al quitar el override.');
-    }
-  };
-
-  const generateKey = async (env: 'live' | 'test') => {
-    try {
-      const res = await api.post(`/tenant/clients/${id}/generate-key?env=${env}`);
-      setClient(prev => ({
-        ...prev,
-        [env === 'live' ? 'liveApiKey' : 'testApiKey']: res.data.key,
-        [env === 'live' ? 'liveApiSecret' : 'testApiSecret']: res.data.secret
-      }));
-      toast.success(`Llaves de ${env === 'live' ? 'producción' : 'pruebas'} generadas exitosamente.`);
-    } catch (err) {
-      toast.error("Error al generar la credencial.");
-    }
-  };
-
-  const copyToClipboard = (text: string, label: string) => {
-    if (!text || text === 'No generada') {
-      toast.error(`No hay ${label} para copiar.`);
-      return;
-    }
-    navigator.clipboard.writeText(text);
-    toast.success(`${label} copiada al portapapeles.`);
-  };
-
   const closeResModal = () => {
     setShowResModal(false);
     setEditingResolutionId(null);
+    setResBranchIds([]);
     setNewRes({
       resolutionNumber: '',
       prefix: '',
@@ -856,11 +730,13 @@ export default function ClientEdit() {
 
   const openCreateResolutionModal = () => {
     setEditingResolutionId(null);
+    setResBranchIds([]);
     setShowResModal(true);
   };
 
   const startEditResolution = (r: any) => {
     setEditingResolutionId(r.id);
+    setResBranchIds(r.branchIds || []);
     setNewRes({
       resolutionNumber: r.resolutionNumber || '',
       prefix: r.prefix || '',
@@ -891,9 +767,10 @@ export default function ClientEdit() {
 
       if (editingResolutionId) {
         await api.put(`/tenant/clients/${id}/resolutions/${editingResolutionId}`, payload);
+        if (branches.length > 1) await api.put(`/tenant/clients/${id}/resolutions/${editingResolutionId}/branches`, { branchIds: resBranchIds });
         toast.success("Resolución actualizada");
       } else {
-        await api.post(`/tenant/clients/${id}/resolutions`, payload);
+        await api.post(`/tenant/clients/${id}/resolutions`, { ...payload, branchIds: resBranchIds });
         toast.success("Resolución agregada");
       }
       closeResModal();
@@ -1173,7 +1050,23 @@ export default function ClientEdit() {
               activeTab === 'credentials' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            <ShieldAlert size={18} /> Credenciales API
+            <ShieldAlert size={18} /> Proveedor y MinSalud
+          </button>
+          <button
+            onClick={() => setActiveTab('branches')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'branches' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Building2 size={18} /> Sucursales
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'users' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <UserRound size={18} /> Usuarios del portal
           </button>
           <button
             onClick={() => setActiveTab('prepaid')}
@@ -1279,6 +1172,7 @@ export default function ClientEdit() {
                           <th className="font-semibold py-3 px-4">Resolución</th>
                           <th className="font-semibold py-3 px-4">Rango</th>
                           <th className="font-semibold py-3 px-4">Próximo #</th>
+                          {branches.length > 1 && <th className="font-semibold py-3 px-4">Sucursales</th>}
                           <th className="font-semibold py-3 px-4">Vigencia</th>
                           <th className="font-semibold py-3 px-4 text-center">Predeterminada</th>
                           <th className="font-semibold py-3 px-4 text-center rounded-tr-xl">Acciones</th>
@@ -1322,6 +1216,11 @@ export default function ClientEdit() {
                                 </button>
                               )}
                             </td>
+                            {branches.length > 1 && (
+                              <td className="py-4 px-4 text-xs text-slate-600">
+                                {(r.branchIds || []).map((bid: string) => branches.find(b => b.id === bid)?.name).filter(Boolean).join(', ') || '—'}
+                              </td>
+                            )}
                             <td className="py-4 px-4 text-sm text-slate-500">
                               {r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} - ${new Date(r.validTo).toLocaleDateString()}`}
                             </td>
@@ -1735,204 +1634,12 @@ export default function ClientEdit() {
                   </form>
                 </div>
 
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                  <h2 className="text-xl font-bold text-slate-800 mb-1">Tarifa por Integrador</h2>
-                  <p className="text-slate-500 text-sm mb-6">
-                    Por defecto se cobra la tarifa plana del emisor (definida en Facturación). Actívalo aquí solo para el integrador que necesite una tarifa o modo distinto.
-                  </p>
-                  <div className="space-y-4">
-                    {clientIntegratorBilling.map((row: any) => (
-                      <div key={row.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-700">{row.name}</span>
-                            {row.hasOverride ? (
-                              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Override activo</span>
-                            ) : (
-                              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-500">Usando tarifa plana</span>
-                            )}
-                          </div>
-                          {row.hasOverride && (
-                            <button type="button" onClick={() => handleClearClientIntegratorBilling(row)} className="text-xs font-bold text-slate-400 hover:text-rose-500 transition-colors">
-                              Quitar override
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap items-end gap-3">
-                          <div className="flex gap-2">
-                            {(['PerDocument', 'PerUser'] as const).map(mode => (
-                              <button
-                                key={mode}
-                                type="button"
-                                onClick={() => updateClientIntegratorRow(row.id, { mode })}
-                                className={`px-4 py-2 rounded-lg font-bold text-xs transition-colors ${
-                                  row.mode === mode ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-100'
-                                }`}
-                              >
-                                {mode === 'PerDocument' ? 'Por Documento' : 'Por Usuario'}
-                              </button>
-                            ))}
-                          </div>
-
-                          {row.mode === 'PerDocument' ? (
-                            <div className="w-40">
-                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tarifa / documento</label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">$</span>
-                                <input type="number" min="0" step="0.01" value={row.pricePerDocument} onChange={e => updateClientIntegratorRow(row.id, { pricePerDocument: parseFloat(e.target.value) || 0 })} className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="w-40">
-                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tarifa / usuario-mes</label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">$</span>
-                                <input type="number" min="0" step="0.01" value={row.pricePerUser} onChange={e => updateClientIntegratorRow(row.id, { pricePerUser: parseFloat(e.target.value) || 0 })} className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                              </div>
-                            </div>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => handleSaveClientIntegratorBilling(row)}
-                            disabled={savingClientIntegratorId === row.id}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition-colors disabled:opacity-50"
-                          >
-                            {savingClientIntegratorId === row.id ? 'Guardando...' : 'Guardar override'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {clientIntegratorBilling.length === 0 && <p className="text-sm text-slate-400">Sin integradores activos en el catálogo.</p>}
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                  <div className="flex items-start justify-between mb-1">
-                    <h2 className="text-xl font-bold text-slate-800">Acceso al Portal del Cliente</h2>
-                    {hasPortalUser && (
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${portalUserActive ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>
-                        {portalUserActive ? 'Activo' : 'Revocado'}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-slate-500 text-sm mb-4">
-                    Con estas credenciales tu cliente ingresa a <span className="font-mono">clients.facil-factura.pro</span> usando el slug de tu empresa (configurado en Apariencia y Branding).
-                  </p>
-                  {hasPortalUser && (
-                    <div className="flex items-center gap-3 mb-3">
-                      {portalUserActive ? (
-                        <>
-                          <button type="button" onClick={handleResendPortalInvitation} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors">
-                            <Mail className="w-3.5 h-3.5" /> Reenviar invitación
-                          </button>
-                          <button type="button" onClick={handleRevokePortalUser} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" /> Revocar acceso
-                          </button>
-                        </>
-                      ) : (
-                        <button type="button" onClick={handleReactivatePortalUser} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors">
-                          <RotateCcw className="w-3.5 h-3.5" /> Reactivar acceso
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {invitationStatus && (
-                    <div className={`flex items-start gap-2 mb-6 px-3 py-2 rounded-lg border text-xs font-medium ${
-                      invitationStatus.sent ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'
-                    }`}>
-                      {invitationStatus.sent ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />}
-                      <span>
-                        {invitationStatus.sent
-                          ? `Correo de invitación enviado correctamente (${new Date(invitationStatus.at).toLocaleTimeString('es-CO')}).`
-                          : `No se pudo enviar el correo${invitationStatus.detail ? `: ${invitationStatus.detail}` : '.'}`}
-                      </span>
-                    </div>
-                  )}
-                  <form onSubmit={handleSavePortalUser} className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre</label>
-                      <input required type="text" value={portalUser.name} onChange={e => setPortalUser({ ...portalUser, name: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email de acceso</label>
-                      <input required type="email" value={portalUser.email} onChange={e => setPortalUser({ ...portalUser, email: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                      {!hasPortalUser && <p className="text-xs text-slate-400 mt-1">Le enviaremos un correo de invitación para que establezca su propia contraseña.</p>}
-                    </div>
-                    <div className="md:col-span-2 flex justify-end">
-                      <button type="submit" disabled={savingPortalUser} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
-                        {savingPortalUser ? 'Guardando...' : hasPortalUser ? 'Actualizar acceso' : 'Crear acceso'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                <h2 className="text-xl font-bold text-slate-800 mb-6">Credenciales de integración</h2>
-                <div className="space-y-6">
-                  <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="font-semibold text-slate-800 mb-1">Credenciales de producción</h3>
-                        <p className="text-slate-500 text-sm">Usa estas credenciales para emitir documentos en producción.</p>
-                      </div>
-                      <button type="button" onClick={() => generateKey('live')} className="px-4 py-2 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-700 transition-colors">Regenerar</button>
-                    </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Key</label>
-                        <div className="flex gap-2">
-                          <input type="text" readOnly value={client.liveApiKey || 'No generada'} className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-600 font-mono text-sm outline-none" />
-                          <button type="button" onClick={() => copyToClipboard(client.liveApiKey, 'API Key (Live)')} className="px-3 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-500 transition-colors" title="Copiar API Key">
-                            <Copy size={16} />
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Secret (HMAC)</label>
-                        <div className="flex gap-2">
-                          <input type="text" readOnly value={client.liveApiSecret || 'No generada'} className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-600 font-mono text-sm outline-none" />
-                          <button type="button" onClick={() => copyToClipboard(client.liveApiSecret, 'API Secret (Live)')} className="px-3 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-500 transition-colors" title="Copiar API Secret">
-                            <Copy size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-amber-50/50 border border-amber-200/50 p-6 rounded-2xl">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="font-semibold text-slate-800 mb-1">Credenciales de pruebas</h3>
-                        <p className="text-slate-500 text-sm">Entorno de pruebas de la DIAN.</p>
-                      </div>
-                      <button type="button" onClick={() => generateKey('test')} className="px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg font-medium hover:bg-amber-50 transition-colors">Regenerar</button>
-                    </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-bold text-amber-600 uppercase mb-1">API Key</label>
-                        <div className="flex gap-2">
-                          <input type="text" readOnly value={client.testApiKey || 'No generada'} className="flex-1 px-4 py-2 bg-white border border-amber-200 rounded-lg text-slate-600 font-mono text-sm outline-none" />
-                          <button type="button" onClick={() => copyToClipboard(client.testApiKey, 'API Key (Test)')} className="px-3 bg-white border border-amber-200 rounded-lg hover:bg-amber-100 text-amber-700 transition-colors" title="Copiar API Key">
-                            <Copy size={16} />
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-amber-600 uppercase mb-1">API Secret (HMAC)</label>
-                        <div className="flex gap-2">
-                          <input type="text" readOnly value={client.testApiSecret || 'No generada'} className="flex-1 px-4 py-2 bg-white border border-amber-200 rounded-lg text-slate-600 font-mono text-sm outline-none" />
-                          <button type="button" onClick={() => copyToClipboard(client.testApiSecret, 'API Secret (Test)')} className="px-3 bg-white border border-amber-200 rounded-lg hover:bg-amber-100 text-amber-700 transition-colors" title="Copiar API Secret">
-                            <Copy size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
               </div>
             )}
+
+            {activeTab === 'branches' && <BranchesTab clientId={id!} />}
+
+            {activeTab === 'users' && <ClientUsersTab clientId={id!} />}
 
             {activeTab === 'prepaid' && (
               <div className="space-y-8">
@@ -2723,6 +2430,21 @@ export default function ClientEdit() {
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Clave Técnica (Solo FE)</label>
                   <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" value={newRes.technicalKey} onChange={e => setNewRes({...newRes, technicalKey: e.target.value})} />
+                </div>
+              )}
+
+              {branches.filter(b => b.isActive).length > 1 && (
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Sucursales donde se usa</label>
+                  <div className="space-y-1.5 border border-slate-200 rounded-xl p-3">
+                    {branches.filter(b => b.isActive).map(b => (
+                      <label key={b.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={resBranchIds.includes(b.id)} onChange={() => setResBranchIds(prev => prev.includes(b.id) ? prev.filter(x => x !== b.id) : [...prev, b.id])} />
+                        {b.name}
+                      </label>
+                    ))}
+                  </div>
+                  {!editingResolutionId && <p className="text-xs text-slate-400 mt-1">Sin elegir, usa las sucursales de la resolución que reemplaza o, si no hay, la principal.</p>}
                 </div>
               )}
 

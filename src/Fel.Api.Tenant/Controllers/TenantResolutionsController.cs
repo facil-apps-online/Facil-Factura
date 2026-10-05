@@ -20,13 +20,15 @@ namespace Fel.Api.Tenant.Controllers
         private readonly DianResolutionParserService _parserService;
         private readonly IDianSoapClient _dianSoapClient;
         private readonly ICryptoVault _cryptoVault;
+        private readonly ResolutionBranchService _resolutionBranches;
 
-        public TenantResolutionsController(FelDbContext dbContext, DianResolutionParserService parserService, IDianSoapClient dianSoapClient, ICryptoVault cryptoVault)
+        public TenantResolutionsController(FelDbContext dbContext, DianResolutionParserService parserService, IDianSoapClient dianSoapClient, ICryptoVault cryptoVault, ResolutionBranchService resolutionBranches)
         {
             _dbContext = dbContext;
             _parserService = parserService;
             _dianSoapClient = dianSoapClient;
             _cryptoVault = cryptoVault;
+            _resolutionBranches = resolutionBranches;
         }
 
         private Guid GetCurrentTenantId()
@@ -61,7 +63,8 @@ namespace Fel.Api.Tenant.Controllers
                     r.TechnicalKey,
                     r.DocumentType,
                     r.NextNumber,
-                    r.IsDefault
+                    r.IsDefault,
+                    BranchIds = _dbContext.ResolutionBranches.Where(rb => rb.ResolutionId == r.Id).Select(rb => rb.BranchId).ToList()
                 })
                 .ToListAsync();
 
@@ -106,6 +109,10 @@ namespace Fel.Api.Tenant.Controllers
             var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
             if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
 
+            var mainBranchId = await BranchProvisioning.MainBranchIdAsync(_dbContext, clientId);
+            var (resolutionBranchIds, branchError) = await _resolutionBranches.ResolveForNewAsync(clientId, request.BranchIds, request.DocumentType, request.Prefix?.Trim() ?? string.Empty, mainBranchId);
+            if (branchError != null) return BadRequest(branchError);
+
             var hasOtherActiveOfType = await _dbContext.Set<Resolution>()
                 .AnyAsync(r => r.ClientId == clientId && r.DocumentType == request.DocumentType && r.IsActive);
 
@@ -126,7 +133,8 @@ namespace Fel.Api.Tenant.Controllers
             };
 
             _dbContext.Set<Resolution>().Add(resolution);
-            _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, await BranchProvisioning.MainBranchIdAsync(_dbContext, clientId)));
+            foreach (var branchId in resolutionBranchIds)
+                _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, branchId));
             await _dbContext.SaveChangesAsync();
 
             return Ok(new {
@@ -359,6 +367,24 @@ namespace Fel.Api.Tenant.Controllers
             return Ok(new { documentType = type, prefix = resolution.Prefix, text });
         }
 
+        public class SetResolutionBranchesRequest
+        {
+            public System.Collections.Generic.List<Guid> BranchIds { get; set; } = new System.Collections.Generic.List<Guid>();
+        }
+
+        // Reemplaza las sucursales donde se usa la resolución; debe quedar al menos una.
+        [HttpPut("{id}/branches")]
+        public async Task<IActionResult> SetBranches(Guid clientId, Guid id, [FromBody] SetResolutionBranchesRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId)) return StatusCode(StatusCodes.Status403Forbidden);
+
+            var (ids, error) = await _resolutionBranches.SetBranchesAsync(clientId, id, request.BranchIds ?? new System.Collections.Generic.List<Guid>());
+            if (ids == null) return NotFound();
+            if (error != null) return BadRequest(error);
+            return Ok(new { branchIds = ids });
+        }
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteResolution(Guid clientId, Guid id)
         {
@@ -386,5 +412,7 @@ namespace Fel.Api.Tenant.Controllers
         public DateTime ValidTo { get; set; }
         public string TechnicalKey { get; set; } = string.Empty;
         public string DocumentType { get; set; } = string.Empty;
+        // Sucursales donde se usará. Sin elegir: las de la resolución que reemplaza o, si no hay, la principal.
+        public System.Collections.Generic.List<Guid>? BranchIds { get; set; }
     }
 }

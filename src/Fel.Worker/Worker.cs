@@ -109,11 +109,14 @@ namespace Fel.Worker
                             ? await dbContext.ClientDocumentSettings.FirstOrDefaultAsync(s => s.ClientId == emisor.Id && s.DocumentTypeId == docType.Id)
                             : null;
 
+                        // Mensajes encolados antes de que existieran sucursales no traen BranchId: caen en la principal.
+                        var branchId = invoiceData.BranchId ?? await BranchProvisioning.MainBranchIdAsync(dbContext, emisor.Id);
+
                         var newDoc = new Document
                         {
                             Id = Guid.NewGuid(),
                             ClientId = emisor.Id,
-                            BranchId = invoiceData.BranchId ?? await BranchProvisioning.MainBranchIdAsync(dbContext, emisor.Id),
+                            BranchId = branchId,
                             TrackingId = $"{invoiceData.Prefix}{invoiceData.DocumentNumber}",
                             TypeCode = docType?.Code ?? "UNKNOWN",
                             Number = invoiceData.DocumentNumber,
@@ -124,7 +127,7 @@ namespace Fel.Worker
                             // Tarifa vigente del cliente al momento de emitir (antes quedaba fijo en
                             // 0 y el corte mensual de Superadmin generaba cobros en $0 sin importar
                             // el volumen real).
-                            PriceCharged = emisor.PricePerDocument,
+                            PriceCharged = await BranchProvisioning.PricePerDocumentAsync(dbContext, branchId),
                             IntegratorId = emisor.IntegratorId,
                             CreatedAt = DateTime.UtcNow,
                             IssueDate = invoiceData.IssueDate,

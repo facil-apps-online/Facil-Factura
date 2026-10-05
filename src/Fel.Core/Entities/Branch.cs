@@ -17,6 +17,13 @@ namespace Fel.Core.Entities
         public bool IsMain { get; set; }
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; }
+        // Cuándo se desactivó (nulo si está activa). El cobro por sucursal activa prorratea los días hasta esta fecha.
+        public DateTime? DeactivatedAt { get; set; }
+
+        // --- Tarifa del Tenant a su Client por esta sucursal (clientes con Dataico) ---
+        // Cuota fija mensual y precio por documento. Las bolsas y planes prepago son del Client y las comparten todas sus sucursales.
+        public decimal SubscriptionRate { get; set; }
+        public decimal PricePerDocument { get; set; }
 
         // Ubicación del emisor para los documentos de esta sucursal. Todo opcional: sin Address la sucursal usa la del Client
         // (la principal hereda, así no se desactualiza cuando se edita la dirección del Client). Ver EmitterLocation.

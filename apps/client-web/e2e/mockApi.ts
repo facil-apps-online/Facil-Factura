@@ -145,7 +145,12 @@ export async function mockApi(page: Page, session: MockSession = ADMIN_SESSION) 
   await page.route('**/api/**', route => {
     const url = new URL(route.request().url());
     const method = route.request().method();
-    const body = method === 'GET' ? respond(url.pathname, url.search, session) : {};
+    let body: any = method === 'GET' ? respond(url.pathname, url.search, session) : {};
+    // Recepción: la principal tiene lo suyo; Norte (b2) hereda el buzón y los eventos de la principal.
+    if (method === 'GET' && url.pathname.endsWith('/client/reception-settings') && body && !Array.isArray(body)) {
+      const inheriting = route.request().headers()['x-branch-id'] === BRANCH_NORTH.id;
+      body = { ...body, isMain: !inheriting, isBranchOwn: !inheriting, isEventsOwn: !inheriting };
+    }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
 }

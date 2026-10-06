@@ -30,7 +30,7 @@ export default function ReceivedDocumentsPage() {
   const fmt = useNumberFormat();
   const { selectedBranchId, hasMultipleBranches } = useSession();
   const { unlocked, lock, toggle } = useCredentialLock();
-  const editingClientDefault = selectedBranchId === ALL_BRANCHES;
+  const editingMainByAll = selectedBranchId === ALL_BRANCHES;
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({
@@ -87,13 +87,24 @@ export default function ReceivedDocumentsPage() {
   };
 
   const removeBranchMailbox = async () => {
-    if (!window.confirm('¿Quitar el buzón propio de esta sucursal? Volverá a usar el del cliente.')) return;
+    if (!window.confirm('¿Quitar el buzón propio de esta sucursal? Volverá a usar el de la principal.')) return;
     try {
       await api.delete('/client/reception-settings');
-      toast.success('La sucursal vuelve a usar el buzón del cliente');
+      toast.success('La sucursal vuelve a usar el buzón de la principal');
       loadSettings();
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'No se pudo quitar el buzón propio'));
+    }
+  };
+
+  const removeBranchEvents = async () => {
+    if (!window.confirm('¿Quitar los eventos propios de esta sucursal? Volverá a usar los de la principal.')) return;
+    try {
+      await api.delete('/client/reception-settings/events');
+      toast.success('La sucursal vuelve a usar los eventos de la principal');
+      loadSettings();
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'No se pudo quitar la configuración propia'));
     }
   };
 
@@ -210,15 +221,15 @@ export default function ReceivedDocumentsPage() {
         </div>
         {hasMultipleBranches && (
           <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600" data-testid="reception-scope">
-            {editingClientDefault ? (
-              <p>Estás editando el buzón <strong>por defecto del cliente</strong>. Lo que llegue aquí queda en la sucursal principal. Elige una sucursal en el encabezado para darle su propio buzón.</p>
+            {settings.isMain ? (
+              <p>Estás editando el buzón de la <strong>sucursal principal</strong>, que es el valor por defecto de las demás{editingMainByAll ? ' (con "Todas" se trabaja sobre la principal)' : ''}. Elige otra sucursal en el encabezado para darle su propio buzón.</p>
             ) : settings.isBranchOwn ? (
               <div className="flex flex-wrap items-center gap-3">
                 <span>Esta sucursal tiene su <strong>buzón propio</strong>: lo que llegue a él queda en ella.</span>
-                <button type="button" onClick={removeBranchMailbox} className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors"><Undo2 size={14} /> Volver a usar el del cliente</button>
+                <button type="button" onClick={removeBranchMailbox} className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors"><Undo2 size={14} /> Volver a usar el de la principal</button>
               </div>
             ) : (
-              <p>Esta sucursal usa el buzón del cliente. Si guardas aquí, tendrá el suyo propio y deberás escribir también la contraseña.</p>
+              <p>Esta sucursal usa el buzón de la principal. Si guardas aquí, tendrá el suyo propio y deberás escribir también la contraseña.</p>
             )}
           </div>
         )}
@@ -285,6 +296,18 @@ export default function ReceivedDocumentsPage() {
         <h2 className="text-xl font-bold text-slate-800 mb-2">Eventos automáticos</h2>
         <p className="text-slate-500 mb-6 text-sm">Elige qué eventos se crearán automáticamente al recibir documentos.</p>
 
+        {hasMultipleBranches && !settings.isMain && (
+          <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600" data-testid="events-scope">
+            {settings.isEventsOwn ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <span>Esta sucursal tiene <strong>eventos propios</strong>.</span>
+                <button type="button" onClick={removeBranchEvents} className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors"><Undo2 size={14} /> Volver a usar los de la principal</button>
+              </div>
+            ) : (
+              <p>Esta sucursal usa los eventos de la principal. Si guardas aquí, tendrá los suyos.</p>
+            )}
+          </div>
+        )}
         <div className="space-y-4">
           {([
             ['autoSendAcuseRecibo', 'acuseRecibo'],

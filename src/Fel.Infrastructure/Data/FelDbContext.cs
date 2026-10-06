@@ -34,6 +34,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<BranchMinSaludCredential> BranchMinSaludCredentials => Set<BranchMinSaludCredential>();
         public DbSet<BranchIhceCredential> BranchIhceCredentials => Set<BranchIhceCredential>();
         public DbSet<BranchReceptionMailbox> BranchReceptionMailboxes => Set<BranchReceptionMailbox>();
+        public DbSet<BranchReceptionEvents> BranchReceptionEvents => Set<BranchReceptionEvents>();
         public DbSet<TenantBilling> TenantBillings => Set<TenantBilling>();
         public DbSet<SuperadminUser> SuperadminUsers => Set<SuperadminUser>();
         public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
@@ -121,12 +122,6 @@ namespace Fel.Infrastructure.Data
                       .WithMany(t => t.Clients)
                       .HasForeignKey(e => e.TenantId)
                       .OnDelete(DeleteBehavior.Restrict);
-
-                entity.Property(e => e.LiveApiKey).HasMaxLength(100);
-                entity.HasIndex(e => e.LiveApiKey).IsUnique();
-                
-                entity.Property(e => e.TestApiKey).HasMaxLength(100);
-                entity.HasIndex(e => e.TestApiKey).IsUnique();
 
                 entity.HasOne(e => e.Integrator)
                       .WithMany()
@@ -242,6 +237,13 @@ namespace Fel.Infrastructure.Data
                 entity.HasOne(e => e.Branch).WithOne().HasForeignKey<BranchReceptionMailbox>(e => e.BranchId).OnDelete(DeleteBehavior.Cascade);
             });
 
+            modelBuilder.Entity<BranchReceptionEvents>(entity =>
+            {
+                entity.ToTable("BranchReceptionEvents");
+                entity.HasKey(e => e.BranchId);
+                entity.HasOne(e => e.Branch).WithOne().HasForeignKey<BranchReceptionEvents>(e => e.BranchId).OnDelete(DeleteBehavior.Cascade);
+            });
+
             modelBuilder.Entity<ClientUserBranch>(entity =>
             {
                 entity.ToTable("ClientUserBranches");
@@ -333,7 +335,6 @@ namespace Fel.Infrastructure.Data
             {
                 entity.Property(e => e.OrganizationDepartment).HasMaxLength(100);
                 entity.Property(e => e.OrganizationType).HasMaxLength(30);
-                entity.Property(e => e.SupportAdjustmentPrefix).HasMaxLength(10);
                 entity.Property(e => e.PersonType).HasMaxLength(2).IsRequired();
                 entity.Property(e => e.DecimalSeparator).HasMaxLength(1).IsRequired().HasDefaultValue(".");
                 entity.Property(e => e.LegalRepresentativeFirstName).HasMaxLength(100);

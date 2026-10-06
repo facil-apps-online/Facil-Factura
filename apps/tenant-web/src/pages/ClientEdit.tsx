@@ -7,7 +7,8 @@ import SearchableSelect from '@shared/components/SearchableSelect';
 import ClientFormFields from '../components/ClientFormFields';
 import BranchesTab from '../components/BranchesTab';
 import ClientUsersTab from '../components/ClientUsersTab';
-import { MinSaludCard, IhceCard, ReceptionMailboxCard } from '../components/BranchCredentials';
+import { MinSaludCard, IhceCard, ReceptionMailboxCard, ReceptionEventsCard } from '../components/BranchCredentials';
+import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
 import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 
 // Consecutivos internos de notas: crédito y débito (facturas) y ajuste (documento soporte).
@@ -238,96 +239,6 @@ export default function ClientEdit() {
     }
   };
 
-  const [receptionSettings, setReceptionSettings] = useState<any>({
-    receptionEmailEnabled: false, receptionEmailHost: '', receptionEmailPort: 993, receptionEmailUseSsl: true,
-    receptionEmailUser: '', hasPassword: false,
-    autoSendAcuseRecibo: false, autoSendReciboBien: false, autoSendAceptacion: false, autoSendReclamo: false
-  });
-  const [receptionPasswordDraft, setReceptionPasswordDraft] = useState('');
-  const [savingReception, setSavingReception] = useState(false);
-  const [testingReceptionConn, setTestingReceptionConn] = useState(false);
-
-  const loadReceptionSettings = () => {
-    api.get(`/tenant/clients/${id}/reception-settings`)
-      .then(res => setReceptionSettings(res.data))
-      .catch(() => toast.error('Error al cargar la configuración de recepción'));
-  };
-
-  const saveReceptionSettings = async () => {
-    setSavingReception(true);
-    try {
-      await api.put(`/tenant/clients/${id}/reception-settings`, {
-        ...receptionSettings,
-        receptionEmailPassword: receptionPasswordDraft || undefined
-      });
-      toast.success('Configuración guardada');
-      setReceptionPasswordDraft('');
-      loadReceptionSettings();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al guardar');
-    } finally {
-      setSavingReception(false);
-    }
-  };
-
-  const testReceptionConnection = async () => {
-    setTestingReceptionConn(true);
-    try {
-      const res = await api.post(`/tenant/clients/${id}/reception-settings/test-connection`);
-      if (res.data.success) toast.success(res.data.message);
-      else toast.error(res.data.message);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al probar la conexión');
-    } finally {
-      setTestingReceptionConn(false);
-    }
-  };
-
-  const [smtpSettings, setSmtpSettings] = useState<any>({
-    smtpHost: '', smtpPort: 587, smtpUseSsl: true, smtpUser: '',
-    smtpFromEmail: '', smtpFromName: '', hasPassword: false
-  });
-  const [smtpPasswordDraft, setSmtpPasswordDraft] = useState('');
-  const [savingSmtp, setSavingSmtp] = useState(false);
-  const [testingSmtpConn, setTestingSmtpConn] = useState(false);
-  const smtpLock = useCredentialLock();
-
-  const loadSmtpSettings = () => {
-    api.get(`/tenant/clients/${id}/smtp-settings`)
-      .then(res => { setSmtpSettings(res.data); smtpLock.lock(); })
-      .catch(() => toast.error('Error al cargar la configuración SMTP'));
-  };
-
-  const saveSmtpSettings = async () => {
-    setSavingSmtp(true);
-    try {
-      await api.put(`/tenant/clients/${id}/smtp-settings`, {
-        ...smtpSettings,
-        smtpPassword: smtpPasswordDraft || undefined
-      });
-      toast.success('Configuración guardada');
-      setSmtpPasswordDraft('');
-      loadSmtpSettings();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al guardar');
-    } finally {
-      setSavingSmtp(false);
-    }
-  };
-
-  const testSmtpConnection = async () => {
-    setTestingSmtpConn(true);
-    try {
-      const res = await api.post(`/tenant/clients/${id}/smtp-settings/test-connection`);
-      if (res.data.success) toast.success(res.data.message);
-      else toast.error(res.data.message);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al probar la conexión');
-    } finally {
-      setTestingSmtpConn(false);
-    }
-  };
-
   const [templateSettings, setTemplateSettings] = useState<any[]>([]);
   const [selectedTemplateSetting, setSelectedTemplateSetting] = useState<any | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
@@ -482,8 +393,6 @@ export default function ClientEdit() {
     if (activeTab === 'credentials') { loadDocProvider(); loadIntegrators(); }
     if (activeTab === 'prepaid') { loadPrepaid(); loadIntegrators(); }
     if (activeTab === 'enablements') { loadEnabledDocTypes(); loadEnabledRetentions(); }
-    if (activeTab === 'reception') loadReceptionSettings();
-    if (activeTab === 'smtp') loadSmtpSettings();
     if (activeTab === 'templates') loadTemplateSettings();
   }, [activeTab, certificateEnvironment]);
 
@@ -1682,98 +1591,16 @@ export default function ClientEdit() {
             {activeTab === 'reception' && (
               <div className="space-y-6">
                 <ReceptionMailboxCard clientId={id!} />
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                  <h2 className="text-xl font-bold text-slate-800 mb-2">Eventos automáticos</h2>
-                  <p className="text-slate-500 mb-6 text-sm">Selecciona los eventos que se crearán automáticamente al recibir un documento.</p>
-
-                  <div className="space-y-3">
-                    {([
-                      ['autoSendAcuseRecibo', 'Acuse de Recibo'],
-                      ['autoSendReciboBien', 'Recibo del Bien o Servicio'],
-                      ['autoSendAceptacion', 'Aceptación Expresa'],
-                      ['autoSendReclamo', 'Reclamo'],
-                    ] as const).map(([field, label]) => (
-                      <label key={field} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer">
-                        <input type="checkbox" checked={receptionSettings[field]}
-                          onChange={e => setReceptionSettings({ ...receptionSettings, [field]: e.target.checked })}
-                          className="w-5 h-5 rounded accent-blue-600" />
-                        <span className="font-semibold text-slate-700 text-sm">{label}</span>
-                      </label>
-                    ))}
-                  </div>
-
-                  <button onClick={saveReceptionSettings} disabled={savingReception} className="mt-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
-                    {savingReception ? 'Guardando...' : 'Guardar eventos automáticos'}
-                  </button>
-                </div>
+                <ReceptionEventsCard clientId={id!} />
               </div>
             )}
 
             {activeTab === 'smtp' && (
-              <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                <div className="flex items-center gap-2 mb-2">
-                  <Mail className="text-blue-600" size={20} />
-                  <h2 className="text-xl font-bold text-slate-800">Correo para Reenvío de Documentos</h2>
-                </div>
-                <p className="text-slate-500 mb-6 text-sm">
-                  Configura, en nombre de este cliente, el SMTP propio para reenviarle a sus clientes un documento ya aprobado cuando emite directo a la DIAN (sin Dataico).
-                  Si lo dejas vacío, se usa el SMTP del tenant (si lo tiene configurado).
-                </p>
-
-                <div className="mb-4 flex justify-end"><CredentialLockButton unlocked={smtpLock.unlocked} onToggle={smtpLock.toggle} /></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor SMTP</label>
-                    <input {...lockedInputProps(smtpLock.unlocked)} type="text" placeholder="smtp.gmail.com" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
-                      value={smtpSettings.smtpHost || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpHost: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
-                    <input {...lockedInputProps(smtpLock.unlocked)} type="number" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
-                      value={smtpSettings.smtpPort || 587} onChange={e => setSmtpSettings({ ...smtpSettings, smtpPort: parseInt(e.target.value) || 587 })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
-                    <input {...lockedInputProps(smtpLock.unlocked)} type="text" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
-                      value={smtpSettings.smtpUser || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpUser: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5">
-                      Contraseña {smtpSettings.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada)</span>}
-                    </label>
-                    <input {...lockedInputProps(smtpLock.unlocked)} type="password" placeholder={smtpSettings.hasPassword ? '••••••••' : ''} className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
-                      value={smtpPasswordDraft} onChange={e => setSmtpPasswordDraft(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo remitente</label>
-                    <input {...lockedInputProps(smtpLock.unlocked)} type="email" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
-                      value={smtpSettings.smtpFromEmail || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpFromEmail: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre remitente</label>
-                    <input {...lockedInputProps(smtpLock.unlocked)} type="text" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
-                      value={smtpSettings.smtpFromName || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpFromName: e.target.value })} />
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-2 mt-4 cursor-pointer">
-                  <input disabled={!smtpLock.unlocked} type="checkbox" checked={!!smtpSettings.smtpUseSsl}
-                    onChange={e => setSmtpSettings({ ...smtpSettings, smtpUseSsl: e.target.checked })}
-                    className="w-4 h-4 rounded accent-blue-600" />
-                  <span className="text-sm text-slate-600">Usar SSL/TLS (recomendado)</span>
-                </label>
-
-                <div className="flex gap-3 mt-6">
-                  {smtpLock.unlocked && (
-                    <button onClick={saveSmtpSettings} disabled={savingSmtp} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
-                      {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
-                    </button>
-                  )}
-                  <button onClick={testSmtpConnection} disabled={testingSmtpConn} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
-                    {testingSmtpConn ? 'Probando...' : 'Probar conexión'}
-                  </button>
-                </div>
-              </div>
+              <SmtpSettingsCard
+                api={api}
+                basePath={`/tenant/clients/${id}/smtp-settings`}
+                description="Configura, en nombre de este cliente, el SMTP propio para reenviarle a sus clientes un documento ya aprobado cuando emite directo a la DIAN (sin Dataico). Si lo dejas vacío, se usa el SMTP del tenant (si lo tiene configurado)."
+              />
             )}
 
             {activeTab === 'templates' && (

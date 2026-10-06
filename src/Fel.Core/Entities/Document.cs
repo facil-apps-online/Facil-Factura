@@ -23,7 +23,7 @@ namespace Fel.Core.Entities
         public Client? Client { get; set; }
 
         // Sucursal con la que se emitió el documento. Nulo solo mientras no se asigne (borradores antiguos).
-        public Guid? BranchId { get; set; }
+        public Guid BranchId { get; set; }
         public Branch? Branch { get; set; }
         
         public Guid? CustomerId { get; set; }

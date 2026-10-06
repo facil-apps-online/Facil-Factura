@@ -2,11 +2,11 @@ using System;
 
 namespace Fel.Core.Entities
 {
-    // Credenciales propias de una sucursal. Cada grupo es una fila opcional (1:1 con la sucursal): sin fila, la sucursal usa las del
-    // Client, que son el valor por defecto de todas sus sucursales (nada se copia, así que no se desactualiza). Con fila, ésta
-    // reemplaza por completo a la del Client para esa sucursal. Las claves van cifradas (ICryptoService) y nunca se serializan.
+    // Credenciales propias de una sucursal. Cada grupo es una fila opcional (1:1 con la sucursal): sin fila, la sucursal usa las de la
+    // sucursal principal, que son el valor por defecto de las demás (nada se copia, así que no se desactualiza). Con fila, ésta reemplaza por
+    // completo a la de la principal para esa sucursal. Las claves van cifradas (ICryptoService) y nunca se serializan.
 
-    // Prestador ante el MUV-FEV-RIPS (LoginSISPRO). Ver los campos equivalentes de Client.
+    // Prestador ante el MUV-FEV-RIPS (LoginSISPRO).
     public class BranchMinSaludCredential
     {
         public Guid BranchId { get; set; }
@@ -42,8 +42,19 @@ namespace Fel.Core.Entities
         public string Environment { get; set; } = "Sandbox"; // Sandbox (Preproducción) o Production
     }
 
-    // Buzón IMAP donde esta sucursal recibe las facturas de sus proveedores. Lo que llega a él queda en la sucursal; lo que llega al
-    // buzón del Client queda en la principal.
+    // Eventos RADIAN que se crean solos al recibir un documento en esta sucursal. Sin fila usa los de la sucursal principal.
+    public class BranchReceptionEvents
+    {
+        public Guid BranchId { get; set; }
+        public Branch Branch { get; set; } = null!;
+
+        public bool AutoSendAcuseRecibo { get; set; }
+        public bool AutoSendReciboBien { get; set; }
+        public bool AutoSendAceptacion { get; set; }
+        public bool AutoSendReclamo { get; set; }
+    }
+
+    // Buzón IMAP donde esta sucursal recibe las facturas de sus proveedores: lo que llega a él queda en la sucursal.
     public class BranchReceptionMailbox
     {
         public Guid BranchId { get; set; }

@@ -10,9 +10,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Tenant.Controllers
 {
-    // Credenciales propias de una sucursal (MinSalud, IHCE y buzón de recepción). Sin credenciales propias la sucursal usa las del Client;
-    // DELETE las quita y vuelve a heredar. Las claves nunca se devuelven: solo si están configuradas. Una sucursal con credenciales propias
-    // reemplaza por completo a las del Client, así que al crearlas no se arrastra ninguna clave heredada.
+    // Credenciales propias de una sucursal (MinSalud, IHCE, buzón de recepción y eventos automáticos). Sin credenciales propias la sucursal
+    // usa las de la principal (el valor por defecto de las demás); DELETE las quita y vuelve a heredar, salvo en la principal. Las claves nunca se devuelven: solo si están configuradas. Una sucursal con credenciales propias
+    // reemplaza por completo a las de la principal, así que al crearlas no se arrastra ninguna clave heredada.
     [ApiController]
     [Route("api/tenant/clients/{clientId}/branches/{branchId}/credentials")]
     public class TenantBranchCredentialsController : ControllerBase
@@ -44,6 +44,8 @@ namespace Fel.Api.Tenant.Controllers
             var branch = await _dbContext.Branches.AsNoTracking().FirstOrDefaultAsync(b => b.Id == branchId && b.ClientId == clientId);
             return (client, branch);
         }
+
+        private const string MainIsDefault = "La sucursal principal es el valor por defecto de las demás: edítala en lugar de quitarla.";
 
         // ---------------- MinSalud ----------------
 
@@ -79,7 +81,7 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var (client, branch) = await GetOwnedAsync(clientId, branchId);
                 if (client == null || branch == null) return NotFound();
-                return Ok(ToDto(await _resolver.MinSaludAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.MinSaludAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -111,7 +113,7 @@ namespace Fel.Api.Tenant.Controllers
                 if (!string.IsNullOrEmpty(request.MinSaludTestPassword)) row.TestPasswordEncrypted = _cryptoService.Encrypt(request.MinSaludTestPassword);
 
                 await _dbContext.SaveChangesAsync();
-                return Ok(ToDto(await _resolver.MinSaludAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.MinSaludAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -123,13 +125,14 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var (client, branch) = await GetOwnedAsync(clientId, branchId);
                 if (client == null || branch == null) return NotFound();
+                if (branch.IsMain) return BadRequest(MainIsDefault);
                 var row = await _dbContext.BranchMinSaludCredentials.FirstOrDefaultAsync(x => x.BranchId == branchId);
                 if (row != null)
                 {
                     _dbContext.BranchMinSaludCredentials.Remove(row);
                     await _dbContext.SaveChangesAsync();
                 }
-                return Ok(ToDto(await _resolver.MinSaludAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.MinSaludAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -169,7 +172,7 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var (client, branch) = await GetOwnedAsync(clientId, branchId);
                 if (client == null || branch == null) return NotFound();
-                return Ok(ToDto(await _resolver.IhceAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.IhceAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -199,7 +202,7 @@ namespace Fel.Api.Tenant.Controllers
                 if (!string.IsNullOrEmpty(request.IhceApimSubscriptionKey)) row.ApimSubscriptionKeyEncrypted = _cryptoService.Encrypt(request.IhceApimSubscriptionKey);
 
                 await _dbContext.SaveChangesAsync();
-                return Ok(ToDto(await _resolver.IhceAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.IhceAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -211,13 +214,14 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var (client, branch) = await GetOwnedAsync(clientId, branchId);
                 if (client == null || branch == null) return NotFound();
+                if (branch.IsMain) return BadRequest(MainIsDefault);
                 var row = await _dbContext.BranchIhceCredentials.FirstOrDefaultAsync(x => x.BranchId == branchId);
                 if (row != null)
                 {
                     _dbContext.BranchIhceCredentials.Remove(row);
                     await _dbContext.SaveChangesAsync();
                 }
-                return Ok(ToDto(await _resolver.IhceAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.IhceAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -252,7 +256,7 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var (client, branch) = await GetOwnedAsync(clientId, branchId);
                 if (client == null || branch == null) return NotFound();
-                return Ok(ToDto(await _resolver.ReceptionMailboxAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.ReceptionMailboxAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -283,7 +287,7 @@ namespace Fel.Api.Tenant.Controllers
                 if (!string.IsNullOrEmpty(request.ReceptionEmailPassword)) row.PasswordEncrypted = _cryptoService.Encrypt(request.ReceptionEmailPassword);
 
                 await _dbContext.SaveChangesAsync();
-                return Ok(ToDto(await _resolver.ReceptionMailboxAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.ReceptionMailboxAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -295,13 +299,90 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var (client, branch) = await GetOwnedAsync(clientId, branchId);
                 if (client == null || branch == null) return NotFound();
+                if (branch.IsMain) return BadRequest(MainIsDefault);
                 var row = await _dbContext.BranchReceptionMailboxes.FirstOrDefaultAsync(x => x.BranchId == branchId);
                 if (row != null)
                 {
                     _dbContext.BranchReceptionMailboxes.Remove(row);
                     await _dbContext.SaveChangesAsync();
                 }
-                return Ok(ToDto(await _resolver.ReceptionMailboxAsync(client, branchId)));
+                return Ok(ToDto(await _resolver.ReceptionMailboxAsync(clientId, branchId)));
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
+        }
+
+        // ---------------- Eventos automáticos de recepción ----------------
+
+        public class ReceptionEventsRequest
+        {
+            public bool AutoSendAcuseRecibo { get; set; }
+            public bool AutoSendReciboBien { get; set; }
+            public bool AutoSendAceptacion { get; set; }
+            public bool AutoSendReclamo { get; set; }
+        }
+
+        private static object ToDto(ReceptionEvents e) => new
+        {
+            isBranchOwn = e.IsBranchOwn,
+            autoSendAcuseRecibo = e.AcuseRecibo,
+            autoSendReciboBien = e.ReciboBien,
+            autoSendAceptacion = e.Aceptacion,
+            autoSendReclamo = e.Reclamo
+        };
+
+        [HttpGet("reception-events")]
+        public async Task<IActionResult> GetReceptionEvents(Guid clientId, Guid branchId)
+        {
+            try
+            {
+                var (client, branch) = await GetOwnedAsync(clientId, branchId);
+                if (client == null || branch == null) return NotFound();
+                return Ok(ToDto(await _resolver.ReceptionEventsAsync(clientId, branchId)));
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
+        }
+
+        [HttpPut("reception-events")]
+        public async Task<IActionResult> SaveReceptionEvents(Guid clientId, Guid branchId, [FromBody] ReceptionEventsRequest request)
+        {
+            try
+            {
+                var (client, branch) = await GetOwnedAsync(clientId, branchId);
+                if (client == null || branch == null) return NotFound();
+
+                var row = await _dbContext.BranchReceptionEvents.FirstOrDefaultAsync(x => x.BranchId == branchId);
+                if (row == null)
+                {
+                    row = new BranchReceptionEvents { BranchId = branchId };
+                    _dbContext.BranchReceptionEvents.Add(row);
+                }
+                row.AutoSendAcuseRecibo = request.AutoSendAcuseRecibo;
+                row.AutoSendReciboBien = request.AutoSendReciboBien;
+                row.AutoSendAceptacion = request.AutoSendAceptacion;
+                row.AutoSendReclamo = request.AutoSendReclamo;
+
+                await _dbContext.SaveChangesAsync();
+                return Ok(ToDto(await _resolver.ReceptionEventsAsync(clientId, branchId)));
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
+        }
+
+        [HttpDelete("reception-events")]
+        public async Task<IActionResult> RemoveReceptionEvents(Guid clientId, Guid branchId)
+        {
+            try
+            {
+                var (client, branch) = await GetOwnedAsync(clientId, branchId);
+                if (client == null || branch == null) return NotFound();
+                if (branch.IsMain) return BadRequest(MainIsDefault);
+
+                var row = await _dbContext.BranchReceptionEvents.FirstOrDefaultAsync(x => x.BranchId == branchId);
+                if (row != null)
+                {
+                    _dbContext.BranchReceptionEvents.Remove(row);
+                    await _dbContext.SaveChangesAsync();
+                }
+                return Ok(ToDto(await _resolver.ReceptionEventsAsync(clientId, branchId)));
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
@@ -314,7 +395,7 @@ namespace Fel.Api.Tenant.Controllers
                 var (client, branch) = await GetOwnedAsync(clientId, branchId);
                 if (client == null || branch == null) return NotFound();
 
-                var mailbox = await _resolver.ReceptionMailboxAsync(client, branchId);
+                var mailbox = await _resolver.ReceptionMailboxAsync(clientId, branchId);
                 if (string.IsNullOrWhiteSpace(mailbox.Host) || string.IsNullOrWhiteSpace(mailbox.PasswordEncrypted))
                     return BadRequest(new { message = "Guarda primero el host, usuario y contraseña." });
 

@@ -33,21 +33,33 @@ test.describe('buzón de recepción', () => {
     await expect(host(page)).toHaveAttribute('readonly', '');
   });
 
-  test('con la principal elegida explica que hereda el buzón del cliente', async ({ page }) => {
+  test('con la principal elegida explica que es el valor por defecto de las demás', async ({ page }) => {
     await signIn(page);
     await mockApi(page);
     await open(page);
-    await expect(page.getByTestId('reception-scope')).toContainText('usa el buzón del cliente');
+    await expect(page.getByTestId('reception-scope')).toContainText('sucursal principal');
+    await expect(page.getByTestId('reception-scope')).toContainText('valor por defecto de las demás');
   });
 
-  test('con "Todas" explica que se edita el buzón por defecto del cliente', async ({ page }) => {
+  test('una sucursal sin buzón ni eventos propios dice que usa los de la principal', async ({ page }) => {
+    await signIn(page);
+    await mockApi(page);
+    await open(page);
+    await page.getByTestId('branch-selector').locator('input').click();
+    await page.getByText('Sucursal Comercializadora', { exact: false }).first().click();
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByTestId('reception-scope')).toContainText('usa el buzón de la principal');
+    await expect(page.getByTestId('events-scope')).toContainText('usa los eventos de la principal');
+  });
+
+  test('con "Todas" se trabaja sobre la principal y lo dice', async ({ page }) => {
     await signIn(page);
     await mockApi(page);
     await open(page);
     await page.getByTestId('branch-selector').locator('input').click();
     await page.getByText('Todas las sucursales', { exact: true }).click();
     await page.waitForLoadState('networkidle');
-    await expect(page.getByTestId('reception-scope')).toContainText('por defecto del cliente');
+    await expect(page.getByTestId('reception-scope')).toContainText('con "Todas" se trabaja sobre la principal');
   });
 
   test('guardar el buzón no envía solo-eventos; guardar eventos automáticos sí', async ({ page }) => {

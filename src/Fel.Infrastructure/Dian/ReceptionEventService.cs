@@ -96,10 +96,12 @@ namespace Fel.Infrastructure.Dian
 
         public async Task TriggerEnabledEventsAsync(ReceivedDocument document, Client client)
         {
-            if (client.AutoSendAcuseRecibo) await TriggerEventAsync(document, client, "030");
-            if (client.AutoSendReciboBien) await TriggerEventAsync(document, client, "032");
-            if (client.AutoSendAceptacion) await TriggerEventAsync(document, client, "033");
-            if (client.AutoSendReclamo) await TriggerEventAsync(document, client, "031");
+            // Los eventos automáticos son los de la sucursal que recibió el documento (o, si no tiene propios, los de la principal).
+            var events = await new Fel.Infrastructure.Services.BranchCredentialResolver(_dbContext).ReceptionEventsAsync(client.Id, document.BranchId);
+            if (events.AcuseRecibo) await TriggerEventAsync(document, client, "030");
+            if (events.ReciboBien) await TriggerEventAsync(document, client, "032");
+            if (events.Aceptacion) await TriggerEventAsync(document, client, "033");
+            if (events.Reclamo) await TriggerEventAsync(document, client, "031");
         }
     }
 }

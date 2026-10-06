@@ -117,78 +117,10 @@ namespace Fel.Core.Entities
         public string? TestSetLastInvoiceCufe { get; set; }
         public string? TestSetLastInvoiceNumber { get; set; }
 
-        // --- Sector Salud: credenciales del profesional/prestador ante el MUV-FEV-RIPS (SIIFA) ---
-        // Cada prestador hace su propia autenticación (LoginSISPRO) con sus propias credenciales,
-        // igual que con el certificado de la DIAN — FacilFactura solo opera la integración a su
-        // nombre. Sin UI en los portales todavía (pendiente).
-        // Tipo de DOCUMENTO de quien autentica (CC, CE, ...). Ojo: hasta la Res 948 este campo
-        // recibía indistintamente CC, RE, PIN, PINx y PIE, mezclando dos cosas que el manual
-        // FEV-RIPS trata por separado — el tipo de documento va en persona.identificacion.tipo y
-        // el tipo de usuario en tipoUsuario. Enviar "RE" como tipo de documento hacía fallar el
-        // LoginSISPRO de cualquier prestador que no fuera persona natural con cédula.
-        public string? MinSaludIdentificationType { get; set; }
-        public string? MinSaludIdentificationNumber { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string? MinSaludPasswordEncrypted { get; set; }
+        // Las credenciales de MinSalud (RIPS) y de IHCE, las llaves de API, la tarifa, el buzón de recepción y los eventos automáticos son de
+        // la sucursal (ver Branch, BranchMinSaludCredential, BranchIhceCredential, BranchReceptionMailbox y BranchReceptionEvents).
 
-        /// <summary>
-        /// Campo "tipoUsuario" del LoginSISPRO: RE (Representante Entidad), PIN (Profesional
-        /// Independiente Nacional), PINx (de Excepción) o PIE (Extranjero). Es opcional según el
-        /// manual; para PSS/PTS debe informarse RE.
-        /// </summary>
-        public string? MinSaludUserType { get; set; }
-
-        // --- Entorno del MUV ---
-        // El Ministerio publica dos ambientes con imágenes y hosts distintos: producción
-        // (fevrips.sispro.gov.co) y pruebas (stage-fevrips.sispropreprod.gov.co). Cada uno exige
-        // sus propias credenciales, igual que TestApiKey/LiveApiKey del lado DIAN, así que no se
-        // pueden guardar en los mismos campos sin obligar al cliente a reescribirlas cada vez que
-        // cambia de ambiente.
-        public string MinSaludEnvironment { get; set; } = MinSaludEnvironments.Test;
-
-        public string? MinSaludTestIdentificationType { get; set; }
-        public string? MinSaludTestIdentificationNumber { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string? MinSaludTestPasswordEncrypted { get; set; }
-
-        // La URL del contenedor FEV-RIPS NO vive acá ni en el Tenant: es configuración de la
-        // plataforma ("MinSalud:MuvProductionUrl" y "MinSalud:MuvTestUrl"), porque la instalación
-        // del MUV es una sola y es nuestra. Antes era un campo por Client, lo que obligaba a
-        // repetir el mismo valor en cada uno y convertía cada repetición en una oportunidad de
-        // escribirlo mal — y una URL mal escrita falla en silencio. Ningún Client llegó a usarlo.
-
-        // --- IHCE (Interoperabilidad de Historia Clínica Electrónica) ---
-        // Credenciales por Client, no por Tenant: según MinSalud, el proveedor tecnológico no se
-        // registra de forma independiente en IHCE — es cada IPS/profesional independiente (nuestro
-        // Client) quien tramita sus propias llaves en el Portal de Administración de Llaves
-        // (Mi Seguridad Social -> Hércules -> ihcecol.sispro.gov.co) y nos las entrega para
-        // configurar/probar la integración en su nombre. Mismo patrón que SoftwareId/SoftwarePin
-        // de la DIAN o las credenciales de MinSalud arriba.
-        public string? IhceClientId { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string? IhceClientSecretEncrypted { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string? IhceApimSubscriptionKey { get; set; }
-        public string? IhceTenantId { get; set; }
-        public string? IhceEndpoint { get; set; }
-        public string IhceEnvironment { get; set; } = "Sandbox"; // Sandbox (Preproducción) o Production
-
-        // --- API Integration (HMAC) ---
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string LiveApiKey { get; set; } = Guid.NewGuid().ToString("N");
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string LiveApiSecret { get; set; } = Guid.NewGuid().ToString("N");
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string TestApiKey { get; set; } = "test_" + Guid.NewGuid().ToString("N");
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string TestApiSecret { get; set; } = Guid.NewGuid().ToString("N");
-        
         // --- Billing ---
-        public decimal PricePerDocument { get; set; } = 0m; // Default price set by Tenant for this Client
-
-        // Tarifa comercial del Tenant hacia este Client, independiente de PricePerDocument
-        // y del modelo de facturación de Superadmin hacia el Tenant.
-        public decimal SubscriptionRate { get; set; } = 0m;
         public BillingFrequency BillingFrequency { get; set; } = BillingFrequency.Monthly;
 
         // --- Proveedor de Documentos Electrónicos ---
@@ -224,24 +156,6 @@ namespace Fel.Core.Entities
         public string? SmtpFromEmail { get; set; }
         public string? SmtpFromName { get; set; }
 
-        // OBSOLETO: los contadores de notas y el prefijo de ajuste viven ahora en NoteNumbering (compartidos por Client o propios de
-        // una sucursal). Estas columnas ya no las lee ni las escribe nada; se eliminan en la limpieza final de las sucursales.
-        // Consecutivo interno de Notas Crédito/Débito — separado del NextNumber de la Resolución
-        // de Factura porque las notas no tienen rango autorizado propio ante la DIAN (solo
-        // reutilizan el Prefix de la resolución "FE", ver DianDocumentMapper.BuildCreditNoteData).
-        // Antes se reclamaba con ResolutionNumbering.ClaimNextNumberAsync(resolution.Id) sobre la
-        // MISMA resolución de Factura, lo que hacía que cada nota consumiera un número que le
-        // correspondía a la siguiente factura real.
-        public long? NextCreditNoteNumber { get; set; }
-        public long? NextDebitNoteNumber { get; set; }
-        // Consecutivo de las Notas de Ajuste del Documento Soporte (DS-AJUSTE), igual que el de las
-        // notas crédito/débito: propio del Client, no compite con el de la resolución del DS.
-        public long? NextSupportAdjustmentNumber { get; set; }
-        // Prefijo de la numeración de Notas de Ajuste registrada en la cuenta de Dataico del Client (ej. "DSA").
-        // Dataico exige que la numeración de estas notas exista en la cuenta y es distinta de la del Documento
-        // Soporte (prefijo "DS"), por eso no se puede derivar de la resolución. Null = usar el de la resolución.
-        public string? SupportAdjustmentPrefix { get; set; }
-
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
 
@@ -251,26 +165,6 @@ namespace Fel.Core.Entities
         // developer independiente tiene el suyo propio bajo el Tenant Sandbox compartido; un
         // developer invitado por un Tenant comparte uno solo por Tenant (ver DeveloperAuthController).
         public bool IsDeveloperSandbox { get; set; } = false;
-
-        // --- Eventos de Recepción (RADIAN) ---
-        // Conexión IMAP al correo de facturación electrónica del Client, para bajar automáticamente
-        // las facturas/notas de sus proveedores. Para Gmail/Outlook, ReceptionEmailPasswordEncrypted
-        // debe ser una "contraseña de aplicación" (esos proveedores ya no aceptan la clave normal
-        // por IMAP), no la contraseña real de la cuenta.
-        public bool ReceptionEmailEnabled { get; set; } = false;
-        public string ReceptionEmailHost { get; set; } = string.Empty;
-        public int ReceptionEmailPort { get; set; } = 993;
-        public bool ReceptionEmailUseSsl { get; set; } = true;
-        public string ReceptionEmailUser { get; set; } = string.Empty;
-        [System.Text.Json.Serialization.JsonIgnore]
-        public string ReceptionEmailPasswordEncrypted { get; set; } = string.Empty;
-
-        // Cuáles eventos RADIAN se disparan automáticamente al recibir un documento (por correo o
-        // carga manual). Todos son opcionales — el Client decide, incluido Reclamo.
-        public bool AutoSendAcuseRecibo { get; set; } = false;
-        public bool AutoSendReciboBien { get; set; } = false;
-        public bool AutoSendAceptacion { get; set; } = false;
-        public bool AutoSendReclamo { get; set; } = false;
 
         public ICollection<Resolution> Resolutions { get; set; } = new List<Resolution>();
         public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();

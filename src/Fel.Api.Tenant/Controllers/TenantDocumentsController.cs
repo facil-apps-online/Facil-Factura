@@ -83,7 +83,7 @@ namespace Fel.Api.Tenant.Controllers
             // esta misma llamada — no queda nada "procesando" ni hay que consultar un estado luego.
             // Credenciales del prestador: las de la sucursal de la llave HMAC si tiene propias; si no, las del Client.
             Guid? branchId = HttpContext.Items["BranchId"] is string branchIdStr && Guid.TryParse(branchIdStr, out var parsedBranchId) ? parsedBranchId : null;
-            var credentials = await _credentialResolver.MinSaludAsync(client, branchId);
+            var credentials = await _credentialResolver.MinSaludAsync(client.Id, branchId);
             var (isSuccess, cuv, message, _) = await _muvService.SendRipsAsync(request, client, credentials);
 
             if (!isSuccess)

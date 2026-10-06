@@ -1,6 +1,6 @@
 # Plan: sucursales en el portal del cliente
 
-Estado: **fases 1 a 4 en producción (5 de octubre de 2026); fase 5 desplegada; fase 6 implementada y probada, pendiente de desplegar.** Ver la sección 14.
+Estado: **fases 1 a 4 en producción (5 de octubre de 2026); fases 5 y 6 desplegadas; fase 7 (limpieza final y SMTP unificado) implementada y probada, pendiente de desplegar.** Ver la sección 14.
 
 ## 1. Objetivo
 
@@ -160,11 +160,17 @@ Orden de despliegue con migraciones: `fel-migrator`, luego APIs, luego el resto.
 
 ## 13. Pendientes
 
-- **Unificar los tres formularios de SMTP** (tenant-web `ClientEdit` y `Branding`, client-web `TemplateSettings`): son casi idénticos y están triplicados; conviene un componente compartido en `apps/_shared`. Se dejó fuera del cambio del lapicito para no mezclar un refactor con él.
-- **Fase 7:** las credenciales de MinSalud, IHCE y buzón que hoy son el valor por defecto en `Client` pasan a la sucursal principal y se eliminan del Client; una sucursal sin credenciales propias heredará entonces las de la principal.
+- Verificar un RIPS real con la llave de una sucursal (no se probó de punta a punta: la validación de la solicitud corta antes del MUV).
+- Limpiar los 11 archivos huérfanos del servidor y los 2 avisos de React por inputs con valor nulo en el formulario del cliente de tenant-web.
+- Facturación automática al cliente: hoy solo se calcula el valor.
 
 ## 14. Estado
 
+- **Fase 7 (limpieza final y SMTP unificado):** implementada y probada; **pendiente de desplegar** (migración `RemoveClientBranchColumns`; un servicio a la vez: fel-migrator, fel-api-tenant, fel-api-client, fel-api-superadmin, fel-worker, tenant-web, client-web; entre la migración y el último servicio los servicios viejos fallan al leer columnas que ya no existen).
+  - Migración: copia (idempotente) las credenciales de MinSalud, IHCE, buzón y eventos automáticos del Client a su sucursal principal, deja el mayor contador de notas, pasa a la principal lo que no tenía sucursal, vuelve `BranchId` obligatorio en `Documents` y `ReceivedDocuments` y elimina 34 columnas del Client (llaves de API, tarifa, contadores de notas, MinSalud, IHCE, buzón y eventos) con sus 2 índices únicos. El `Down` recrea las columnas y copia los datos de vuelta desde la principal (probado con ida, vuelta e ida).
+  - La sucursal principal es el valor por defecto: una sucursal sin credenciales propias hereda las de la principal (`BranchCredentialResolver`); la principal no se "quita", se edita. Los eventos automáticos de recepción pasan a ser por sucursal (`BranchReceptionEvents`, sin fila hereda los de la principal) y el servicio de eventos usa los de la sucursal que recibió el documento. Desaparecen `minsalud-config`, `ihce-config` y `reception-settings` del Client en tenant; en el portal, con "Todas" se trabaja sobre la principal.
+  - tenant-web: el selector "Aplica a" lista solo sucursales (la principal marcada como valor por defecto) y hay una tarjeta nueva de eventos automáticos. El SMTP (tenant-web `ClientEdit` y `Branding`, client-web `TemplateSettings`) es un solo componente compartido, `SmtpSettingsCard`, con el lapicito incluido.
+  - Pruebas: migración con datos (20), API del tenant y del portal (56), resolvedor (24), cobro (26), regresión de las fases 5 (91) y anteriores (t-api, t-hmac, t-create, t4), 21 de interfaz de tenant-web y 232 e2e del portal.
 - **Lapicito en los formularios de credenciales existentes:** hecho y probado; **pendiente de desplegar** (solo tenant-web y client-web, sin backend ni migración). Proveedor de documentos (Dataico) y SMTP del cliente en `ClientEdit`, SMTP del tenant en `Branding` y SMTP del cliente en `TemplateSettings` arrancan bloqueados y sin autocompletado; el lapicito los habilita, Guardar solo existe desbloqueado, vuelven a bloquearse tras guardar y "Probar conexión" sigue disponible. En Dataico también se bloquean los botones de proveedor. La contraseña del .p12 al subir un certificado solo lleva `autoComplete="new-password"` (no es una credencial guardada). Pruebas: 11 de interfaz de tenant-web contra la API real, 1 e2e nueva del portal y 231 e2e en total. No verificado: los botones de proveedor bloqueados (la base de prueba no tiene proveedores habilitados) ni el campo de la contraseña del .p12 (no apareció en la pantalla de prueba).
 - **Fase 6 (credenciales por sucursal: MinSalud, IHCE y buzón de recepción):** implementada y probada; **pendiente de desplegar** (migración `AddBranchCredentials`, solo crea tablas; orden fel-migrator, fel-api-tenant, fel-api-client, fel-worker, tenant-web, client-web, de uno en uno).
   - Tres tablas 1:1 con la sucursal (`BranchMinSaludCredentials`, `BranchIhceCredentials`, `BranchReceptionMailboxes`): sin fila la sucursal hereda las del Client (que siguen siendo el valor por defecto, nada se copia); con fila, ésta reemplaza por completo a las del Client y no arrastra claves heredadas. `BranchCredentialResolver` da las credenciales efectivas.

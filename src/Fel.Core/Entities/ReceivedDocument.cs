@@ -13,7 +13,7 @@ namespace Fel.Core.Entities
         public Client Client { get; set; } = null!;
 
         // Sucursal cuyo buzón (o carga manual) recibió el documento.
-        public Guid? BranchId { get; set; }
+        public Guid BranchId { get; set; }
         public Branch? Branch { get; set; }
 
         public string SourceType { get; set; } = "Manual"; // "Manual" | "Email"

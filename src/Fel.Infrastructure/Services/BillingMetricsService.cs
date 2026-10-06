@@ -155,7 +155,6 @@ namespace Fel.Infrastructure.Services
             if (client == null) throw new Exception("Client not found");
 
             var branches = await _dbContext.Branches.AsNoTracking().Where(b => b.ClientId == clientId).ToListAsync();
-            var mainBranchId = branches.FirstOrDefault(b => b.IsMain)?.Id ?? Guid.Empty;
 
             // Los documentos de Clients sandbox quedan en "APPROVED" pero nunca se transmitieron a
             // la DIAN: son respuestas simuladas para developers (ver SandboxSimulation), así que no
@@ -167,10 +166,10 @@ namespace Fel.Infrastructure.Services
                 .ToListAsync();
 
             // Documentos emitidos antes de la Fase 3a no tienen IntegratorId propio — se asumen del integrador
-            // actual del Client, la mejor aproximación disponible; los que no traen sucursal van a la principal.
+            // actual del Client, la mejor aproximación disponible.
             var charges = await ComputeClientDocumentChargesAsync(
                 clientId,
-                docs.Select(d => (d.BranchId ?? mainBranchId, d.IntegratorId ?? client.IntegratorId, d.CreatedAt)).ToList(),
+                docs.Select(d => (d.BranchId, d.IntegratorId ?? client.IntegratorId, d.CreatedAt)).ToList(),
                 branches.ToDictionary(b => b.Id, b => b.PricePerDocument));
 
             // La cuota fija mensual la paga cada sucursal activa.
@@ -381,16 +380,15 @@ namespace Fel.Infrastructure.Services
             foreach (var clientBranches in branches.GroupBy(b => b.ClientId))
             {
                 var clientRows = rows.Where(r => r.ClientId == clientBranches.Key).ToList();
-                var mainBranchId = clientBranches.FirstOrDefault(b => b.IsMain)?.Id ?? clientBranches.First().Id;
 
                 var charges = await ComputeClientDocumentChargesAsync(
                     clientBranches.Key,
-                    clientRows.Select(r => (r.BranchId ?? mainBranchId, r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId, r.CreatedAt)).ToList(),
+                    clientRows.Select(r => (r.BranchId, r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId, r.CreatedAt)).ToList(),
                     clientBranches.ToDictionary(b => b.Id, b => b.PricePerDocument));
 
                 foreach (var branch in clientBranches)
                 {
-                    var documents = clientRows.Count(r => (r.BranchId ?? mainBranchId) == branch.Id);
+                    var documents = clientRows.Count(r => r.BranchId == branch.Id);
                     var due = charges.GetValueOrDefault(branch.Id) + (branch.IsActive ? branch.SubscriptionRate : 0m);
                     if (documents == 0 && due == 0) continue;
 

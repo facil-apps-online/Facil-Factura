@@ -1,17 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Mail, ShieldCheck, Stethoscope, Undo2 } from 'lucide-react';
+import { BellRing, Mail, ShieldCheck, Stethoscope, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 import { api, getErrorMessage } from '../lib/api';
 
-// Credenciales que cada sucursal puede tener propias (MinSalud, IHCE y buzón de recepción). Cada tarjeta se edita para "todo el cliente"
-// (el valor por defecto) o para una sucursal: sin credenciales propias la sucursal hereda las del cliente; al guardar las suyas las
-// reemplazan por completo, y "Volver a heredar" las quita. Los formularios arrancan bloqueados (lapicito) para que el navegador no los
-// autocomplete ni se cambien por accidente.
+// Credenciales que cada sucursal puede tener propias (MinSalud, IHCE, buzón de recepción y eventos automáticos). La sucursal principal es el
+// valor por defecto: una sucursal sin credenciales propias hereda las de la principal; al guardar las suyas éstas las reemplazan por
+// completo, y "Volver a heredar" las quita. Los formularios arrancan bloqueados (lapicito) para que el navegador no los autocomplete ni se
+// cambien por accidente.
 
-type Scope = 'client' | string;
-type Kind = 'minsalud' | 'ihce' | 'reception';
+type Kind = 'minsalud' | 'ihce' | 'reception' | 'reception-events';
 
 interface BranchOption { id: string; name: string; isMain: boolean; isActive: boolean }
 
@@ -19,28 +18,28 @@ const inputBase = 'w-full px-4 py-2.5 border border-slate-200 rounded-xl outline
 const labelClass = 'block text-xs font-bold text-slate-500 uppercase mb-1';
 const selectInputClass = (unlocked: boolean) => lockedInputClass(unlocked, 'w-full px-4 py-2.5 pr-8 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white');
 
-function endpoint(clientId: string, kind: Kind, scope: Scope) {
-  if (scope === 'client') {
-    return { minsalud: `/tenant/clients/${clientId}/minsalud-config`, ihce: `/tenant/clients/${clientId}/ihce-config`, reception: `/tenant/clients/${clientId}/reception-settings` }[kind];
-  }
-  return `/tenant/clients/${clientId}/branches/${scope}/credentials/${kind}`;
-}
+const endpoint = (clientId: string, kind: Kind, branchId: string) => `/tenant/clients/${clientId}/branches/${branchId}/credentials/${kind}`;
 
+// Sucursales del cliente y la elegida (arranca en la principal).
 function useScope(clientId: string) {
   const [branches, setBranches] = useState<BranchOption[]>([]);
-  const [scope, setScope] = useState<Scope>('client');
+  const [scope, setScope] = useState<string>('');
   useEffect(() => {
-    api.get(`/tenant/clients/${clientId}/branches`).then(res => setBranches(res.data)).catch(() => {});
+    api.get(`/tenant/clients/${clientId}/branches`).then(res => {
+      setBranches(res.data);
+      setScope(prev => prev || res.data.find((b: BranchOption) => b.isMain)?.id || res.data[0]?.id || '');
+    }).catch(() => {});
   }, [clientId]);
-  return { branches, scope, setScope };
+  const isMain = branches.find(b => b.id === scope)?.isMain ?? true;
+  return { branches, scope, setScope, isMain };
 }
 
-function Card({ icon, title, description, clientId, kind, children, header, lock }: {
-  icon: React.ReactNode; title: string; description: string; clientId: string; kind: Kind;
+function Card({ icon, title, description, kind, children, header, lock }: {
+  icon: React.ReactNode; title: string; description: string; kind: Kind;
   header: React.ReactNode; children: React.ReactNode; lock: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100" data-credential-card={kind} data-client={clientId}>
+    <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100" data-credential-card={kind}>
       <div className="flex items-start justify-between gap-4 mb-1">
         <div className="flex items-center gap-2">{icon}<h2 className="text-xl font-bold text-slate-800">{title}</h2></div>
         {lock}
@@ -52,8 +51,8 @@ function Card({ icon, title, description, clientId, kind, children, header, lock
   );
 }
 
-function ScopeBar({ branches, scope, setScope, isOwn, onRemove, disabled }: {
-  branches: BranchOption[]; scope: Scope; setScope: (s: Scope) => void; isOwn: boolean; onRemove: () => void; disabled: boolean;
+function ScopeBar({ branches, scope, setScope, isMain, isOwn, onRemove, disabled, noun }: {
+  branches: BranchOption[]; scope: string; setScope: (s: string) => void; isMain: boolean; isOwn: boolean; onRemove: () => void; disabled: boolean; noun: string;
 }) {
   if (branches.length <= 1) return null; // con una sola sucursal no hay a qué aplicarlo por separado
   return (
@@ -62,22 +61,23 @@ function ScopeBar({ branches, scope, setScope, isOwn, onRemove, disabled }: {
         <label className="text-sm font-semibold text-slate-700">Aplica a</label>
         <select value={scope} onChange={e => setScope(e.target.value)} disabled={disabled}
           className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-          <option value="client">Todo el cliente (valor por defecto)</option>
           {branches.map(b => <option key={b.id} value={b.id}>{b.name}{b.isMain ? ' (principal)' : ''}{b.isActive ? '' : ' — inactiva'}</option>)}
         </select>
-        {scope !== 'client' && (
+        {isMain ? (
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Valor por defecto de las demás sucursales</span>
+        ) : (
           <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isOwn ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
-            {isOwn ? 'Credenciales propias de la sucursal' : 'Hereda las del cliente'}
+            {isOwn ? `${noun} propios de la sucursal` : 'Hereda los de la principal'}
           </span>
         )}
-        {scope !== 'client' && isOwn && (
+        {!isMain && isOwn && (
           <button type="button" onClick={onRemove} className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors">
             <Undo2 size={14} /> Volver a heredar
           </button>
         )}
       </div>
-      {scope !== 'client' && !isOwn && (
-        <p className="text-xs text-slate-500">Estás viendo las del cliente. Si guardas aquí, la sucursal tendrá las suyas y deberás escribir también las claves: no se copian las del cliente.</p>
+      {!isMain && !isOwn && (
+        <p className="text-xs text-slate-500">Estás viendo lo de la principal. Si guardas aquí, la sucursal tendrá lo suyo y deberás escribir también las claves: no se copian las de la principal.</p>
       )}
     </div>
   );
@@ -86,7 +86,7 @@ function ScopeBar({ branches, scope, setScope, isOwn, onRemove, disabled }: {
 // ---------------- MinSalud ----------------
 
 export function MinSaludCard({ clientId }: { clientId: string }) {
-  const { branches, scope, setScope } = useScope(clientId);
+  const { branches, scope, setScope, isMain } = useScope(clientId);
   const { unlocked, lock, toggle } = useCredentialLock();
   const [form, setForm] = useState<any>({ minSaludEnvironment: 'Test', minSaludUserType: '', minSaludIdentificationType: 'CC', minSaludIdentificationNumber: '', minSaludTestIdentificationType: 'CC', minSaludTestIdentificationNumber: '' });
   const [passwords, setPasswords] = useState({ prod: '', test: '' });
@@ -99,6 +99,7 @@ export function MinSaludCard({ clientId }: { clientId: string }) {
   }, []);
 
   const load = () => {
+    if (!scope) return;
     api.get(endpoint(clientId, 'minsalud', scope)).then(res => {
       const d = res.data;
       setForm({
@@ -118,7 +119,7 @@ export function MinSaludCard({ clientId }: { clientId: string }) {
     setSaving(true);
     try {
       await api.put(endpoint(clientId, 'minsalud', scope), { ...form, minSaludPassword: passwords.prod, minSaludTestPassword: passwords.test });
-      toast.success(scope === 'client' ? 'Configuración de MinSalud (RIPS) actualizada.' : 'Credenciales de MinSalud de la sucursal guardadas.');
+      toast.success(isMain ? 'Configuración de MinSalud (RIPS) actualizada.' : 'Credenciales de MinSalud de la sucursal guardadas.');
       load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'Error al guardar la configuración.'));
@@ -128,10 +129,10 @@ export function MinSaludCard({ clientId }: { clientId: string }) {
   };
 
   const remove = async () => {
-    if (!window.confirm('¿Quitar las credenciales propias de esta sucursal? Volverá a usar las del cliente.')) return;
+    if (!window.confirm('¿Quitar las credenciales propias de esta sucursal? Volverá a usar las de la principal.')) return;
     try {
       await api.delete(endpoint(clientId, 'minsalud', scope));
-      toast.success('La sucursal vuelve a heredar las credenciales del cliente.');
+      toast.success('La sucursal vuelve a heredar las credenciales de la principal.');
       load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'No se pudo quitar la configuración propia.'));
@@ -161,10 +162,10 @@ export function MinSaludCard({ clientId }: { clientId: string }) {
   );
 
   return (
-    <Card clientId={clientId} kind="minsalud" icon={<Stethoscope className="text-blue-600" size={20} />} title="MinSalud / RIPS (MUV-FEV-RIPS)"
+    <Card kind="minsalud" icon={<Stethoscope className="text-blue-600" size={20} />} title="MinSalud / RIPS (MUV-FEV-RIPS)"
       description="Credenciales del prestador ante SISPRO para el envío de RIPS al Ministerio de Salud. Solo aplica a emisores del sector salud."
       lock={<CredentialLockButton unlocked={unlocked} onToggle={toggle} />}
-      header={<ScopeBar branches={branches} scope={scope} setScope={setScope} isOwn={meta.isBranchOwn} onRemove={remove} disabled={saving} />}>
+      header={<ScopeBar branches={branches} scope={scope} setScope={setScope} isMain={isMain} isOwn={meta.isBranchOwn} onRemove={remove} disabled={saving} noun="Credenciales" />}>
       <form onSubmit={save} className="space-y-5" autoComplete="off">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -197,7 +198,7 @@ export function MinSaludCard({ clientId }: { clientId: string }) {
 // ---------------- IHCE ----------------
 
 export function IhceCard({ clientId }: { clientId: string }) {
-  const { branches, scope, setScope } = useScope(clientId);
+  const { branches, scope, setScope, isMain } = useScope(clientId);
   const { unlocked, lock, toggle } = useCredentialLock();
   const [form, setForm] = useState({ ihceClientId: '', ihceTenantId: '', ihceEndpoint: '', ihceEnvironment: 'Sandbox' });
   const [secrets, setSecrets] = useState({ clientSecret: '', apimKey: '' });
@@ -205,6 +206,7 @@ export function IhceCard({ clientId }: { clientId: string }) {
   const [saving, setSaving] = useState(false);
 
   const load = () => {
+    if (!scope) return;
     api.get(endpoint(clientId, 'ihce', scope)).then(res => {
       const d = res.data;
       setForm({ ihceClientId: d.ihceClientId || '', ihceTenantId: d.ihceTenantId || '', ihceEndpoint: d.ihceEndpoint || '', ihceEnvironment: d.ihceEnvironment || 'Sandbox' });
@@ -220,7 +222,7 @@ export function IhceCard({ clientId }: { clientId: string }) {
     setSaving(true);
     try {
       await api.put(endpoint(clientId, 'ihce', scope), { ...form, ihceClientSecret: secrets.clientSecret, ihceApimSubscriptionKey: secrets.apimKey });
-      toast.success(scope === 'client' ? 'Credenciales de IHCE actualizadas.' : 'Credenciales de IHCE de la sucursal guardadas.');
+      toast.success(isMain ? 'Credenciales de IHCE actualizadas.' : 'Credenciales de IHCE de la sucursal guardadas.');
       load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'Error al guardar la configuración de IHCE.'));
@@ -230,10 +232,10 @@ export function IhceCard({ clientId }: { clientId: string }) {
   };
 
   const remove = async () => {
-    if (!window.confirm('¿Quitar las credenciales propias de esta sucursal? Volverá a usar las del cliente.')) return;
+    if (!window.confirm('¿Quitar las credenciales propias de esta sucursal? Volverá a usar las de la principal.')) return;
     try {
       await api.delete(endpoint(clientId, 'ihce', scope));
-      toast.success('La sucursal vuelve a heredar las credenciales del cliente.');
+      toast.success('La sucursal vuelve a heredar las credenciales de la principal.');
       load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'No se pudo quitar la configuración propia.'));
@@ -241,10 +243,10 @@ export function IhceCard({ clientId }: { clientId: string }) {
   };
 
   return (
-    <Card clientId={clientId} kind="ihce" icon={<ShieldCheck className="text-blue-600" size={20} />} title="IHCE (Historia Clínica Electrónica)"
+    <Card kind="ihce" icon={<ShieldCheck className="text-blue-600" size={20} />} title="IHCE (Historia Clínica Electrónica)"
       description="Llaves que la IPS o el profesional tramita en el Portal de Administración de Llaves de IHCE (Hércules) para interoperar su historia clínica."
       lock={<CredentialLockButton unlocked={unlocked} onToggle={toggle} />}
-      header={<ScopeBar branches={branches} scope={scope} setScope={setScope} isOwn={meta.isBranchOwn} onRemove={remove} disabled={saving} />}>
+      header={<ScopeBar branches={branches} scope={scope} setScope={setScope} isMain={isMain} isOwn={meta.isBranchOwn} onRemove={remove} disabled={saving} noun="Credenciales" />}>
       <form onSubmit={save} className="space-y-4" autoComplete="off">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -292,10 +294,8 @@ export function IhceCard({ clientId }: { clientId: string }) {
 // ---------------- Buzón de recepción ----------------
 
 export function ReceptionMailboxCard({ clientId }: { clientId: string }) {
-  const { branches, scope, setScope } = useScope(clientId);
+  const { branches, scope, setScope, isMain } = useScope(clientId);
   const { unlocked, lock, toggle } = useCredentialLock();
-  // En el alcance del cliente el PUT también lleva los eventos automáticos (son del cliente): se conservan tal como vinieron.
-  const [raw, setRaw] = useState<any>({});
   const [form, setForm] = useState({ receptionEmailEnabled: false, receptionEmailHost: '', receptionEmailPort: 993, receptionEmailUseSsl: true, receptionEmailUser: '' });
   const [password, setPassword] = useState('');
   const [meta, setMeta] = useState({ hasPassword: false, isBranchOwn: false });
@@ -303,9 +303,9 @@ export function ReceptionMailboxCard({ clientId }: { clientId: string }) {
   const [testing, setTesting] = useState(false);
 
   const load = () => {
+    if (!scope) return;
     api.get(endpoint(clientId, 'reception', scope)).then(res => {
       const d = res.data;
-      setRaw(d);
       setForm({ receptionEmailEnabled: !!d.receptionEmailEnabled, receptionEmailHost: d.receptionEmailHost || '', receptionEmailPort: d.receptionEmailPort || 993, receptionEmailUseSsl: d.receptionEmailUseSsl !== false, receptionEmailUser: d.receptionEmailUser || '' });
       setMeta({ hasPassword: !!d.hasPassword, isBranchOwn: !!d.isBranchOwn });
       setPassword('');
@@ -317,11 +317,8 @@ export function ReceptionMailboxCard({ clientId }: { clientId: string }) {
   const save = async () => {
     setSaving(true);
     try {
-      const body = scope === 'client'
-        ? { autoSendAcuseRecibo: raw.autoSendAcuseRecibo, autoSendReciboBien: raw.autoSendReciboBien, autoSendAceptacion: raw.autoSendAceptacion, autoSendReclamo: raw.autoSendReclamo, ...form, receptionEmailPassword: password }
-        : { ...form, receptionEmailPassword: password };
-      await api.put(endpoint(clientId, 'reception', scope), body);
-      toast.success(scope === 'client' ? 'Configuración guardada.' : 'Buzón de la sucursal guardado.');
+      await api.put(endpoint(clientId, 'reception', scope), { ...form, receptionEmailPassword: password });
+      toast.success(isMain ? 'Configuración guardada.' : 'Buzón de la sucursal guardado.');
       load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'Error al guardar la configuración.'));
@@ -344,10 +341,10 @@ export function ReceptionMailboxCard({ clientId }: { clientId: string }) {
   };
 
   const remove = async () => {
-    if (!window.confirm('¿Quitar el buzón propio de esta sucursal? Volverá a usar el del cliente.')) return;
+    if (!window.confirm('¿Quitar el buzón propio de esta sucursal? Volverá a usar el de la principal.')) return;
     try {
       await api.delete(endpoint(clientId, 'reception', scope));
-      toast.success('La sucursal vuelve a heredar el buzón del cliente.');
+      toast.success('La sucursal vuelve a heredar el buzón de la principal.');
       load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'No se pudo quitar el buzón propio.'));
@@ -355,10 +352,10 @@ export function ReceptionMailboxCard({ clientId }: { clientId: string }) {
   };
 
   return (
-    <Card clientId={clientId} kind="reception" icon={<Mail className="text-blue-600" size={20} />} title="Correo de Facturación Electrónica"
-      description="El buzón donde le llegan las facturas de sus proveedores. Lo que llegue al buzón del cliente queda en la sucursal principal; lo que llegue al de una sucursal queda en ella. Para Gmail u Outlook usa una contraseña de aplicación."
+    <Card kind="reception" icon={<Mail className="text-blue-600" size={20} />} title="Correo de Facturación Electrónica"
+      description="El buzón donde le llegan las facturas de sus proveedores; lo que llegue a él queda en la sucursal elegida. Para Gmail u Outlook usa una contraseña de aplicación."
       lock={<CredentialLockButton unlocked={unlocked} onToggle={toggle} />}
-      header={<ScopeBar branches={branches} scope={scope} setScope={setScope} isOwn={meta.isBranchOwn} onRemove={remove} disabled={saving} />}>
+      header={<ScopeBar branches={branches} scope={scope} setScope={setScope} isMain={isMain} isOwn={meta.isBranchOwn} onRemove={remove} disabled={saving} noun="Buzón" />}>
       <div>
         <label className="flex items-center gap-3 mb-5 cursor-pointer">
           <input type="checkbox" disabled={!unlocked} checked={form.receptionEmailEnabled} onChange={e => setForm({ ...form, receptionEmailEnabled: e.target.checked })} className="w-5 h-5 rounded accent-blue-600" />
@@ -397,6 +394,74 @@ export function ReceptionMailboxCard({ clientId }: { clientId: string }) {
           </button>
         </div>
       </div>
+    </Card>
+  );
+}
+
+// ---------------- Eventos automáticos de recepción ----------------
+
+const EVENTS = [
+  ['autoSendAcuseRecibo', 'Acuse de Recibo'],
+  ['autoSendReciboBien', 'Recibo del Bien o Servicio'],
+  ['autoSendAceptacion', 'Aceptación Expresa'],
+  ['autoSendReclamo', 'Reclamo']
+] as const;
+
+export function ReceptionEventsCard({ clientId }: { clientId: string }) {
+  const { branches, scope, setScope, isMain } = useScope(clientId);
+  const [form, setForm] = useState<Record<string, boolean>>({ autoSendAcuseRecibo: false, autoSendReciboBien: false, autoSendAceptacion: false, autoSendReclamo: false });
+  const [isOwn, setIsOwn] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    if (!scope) return;
+    api.get(endpoint(clientId, 'reception-events', scope)).then(res => {
+      setForm({ autoSendAcuseRecibo: !!res.data.autoSendAcuseRecibo, autoSendReciboBien: !!res.data.autoSendReciboBien, autoSendAceptacion: !!res.data.autoSendAceptacion, autoSendReclamo: !!res.data.autoSendReclamo });
+      setIsOwn(!!res.data.isBranchOwn);
+    }).catch(err => toast.error(getErrorMessage(err, 'No se pudo cargar la configuración de eventos.')));
+  };
+  useEffect(load, [clientId, scope]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(endpoint(clientId, 'reception-events', scope), form);
+      toast.success(isMain ? 'Eventos automáticos guardados.' : 'Eventos automáticos de la sucursal guardados.');
+      load();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Error al guardar los eventos.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm('¿Quitar los eventos propios de esta sucursal? Volverá a usar los de la principal.')) return;
+    try {
+      await api.delete(endpoint(clientId, 'reception-events', scope));
+      toast.success('La sucursal vuelve a heredar los eventos de la principal.');
+      load();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudo quitar la configuración propia.'));
+    }
+  };
+
+  return (
+    <Card kind="reception-events" icon={<BellRing className="text-blue-600" size={20} />} title="Eventos automáticos"
+      description="Selecciona los eventos que se crearán automáticamente al recibir un documento en la sucursal."
+      lock={null}
+      header={<ScopeBar branches={branches} scope={scope} setScope={setScope} isMain={isMain} isOwn={isOwn} onRemove={remove} disabled={saving} noun="Eventos" />}>
+      <div className="space-y-3">
+        {EVENTS.map(([field, label]) => (
+          <label key={field} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer">
+            <input type="checkbox" checked={form[field]} onChange={e => setForm({ ...form, [field]: e.target.checked })} className="w-5 h-5 rounded accent-blue-600" />
+            <span className="font-semibold text-slate-700 text-sm">{label}</span>
+          </label>
+        ))}
+      </div>
+      <button onClick={save} disabled={saving} className="mt-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+        {saving ? 'Guardando...' : 'Guardar eventos automáticos'}
+      </button>
     </Card>
   );
 }

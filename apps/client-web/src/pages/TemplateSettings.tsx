@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Copy, Upload, GitBranch, Pencil, Eye, Loader2, Mail } from 'lucide-react';
+import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Copy, Upload, GitBranch, Pencil, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { buildNumberFormat, setDecimalSeparator, useNumberFormat } from '../lib/numberFormat';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { Button } from '../components/ui/button';
-import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
+import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
 
 interface ClientSetting {
   settingId: string;
@@ -58,48 +58,6 @@ export default function TemplateSettings() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [savingUnitFormat, setSavingUnitFormat] = useState(false);
 
-  const [smtp, setSmtp] = useState<any>({
-    smtpHost: '', smtpPort: 587, smtpUseSsl: true, smtpUser: '',
-    smtpFromEmail: '', smtpFromName: '', hasPassword: false
-  });
-  const [smtpPasswordDraft, setSmtpPasswordDraft] = useState('');
-  const [savingSmtp, setSavingSmtp] = useState(false);
-  const [testingSmtp, setTestingSmtp] = useState(false);
-  const smtpLock = useCredentialLock();
-
-  const loadSmtp = () => {
-    api.get('/client/smtp-settings')
-      .then(res => { setSmtp(res.data); smtpLock.lock(); })
-      .catch(() => toast.error('No se pudo cargar la configuración SMTP'));
-  };
-
-  const saveSmtp = async () => {
-    setSavingSmtp(true);
-    try {
-      await api.put('/client/smtp-settings', { ...smtp, smtpPassword: smtpPasswordDraft || undefined });
-      toast.success('Configuración SMTP guardada');
-      setSmtpPasswordDraft('');
-      loadSmtp();
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Error al guardar la configuración SMTP'));
-    } finally {
-      setSavingSmtp(false);
-    }
-  };
-
-  const testSmtp = async () => {
-    setTestingSmtp(true);
-    try {
-      const res = await api.post('/client/smtp-settings/test-connection');
-      if (res.data.success) toast.success(res.data.message);
-      else toast.error(res.data.message);
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Error al probar la conexión'));
-    } finally {
-      setTestingSmtp(false);
-    }
-  };
-
   const loadBranding = () => {
     api.get<{ invoiceLogoUrl?: string, unitOfMeasureDisplayOverride?: string }>('/v1/branding/my-branding')
       .then(res => setBranding({ invoiceLogoUrl: res.data.invoiceLogoUrl || '', unitOfMeasureDisplayOverride: res.data.unitOfMeasureDisplayOverride || '' }))
@@ -148,7 +106,6 @@ export default function TemplateSettings() {
     loadSettings();
     loadBranding();
     loadMyTemplates();
-    loadSmtp();
   }, []);
 
   const handleSelectType = async (setting: ClientSetting) => {
@@ -347,69 +304,12 @@ export default function TemplateSettings() {
         </div>
       </div>
 
-      {/* SMTP propio para reenvío de documentos del flujo nativo DIAN */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8">
-        <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
-          <Mail className="w-5 h-5 text-primary" /> Correo para reenvío de documentos
-        </h2>
-        <p className="text-sm text-slate-500 mb-6">
-          Si emites directo a la DIAN, este SMTP es el que se usa para reenviarle un documento ya aprobado a tu cliente.
-          Si lo dejas vacío, se usa el SMTP de tu proveedor (si lo tiene configurado).
-        </p>
-
-        <div className="mb-4 flex justify-end"><CredentialLockButton unlocked={smtpLock.unlocked} onToggle={smtpLock.toggle} /></div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor SMTP</label>
-            <input {...lockedInputProps(smtpLock.unlocked)} type="text" placeholder="smtp.gmail.com" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
-              value={smtp.smtpHost || ''} onChange={e => setSmtp({ ...smtp, smtpHost: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
-            <input {...lockedInputProps(smtpLock.unlocked)} type="number" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
-              value={smtp.smtpPort || 587} onChange={e => setSmtp({ ...smtp, smtpPort: parseInt(e.target.value) || 587 })} />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
-            <input {...lockedInputProps(smtpLock.unlocked)} type="text" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
-              value={smtp.smtpUser || ''} onChange={e => setSmtp({ ...smtp, smtpUser: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">
-              Contraseña {smtp.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada — deja en blanco para no cambiarla)</span>}
-            </label>
-            <input {...lockedInputProps(smtpLock.unlocked)} type="password" placeholder={smtp.hasPassword ? '••••••••' : ''} className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
-              value={smtpPasswordDraft} onChange={e => setSmtpPasswordDraft(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo remitente</label>
-            <input {...lockedInputProps(smtpLock.unlocked)} type="email" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
-              value={smtp.smtpFromEmail || ''} onChange={e => setSmtp({ ...smtp, smtpFromEmail: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre remitente</label>
-            <input {...lockedInputProps(smtpLock.unlocked)} type="text" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
-              value={smtp.smtpFromName || ''} onChange={e => setSmtp({ ...smtp, smtpFromName: e.target.value })} />
-          </div>
-        </div>
-
-        <label className="flex items-center gap-2 mt-4 cursor-pointer">
-          <input disabled={!smtpLock.unlocked} type="checkbox" checked={!!smtp.smtpUseSsl} onChange={e => setSmtp({ ...smtp, smtpUseSsl: e.target.checked })} className="w-4 h-4 rounded accent-primary" />
-          <span className="text-sm text-slate-600">Usar conexión segura (SSL/TLS)</span>
-        </label>
-
-        <div className="flex flex-col gap-3 sm:flex-row mt-6">
-          {smtpLock.unlocked && (
-            <button onClick={saveSmtp} disabled={savingSmtp} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
-              {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
-            </button>
-          )}
-          <button onClick={testSmtp} disabled={testingSmtp} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
-            {testingSmtp ? 'Probando...' : 'Probar conexión'}
-          </button>
-        </div>
-      </div>
+      <SmtpSettingsCard
+        api={api}
+        basePath="/client/smtp-settings"
+        className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8"
+        description={<>Si emites directo a la DIAN, este SMTP es el que se usa para reenviarle un documento ya aprobado a tu cliente. Si lo dejas vacío, se usa el SMTP de tu proveedor (si lo tiene configurado).</>}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
         {/* Lista de Tipos de Documento */}

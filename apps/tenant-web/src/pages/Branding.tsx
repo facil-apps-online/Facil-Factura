@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Palette, Image as ImageIcon, Save, CheckCircle2, XCircle, Loader2, Copy, Mail } from 'lucide-react';
 import { api } from '../lib/api';
+import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 
 export default function Branding() {
   const [formData, setFormData] = useState({
@@ -27,10 +28,11 @@ export default function Branding() {
   const [smtpPasswordDraft, setSmtpPasswordDraft] = useState('');
   const [savingSmtp, setSavingSmtp] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
+  const smtpLock = useCredentialLock();
 
   const loadSmtp = () => {
     api.get('/tenant/smtp-settings')
-      .then(res => setSmtp(res.data))
+      .then(res => { setSmtp(res.data); smtpLock.lock(); })
       .catch(() => toast.error('No se pudo cargar la configuración SMTP'));
   };
 
@@ -306,50 +308,54 @@ export default function Branding() {
           SMTP por defecto para tus clientes que emiten directo a la DIAN (sin Dataico) y no configuraron su propio SMTP.
         </p>
 
+        <div className="mb-4 flex justify-end max-w-3xl"><CredentialLockButton unlocked={smtpLock.unlocked} onToggle={smtpLock.toggle} /></div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl">
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor SMTP</label>
-            <input type="text" placeholder="smtp.gmail.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input {...lockedInputProps(smtpLock.unlocked)} type="text" placeholder="smtp.gmail.com" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
               value={smtp.smtpHost || ''} onChange={e => setSmtp({ ...smtp, smtpHost: e.target.value })} />
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
-            <input type="number" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input {...lockedInputProps(smtpLock.unlocked)} type="number" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
               value={smtp.smtpPort || 587} onChange={e => setSmtp({ ...smtp, smtpPort: parseInt(e.target.value) || 587 })} />
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
-            <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input {...lockedInputProps(smtpLock.unlocked)} type="text" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
               value={smtp.smtpUser || ''} onChange={e => setSmtp({ ...smtp, smtpUser: e.target.value })} />
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">
               Contraseña {smtp.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada — deja en blanco para no cambiarla)</span>}
             </label>
-            <input type="password" placeholder={smtp.hasPassword ? '••••••••' : ''} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input {...lockedInputProps(smtpLock.unlocked)} type="password" placeholder={smtp.hasPassword ? '••••••••' : ''} className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
               value={smtpPasswordDraft} onChange={e => setSmtpPasswordDraft(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo remitente</label>
-            <input type="email" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input {...lockedInputProps(smtpLock.unlocked)} type="email" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
               value={smtp.smtpFromEmail || ''} onChange={e => setSmtp({ ...smtp, smtpFromEmail: e.target.value })} />
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre remitente</label>
-            <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input {...lockedInputProps(smtpLock.unlocked)} type="text" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary")}
               value={smtp.smtpFromName || ''} onChange={e => setSmtp({ ...smtp, smtpFromName: e.target.value })} />
           </div>
         </div>
 
         <label className="flex items-center gap-2 mt-4 cursor-pointer">
-          <input type="checkbox" checked={!!smtp.smtpUseSsl} onChange={e => setSmtp({ ...smtp, smtpUseSsl: e.target.checked })} className="w-4 h-4 rounded accent-primary" />
+          <input disabled={!smtpLock.unlocked} type="checkbox" checked={!!smtp.smtpUseSsl} onChange={e => setSmtp({ ...smtp, smtpUseSsl: e.target.checked })} className="w-4 h-4 rounded accent-primary" />
           <span className="text-sm text-slate-600">Usar conexión segura (SSL/TLS)</span>
         </label>
 
         <div className="flex gap-3 mt-6">
-          <button onClick={saveSmtp} disabled={savingSmtp} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
-            {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
-          </button>
+          {smtpLock.unlocked && (
+            <button onClick={saveSmtp} disabled={savingSmtp} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+              {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
+            </button>
+          )}
           <button onClick={testSmtp} disabled={testingSmtp} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
             {testingSmtp ? 'Probando...' : 'Probar conexión'}
           </button>

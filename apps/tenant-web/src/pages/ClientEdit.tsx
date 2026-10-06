@@ -8,6 +8,7 @@ import ClientFormFields from '../components/ClientFormFields';
 import BranchesTab from '../components/BranchesTab';
 import ClientUsersTab from '../components/ClientUsersTab';
 import { MinSaludCard, IhceCard, ReceptionMailboxCard } from '../components/BranchCredentials';
+import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 
 // Consecutivos internos de notas: crédito y débito (facturas) y ajuste (documento soporte).
 type NoteCounterType = 'credit' | 'debit' | 'adjustment';
@@ -91,6 +92,7 @@ export default function ClientEdit() {
     hasAuthToken: false
   });
   const [savingDocProvider, setSavingDocProvider] = useState(false);
+  const docLock = useCredentialLock();
   const [integrators, setIntegrators] = useState<{ id: string, code: string, name: string }[]>([]);
   const [prepaidPackages, setPrepaidPackages] = useState<any[]>([]);
   const [prepaidBags, setPrepaidBags] = useState<any[]>([]);
@@ -288,10 +290,11 @@ export default function ClientEdit() {
   const [smtpPasswordDraft, setSmtpPasswordDraft] = useState('');
   const [savingSmtp, setSavingSmtp] = useState(false);
   const [testingSmtpConn, setTestingSmtpConn] = useState(false);
+  const smtpLock = useCredentialLock();
 
   const loadSmtpSettings = () => {
     api.get(`/tenant/clients/${id}/smtp-settings`)
-      .then(res => setSmtpSettings(res.data))
+      .then(res => { setSmtpSettings(res.data); smtpLock.lock(); })
       .catch(() => toast.error('Error al cargar la configuración SMTP'));
   };
 
@@ -459,7 +462,7 @@ export default function ClientEdit() {
 
   const loadDocProvider = () => {
     api.get(`/tenant/clients/${id}/document-provider`)
-      .then(res => setDocProvider(prev => ({ ...prev, ...res.data, dataicoApiPassword: '', dataicoAuthToken: '' })))
+      .then(res => { setDocProvider(prev => ({ ...prev, ...res.data, dataicoApiPassword: '', dataicoAuthToken: '' })); docLock.lock(); })
       .catch(() => {});
   };
 
@@ -1388,6 +1391,7 @@ export default function ClientEdit() {
                         <label className="block text-sm font-semibold text-slate-700 mb-2">Contraseña del Certificado</label>
                         <input 
                           type="password" 
+                          autoComplete="new-password"
                           required
                           value={certPassword}
                           onChange={e => setCertPassword(e.target.value)}
@@ -1420,7 +1424,8 @@ export default function ClientEdit() {
                       ? 'Por defecto los documentos se emiten con el motor propio. Si este emisor factura con otro proveedor, actívalo aquí y captura sus credenciales.'
                       : 'Los documentos de este emisor se emiten con el motor propio (emisión directa ante la DIAN).'}
                   </p>
-                  <form onSubmit={handleSaveDocProvider} className="space-y-4">
+                  <div className="mb-4 flex justify-end"><CredentialLockButton unlocked={docLock.unlocked} onToggle={docLock.toggle} /></div>
+                  <form onSubmit={handleSaveDocProvider} className="space-y-4" autoComplete="off">
                     <div className="flex gap-3">
                       {integrators.map(i => {
                         const value = i.code === 'DATAICO' ? 'Dataico' : 'Native';
@@ -1428,6 +1433,7 @@ export default function ClientEdit() {
                           <button
                             key={i.id}
                             type="button"
+                            disabled={!docLock.unlocked}
                             onClick={() => setDocProvider({ ...docProvider, documentProvider: value })}
                             className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors ${
                               docProvider.documentProvider === value ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
@@ -1443,39 +1449,41 @@ export default function ClientEdit() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ambiente</label>
-                          <select value={docProvider.dataicoEnvironment} onChange={e => setDocProvider({ ...docProvider, dataicoEnvironment: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                          <select disabled={!docLock.unlocked} value={docProvider.dataicoEnvironment} onChange={e => setDocProvider({ ...docProvider, dataicoEnvironment: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white")}>
                             <option value="PRUEBAS">Pruebas</option>
                             <option value="PRODUCCION">Producción</option>
                           </select>
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dataico Account ID</label>
-                          <input type="text" value={docProvider.dataicoAccountId} onChange={e => setDocProvider({ ...docProvider, dataicoAccountId: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" />
+                          <input {...lockedInputProps(docLock.unlocked)} type="text" value={docProvider.dataicoAccountId} onChange={e => setDocProvider({ ...docProvider, dataicoAccountId: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm")} />
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Usuario API</label>
-                          <input type="text" value={docProvider.dataicoApiUser} onChange={e => setDocProvider({ ...docProvider, dataicoApiUser: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                          <input {...lockedInputProps(docLock.unlocked)} type="text" value={docProvider.dataicoApiUser} onChange={e => setDocProvider({ ...docProvider, dataicoApiUser: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none")} />
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
                             Contraseña API {docProvider.hasApiPassword && <span className="text-emerald-600 normal-case font-normal">(configurada)</span>}
                           </label>
-                          <input type="password" placeholder={docProvider.hasApiPassword ? 'Dejar vacío para no cambiar' : ''} value={docProvider.dataicoApiPassword} onChange={e => setDocProvider({ ...docProvider, dataicoApiPassword: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                          <input {...lockedInputProps(docLock.unlocked)} type="password" placeholder={docProvider.hasApiPassword ? 'Dejar vacío para no cambiar' : ''} value={docProvider.dataicoApiPassword} onChange={e => setDocProvider({ ...docProvider, dataicoApiPassword: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none")} />
                         </div>
                         <div className="md:col-span-2">
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
                             Auth-token {docProvider.hasAuthToken && <span className="text-emerald-600 normal-case font-normal">(configurado)</span>}
                           </label>
-                          <input type="password" placeholder={docProvider.hasAuthToken ? 'Dejar vacío para no cambiar' : ''} value={docProvider.dataicoAuthToken} onChange={e => setDocProvider({ ...docProvider, dataicoAuthToken: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" />
+                          <input {...lockedInputProps(docLock.unlocked)} type="password" placeholder={docProvider.hasAuthToken ? 'Dejar vacío para no cambiar' : ''} value={docProvider.dataicoAuthToken} onChange={e => setDocProvider({ ...docProvider, dataicoAuthToken: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm")} />
                         </div>
                       </div>
                     )}
 
-                    <div className="flex justify-end pt-2">
-                      <button type="submit" disabled={savingDocProvider} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
-                        {savingDocProvider ? 'Guardando...' : 'Guardar Proveedor'}
-                      </button>
-                    </div>
+                    {docLock.unlocked && (
+                      <div className="flex justify-end pt-2">
+                        <button type="submit" disabled={savingDocProvider} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
+                          {savingDocProvider ? 'Guardando...' : 'Guardar Proveedor'}
+                        </button>
+                      </div>
+                    )}
                   </form>
                 </div>
 
@@ -1712,52 +1720,55 @@ export default function ClientEdit() {
                   Si lo dejas vacío, se usa el SMTP del tenant (si lo tiene configurado).
                 </p>
 
+                <div className="mb-4 flex justify-end"><CredentialLockButton unlocked={smtpLock.unlocked} onToggle={smtpLock.toggle} /></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor SMTP</label>
-                    <input type="text" placeholder="smtp.gmail.com" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    <input {...lockedInputProps(smtpLock.unlocked)} type="text" placeholder="smtp.gmail.com" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
                       value={smtpSettings.smtpHost || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpHost: e.target.value })} />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
-                    <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    <input {...lockedInputProps(smtpLock.unlocked)} type="number" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
                       value={smtpSettings.smtpPort || 587} onChange={e => setSmtpSettings({ ...smtpSettings, smtpPort: parseInt(e.target.value) || 587 })} />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
-                    <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    <input {...lockedInputProps(smtpLock.unlocked)} type="text" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
                       value={smtpSettings.smtpUser || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpUser: e.target.value })} />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">
                       Contraseña {smtpSettings.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada)</span>}
                     </label>
-                    <input type="password" placeholder={smtpSettings.hasPassword ? '••••••••' : ''} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    <input {...lockedInputProps(smtpLock.unlocked)} type="password" placeholder={smtpSettings.hasPassword ? '••••••••' : ''} className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
                       value={smtpPasswordDraft} onChange={e => setSmtpPasswordDraft(e.target.value)} />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">Correo remitente</label>
-                    <input type="email" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    <input {...lockedInputProps(smtpLock.unlocked)} type="email" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
                       value={smtpSettings.smtpFromEmail || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpFromEmail: e.target.value })} />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre remitente</label>
-                    <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    <input {...lockedInputProps(smtpLock.unlocked)} type="text" className={lockedInputClass(smtpLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500")}
                       value={smtpSettings.smtpFromName || ''} onChange={e => setSmtpSettings({ ...smtpSettings, smtpFromName: e.target.value })} />
                   </div>
                 </div>
 
                 <label className="flex items-center gap-2 mt-4 cursor-pointer">
-                  <input type="checkbox" checked={!!smtpSettings.smtpUseSsl}
+                  <input disabled={!smtpLock.unlocked} type="checkbox" checked={!!smtpSettings.smtpUseSsl}
                     onChange={e => setSmtpSettings({ ...smtpSettings, smtpUseSsl: e.target.checked })}
                     className="w-4 h-4 rounded accent-blue-600" />
                   <span className="text-sm text-slate-600">Usar SSL/TLS (recomendado)</span>
                 </label>
 
                 <div className="flex gap-3 mt-6">
-                  <button onClick={saveSmtpSettings} disabled={savingSmtp} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
-                    {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
-                  </button>
+                  {smtpLock.unlocked && (
+                    <button onClick={saveSmtpSettings} disabled={savingSmtp} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+                      {savingSmtp ? 'Guardando...' : 'Guardar configuración'}
+                    </button>
+                  )}
                   <button onClick={testSmtpConnection} disabled={testingSmtpConn} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
                     {testingSmtpConn ? 'Probando...' : 'Probar conexión'}
                   </button>

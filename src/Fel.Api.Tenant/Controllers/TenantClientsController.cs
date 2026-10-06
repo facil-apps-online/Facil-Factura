@@ -639,6 +639,50 @@ namespace Fel.Api.Tenant.Controllers
             return Ok(new { Message = "Configuración de MinSalud (RIPS) actualizada." });
         }
 
+        // Credenciales IHCE del Client: el valor por defecto de todas sus sucursales (cada una puede tener las suyas, ver
+        // TenantBranchCredentialsController). Las claves se guardan cifradas y nunca se devuelven.
+        [HttpGet("{id}/ihce-config")]
+        public async Task<IActionResult> GetIhceConfig(Guid id)
+        {
+            var tenantId = GetCurrentTenantId();
+            var client = await _dbContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+            if (client == null) return NotFound();
+            return Ok(IhceConfigDto(client));
+        }
+
+        private static object IhceConfigDto(Client client) => new
+        {
+            ihceClientId = client.IhceClientId,
+            hasClientSecret = !string.IsNullOrEmpty(client.IhceClientSecretEncrypted),
+            hasApimSubscriptionKey = !string.IsNullOrEmpty(client.IhceApimSubscriptionKey),
+            ihceTenantId = client.IhceTenantId,
+            ihceEndpoint = client.IhceEndpoint,
+            ihceEnvironment = string.IsNullOrEmpty(client.IhceEnvironment) ? "Sandbox" : client.IhceEnvironment
+        };
+
+        [HttpPut("{id}/ihce-config")]
+        public async Task<IActionResult> UpdateIhceConfig(Guid id, [FromBody] UpdateIhceConfigRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+            if (client == null) return NotFound();
+
+            if (request.IhceEnvironment != "Sandbox" && request.IhceEnvironment != "Production") return BadRequest("El ambiente de IHCE debe ser Sandbox o Production.");
+            if (!string.IsNullOrWhiteSpace(request.IhceEndpoint) && !(Uri.TryCreate(request.IhceEndpoint, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)))
+                return BadRequest("El endpoint de IHCE no es una URL válida.");
+
+            client.IhceClientId = request.IhceClientId?.Trim();
+            client.IhceTenantId = request.IhceTenantId?.Trim();
+            client.IhceEndpoint = request.IhceEndpoint?.Trim();
+            client.IhceEnvironment = request.IhceEnvironment!;
+            // Vacía = no cambiar. La llave de suscripción también va cifrada (la columna no lo decía, pero nadie la había escrito antes).
+            if (!string.IsNullOrEmpty(request.IhceClientSecret)) client.IhceClientSecretEncrypted = _cryptoService.Encrypt(request.IhceClientSecret);
+            if (!string.IsNullOrEmpty(request.IhceApimSubscriptionKey)) client.IhceApimSubscriptionKey = _cryptoService.Encrypt(request.IhceApimSubscriptionKey);
+
+            await _dbContext.SaveChangesAsync();
+            return Ok(IhceConfigDto(client));
+        }
+
         // Tipos de documento que este Client puede emitir desde su formulario de facturación —
         // por defecto solo el set estándar (Factura/NC/ND, ver DefaultCatalogSets), el Tenant
         // amplía o reduce esto según lo que ese Client realmente necesite.
@@ -784,6 +828,16 @@ namespace Fel.Api.Tenant.Controllers
         public long? NextCreditNoteNumber { get; set; }
         public long? NextDebitNoteNumber { get; set; }
         public long? NextSupportAdjustmentNumber { get; set; }
+    }
+
+    public class UpdateIhceConfigRequest
+    {
+        public string? IhceClientId { get; set; }
+        public string? IhceClientSecret { get; set; }
+        public string? IhceApimSubscriptionKey { get; set; }
+        public string? IhceTenantId { get; set; }
+        public string? IhceEndpoint { get; set; }
+        public string? IhceEnvironment { get; set; }
     }
 
     public class UpdateMinSaludConfigRequest

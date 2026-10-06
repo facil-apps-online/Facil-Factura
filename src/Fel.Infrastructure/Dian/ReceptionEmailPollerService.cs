@@ -24,15 +24,17 @@ namespace Fel.Infrastructure.Dian
     public class ReceptionEmailPollerService
     {
         private readonly FelDbContext _dbContext;
+        private readonly BranchCredentialResolver _credentialResolver;
         private readonly ICryptoService _cryptoService;
         private readonly IReceptionEventService _eventService;
         private readonly ILogger<ReceptionEmailPollerService> _logger;
 
         public ReceptionEmailPollerService(
-            FelDbContext dbContext, ICryptoService cryptoService, IReceptionEventService eventService,
+            FelDbContext dbContext, BranchCredentialResolver credentialResolver, ICryptoService cryptoService, IReceptionEventService eventService,
             ILogger<ReceptionEmailPollerService> logger)
         {
             _dbContext = dbContext;
+            _credentialResolver = credentialResolver;
             _cryptoService = cryptoService;
             _eventService = eventService;
             _logger = logger;
@@ -40,30 +42,30 @@ namespace Fel.Infrastructure.Dian
 
         public async Task PollAllClientsAsync(CancellationToken ct)
         {
-            var clients = await _dbContext.Clients
-                .Where(c => c.ReceptionEmailEnabled && c.IsActive)
-                .ToListAsync(ct);
+            // El buzón del Client y el de cada sucursal que tenga el suyo; un buzón roto no frena a los demás.
+            var mailboxes = await _credentialResolver.ActiveReceptionMailboxesAsync(ct);
+            var clients = await _dbContext.Clients.Where(c => mailboxes.Select(m => m.ClientId).Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
 
-            foreach (var client in clients)
+            foreach (var mailbox in mailboxes)
             {
                 try
                 {
-                    await PollClientMailboxAsync(client, ct);
+                    await PollMailboxAsync(mailbox, clients[mailbox.ClientId], ct);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error revisando el correo de recepción del Client {ClientId} ({Email})", client.Id, client.ReceptionEmailUser);
+                    _logger.LogError(ex, "Error revisando el correo de recepción del Client {ClientId}, sucursal {BranchId} ({Email})", mailbox.ClientId, mailbox.BranchId, mailbox.User);
                 }
             }
         }
 
-        private async Task PollClientMailboxAsync(Client client, CancellationToken ct)
+        private async Task PollMailboxAsync(ReceptionMailbox mailbox, Client client, CancellationToken ct)
         {
             using var imap = new ImapClient();
-            await imap.ConnectAsync(client.ReceptionEmailHost, client.ReceptionEmailPort, client.ReceptionEmailUseSsl, ct);
+            await imap.ConnectAsync(mailbox.Host, mailbox.Port, mailbox.UseSsl, ct);
 
-            var password = _cryptoService.Decrypt(client.ReceptionEmailPasswordEncrypted);
-            await imap.AuthenticateAsync(client.ReceptionEmailUser, password, ct);
+            var password = _cryptoService.Decrypt(mailbox.PasswordEncrypted);
+            await imap.AuthenticateAsync(mailbox.User, password, ct);
 
             var inbox = imap.Inbox;
             await inbox.OpenAsync(FolderAccess.ReadWrite, ct);
@@ -75,7 +77,7 @@ namespace Fel.Infrastructure.Dian
                 var message = await inbox.GetMessageAsync(uid, ct);
                 try
                 {
-                    await ProcessMessageAsync(message, client);
+                    await ProcessMessageAsync(message, client, mailbox.BranchId);
                 }
                 catch (Exception ex)
                 {
@@ -92,7 +94,7 @@ namespace Fel.Infrastructure.Dian
             await imap.DisconnectAsync(true, ct);
         }
 
-        private async Task ProcessMessageAsync(MimeMessage message, Client client)
+        private async Task ProcessMessageAsync(MimeMessage message, Client client, Guid branchId)
         {
             foreach (var attachment in message.Attachments)
             {
@@ -143,7 +145,7 @@ namespace Fel.Infrastructure.Dian
                 {
                     Id = Guid.NewGuid(),
                     ClientId = client.Id,
-                    BranchId = await BranchProvisioning.MainBranchIdAsync(_dbContext, client.Id),
+                    BranchId = branchId,
                     SourceType = "Email",
                     RawXml = xml,
                     Cufe = parsed.Cufe,

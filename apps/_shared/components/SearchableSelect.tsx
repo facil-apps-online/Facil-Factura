@@ -31,6 +31,8 @@ interface SearchableSelectProps {
   className?: string;
   inputClassName?: string;
   required?: boolean;
+  // Bloqueado: se ve el valor pero no se abre ni se puede cambiar (formularios de credenciales en modo solo lectura).
+  disabled?: boolean;
   // Una o más acciones "+ Agregar ..." al final de la lista (cuando hay texto escrito) — por
   // ejemplo, ofrecer "crear como código" y "crear como nombre" a la vez, en vez de una sola.
   createOptions?: (query: string) => CreateOption[];
@@ -51,7 +53,7 @@ function rowValueOf(opt: SearchableSelectOption): string {
   return opt.displayLabel ?? opt.label;
 }
 
-export default function SearchableSelect({ options, value, onChange, placeholder, emptyLabel, className, inputClassName, required, createOptions }: SearchableSelectProps) {
+export default function SearchableSelect({ options, value, onChange, placeholder, emptyLabel, className, inputClassName, required, disabled, createOptions }: SearchableSelectProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
@@ -141,14 +143,16 @@ export default function SearchableSelect({ options, value, onChange, placeholder
           required={required && !value}
           value={query}
           placeholder={placeholder || 'Buscar...'}
-          onFocus={() => { setIsOpen(true); setHighlighted(0); }}
-          onChange={e => { setQuery(e.target.value); setIsOpen(true); setHighlighted(0); if (value) onChange(''); }}
+          readOnly={disabled}
+          autoComplete="off"
+          onFocus={() => { if (disabled) return; setIsOpen(true); setHighlighted(0); }}
+          onChange={e => { if (disabled) return; setQuery(e.target.value); setIsOpen(true); setHighlighted(0); if (value) onChange(''); }}
           onKeyDown={handleKeyDown}
           className={inputClassName || 'w-full px-4 py-2 pr-8 border rounded-xl focus:ring-2 focus:ring-primary outline-none bg-white'}
         />
         <ChevronDown size={16} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
       </div>
-      {isOpen && createPortal(
+      {isOpen && !disabled && createPortal(
         <div
           ref={dropdownRef}
           style={{ position: 'fixed', top: coords.top, left: coords.left, width: coords.width, zIndex: 9999 }}

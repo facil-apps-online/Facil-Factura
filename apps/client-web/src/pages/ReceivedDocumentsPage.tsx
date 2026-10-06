@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Inbox, Mail, Upload, Loader2, CheckCircle2, XCircle, Send } from 'lucide-react';
+import { Inbox, Mail, Upload, Loader2, CheckCircle2, XCircle, Send, Undo2 } from 'lucide-react';
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import { useNumberFormat } from '../lib/numberFormat';
 import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import { ALL_BRANCHES, useSession } from '../context/SessionContext';
+import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 
 const EVENT_INFO: Record<string, { label: string; description: string }> = {
   acuseRecibo: {
@@ -26,6 +28,9 @@ const EVENT_INFO: Record<string, { label: string; description: string }> = {
 
 export default function ReceivedDocumentsPage() {
   const fmt = useNumberFormat();
+  const { selectedBranchId, hasMultipleBranches } = useSession();
+  const { unlocked, lock, toggle } = useCredentialLock();
+  const editingClientDefault = selectedBranchId === ALL_BRANCHES;
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({
@@ -53,7 +58,7 @@ export default function ReceivedDocumentsPage() {
 
   const loadSettings = () => {
     api.get('/client/reception-settings')
-      .then(res => setSettings(res.data))
+      .then(res => { setSettings(res.data); lock(); })
       .catch(() => toast.error('Error al cargar la configuración'))
       .finally(() => setLoading(false));
   };
@@ -63,12 +68,13 @@ export default function ReceivedDocumentsPage() {
     loadSettings();
   }, []);
 
-  const saveSettings = async () => {
+  const saveSettings = async (onlyAutoSend = false) => {
     setSavingSettings(true);
     try {
       await api.put('/client/reception-settings', {
         ...settings,
-        receptionEmailPassword: emailPasswordDraft || undefined
+        onlyAutoSend,
+        receptionEmailPassword: onlyAutoSend ? undefined : (emailPasswordDraft || undefined)
       });
       toast.success('Configuración guardada');
       setEmailPasswordDraft('');
@@ -77,6 +83,17 @@ export default function ReceivedDocumentsPage() {
       toast.error(getErrorMessage(err, 'Error al guardar la configuración'));
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const removeBranchMailbox = async () => {
+    if (!window.confirm('¿Quitar el buzón propio de esta sucursal? Volverá a usar el del cliente.')) return;
+    try {
+      await api.delete('/client/reception-settings');
+      toast.success('La sucursal vuelve a usar el buzón del cliente');
+      loadSettings();
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'No se pudo quitar el buzón propio'));
     }
   };
 
@@ -189,7 +206,22 @@ export default function ReceivedDocumentsPage() {
         <div className="flex items-center gap-2 mb-2">
           <Mail className="text-primary" size={20} />
           <h2 className="text-xl font-bold text-slate-800">Correo de Facturación Electrónica</h2>
+          <div className="ml-auto"><CredentialLockButton unlocked={unlocked} onToggle={toggle} /></div>
         </div>
+        {hasMultipleBranches && (
+          <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600" data-testid="reception-scope">
+            {editingClientDefault ? (
+              <p>Estás editando el buzón <strong>por defecto del cliente</strong>. Lo que llegue aquí queda en la sucursal principal. Elige una sucursal en el encabezado para darle su propio buzón.</p>
+            ) : settings.isBranchOwn ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <span>Esta sucursal tiene su <strong>buzón propio</strong>: lo que llegue a él queda en ella.</span>
+                <button type="button" onClick={removeBranchMailbox} className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors"><Undo2 size={14} /> Volver a usar el del cliente</button>
+              </div>
+            ) : (
+              <p>Esta sucursal usa el buzón del cliente. Si guardas aquí, tendrá el suyo propio y deberás escribir también la contraseña.</p>
+            )}
+          </div>
+        )}
         <p className="text-slate-500 mb-6 text-sm">
           Conecta el buzón donde te llegan las facturas de tus proveedores para procesarlas automáticamente.
           Para Gmail u Outlook, usa una <strong>contraseña de aplicación</strong> (no tu clave normal) — esos proveedores ya no aceptan la clave normal por este medio.
@@ -199,6 +231,7 @@ export default function ReceivedDocumentsPage() {
           <input
             type="checkbox"
             checked={settings.receptionEmailEnabled}
+            disabled={!unlocked}
             onChange={e => setSettings({ ...settings, receptionEmailEnabled: e.target.checked })}
             className="w-5 h-5 rounded accent-primary"
           />
@@ -208,37 +241,39 @@ export default function ReceivedDocumentsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor IMAP</label>
-            <input type="text" placeholder="imap.gmail.com" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input type="text" placeholder="imap.gmail.com" {...lockedInputProps(unlocked)} className={lockedInputClass(unlocked, 'w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary')}
               value={settings.receptionEmailHost} onChange={e => setSettings({ ...settings, receptionEmailHost: e.target.value })} />
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
-            <input type="number" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input type="number" {...lockedInputProps(unlocked)} className={lockedInputClass(unlocked, 'w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary')}
               value={settings.receptionEmailPort} onChange={e => setSettings({ ...settings, receptionEmailPort: parseInt(e.target.value) || 993 })} />
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario / Correo</label>
-            <input type="email" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input type="email" {...lockedInputProps(unlocked)} className={lockedInputClass(unlocked, 'w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary')}
               value={settings.receptionEmailUser} onChange={e => setSettings({ ...settings, receptionEmailUser: e.target.value })} />
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">
               Contraseña {settings.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada — deja en blanco para no cambiarla)</span>}
             </label>
-            <input type="password" placeholder={settings.hasPassword ? '••••••••' : ''} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+            <input type="password" {...lockedInputProps(unlocked)} placeholder={settings.hasPassword ? '••••••••' : ''} className={lockedInputClass(unlocked, 'w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary')}
               value={emailPasswordDraft} onChange={e => setEmailPasswordDraft(e.target.value)} />
           </div>
         </div>
 
         <label className="flex items-center gap-2 mt-4 cursor-pointer">
-          <input type="checkbox" checked={settings.receptionEmailUseSsl} onChange={e => setSettings({ ...settings, receptionEmailUseSsl: e.target.checked })} className="w-4 h-4 rounded accent-primary" />
+          <input type="checkbox" disabled={!unlocked} checked={settings.receptionEmailUseSsl} onChange={e => setSettings({ ...settings, receptionEmailUseSsl: e.target.checked })} className="w-4 h-4 rounded accent-primary" />
           <span className="text-sm text-slate-600">Usar SSL/TLS (recomendado)</span>
         </label>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <button onClick={saveSettings} disabled={savingSettings} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
-            {savingSettings ? 'Guardando...' : 'Guardar configuración'}
-          </button>
+          {unlocked && (
+            <button onClick={() => saveSettings()} disabled={savingSettings} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+              {savingSettings ? 'Guardando...' : 'Guardar configuración'}
+            </button>
+          )}
           <button onClick={testConnection} disabled={testingConnection} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
             {testingConnection ? 'Probando...' : 'Probar conexión'}
           </button>
@@ -267,7 +302,7 @@ export default function ReceivedDocumentsPage() {
           ))}
         </div>
 
-        <button onClick={saveSettings} disabled={savingSettings} className="mt-6 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+        <button onClick={() => saveSettings(true)} disabled={savingSettings} className="mt-6 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
           {savingSettings ? 'Guardando...' : 'Guardar eventos automáticos'}
         </button>
       </div>

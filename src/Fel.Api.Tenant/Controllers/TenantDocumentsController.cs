@@ -28,15 +28,18 @@ namespace Fel.Api.Tenant.Controllers
         private readonly FelDbContext _dbContext;
         private readonly IClinicalValidationService _clinicalValidationService;
         private readonly IMinSaludMuvService _muvService;
+        private readonly Fel.Infrastructure.Services.BranchCredentialResolver _credentialResolver;
 
         public TenantDocumentsController(
             FelDbContext dbContext,
             IClinicalValidationService clinicalValidationService,
-            IMinSaludMuvService muvService)
+            IMinSaludMuvService muvService,
+            Fel.Infrastructure.Services.BranchCredentialResolver credentialResolver)
         {
             _dbContext = dbContext;
             _clinicalValidationService = clinicalValidationService;
             _muvService = muvService;
+            _credentialResolver = credentialResolver;
         }
 
         /// <summary>
@@ -78,7 +81,10 @@ namespace Fel.Api.Tenant.Controllers
             // Ensamblaje JSON y Envío al MUV. A diferencia de la DIAN, CargarRipsSinFactura es
             // síncrono: si isSuccess viene en true es porque el MUV ya validó y entregó el CUV en
             // esta misma llamada — no queda nada "procesando" ni hay que consultar un estado luego.
-            var (isSuccess, cuv, message, _) = await _muvService.SendRipsAsync(request, client);
+            // Credenciales del prestador: las de la sucursal de la llave HMAC si tiene propias; si no, las del Client.
+            Guid? branchId = HttpContext.Items["BranchId"] is string branchIdStr && Guid.TryParse(branchIdStr, out var parsedBranchId) ? parsedBranchId : null;
+            var credentials = await _credentialResolver.MinSaludAsync(client, branchId);
+            var (isSuccess, cuv, message, _) = await _muvService.SendRipsAsync(request, client, credentials);
 
             if (!isSuccess)
             {

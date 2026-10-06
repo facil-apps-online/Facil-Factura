@@ -37,6 +37,7 @@ builder.ConfigureServices((hostContext, services) =>
     services.AddScoped<IDianSoapClient, Fel.Infrastructure.Dian.DianSoapClient>();
     services.AddScoped<IReceptionEventService, Fel.Infrastructure.Dian.ReceptionEventService>();
     services.AddScoped<Fel.Infrastructure.Dian.ReceptionEmailPollerService>();
+    services.AddScoped<Fel.Infrastructure.Services.BranchCredentialResolver>();
 
     services.AddScoped<Fel.Infrastructure.Services.BillingMetricsService>();
     services.AddScoped<Fel.Infrastructure.Services.MonthlyBillingCutService>();

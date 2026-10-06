@@ -60,6 +60,7 @@ builder.Services.AddHttpClient<Fel.Core.Interfaces.IFacilReportsClient, Fel.Infr
 builder.Services.AddScoped<Fel.Infrastructure.Services.PasswordResetService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ClientUserAdminService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ResolutionBranchService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.BranchCredentialResolver>();
 builder.Services.AddTransient<Fel.Infrastructure.Services.DianRutParserService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddOpenApi(); // .NET 9 json endpoint

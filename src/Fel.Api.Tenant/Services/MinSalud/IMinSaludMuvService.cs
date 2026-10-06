@@ -5,6 +5,6 @@ namespace Fel.Api.Tenant.Services.MinSalud
 {
     public interface IMinSaludMuvService
     {
-        Task<(bool IsSuccess, string TrackingId, string Message, string JsonPayload)> SendRipsAsync(RipsEmitRequest request, Client client);
+        Task<(bool IsSuccess, string TrackingId, string Message, string JsonPayload)> SendRipsAsync(RipsEmitRequest request, Client client, Fel.Infrastructure.Services.MinSaludCredentials credentials);
     }
 }

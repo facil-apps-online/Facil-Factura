@@ -1,6 +1,6 @@
 # Plan: sucursales en el portal del cliente
 
-Estado: **fases 1 a 4 en producción (5 de octubre de 2026); fase 5 implementada y probada, pendiente de desplegar.** Ver la sección 14.
+Estado: **fases 1 a 4 en producción (5 de octubre de 2026); fase 5 desplegada; fase 6 implementada y probada, pendiente de desplegar.** Ver la sección 14.
 
 ## 1. Objetivo
 
@@ -160,10 +160,18 @@ Orden de despliegue con migraciones: `fel-migrator`, luego APIs, luego el resto.
 
 ## 13. Pendientes
 
-Ninguno por ahora.
+- **Lapicito en los formularios de credenciales que ya existen** (solicitado por el usuario): al abrir un formulario de credenciales el navegador lo rellena con valores guardados, así que cada uno debe arrancar bloqueado y habilitarse con el lapicito (`CredentialLock` en `apps/_shared`, ya usado en las tarjetas nuevas de la fase 6). Faltan: proveedor de documentos (Dataico) y SMTP de reenvío en tenant-web, SMTP del cliente en el portal, y el resto de formularios con claves de los portales.
+- **Fase 7:** las credenciales de MinSalud, IHCE y buzón que hoy son el valor por defecto en `Client` pasan a la sucursal principal y se eliminan del Client; una sucursal sin credenciales propias heredará entonces las de la principal.
 
 ## 14. Estado
 
+- **Fase 6 (credenciales por sucursal: MinSalud, IHCE y buzón de recepción):** implementada y probada; **pendiente de desplegar** (migración `AddBranchCredentials`, solo crea tablas; orden fel-migrator, fel-api-tenant, fel-api-client, fel-worker, tenant-web, client-web, de uno en uno).
+  - Tres tablas 1:1 con la sucursal (`BranchMinSaludCredentials`, `BranchIhceCredentials`, `BranchReceptionMailboxes`): sin fila la sucursal hereda las del Client (que siguen siendo el valor por defecto, nada se copia); con fila, ésta reemplaza por completo a las del Client y no arrastra claves heredadas. `BranchCredentialResolver` da las credenciales efectivas.
+  - RIPS: `rips/emit` toma la sucursal de la llave HMAC y usa sus credenciales. Buzón: el worker revisa el del Client (lo que llegue queda en la principal) y el de cada sucursal activa que tenga el suyo (lo que llegue queda en ella). Las claves van cifradas.
+  - IHCE no tenía endpoints ni pantalla: ahora tiene valor por defecto del Client (`ihce-config`) y propio por sucursal. La llave de suscripción APIM se guarda cifrada.
+  - Tenant: `TenantBranchCredentialsController` (GET/PUT/DELETE por grupo, y prueba de conexión del buzón). Portal: `reception-settings` según la sucursal elegida ("Todas" = buzón del cliente; una sucursal = el suyo), `DELETE` para volver a heredar y `onlyAutoSend` para guardar los eventos automáticos sin crear un buzón propio.
+  - Interfaz: tarjetas MinSalud, IHCE y buzón en tenant-web con selector "Aplica a" y lapicito (formularios bloqueados y sin autocompletado); buzón del portal con lapicito y mensaje de alcance.
+  - Pruebas: 45 de API (tenant y portal), 16 del resolvedor (buzones activos, herencia, aislamiento entre clientes, cascada), 16 de interfaz de tenant-web, 4 e2e nuevas del portal; regresión de la fase 5 (91), t-api/t-hmac/t-create/t4 y 226 e2e. **No verificado de punta a punta:** el envío real de un RIPS con la llave de una sucursal (la validación de la solicitud corta antes del MUV); el resolvedor y su cableado sí están probados.
 - **Fase 5 (tenant-web: sucursales y usuarios, y cobro por sucursal):** implementada y probada; **pendiente de desplegar** (con migración `AddBranchBilling`: respaldo de FelDb antes; orden fel-migrator, fel-api-tenant, fel-api-client, fel-api-superadmin, fel-worker, tenant-web).
   - Migración: `Branch` gana `SubscriptionRate`, `PricePerDocument` y `DeactivatedAt`; la principal recibe la tarifa del Client (idempotente) y `ClientIntegratorBilling` pasa a `(BranchId, IntegratorId)` con las filas existentes ligadas a la principal. Reversible y sin cambios de modelo pendientes.
   - Servicios compartidos `ClientUserAdminService` y `ResolutionBranchService` (portal y tenant aplican las mismas reglas). El tenant gestiona sucursales (`TenantBranchesController`: crear, editar, desactivar, reactivar, llaves por sucursal), usuarios (`TenantClientUsersController`) y resoluciones por sucursal; la tarifa por integrador es por sucursal. Salen del tenant: `portal-user`, `generate-key`, llaves y cuota mensual del cliente.

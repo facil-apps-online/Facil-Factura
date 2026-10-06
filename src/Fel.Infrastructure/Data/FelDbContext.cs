@@ -31,6 +31,9 @@ namespace Fel.Infrastructure.Data
         public DbSet<NoteNumbering> NoteNumberings => Set<NoteNumbering>();
         public DbSet<ResolutionBranch> ResolutionBranches => Set<ResolutionBranch>();
         public DbSet<ClientUserBranch> ClientUserBranches => Set<ClientUserBranch>();
+        public DbSet<BranchMinSaludCredential> BranchMinSaludCredentials => Set<BranchMinSaludCredential>();
+        public DbSet<BranchIhceCredential> BranchIhceCredentials => Set<BranchIhceCredential>();
+        public DbSet<BranchReceptionMailbox> BranchReceptionMailboxes => Set<BranchReceptionMailbox>();
         public DbSet<TenantBilling> TenantBillings => Set<TenantBilling>();
         public DbSet<SuperadminUser> SuperadminUsers => Set<SuperadminUser>();
         public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
@@ -203,6 +206,40 @@ namespace Fel.Infrastructure.Data
             modelBuilder.Entity<ClientUser>(entity =>
             {
                 entity.Property(e => e.Role).IsRequired().HasMaxLength(20);
+            });
+
+            // Credenciales propias de una sucursal: una fila opcional por grupo (sin fila hereda las del Client).
+            modelBuilder.Entity<BranchMinSaludCredential>(entity =>
+            {
+                entity.ToTable("BranchMinSaludCredentials");
+                entity.HasKey(e => e.BranchId);
+                entity.Property(e => e.Environment).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.UserType).HasMaxLength(10);
+                entity.Property(e => e.IdentificationType).HasMaxLength(10);
+                entity.Property(e => e.IdentificationNumber).HasMaxLength(50);
+                entity.Property(e => e.TestIdentificationType).HasMaxLength(10);
+                entity.Property(e => e.TestIdentificationNumber).HasMaxLength(50);
+                entity.HasOne(e => e.Branch).WithOne().HasForeignKey<BranchMinSaludCredential>(e => e.BranchId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<BranchIhceCredential>(entity =>
+            {
+                entity.ToTable("BranchIhceCredentials");
+                entity.HasKey(e => e.BranchId);
+                entity.Property(e => e.ClientId).HasMaxLength(200);
+                entity.Property(e => e.TenantId).HasMaxLength(200);
+                entity.Property(e => e.Endpoint).HasMaxLength(500);
+                entity.Property(e => e.Environment).IsRequired().HasMaxLength(20);
+                entity.HasOne(e => e.Branch).WithOne().HasForeignKey<BranchIhceCredential>(e => e.BranchId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<BranchReceptionMailbox>(entity =>
+            {
+                entity.ToTable("BranchReceptionMailboxes");
+                entity.HasKey(e => e.BranchId);
+                entity.Property(e => e.Host).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.User).IsRequired().HasMaxLength(200);
+                entity.HasOne(e => e.Branch).WithOne().HasForeignKey<BranchReceptionMailbox>(e => e.BranchId).OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<ClientUserBranch>(entity =>

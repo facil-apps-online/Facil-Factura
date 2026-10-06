@@ -34,7 +34,7 @@ namespace Fel.Api.Tenant.Services.MinSalud
             _configuration = configuration;
         }
 
-        public async Task<(bool IsSuccess, string TrackingId, string Message, string JsonPayload)> SendRipsAsync(RipsEmitRequest request, Client client)
+        public async Task<(bool IsSuccess, string TrackingId, string Message, string JsonPayload)> SendRipsAsync(RipsEmitRequest request, Client client, Fel.Infrastructure.Services.MinSaludCredentials credentials)
         {
             // MinSalud no ofrece sandbox público (ver "Manual de Consumo API-Docker-FEV-RIPS"):
             // el contenedor real solo se puede probar tras la habilitación formal como PSS/PTS
@@ -51,7 +51,7 @@ namespace Fel.Api.Tenant.Services.MinSalud
 
             // El ambiente decide TODO: contra cuál MUV se emite y con qué credenciales. Las de
             // pruebas no sirven en producción ni al revés, por eso se guardan por separado.
-            var esProduccion = client.MinSaludEnvironment == MinSaludEnvironments.Production;
+            var esProduccion = credentials.Environment == MinSaludEnvironments.Production;
             var nombreAmbiente = esProduccion ? "producción" : "pruebas";
 
             // La URL es configuración de la plataforma, no un dato por cliente: la instalación del
@@ -63,9 +63,9 @@ namespace Fel.Api.Tenant.Services.MinSalud
                 return (false, string.Empty, $"No hay URL del MUV configurada para el ambiente de {nombreAmbiente} (MinSalud:Muv{(esProduccion ? "Production" : "Test")}Url).", string.Empty);
             }
 
-            var identificacionTipo = esProduccion ? client.MinSaludIdentificationType : client.MinSaludTestIdentificationType;
-            var identificacionNumero = esProduccion ? client.MinSaludIdentificationNumber : client.MinSaludTestIdentificationNumber;
-            var claveCifrada = esProduccion ? client.MinSaludPasswordEncrypted : client.MinSaludTestPasswordEncrypted;
+            var identificacionTipo = esProduccion ? credentials.IdentificationType : credentials.TestIdentificationType;
+            var identificacionNumero = esProduccion ? credentials.IdentificationNumber : credentials.TestIdentificationNumber;
+            var claveCifrada = esProduccion ? credentials.PasswordEncrypted : credentials.TestPasswordEncrypted;
 
             if (string.IsNullOrWhiteSpace(identificacionNumero) || string.IsNullOrWhiteSpace(claveCifrada))
             {
@@ -94,7 +94,7 @@ namespace Fel.Api.Tenant.Services.MinSalud
                     Nit = client.TaxId,
                     // Campo declarado desde el principio pero que nunca se enviaba. El manual lo
                     // marca opcional, y para PSS/PTS debe ir en RE.
-                    TipoUsuario = client.MinSaludUserType
+                    TipoUsuario = credentials.UserType
                 };
 
                 var loginResponse = await _httpClient.PostAsJsonAsync($"{baseUrl}/api/Auth/LoginSISPRO", loginRequest);

@@ -7,6 +7,7 @@ import SearchableSelect from '@shared/components/SearchableSelect';
 import ClientFormFields from '../components/ClientFormFields';
 import BranchesTab from '../components/BranchesTab';
 import ClientUsersTab from '../components/ClientUsersTab';
+import { MinSaludCard, IhceCard, ReceptionMailboxCard } from '../components/BranchCredentials';
 
 // Consecutivos internos de notas: crédito y débito (facturas) y ajuste (documento soporte).
 type NoteCounterType = 'credit' | 'debit' | 'adjustment';
@@ -90,25 +91,6 @@ export default function ClientEdit() {
     hasAuthToken: false
   });
   const [savingDocProvider, setSavingDocProvider] = useState(false);
-  const [minSaludConfig, setMinSaludConfig] = useState({
-    minSaludEnvironment: 'Test',
-    minSaludUserType: '',
-    minSaludIdentificationType: 'CC',
-    minSaludIdentificationNumber: '',
-    minSaludPassword: '',
-    hasPassword: false,
-    minSaludTestIdentificationType: 'CC',
-    minSaludTestIdentificationNumber: '',
-    minSaludTestPassword: '',
-    hasTestPassword: false
-  });
-  const [savingMinSalud, setSavingMinSalud] = useState(false);
-  // Catálogos del LoginSISPRO servidos por el backend, para no repetirlos en cada portal.
-  const [minSaludCatalogs, setMinSaludCatalogs] = useState<{
-    documentTypes: { code: string; name: string }[];
-    userTypes: { code: string; name: string }[];
-    environments: { code: string; name: string }[];
-  }>({ documentTypes: [], userTypes: [], environments: [] });
   const [integrators, setIntegrators] = useState<{ id: string, code: string, name: string }[]>([]);
   const [prepaidPackages, setPrepaidPackages] = useState<any[]>([]);
   const [prepaidBags, setPrepaidBags] = useState<any[]>([]);
@@ -481,29 +463,6 @@ export default function ClientEdit() {
       .catch(() => {});
   };
 
-  const loadMinSaludCatalogs = () => {
-    api.get('/tenant/clients/minsalud-catalogs')
-      .then(res => setMinSaludCatalogs(res.data))
-      .catch(() => toast.error('No se pudieron cargar los catálogos de MinSalud.'));
-  };
-
-  const loadMinSaludConfig = () => {
-    api.get(`/tenant/clients/${id}/minsalud-config`)
-      // Las contraseñas nunca vuelven del servidor: se limpian las dos para que el campo vacío
-      // signifique "no cambiar" y no se reenvíe basura.
-      .then(res => setMinSaludConfig(prev => ({
-        ...prev,
-        ...res.data,
-        minSaludEnvironment: res.data.minSaludEnvironment || 'Test',
-        minSaludUserType: res.data.minSaludUserType || '',
-        minSaludIdentificationType: res.data.minSaludIdentificationType || 'CC',
-        minSaludTestIdentificationType: res.data.minSaludTestIdentificationType || 'CC',
-        minSaludPassword: '',
-        minSaludTestPassword: ''
-      })))
-      .catch(() => {});
-  };
-
   const loadPrepaid = () => {
     api.get(`/tenant/clients/${id}/prepaid/packages`).then(res => setPrepaidPackages(res.data)).catch(() => {});
     api.get(`/tenant/clients/${id}/prepaid/bags`).then(res => setPrepaidBags(res.data)).catch(() => {});
@@ -517,7 +476,7 @@ export default function ClientEdit() {
     if (activeTab === 'resolutions') { loadResolutions(); loadNoteCounters(); }
     if (activeTab === 'certificate') loadCertificate();
     if (activeTab === 'dian') loadHabilitationStatus();
-    if (activeTab === 'credentials') { loadDocProvider(); loadIntegrators(); loadMinSaludCatalogs(); loadMinSaludConfig(); }
+    if (activeTab === 'credentials') { loadDocProvider(); loadIntegrators(); }
     if (activeTab === 'prepaid') { loadPrepaid(); loadIntegrators(); }
     if (activeTab === 'enablements') { loadEnabledDocTypes(); loadEnabledRetentions(); }
     if (activeTab === 'reception') loadReceptionSettings();
@@ -639,20 +598,6 @@ export default function ClientEdit() {
       toast.error(err.response?.data || 'Error al guardar la configuración.');
     } finally {
       setSavingDocProvider(false);
-    }
-  };
-
-  const handleSaveMinSalud = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingMinSalud(true);
-    try {
-      await api.put(`/tenant/clients/${id}/minsalud-config`, minSaludConfig);
-      toast.success('Configuración de MinSalud (RIPS) actualizada.');
-      loadMinSaludConfig();
-    } catch (err: any) {
-      toast.error(err.response?.data || 'Error al guardar la configuración.');
-    } finally {
-      setSavingMinSalud(false);
     }
   };
 
@@ -1534,106 +1479,8 @@ export default function ClientEdit() {
                   </form>
                 </div>
 
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                  <h2 className="text-xl font-bold text-slate-800 mb-1">MinSalud / RIPS (MUV-FEV-RIPS)</h2>
-                  <p className="text-slate-500 text-sm mb-6">
-                    Credenciales del prestador ante SISPRO para el envío de RIPS al Ministerio de Salud. Solo aplica a emisores del sector salud.
-                  </p>
-                  <form onSubmit={handleSaveMinSalud} className="space-y-5">
-                    {/* El ambiente decide contra cuál de los dos MUV emite este cliente. Las
-                        credenciales de uno no sirven en el otro, por eso se piden por separado. */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ambiente</label>
-                        <SearchableSelect
-                          options={minSaludCatalogs.environments.map(o => ({ value: o.code, label: o.name }))}
-                          value={minSaludConfig.minSaludEnvironment}
-                          onChange={v => setMinSaludConfig({ ...minSaludConfig, minSaludEnvironment: v })}
-                          inputClassName="w-full px-4 py-2.5 pr-8 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                        />
-                        <p className="text-xs text-slate-400 mt-1">
-                          {minSaludConfig.minSaludEnvironment === 'Production'
-                            ? 'Lo que se emita cuenta como reporte real ante el Ministerio.'
-                            : 'Emite contra el ambiente de pruebas del Ministerio.'}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Usuario</label>
-                        <SearchableSelect
-                          options={minSaludCatalogs.userTypes.map(o => ({ value: o.code, label: `${o.code} - ${o.name}`, shortLabel: o.code }))}
-                          value={minSaludConfig.minSaludUserType}
-                          onChange={v => setMinSaludConfig({ ...minSaludConfig, minSaludUserType: v })}
-                          placeholder="(no informar)"
-                          inputClassName="w-full px-4 py-2.5 pr-8 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                        />
-                        <p className="text-xs text-slate-400 mt-1">Para PSS y PTS el manual exige RE.</p>
-                      </div>
-                    </div>
-
-                    <div className={`rounded-xl border p-4 ${minSaludConfig.minSaludEnvironment === 'Production' ? 'border-blue-200 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
-                      <h3 className="text-sm font-bold text-slate-700 mb-3">
-                        Credenciales de producción
-                        {minSaludConfig.minSaludEnvironment === 'Production' && <span className="ml-2 text-xs font-medium text-blue-600">(en uso)</span>}
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Documento</label>
-                          <SearchableSelect
-                            options={minSaludCatalogs.documentTypes.map(o => ({ value: o.code, label: `${o.code} - ${o.name}`, shortLabel: o.code }))}
-                            value={minSaludConfig.minSaludIdentificationType}
-                            onChange={v => setMinSaludConfig({ ...minSaludConfig, minSaludIdentificationType: v })}
-                            inputClassName="w-full px-4 py-2.5 pr-8 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Número de Documento</label>
-                          <input type="text" value={minSaludConfig.minSaludIdentificationNumber} onChange={e => setMinSaludConfig({ ...minSaludConfig, minSaludIdentificationNumber: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                            Contraseña {minSaludConfig.hasPassword && <span className="text-emerald-600 normal-case font-normal">(configurada)</span>}
-                          </label>
-                          <input type="password" placeholder={minSaludConfig.hasPassword ? 'Dejar vacío para no cambiar' : ''} value={minSaludConfig.minSaludPassword} onChange={e => setMinSaludConfig({ ...minSaludConfig, minSaludPassword: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className={`rounded-xl border p-4 ${minSaludConfig.minSaludEnvironment === 'Test' ? 'border-blue-200 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
-                      <h3 className="text-sm font-bold text-slate-700 mb-3">
-                        Credenciales de pruebas
-                        {minSaludConfig.minSaludEnvironment === 'Test' && <span className="ml-2 text-xs font-medium text-blue-600">(en uso)</span>}
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Documento</label>
-                          <SearchableSelect
-                            options={minSaludCatalogs.documentTypes.map(o => ({ value: o.code, label: `${o.code} - ${o.name}`, shortLabel: o.code }))}
-                            value={minSaludConfig.minSaludTestIdentificationType}
-                            onChange={v => setMinSaludConfig({ ...minSaludConfig, minSaludTestIdentificationType: v })}
-                            inputClassName="w-full px-4 py-2.5 pr-8 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Número de Documento</label>
-                          <input type="text" value={minSaludConfig.minSaludTestIdentificationNumber} onChange={e => setMinSaludConfig({ ...minSaludConfig, minSaludTestIdentificationNumber: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                            Contraseña {minSaludConfig.hasTestPassword && <span className="text-emerald-600 normal-case font-normal">(configurada)</span>}
-                          </label>
-                          <input type="password" placeholder={minSaludConfig.hasTestPassword ? 'Dejar vacío para no cambiar' : ''} value={minSaludConfig.minSaludTestPassword} onChange={e => setMinSaludConfig({ ...minSaludConfig, minSaludTestPassword: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end pt-2">
-                      <button type="submit" disabled={savingMinSalud} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
-                        {savingMinSalud ? 'Guardando...' : 'Guardar MinSalud'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-
+                <MinSaludCard clientId={id!} />
+                <IhceCard clientId={id!} />
               </div>
             )}
 
@@ -1826,65 +1673,7 @@ export default function ClientEdit() {
 
             {activeTab === 'reception' && (
               <div className="space-y-6">
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Mail className="text-blue-600" size={20} />
-                    <h2 className="text-xl font-bold text-slate-800">Correo de Facturación Electrónica</h2>
-                  </div>
-                  <p className="text-slate-500 mb-6 text-sm">
-                    Configura, en nombre de este cliente, el buzón donde le llegan las facturas de sus proveedores.
-                    Para Gmail u Outlook, usa una <strong>contraseña de aplicación</strong> (no la clave normal de la cuenta).
-                  </p>
-
-                  <label className="flex items-center gap-3 mb-5 cursor-pointer">
-                    <input type="checkbox" checked={receptionSettings.receptionEmailEnabled}
-                      onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailEnabled: e.target.checked })}
-                      className="w-5 h-5 rounded accent-blue-600" />
-                    <span className="font-semibold text-slate-700">Activar conexión de correo</span>
-                  </label>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1.5">Servidor IMAP</label>
-                      <input type="text" placeholder="imap.gmail.com" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                        value={receptionSettings.receptionEmailHost} onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailHost: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1.5">Puerto</label>
-                      <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                        value={receptionSettings.receptionEmailPort} onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailPort: parseInt(e.target.value) || 993 })} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario / Correo</label>
-                      <input type="email" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                        value={receptionSettings.receptionEmailUser} onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailUser: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1.5">
-                        Contraseña {receptionSettings.hasPassword && <span className="text-emerald-600 font-normal">(ya guardada)</span>}
-                      </label>
-                      <input type="password" placeholder={receptionSettings.hasPassword ? '••••••••' : ''} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                        value={receptionPasswordDraft} onChange={e => setReceptionPasswordDraft(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <label className="flex items-center gap-2 mt-4 cursor-pointer">
-                    <input type="checkbox" checked={receptionSettings.receptionEmailUseSsl}
-                      onChange={e => setReceptionSettings({ ...receptionSettings, receptionEmailUseSsl: e.target.checked })}
-                      className="w-4 h-4 rounded accent-blue-600" />
-                    <span className="text-sm text-slate-600">Usar SSL/TLS (recomendado)</span>
-                  </label>
-
-                  <div className="flex gap-3 mt-6">
-                    <button onClick={saveReceptionSettings} disabled={savingReception} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
-                      {savingReception ? 'Guardando...' : 'Guardar configuración'}
-                    </button>
-                    <button onClick={testReceptionConnection} disabled={testingReceptionConn} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition-all">
-                      {testingReceptionConn ? 'Probando...' : 'Probar conexión'}
-                    </button>
-                  </div>
-                </div>
-
+                <ReceptionMailboxCard clientId={id!} />
                 <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                   <h2 className="text-xl font-bold text-slate-800 mb-2">Eventos automáticos</h2>
                   <p className="text-slate-500 mb-6 text-sm">Selecciona los eventos que se crearán automáticamente al recibir un documento.</p>

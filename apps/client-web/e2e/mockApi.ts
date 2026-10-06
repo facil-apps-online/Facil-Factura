@@ -73,6 +73,7 @@ export const BRANCH_NORTH = { id: 'b2', name: `Sucursal ${LONG_NAME}`, code: 'NO
 export type MockSession = {
   role: string; isAdministrator: boolean; allBranches: boolean;
   branches: Array<{ id: string; name: string; code: string; isMain: boolean }>;
+  features?: { payments: boolean };
 };
 
 const sessionCatalogs = {
@@ -80,7 +81,8 @@ const sessionCatalogs = {
   noteKinds: [{ value: 'CreditNote', label: 'Nota crédito' }, { value: 'DebitNote', label: 'Nota débito' }, { value: 'SupportAdjustment', label: 'Nota de ajuste' }],
 };
 
-export const ADMIN_SESSION: MockSession = { role: 'Administrador', isAdministrator: true, allBranches: true, branches: [BRANCH_MAIN, BRANCH_NORTH] };
+// El Tenant activó el módulo de pagos para este cliente (apagado por defecto en la API).
+export const ADMIN_SESSION: MockSession = { role: 'Administrador', isAdministrator: true, allBranches: true, branches: [BRANCH_MAIN, BRANCH_NORTH], features: { payments: true } };
 export const INVOICER_SESSION: MockSession = { role: 'Facturador', isAdministrator: false, allBranches: false, branches: [BRANCH_NORTH] };
 
 const users = [
@@ -105,7 +107,7 @@ const supportWithRetentions = {
 
 // Devuelve la respuesta simulada para una petición, o [] si el endpoint no está en la tabla.
 function respond(pathname: string, search: string, session: MockSession): unknown {
-  if (pathname.endsWith('/client/session')) return { ...session, ...sessionCatalogs };
+  if (pathname.endsWith('/client/session')) return { features: { payments: false }, ...session, ...sessionCatalogs };
   if (pathname.endsWith('/client/users')) return users;
   if (pathname.endsWith('/client/note-numberings')) return noteNumberings;
   if (pathname.endsWith('/v1/branding/my-branding')) return branding;

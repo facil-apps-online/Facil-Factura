@@ -200,7 +200,8 @@ namespace Fel.Api.Tenant.Controllers
                 client.Latitude,
                 client.Longitude,
                 client.IsActive,
-                BillingFrequency = client.BillingFrequency.ToString()
+                BillingFrequency = client.BillingFrequency.ToString(),
+                client.ControlsPayments
             });
         }
 
@@ -343,6 +344,8 @@ namespace Fel.Api.Tenant.Controllers
             {
                 client.BillingFrequency = frequency;
             }
+            // Opcional: un portal anterior que no lo envía no debe apagarlo sin querer.
+            if (request.ControlsPayments.HasValue) client.ControlsPayments = request.ControlsPayments.Value;
 
             await _dbContext.SaveChangesAsync();
 
@@ -769,6 +772,7 @@ namespace Fel.Api.Tenant.Controllers
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
         public string BillingFrequency { get; set; } = "Monthly";
+        public bool? ControlsPayments { get; set; }
         public bool AppliesRetentions { get; set; } = true;
         public string? ElectronicInvoiceLegend { get; set; }
         public string? SupportDocumentLegend { get; set; }

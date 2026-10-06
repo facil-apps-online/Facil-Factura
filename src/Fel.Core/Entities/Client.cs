@@ -123,6 +123,10 @@ namespace Fel.Core.Entities
         // --- Billing ---
         public BillingFrequency BillingFrequency { get; set; } = BillingFrequency.Monthly;
 
+        // Módulo de pagos del portal: lo activa el Tenant por cliente (un Tenant puede tener varios negocios y no a todos les controla los
+        // pagos). Apagado por defecto: sin él, el portal del cliente no muestra el menú "Pagos".
+        public bool ControlsPayments { get; set; } = false;
+
         // --- Proveedor de Documentos Electrónicos ---
         public Guid IntegratorId { get; set; }
         public Integrator Integrator { get; set; } = null!;

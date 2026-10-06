@@ -143,6 +143,7 @@ export default function ClientEdit() {
     longitude: null as number | null,
     isActive: true,
     billingFrequency: 'Monthly',
+    controlsPayments: false,
      electronicInvoiceLegend: '',
      supportDocumentLegend: ''
   });
@@ -489,7 +490,8 @@ export default function ClientEdit() {
         associateId: client.associateId || null,
         latitude: client.latitude,
         longitude: client.longitude,
-         billingFrequency: client.billingFrequency
+         billingFrequency: client.billingFrequency,
+         controlsPayments: !!client.controlsPayments
          ,electronicInvoiceLegend: client.electronicInvoiceLegend || '',
          supportDocumentLegend: client.supportDocumentLegend || ''
       });
@@ -976,6 +978,18 @@ export default function ClientEdit() {
                 <form onSubmit={handleSave} className="space-y-6">
                   
                    <ClientFormFields client={client} setClient={setClient} associates={associates} showBillingSection />
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5" data-testid="portal-modules">
+                    <h3 className="font-semibold text-slate-800">Módulos del portal</h3>
+                    <p className="text-sm text-slate-500 mt-1">Lo que este cliente ve en su portal. Cada cliente se configura por separado.</p>
+                    <label className="flex items-start gap-3 mt-4 cursor-pointer">
+                      <input type="checkbox" checked={!!client.controlsPayments} onChange={e => setClient({ ...client, controlsPayments: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
+                      <span>
+                        <span className="font-semibold text-slate-700 text-sm">Control de pagos</span>
+                        <span className="block text-xs text-slate-500 mt-0.5">El sistema controla los pagos de este cliente. Apagado, el menú "Pagos" no aparece en su portal.</span>
+                      </span>
+                    </label>
+                  </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4">
                     <div>

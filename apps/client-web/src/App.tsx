@@ -101,8 +101,8 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed, isDesktop, mobileOpen
   const logo = branding?.logoLightUrl || '/brand/isotipo-blanco.png';
   const name = branding?.companyName || 'Facil Factura';
 
-  const { isAdministrator } = useSession();
-  const allLinks: Array<{ to: string; icon: React.ReactNode; label: string; adminOnly?: boolean }> = [
+  const { isAdministrator, features } = useSession();
+  const allLinks: Array<{ to: string; icon: React.ReactNode; label: string; adminOnly?: boolean; feature?: keyof typeof features }> = [
     { to: "/", icon: <Home size={20} />, label: "Inicio" },
     { to: "/invoices", icon: <FileText size={20} />, label: "Mis Facturas" },
     { to: "/support-documents", icon: <Receipt size={20} />, label: "Documentos Soporte" },
@@ -110,12 +110,12 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed, isDesktop, mobileOpen
     { to: "/received-documents", icon: <Inbox size={20} />, label: "Documentos recibidos", adminOnly: true },
     { to: "/customers", icon: <Users size={20} />, label: "Terceros" },
     { to: "/products", icon: <Package size={20} />, label: "Productos y servicios" },
-    { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos", adminOnly: true },
+    { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos", adminOnly: true, feature: "payments" },
     { to: "/resolutions", icon: <FileSignature size={20} />, label: "Resoluciones DIAN", adminOnly: true },
     { to: "/settings", icon: <Settings size={20} />, label: "Diseño y Ajustes", adminOnly: true },
     { to: "/users", icon: <UserCog size={20} />, label: "Usuarios", adminOnly: true },
   ];
-  const links = allLinks.filter(l => !l.adminOnly || isAdministrator);
+  const links = allLinks.filter(l => (!l.adminOnly || isAdministrator) && (!l.feature || features[l.feature]));
 
   return (
     <aside
@@ -471,6 +471,12 @@ const Dashboard = () => {
   );
 };
 
+// Módulos que el Tenant activa por cliente: si está apagado no hay menú y, si entra por la URL, vuelve al inicio.
+function RequireFeature({ feature, children }: { feature: keyof ReturnType<typeof useSession>['features']; children: React.ReactNode }) {
+  const { features } = useSession();
+  return features[feature] ? <>{children}</> : <Navigate to="/" replace />;
+}
+
 // Pantallas de administración: el Facturador no las ve en el menú y, si entra por la URL, vuelve al inicio.
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { isAdministrator } = useSession();
@@ -520,7 +526,7 @@ function App() {
                         <Route path="/received-documents" element={<RequireAdmin><ReceivedDocumentsPage /></RequireAdmin>} />
                         <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
                         {/* Rutas ficticias para completar el sidebar */}
-                        <Route path="/payments" element={<RequireAdmin><div className="p-8">Esta sección estará disponible próximamente.</div></RequireAdmin>} />
+                        <Route path="/payments" element={<RequireAdmin><RequireFeature feature="payments"><div className="p-8">Esta sección estará disponible próximamente.</div></RequireFeature></RequireAdmin>} />
                       </Routes>
                     </Layout>
                   </BrandingProvider>

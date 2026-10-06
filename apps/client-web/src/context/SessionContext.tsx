@@ -23,6 +23,8 @@ interface SessionData {
   // true = el usuario puede ver todas las sucursales del cliente (y por tanto elegir "Todas").
   allBranches: boolean;
   branches: SessionBranch[];
+  // Módulos que el Tenant activó para este cliente (apagados por defecto).
+  features: { payments: boolean };
   roles: CatalogItem[];
   noteKinds: CatalogItem[];
 }

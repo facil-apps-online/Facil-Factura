@@ -28,19 +28,19 @@ namespace Fel.Api.Client.Controllers
 
         private readonly FelDbContext _dbContext;
         private readonly PasswordResetService _passwordResetService;
-        private readonly ISessionTokenService _sessionTokenService;
+        private readonly Fel.Infrastructure.Security.AccountSessionService _accountSessions;
         private readonly string _portalUrl;
 
-        public DeveloperAuthController(FelDbContext dbContext, PasswordResetService passwordResetService, ISessionTokenService sessionTokenService, IConfiguration config)
+        public DeveloperAuthController(FelDbContext dbContext, PasswordResetService passwordResetService, Fel.Infrastructure.Security.AccountSessionService accountSessions, IConfiguration config)
         {
             _dbContext = dbContext;
             _passwordResetService = passwordResetService;
-            _sessionTokenService = sessionTokenService;
+            _accountSessions = accountSessions;
             _portalUrl = config["DeveloperPortalUrl"] ?? "https://developers.facil-factura.pro";
         }
 
-        private string IssueToken(Guid developerId) =>
-            _sessionTokenService.GenerateToken(new[] { ("DeveloperId", developerId.ToString()) }, TimeSpan.FromHours(24));
+        private string IssueToken(DeveloperUser user) =>
+            _accountSessions.Issue(Fel.Core.Security.PortalKind.Developer, user, new[] { ("DeveloperId", user.Id.ToString()) }).Token;
 
         // Registro independiente: no requiere invitación de ningún Tenant, pero sigue el mismo
         // patrón que el resto de la plataforma — nadie escribe su propia contraseña en este
@@ -148,7 +148,7 @@ namespace Fel.Api.Client.Controllers
 
             return Ok(new
             {
-                token = IssueToken(user.Id),
+                token = IssueToken(user),
                 user.Id,
                 user.Name,
                 user.Email,
@@ -184,6 +184,7 @@ namespace Fel.Api.Client.Controllers
             if (user == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+            _accountSessions.RotateStamp(Fel.Core.Security.PortalKind.Developer, user); // quien recupera su cuenta corta cualquier sesión abierta
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { message = "Contraseña actualizada correctamente." });

@@ -125,6 +125,7 @@ function respond(pathname: string, search: string, session: MockSession): unknow
   if (pathname.endsWith('/client/dian/habilitation-status')) return { status: 'Production' };
   if (pathname.endsWith('/client/reception-settings')) return { receptionEmailEnabled: true, receptionEmailHost: 'imap.gmail.com', receptionEmailPort: 993, receptionEmailUseSsl: true, receptionEmailUser: LONG_EMAIL, hasPassword: true, autoSendAcuseRecibo: false, autoSendReciboBien: false, autoSendAceptacion: false, autoSendReclamo: false };
   if (pathname.endsWith('/client/smtp-settings')) return { smtpHost: 'smtp.gmail.com', smtpPort: 587, smtpUseSsl: true, smtpUser: LONG_EMAIL, smtpFromEmail: LONG_EMAIL, smtpFromName: LONG_NAME, hasPassword: true };
+  if (pathname.endsWith('/client/auth/me')) return { name: 'Ana Prueba', displayName: 'Ana Prueba', email: 'ana@prueba.test', role: session.role, organization: 'Cliente de prueba', sessionMinutes: 30, allowedSessionMinutes: [15, 30, 60, 120, 240, 480], absoluteCapHours: 12 };
   if (pathname.endsWith('/client/me')) return { electronicInvoiceLegend: LONG_NAME, supportDocumentLegend: '' };
   if (pathname.endsWith('/client/templates/settings')) return [{ settingId: 's1', documentTypeId: 't1', documentTypeName: 'Factura Electrónica de Venta', selectedTemplateId: 'tp1', selectedTemplateName: LONG_NAME }];
   if (pathname.endsWith('/client/templates/available/t1')) return [{ id: 'tp1', name: LONG_NAME, isGlobal: true }, { id: 'tp2', name: 'Plantilla del proveedor', isGlobal: false }];
@@ -157,11 +158,17 @@ export async function mockApi(page: Page, session: MockSession = ADMIN_SESSION) 
   });
 }
 
-// Sesión iniciada: el portal solo mira la presencia del token en localStorage.
+// Sesión iniciada. El vigilante de sesión lee el vencimiento del token (sin validarlo), así que se arma uno con 12 horas de vida.
+function fakeToken() {
+  const enc = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  return `${enc({ alg: 'none' })}.${enc({ iat: now, exp: now + 43200, sst: now, cap: now + 86400 })}.x`;
+}
+
 export async function signIn(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem('fel_client_auth', 'token-de-prueba');
+  await page.addInitScript((token: string) => {
+    localStorage.setItem('fel_client_auth', token);
     localStorage.setItem('fel_client_id', 'client-1');
     localStorage.setItem('fel_client_tenant', 'demo');
-  });
+  }, fakeToken());
 }

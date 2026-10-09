@@ -10,7 +10,7 @@ namespace Fel.Core.Entities
     //    Client de prueba (ClientId con valor) bajo el Tenant "Sandbox" compartido, para que
     //    pueda generar credenciales de prueba y probar la integración sin depender de ningún
     //    Tenant real.
-    public class DeveloperUser
+    public class DeveloperUser : ISessionAccount
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = string.Empty;
@@ -25,5 +25,9 @@ namespace Fel.Core.Entities
 
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
+
+        // Sesión del portal: sello de seguridad (ver ISessionAccount) y minutos de inactividad que elige el usuario.
+        public Guid SecurityStamp { get; set; } = Guid.NewGuid();
+        public int SessionMinutes { get; set; } = Fel.Core.Security.SessionPolicy.DefaultMinutes;
     }
 }

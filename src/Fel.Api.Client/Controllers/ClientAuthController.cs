@@ -18,14 +18,14 @@ namespace Fel.Api.Client.Controllers
     {
         private readonly FelDbContext _dbContext;
         private readonly PasswordResetService _passwordResetService;
-        private readonly ISessionTokenService _sessionTokenService;
+        private readonly Fel.Infrastructure.Security.AccountSessionService _accountSessions;
         private readonly string _portalUrl;
 
-        public ClientAuthController(FelDbContext dbContext, PasswordResetService passwordResetService, ISessionTokenService sessionTokenService, IConfiguration config)
+        public ClientAuthController(FelDbContext dbContext, PasswordResetService passwordResetService, Fel.Infrastructure.Security.AccountSessionService accountSessions, IConfiguration config)
         {
             _dbContext = dbContext;
             _passwordResetService = passwordResetService;
-            _sessionTokenService = sessionTokenService;
+            _accountSessions = accountSessions;
             _portalUrl = config["PortalUrl"] ?? "https://clients.facil-factura.pro";
         }
 
@@ -76,12 +76,12 @@ namespace Fel.Api.Client.Controllers
                 return Unauthorized("No tienes sucursales activas asignadas. Contacta a tu administrador.");
             }
 
-            var token = _sessionTokenService.GenerateToken(new[]
+            var token = _accountSessions.Issue(Fel.Core.Security.PortalKind.Client, user, new[]
             {
                 ("ClientId", user.ClientId.ToString()),
                 (System.Security.Claims.ClaimTypes.NameIdentifier, user.Id.ToString()),
                 (System.Security.Claims.ClaimTypes.Email, user.Email)
-            }, TimeSpan.FromHours(24));
+            }).Token;
 
             return Ok(new
             {
@@ -133,6 +133,7 @@ namespace Fel.Api.Client.Controllers
             if (user == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+            _accountSessions.RotateStamp(Fel.Core.Security.PortalKind.Client, user); // quien recupera su cuenta corta cualquier sesión abierta
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { message = "Contraseña actualizada correctamente." });

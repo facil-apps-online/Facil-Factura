@@ -2,7 +2,7 @@ using System;
 
 namespace Fel.Core.Entities
 {
-    public class TenantUser
+    public class TenantUser : ISessionAccount
     {
         public Guid Id { get; set; }
         public Guid TenantId { get; set; }
@@ -14,5 +14,9 @@ namespace Fel.Core.Entities
         
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
+
+        // Sesión del portal: sello de seguridad (ver ISessionAccount) y minutos de inactividad que elige el usuario.
+        public Guid SecurityStamp { get; set; } = Guid.NewGuid();
+        public int SessionMinutes { get; set; } = Fel.Core.Security.SessionPolicy.DefaultMinutes;
     }
 }

@@ -33,6 +33,11 @@
     <ProjectReference Include="..\Fel.Infrastructure\Fel.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Perfil y sesión del usuario: el mismo controlador base en las tres APIs de portales. -->
+    <Compile Include="..\Shared\AccountControllerBase.cs" Link="Shared\AccountControllerBase.cs" />
+  </ItemGroup>
+
 </Project>
 
 

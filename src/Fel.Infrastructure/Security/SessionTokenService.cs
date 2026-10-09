@@ -1,19 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using Fel.Core.Interfaces;
+using Fel.Core.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Fel.Infrastructure.Security
 {
     // Misma llave y algoritmo (HMAC-SHA256, config "MasterKey" plano — no "Security:MasterKey",
-    // que es la llave de cifrado de CryptoVault, un secreto distinto) que ya usa
-    // SuperadminAuthController para firmar su JWT — se centraliza acá para no repetir esta lógica
-    // en TenantAuthController/ClientAuthController/DeveloperAuthController.
+    // que es la llave de cifrado de CryptoVault, un secreto distinto) en las tres APIs de portales.
     public class SessionTokenService : ISessionTokenService
     {
         private readonly byte[] _key;
@@ -24,20 +24,31 @@ namespace Fel.Infrastructure.Security
             _key = Encoding.UTF8.GetBytes(keyStr.PadRight(32, '0'));
         }
 
-        public string GenerateToken(IEnumerable<(string Type, string Value)> claims, TimeSpan validity)
+        public SessionTokenResult IssueSession(IEnumerable<(string Type, string Value)> claims, Guid stamp, int sessionMinutes, DateTime sessionStartUtc)
         {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var identity = new ClaimsIdentity(claims.Select(c => new Claim(c.Type, c.Value)));
+            var now = DateTime.UtcNow;
+            var cap = sessionStartUtc + SessionPolicy.AbsoluteCap;
+            var expires = now.AddMinutes(sessionMinutes);
+            if (expires > cap) expires = cap;
 
-            var tokenDescriptor = new SecurityTokenDescriptor
+            static string Unix(DateTime utc) => new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+
+            var own = new[] { SessionPolicy.StampClaim, SessionPolicy.SessionStartClaim, SessionPolicy.CapClaim };
+            var list = claims.Where(c => !own.Contains(c.Type)).Select(c => new Claim(c.Type, c.Value)).ToList();
+            list.Add(new Claim(SessionPolicy.StampClaim, stamp.ToString()));
+            list.Add(new Claim(SessionPolicy.SessionStartClaim, Unix(sessionStartUtc), ClaimValueTypes.Integer64));
+            list.Add(new Claim(SessionPolicy.CapClaim, Unix(cap), ClaimValueTypes.Integer64));
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var descriptor = new SecurityTokenDescriptor
             {
-                Subject = identity,
-                Expires = DateTime.UtcNow.Add(validity),
+                Subject = new ClaimsIdentity(list),
+                IssuedAt = now,
+                Expires = expires,
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_key), SecurityAlgorithms.HmacSha256Signature)
             };
 
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(token);
+            return new SessionTokenResult(tokenHandler.WriteToken(tokenHandler.CreateToken(descriptor)), expires);
         }
     }
 }

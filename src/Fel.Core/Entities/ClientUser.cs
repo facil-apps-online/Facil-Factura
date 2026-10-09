@@ -21,7 +21,7 @@ namespace Fel.Core.Entities
         public static bool IsValid(string? role) => All.Any(r => r.Value == role);
     }
 
-    public class ClientUser
+    public class ClientUser : ISessionAccount
     {
         public Guid Id { get; set; }
         public Guid ClientId { get; set; }
@@ -39,5 +39,9 @@ namespace Fel.Core.Entities
 
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
+
+        // Sesión del portal: sello de seguridad (ver ISessionAccount) y minutos de inactividad que elige el usuario.
+        public Guid SecurityStamp { get; set; } = Guid.NewGuid();
+        public int SessionMinutes { get; set; } = Fel.Core.Security.SessionPolicy.DefaultMinutes;
     }
 }

@@ -20,13 +20,15 @@ namespace Fel.Api.Superadmin.Controllers
         private readonly FelDbContext _context;
         private readonly IConfiguration _configuration;
         private readonly PasswordResetService _passwordResetService;
+        private readonly Fel.Infrastructure.Security.AccountSessionService _accountSessions;
         private readonly string _portalUrl;
 
-        public SuperadminAuthController(FelDbContext context, IConfiguration configuration, PasswordResetService passwordResetService)
+        public SuperadminAuthController(FelDbContext context, IConfiguration configuration, PasswordResetService passwordResetService, Fel.Infrastructure.Security.AccountSessionService accountSessions)
         {
             _context = context;
             _configuration = configuration;
             _passwordResetService = passwordResetService;
+            _accountSessions = accountSessions;
             _portalUrl = configuration["PortalUrl"] ?? "https://admin.facil-factura.pro";
         }
 
@@ -50,7 +52,7 @@ namespace Fel.Api.Superadmin.Controllers
             {
                 Id = Guid.NewGuid(),
                 Email = request.Email,
-                PasswordHash = HashPassword(request.Password),
+                PasswordHash = Fel.Infrastructure.Security.SuperadminPasswordHasher.Hash(request.Password),
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -69,33 +71,26 @@ namespace Fel.Api.Superadmin.Controllers
                 return Unauthorized("Credenciales inválidas");
             }
 
-            var hash = HashPassword(request.Password);
-            if (user.PasswordHash != hash)
+            if (!Fel.Infrastructure.Security.SuperadminPasswordHasher.Verify(request.Password, user.PasswordHash))
             {
                 return Unauthorized("Credenciales inválidas");
             }
 
-            var tokenHandler = new JwtSecurityTokenHandler();
-            // Use MasterKey from appsettings.json for JWT signing, ensure it's at least 32 bytes
-            var keyStr = _configuration.GetValue<string>("MasterKey") ?? "SUPER_SECRET_FALLBACK_KEY_MUST_BE_32_CHARS_LONG_OR_MORE_123456";
-            var key = Encoding.UTF8.GetBytes(keyStr.PadRight(32, '0')); 
-            
-            var tokenDescriptor = new SecurityTokenDescriptor
+            // Las contraseñas guardadas con el esquema anterior (SHA-256 con sal fija) se pasan a BCrypt la primera vez que entran bien.
+            if (Fel.Infrastructure.Security.SuperadminPasswordHasher.IsLegacy(user.PasswordHash))
             {
-                Subject = new ClaimsIdentity(new[] 
-                {
-                    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                    new Claim(ClaimTypes.Email, user.Email),
-                    new Claim(ClaimTypes.Role, "Superadmin")
-                }),
-                Expires = DateTime.UtcNow.AddHours(24),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-            };
-            
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var jwtToken = tokenHandler.WriteToken(token);
+                user.PasswordHash = Fel.Infrastructure.Security.SuperadminPasswordHasher.Hash(request.Password);
+                await _context.SaveChangesAsync();
+            }
 
-            return Ok(new { token = jwtToken, email = user.Email });
+            var session = _accountSessions.Issue(Fel.Core.Security.PortalKind.Superadmin, user, new[]
+            {
+                (ClaimTypes.NameIdentifier, user.Id.ToString()),
+                (ClaimTypes.Email, user.Email),
+                (ClaimTypes.Role, "Superadmin")
+            });
+
+            return Ok(new { token = session.Token, email = user.Email });
         }
 
         [HttpPost("forgot-password")]
@@ -125,20 +120,11 @@ namespace Fel.Api.Superadmin.Controllers
             var user = await _context.SuperadminUsers.FindAsync(consumed.Value.UserId);
             if (user == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 
-            user.PasswordHash = HashPassword(request.NewPassword);
+            user.PasswordHash = Fel.Infrastructure.Security.SuperadminPasswordHasher.Hash(request.NewPassword);
+            _accountSessions.RotateStamp(Fel.Core.Security.PortalKind.Superadmin, user); // quien recupera su cuenta corta cualquier sesión abierta
             await _context.SaveChangesAsync();
 
             return Ok(new { message = "Contraseña actualizada correctamente." });
-        }
-
-        private string HashPassword(string password)
-        {
-            using (var sha256 = SHA256.Create())
-            {
-                var bytes = Encoding.UTF8.GetBytes(password + "FEL_SALT_SECURE");
-                var hash = sha256.ComputeHash(bytes);
-                return Convert.ToBase64String(hash);
-            }
         }
     }
 

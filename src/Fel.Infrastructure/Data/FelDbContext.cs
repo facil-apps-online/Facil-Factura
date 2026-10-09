@@ -237,6 +237,17 @@ namespace Fel.Infrastructure.Data
                 entity.HasOne(e => e.Branch).WithOne().HasForeignKey<BranchReceptionMailbox>(e => e.BranchId).OnDelete(DeleteBehavior.Cascade);
             });
 
+            // Sesión de los usuarios de portal: sello de seguridad (único por usuario aunque se inserte por SQL) y minutos de inactividad.
+            modelBuilder.Entity<ClientUser>().Property(e => e.SecurityStamp).HasDefaultValueSql("NEWID()");
+            modelBuilder.Entity<TenantUser>().Property(e => e.SecurityStamp).HasDefaultValueSql("NEWID()");
+            modelBuilder.Entity<DeveloperUser>().Property(e => e.SecurityStamp).HasDefaultValueSql("NEWID()");
+            modelBuilder.Entity<SuperadminUser>().Property(e => e.SecurityStamp).HasDefaultValueSql("NEWID()");
+            modelBuilder.Entity<ClientUser>().Property(e => e.SessionMinutes).HasDefaultValue(Fel.Core.Security.SessionPolicy.DefaultMinutes);
+            modelBuilder.Entity<TenantUser>().Property(e => e.SessionMinutes).HasDefaultValue(Fel.Core.Security.SessionPolicy.DefaultMinutes);
+            modelBuilder.Entity<DeveloperUser>().Property(e => e.SessionMinutes).HasDefaultValue(Fel.Core.Security.SessionPolicy.DefaultMinutes);
+            modelBuilder.Entity<SuperadminUser>().Property(e => e.SessionMinutes).HasDefaultValue(Fel.Core.Security.SessionPolicy.DefaultMinutes);
+            modelBuilder.Entity<SuperadminUser>().Property(e => e.Name).HasMaxLength(150);
+
             modelBuilder.Entity<BranchReceptionEvents>(entity =>
             {
                 entity.ToTable("BranchReceptionEvents");

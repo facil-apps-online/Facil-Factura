@@ -1,11 +1,14 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { Home, FileText, Settings, CreditCard, LogOut, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight, Menu, X, CheckCircle2, Clock, AlertTriangle, DollarSign, ArrowRight, Wallet, UserCog } from 'lucide-react';
+import { Home, FileText, Settings, CreditCard, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight, Menu, X, CheckCircle2, Clock, AlertTriangle, DollarSign, ArrowRight, Wallet, UserCog } from 'lucide-react';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { ConfirmDialogProvider } from '@/components/ConfirmDialog';
 import { api, BRANCH_STORAGE_KEY } from './lib/api';
 import { SessionProvider, useSession } from './context/SessionContext';
 import BranchSelector from './components/BranchSelector';
+import SessionGuard from '@shared/components/session/SessionGuard';
+import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
+import ProfilePage from '@shared/components/session/ProfilePage';
 import { setDecimalSeparator, useNumberFormat } from './lib/numberFormat';
 
 import TemplateSettings from './pages/TemplateSettings';
@@ -184,12 +187,6 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed, isDesktop, mobileOpen
         })}
       </nav>
 
-      <div className="p-4 border-t border-slate-800">
-        <button onClick={onLogout} title={collapsed ? 'Cerrar sesión' : undefined} className={`flex items-center gap-3 px-4 py-3 w-full rounded-xl hover:bg-rose-500/10 hover:text-rose-400 transition-colors text-left ${collapsed ? 'justify-center px-0' : ''}`}>
-          <LogOut size={20} />
-          {!collapsed && <span>Cerrar sesión</span>}
-        </button>
-      </div>
     </aside>
   );
 }
@@ -198,6 +195,8 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
   const branding = useContext(BrandingContext);
   const name = branding?.companyName || 'Facil Factura';
   const { selectedBranchId } = useSession();
+  const { me } = useAccountMe(api, '/client/auth');
+  const navigate = useNavigate();
   const location = useLocation();
   const isDesktop = useIsDesktop();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -266,9 +265,8 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
           </div>
           <div className="flex items-center gap-4 shrink-0">
             <BranchSelector />
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm shadow-md">
-              {name.substring(0, 2).toUpperCase()}
-            </div>
+            <UserMenu me={me} fallbackName={name} onProfile={() => navigate('/profile')} onLogout={onLogout} />
+            <SessionGuard api={api} tokenKey="fel_client_auth" basePath="/client/auth" onExpired={onLogout} />
           </div>
         </header>
 
@@ -525,6 +523,7 @@ function App() {
                         <Route path="/payroll" element={<PayrollPage />} />
                         <Route path="/received-documents" element={<RequireAdmin><ReceivedDocumentsPage /></RequireAdmin>} />
                         <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
+                        <Route path="/profile" element={<ProfilePage api={api} basePath="/client/auth" tokenKey="fel_client_auth" />} />
                         {/* Rutas ficticias para completar el sidebar */}
                         <Route path="/payments" element={<RequireAdmin><RequireFeature feature="payments"><div className="p-8">Esta sección estará disponible próximamente.</div></RequireFeature></RequireAdmin>} />
                       </Routes>

@@ -17,14 +17,14 @@ namespace Fel.Api.Tenant.Controllers
     {
         private readonly FelDbContext _dbContext;
         private readonly PasswordResetService _passwordResetService;
-        private readonly ISessionTokenService _sessionTokenService;
+        private readonly Fel.Infrastructure.Security.AccountSessionService _accountSessions;
         private readonly string _portalUrl;
 
-        public TenantAuthController(FelDbContext dbContext, PasswordResetService passwordResetService, ISessionTokenService sessionTokenService, IConfiguration config)
+        public TenantAuthController(FelDbContext dbContext, PasswordResetService passwordResetService, Fel.Infrastructure.Security.AccountSessionService accountSessions, IConfiguration config)
         {
             _dbContext = dbContext;
             _passwordResetService = passwordResetService;
-            _sessionTokenService = sessionTokenService;
+            _accountSessions = accountSessions;
             _portalUrl = config["PortalUrl"] ?? "https://tenants.facil-factura.pro";
         }
 
@@ -65,12 +65,12 @@ namespace Fel.Api.Tenant.Controllers
             var tenantInicial = tenantsAccesibles.FirstOrDefault(t => t.TenantId == user.TenantId)
                                  ?? tenantsAccesibles[0];
 
-            var token = _sessionTokenService.GenerateToken(new[]
+            var token = _accountSessions.Issue(Fel.Core.Security.PortalKind.Tenant, user, new[]
             {
                 ("TenantId", tenantInicial.TenantId.ToString()),
                 (System.Security.Claims.ClaimTypes.NameIdentifier, user.Id.ToString()),
                 (System.Security.Claims.ClaimTypes.Email, user.Email)
-            }, TimeSpan.FromHours(24));
+            }).Token;
 
             return Ok(new
             {
@@ -117,12 +117,12 @@ namespace Fel.Api.Tenant.Controllers
                 return Unauthorized("No tienes acceso vigente a ese tenant.");
             }
 
-            var token = _sessionTokenService.GenerateToken(new[]
+            var token = _accountSessions.Issue(Fel.Core.Security.PortalKind.Tenant, user, new[]
             {
                 ("TenantId", asignacion.TenantId.ToString()),
                 (System.Security.Claims.ClaimTypes.NameIdentifier, user.Id.ToString()),
                 (System.Security.Claims.ClaimTypes.Email, user.Email)
-            }, TimeSpan.FromHours(24));
+            }, Fel.Infrastructure.Security.AccountSessionService.SessionStart(User)).Token;
 
             return Ok(new
             {
@@ -165,6 +165,7 @@ namespace Fel.Api.Tenant.Controllers
             if (user == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+            _accountSessions.RotateStamp(Fel.Core.Security.PortalKind.Tenant, user); // quien recupera su cuenta corta cualquier sesión abierta
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { message = "Contraseña actualizada correctamente." });

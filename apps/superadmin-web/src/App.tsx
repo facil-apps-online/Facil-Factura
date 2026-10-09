@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Receipt, Settings, Plus, LogOut, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, Settings, Plus, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
 import { api } from './api';
@@ -21,6 +21,9 @@ import { Billing } from './Billing';
 import { ForgotPassword } from './ForgotPassword';
 import { ResetPassword } from './ResetPassword';
 import { CertificateProviders } from './CertificateProviders';
+import SessionGuard from '@shared/components/session/SessionGuard';
+import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
+import ProfilePage from '@shared/components/session/ProfilePage';
 
 const libraries: "places"[] = ['places'];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSy_TU_LLAVE_DE_PRUEBA_AQUI";
@@ -755,9 +758,11 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('fel_superadmin_sidebar_collapsed') === '1');
 
+  const { me } = useAccountMe(api, '/auth');
+
   const handleLogout = () => {
     localStorage.removeItem('fel_superadmin_auth');
-    navigate('/login');
+    window.location.href = '/login';
   };
 
   const toggleCollapsed = () => {
@@ -828,19 +833,17 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
           ))}
         </nav>
 
-        <div className="p-4 mt-auto border-t border-slate-800">
-          <button
-            onClick={handleLogout}
-            title={collapsed ? 'Cerrar sesión' : undefined}
-            className={`flex items-center w-full px-4 py-3 rounded-xl font-medium text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-colors ${collapsed ? 'justify-center px-0' : ''}`}>
-            <LogOut className={`w-5 h-5 opacity-70 ${collapsed ? '' : 'mr-3'}`} /> {!collapsed && 'Cerrar sesión'}
-          </button>
-        </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto relative z-10">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
+        <header className="h-16 shrink-0 flex items-center justify-end gap-4 px-6 border-b border-slate-800/60 bg-[#060B14]">
+          <UserMenu me={me} fallbackName="Administrador" onProfile={() => navigate('/profile')} onLogout={handleLogout} theme="dark" />
+          <SessionGuard api={api} tokenKey="fel_superadmin_auth" basePath="/auth" onExpired={handleLogout} theme="dark" />
+        </header>
+        <main className="flex-1 overflow-y-auto">
+          {children}
+        </main>
+      </div>
     </div>
   );
 };
@@ -883,6 +886,7 @@ const App = () => {
                   <Route path="/document-types/:typeId/templates" element={<DocumentTemplates />} />
                   <Route path="/document-types/:typeId/templates/:templateKey/edit" element={<TemplateEditor />} />
                   <Route path="/billing" element={<Billing />} />
+                  <Route path="/profile" element={<ProfilePage api={api} basePath="/auth" tokenKey="fel_superadmin_auth" theme="dark" />} />
                   <Route path="/settings" element={<div className="p-10"><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Configuración</h1></div>} />
                 </Routes>
               </ProtectedLayout>

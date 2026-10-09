@@ -19,6 +19,9 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddScoped<Fel.Core.Interfaces.ISessionTokenService, Fel.Infrastructure.Security.SessionTokenService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<Fel.Infrastructure.Security.SessionStampValidator>();
+builder.Services.AddScoped<Fel.Infrastructure.Security.AccountSessionService>();
 
 // Misma llave/algoritmo que SessionTokenService usa para firmar — ver SessionHeaderGuardMiddleware
 // para cómo se aplica (solo exige el JWT cuando la petición ya trae x-client-id o x-developer-id).
@@ -36,6 +39,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = false,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
+        };
+
+        // Revoca tokens: el sello de seguridad del token debe ser el actual del usuario y el usuario debe seguir activo.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async ctx =>
+            {
+                var validator = ctx.HttpContext.RequestServices.GetRequiredService<Fel.Infrastructure.Security.SessionStampValidator>();
+                if (!await validator.IsValidAsync(ctx.Principal!)) ctx.Fail("Sesión revocada o inválida.");
+            }
         };
     });
 

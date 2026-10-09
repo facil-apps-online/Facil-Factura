@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, Check, KeyRound, Building2, LogOut, LayoutDashboard, Code2, Stethoscope, Globe } from 'lucide-react';
+import { Copy, Check, KeyRound, Building2, LayoutDashboard, Code2, Stethoscope, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 
 // Catálogo de países soportados y qué documentación aplica a cada uno — hoy solo Colombia.
 // Al sumar un país nuevo (ej. México/SAT), se agrega aquí y sus propias pestañas, sin tocar
@@ -59,7 +60,8 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function Dashboard({ onLogout }: { onLogout: () => void }) {
+export default function Dashboard({ onLogout, onProfile }: { onLogout: () => void; onProfile: () => void }) {
+  const { me: account } = useAccountMe(api, '/developer/auth');
   const [me, setMe] = useState<DeveloperMe | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'overview' | 'docs' | 'docsV1'>('overview');
@@ -81,9 +83,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
             <img src="/brand/isotipo-color.png" alt="Facil Factura" className="w-8 h-8 object-contain" />
             <span className="font-bold text-slate-800">Portal de Developers</span>
           </div>
-          <button onClick={onLogout} className="flex items-center gap-2 text-sm text-slate-500 hover:text-rose-600 font-medium transition-colors">
-            <LogOut size={16} /> Salir
-          </button>
+          <UserMenu me={account} fallbackName={localStorage.getItem('fel_developer_name') || undefined} onProfile={onProfile} onLogout={onLogout} />
         </div>
         <div className="px-6 flex items-center justify-between">
           <div className="flex gap-1">

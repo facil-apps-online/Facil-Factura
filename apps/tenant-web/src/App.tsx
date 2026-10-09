@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { Home, Users, FileKey, FileSignature, LogOut, Settings, Palette, FileText, Briefcase, Code2, ChevronLeft, ChevronRight, Layers, Building2, Check, Loader2 } from 'lucide-react';
+import { Home, Users, FileKey, FileSignature, Settings, Palette, FileText, Briefcase, Code2, ChevronLeft, ChevronRight, Layers, Building2, Check, Loader2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from './lib/api';
 import { Toaster } from 'sonner';
@@ -18,6 +18,20 @@ import DocumentTemplates from './pages/DocumentTemplates';
 import TemplateEditor from './pages/TemplateEditor';
 import Developers from './pages/Developers';
 import GroupBilling from './pages/GroupBilling';
+import SessionGuard from '@shared/components/session/SessionGuard';
+import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
+import ProfilePage from '@shared/components/session/ProfilePage';
+
+const TOKEN_KEY = 'fel_tenant_auth';
+const ACCOUNT_PATH = '/tenant/auth';
+
+function clearTenantSession() {
+  localStorage.removeItem('fel_tenant_auth');
+  localStorage.removeItem('fel_tenant_id');
+  localStorage.removeItem('fel_tenant_name');
+  localStorage.removeItem('fel_tenant_list');
+  window.location.href = '/login';
+}
 
 interface TenantOption {
   id: string;
@@ -199,22 +213,6 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
         })}
       </nav>
 
-      <div className="p-4 border-t border-slate-800">
-        <button
-          onClick={() => {
-            localStorage.removeItem('fel_tenant_auth');
-            localStorage.removeItem('fel_tenant_id');
-            localStorage.removeItem('fel_tenant_name');
-            localStorage.removeItem('fel_tenant_list');
-            window.location.href = '/login';
-          }}
-          title={collapsed ? 'Cerrar sesión' : undefined}
-          className={`flex items-center gap-3 px-4 py-3 w-full rounded-xl hover:bg-rose-500/10 hover:text-rose-400 transition-colors text-left ${collapsed ? 'justify-center px-0' : ''}`}
-        >
-          <LogOut size={20} />
-          {!collapsed && <span>Cerrar sesión</span>}
-        </button>
-      </div>
     </aside>
   );
 }
@@ -228,6 +226,8 @@ interface TenantBranding {
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [tenantName, setTenantName] = useState('Cargando...');
   const [tenantBranding, setTenantBranding] = useState<TenantBranding | null>(null);
+  const { me } = useAccountMe(api, ACCOUNT_PATH);
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('fel_tenant_sidebar_collapsed') === '1');
 
   const toggleCollapsed = () => {
@@ -266,9 +266,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             <button className="p-2 text-slate-400 hover:text-primary transition-colors">
               <Settings size={20} />
             </button>
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm shadow-md">
-              {tenantName.substring(0, 2).toUpperCase()}
-            </div>
+            <UserMenu me={me} fallbackName={tenantName} onProfile={() => navigate('/profile')} onLogout={clearTenantSession} />
+            <SessionGuard api={api} tokenKey={TOKEN_KEY} basePath={ACCOUNT_PATH} onExpired={clearTenantSession} />
           </div>
         </header>
         
@@ -312,6 +311,7 @@ function App() {
                   <Route path="/templates" element={<DocumentTemplates />} />
                   <Route path="/templates/editor" element={<TemplateEditor />} />
                   <Route path="/developers" element={<Developers />} />
+                  <Route path="/profile" element={<ProfilePage api={api} basePath={ACCOUNT_PATH} tokenKey={TOKEN_KEY} />} />
                 </Routes>
               </ProtectedLayout>
             ) : (

@@ -27,7 +27,10 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<Fel.Core.Interfaces.ISessionTokenService, Fel.Infrastructure.Security.SessionTokenService>();
+builder.Services.AddScoped<Fel.Infrastructure.Security.SessionStampValidator>();
+builder.Services.AddScoped<Fel.Infrastructure.Security.AccountSessionService>();
 
 // Misma llave/algoritmo que SessionTokenService usa para firmar — ver SessionHeaderGuardMiddleware
 // para cómo se aplica (solo exige el JWT cuando la petición ya trae x-tenant-id).
@@ -46,6 +49,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
         };
+
+        // Revoca tokens: el sello de seguridad del token debe ser el actual del usuario y el usuario debe seguir activo.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async ctx =>
+            {
+                var validator = ctx.HttpContext.RequestServices.GetRequiredService<Fel.Infrastructure.Security.SessionStampValidator>();
+                if (!await validator.IsValidAsync(ctx.Principal!)) ctx.Fail("Sesión revocada o inválida.");
+            }
+        };
     });
 builder.Services.AddFluentValidationAutoValidation()
                 .AddFluentValidationClientsideAdapters();
@@ -62,7 +75,6 @@ builder.Services.AddScoped<Fel.Infrastructure.Services.ClientUserAdminService>()
 builder.Services.AddScoped<Fel.Infrastructure.Services.ResolutionBranchService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.BranchCredentialResolver>();
 builder.Services.AddTransient<Fel.Infrastructure.Services.DianRutParserService>();
-builder.Services.AddMemoryCache();
 builder.Services.AddOpenApi(); // .NET 9 json endpoint
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

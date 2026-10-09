@@ -31,6 +31,10 @@ builder.Services.AddAuthorization();
 
 // Misma llave y algoritmo que usa SuperadminAuthController.Login para firmar el JWT — si se
 // cambia una, hay que cambiar la otra.
+builder.Services.AddScoped<Fel.Core.Interfaces.ISessionTokenService, Fel.Infrastructure.Security.SessionTokenService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<Fel.Infrastructure.Security.SessionStampValidator>();
+builder.Services.AddScoped<Fel.Infrastructure.Security.AccountSessionService>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -45,6 +49,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = false,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
+        };
+
+        // Revoca tokens: el sello de seguridad del token debe ser el actual del usuario y el usuario debe seguir activo.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async ctx =>
+            {
+                var validator = ctx.HttpContext.RequestServices.GetRequiredService<Fel.Infrastructure.Security.SessionStampValidator>();
+                if (!await validator.IsValidAsync(ctx.Principal!)) ctx.Fail("Sesión revocada o inválida.");
+            }
         };
     });
 builder.Services.AddFluentValidationAutoValidation()

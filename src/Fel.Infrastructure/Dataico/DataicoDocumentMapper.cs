@@ -450,24 +450,118 @@ namespace Fel.Infrastructure.Dataico
             public decimal? CesantiasInterest { get; set; }
             public decimal? OrdinaryCompensation { get; set; }
             public decimal? ExtraordinaryCompensation { get; set; }
+            public decimal? PrivateSanction { get; set; }
+            public decimal? PublicSanction { get; set; }
         }
 
-        private static DataicoPayrollConcept ToDataicoConcept(PayrollConceptInput input, string defaultCode) => new()
+        // Campos que Dataico acepta en cada concepto. Una llave que no corresponde al código (por ejemplo
+        // medical-leave-type en una deducción de salud) se rechaza con "invalid-key", así que solo se envían
+        // los de la lista, igual que la integración en producción de C:\FEL.
+        [System.Flags]
+        private enum ConceptField
         {
-            code = string.IsNullOrWhiteSpace(input.Code) ? defaultCode : input.Code!,
-            description = input.Description,
-            amount = input.Amount,
-            amount_ns = input.AmountNs,
-            days = input.Days,
-            percentage = input.Percentage,
-            hours = input.Hours,
-            initial_date = input.InitialDate,
-            final_date = input.FinalDate,
-            medical_leave_type = input.MedicalLeaveType,
-            cesantias_interest = input.CesantiasInterest,
-            ordinary_compensation = input.OrdinaryCompensation,
-            extraordinary_compensation = input.ExtraordinaryCompensation
+            None = 0, Amount = 1, AmountNs = 2, Days = 4, Percentage = 8, Hours = 16, Dates = 32, MedicalLeave = 64,
+            CesantiasInterest = 128, Compensation = 256, Description = 512, Sanction = 1024
+        }
+
+        private const ConceptField A = ConceptField.Amount, N = ConceptField.AmountNs, D = ConceptField.Days, P = ConceptField.Percentage, H = ConceptField.Hours;
+
+        private static readonly Dictionary<string, ConceptField> ConceptFields = new(StringComparer.OrdinalIgnoreCase)
+        {
+            // Devengos
+            ["BASICO"] = A | D,
+            ["AUXILIO_DE_TRANSPORTE"] = A,
+            ["VIATICO"] = A | N,
+            ["BONIFICACION"] = A | N,
+            ["AUXILIO"] = A | N,
+            ["BONO_EPCTV"] = A | N,
+            ["BONO_EPCTV_ALIMENTACION"] = A | N,
+            ["COMISION"] = A,
+            ["PAGO_TERCERO"] = A,
+            ["ANTICIPO"] = A,
+            ["DOTACION"] = A | N,
+            ["APOYO_PRACTICA"] = A | N,
+            ["TELETRABAJO"] = A,
+            ["BONIFICACION_RETIRO"] = A | N,
+            ["INDEMNIZACION"] = A | N,
+            ["HORA_EXTRA_DIURNA"] = A | H | P,
+            ["HORA_EXTRA_NOCTURNA"] = A | H | P,
+            ["HORA_EXTRA_DIURNA_DF"] = A | H | P,
+            ["HORA_EXTRA_NOCTURNA_DF"] = A | H | P,
+            ["HORA_RECARGO_NOCTURNO"] = A | H | P,
+            ["HORA_RECARGO_DIURNA_DF"] = A | H | P,
+            ["HORA_RECARGO_NOCTURNO_DF"] = A | H | P,
+            ["VACACION"] = A | D,
+            ["VACACION_COMPENSADA"] = A | D,
+            ["PRIMA"] = A | N | D,
+            ["CESANTIAS"] = A | N | P | ConceptField.CesantiasInterest,
+            ["INCAPACIDAD"] = A | D | ConceptField.MedicalLeave,
+            ["LICENCIA_PATERNIDAD"] = A | D | ConceptField.Dates,
+            ["LICENCIA_REMUNERADA"] = A | D,
+            ["LICENCIA_NO_REMUNERADA"] = D,
+            ["HUELGA_LEGAL"] = D | ConceptField.Dates,
+            ["COMPENSACION"] = ConceptField.Compensation,
+            ["OTRO_CONCEPTO"] = A | N | D | ConceptField.Description,
+            // Deducciones
+            ["SALUD"] = A | P,
+            ["FONDO_PENSION"] = A | P,
+            ["FONDO_SUBSISTENCIA"] = A | P,
+            ["FONDO_SOLIDARIDAD_PENSIONAL"] = A | P,
+            ["SINDICATO"] = A | P,
+            ["LIBRANZA"] = A | ConceptField.Description,
+            ["OTRA_DEDUCCION"] = A | ConceptField.Description,
+            ["SANCION"] = ConceptField.Sanction,
+            ["PENSION_VOLUNTARIA"] = A,
+            ["RETENCION_FUENTE"] = A,
+            ["AFC"] = A,
+            ["COOPERATIVA"] = A,
+            ["EMBARGO_FISCAL"] = A,
+            ["PLANES_COMPLEMENTARIOS"] = A,
+            ["EDUCACION"] = A,
+            ["REINTEGRO"] = A,
+            ["DEUDA"] = A
         };
+
+        // Un concepto con un código fuera del catálogo conocido conserva los campos más comunes.
+        private const ConceptField UnknownConceptFields = ConceptField.Amount | ConceptField.AmountNs | ConceptField.Days | ConceptField.Description;
+
+        private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+        // Dataico trata un monto en cero como ausente: se omite en vez de enviar 0.
+        private static decimal? NullIfZero(decimal? value) => value is null or 0m ? null : value;
+
+        private static DataicoPayrollConcept ToDataicoConcept(PayrollConceptInput input, string defaultCode)
+        {
+            var code = string.IsNullOrWhiteSpace(input.Code) ? defaultCode : input.Code!.Trim();
+            var allowed = ConceptFields.TryGetValue(code, out var fields) ? fields : UnknownConceptFields;
+            bool Has(ConceptField f) => (allowed & f) != 0;
+
+            return new DataicoPayrollConcept
+            {
+                code = code,
+                description = Has(ConceptField.Description) ? NullIfBlank(input.Description) : null,
+                amount = Has(ConceptField.Amount) ? NullIfZero(input.Amount) : null,
+                amount_ns = Has(ConceptField.AmountNs) ? NullIfZero(input.AmountNs) : null,
+                days = Has(ConceptField.Days) ? input.Days : null,
+                percentage = Has(ConceptField.Percentage) ? input.Percentage : null,
+                hours = Has(ConceptField.Hours) ? input.Hours : null,
+                initial_date = Has(ConceptField.Dates) ? NullIfBlank(input.InitialDate) : null,
+                final_date = Has(ConceptField.Dates) ? NullIfBlank(input.FinalDate) : null,
+                medical_leave_type = Has(ConceptField.MedicalLeave) ? NullIfBlank(input.MedicalLeaveType) ?? "COMUN" : null,
+                cesantias_interest = Has(ConceptField.CesantiasInterest) ? NullIfZero(input.CesantiasInterest) : null,
+                ordinary_compensation = Has(ConceptField.Compensation) ? input.OrdinaryCompensation : null,
+                extraordinary_compensation = Has(ConceptField.Compensation) ? input.ExtraordinaryCompensation : null,
+                private_sanction = Has(ConceptField.Sanction) ? input.PrivateSanction : null,
+                public_sanction = Has(ConceptField.Sanction) ? input.PublicSanction : null
+            };
+        }
+
+        // Sin ningún dato de dirección no se envía el bloque; Dataico rechaza ciudad o departamento vacíos.
+        private static DataicoEmployeeAddress? BuildEmployeeAddress(string? department, string? city, string? line)
+        {
+            var address = new DataicoEmployeeAddress { department = NullIfBlank(department), city = NullIfBlank(city), line = NullIfBlank(line) };
+            return address.department == null && address.city == null && address.line == null ? null : address;
+        }
 
         public static DataicoPayrollRequest BuildPayrollRequest(
             Customer employee,
@@ -479,7 +573,8 @@ namespace Fel.Infrastructure.Dataico
             DateTime issueDate,
             DateTime paymentDate,
             IEnumerable<PayrollConceptInput> accruals,
-            IEnumerable<PayrollConceptInput> deductions)
+            IEnumerable<PayrollConceptInput> deductions,
+            string? noteText = null)
         {
             var (department, city) = DataicoMapper.SplitCityCode(employee.CityCode);
 
@@ -502,24 +597,20 @@ namespace Fel.Infrastructure.Dataico
                     identification_type = DataicoMapper.MapIdentificationType(employee.IdentificationType),
                     identification = employee.IdentificationNumber,
                     first_name = string.IsNullOrWhiteSpace(employee.FirstName) ? employee.Name : employee.FirstName,
-                    other_names = employee.SecondName,
+                    other_names = NullIfBlank(employee.SecondName),
                     last_name = employee.FirstLastName ?? string.Empty,
-                    second_last_name = employee.SecondLastName,
+                    second_last_name = NullIfBlank(employee.SecondLastName),
                     high_risk = employee.HighRisk,
                     integral_salary = employee.IntegralSalary,
                     start_date = employee.StartDate?.ToString("dd/MM/yyyy"),
                     fire_date = employee.FireDate?.ToString("dd/MM/yyyy"),
-                    bank = employee.Bank,
-                    account_type_kw = employee.AccountType,
-                    account_number = employee.AccountNumber,
-                    address = new DataicoEmployeeAddress { department = department, city = city, line = employee.Address }
+                    email = NullIfBlank(employee.Email),
+                    bank = NullIfBlank(employee.Bank),
+                    account_type_kw = NullIfBlank(employee.AccountType),
+                    account_number = NullIfBlank(employee.AccountNumber),
+                    address = BuildEmployeeAddress(department, city, employee.Address)
                 },
-                software = new DataicoPayrollSoftware
-                {
-                    pin = client.SoftwarePin,
-                    test_set_id = client.TestSetId,
-                    dian_id = client.SoftwareId
-                }
+                notes = BuildPayrollNotes(noteText)
             };
 
             request.accruals.AddRange(accruals.Select(a => ToDataicoConcept(a, "OTRO_CONCEPTO")));
@@ -552,8 +643,7 @@ namespace Fel.Infrastructure.Dataico
                 number = number,
                 issue_date = issueDate.ToString("dd/MM/yyyy"),
                 entry = BuildPayrollReference(originalPrefix, originalNumber, originalCune, originalIssueDate),
-                notes = BuildPayrollNotes(noteText),
-                software = new DataicoPayrollSoftware { pin = client.SoftwarePin, test_set_id = client.TestSetId, dian_id = client.SoftwareId }
+                notes = BuildPayrollNotes(noteText)
             };
         }
 
@@ -565,7 +655,7 @@ namespace Fel.Infrastructure.Dataico
             IEnumerable<PayrollConceptInput> accruals, IEnumerable<PayrollConceptInput> deductions,
             string originalPrefix, long originalNumber, string originalCune, DateTime originalIssueDate, string? noteText)
         {
-            var basePayload = BuildPayrollRequest(employee, client, prefix, number, initialSettlement, finalSettlement, issueDate, paymentDate, accruals, deductions);
+            var basePayload = BuildPayrollRequest(employee, client, prefix, number, initialSettlement, finalSettlement, issueDate, paymentDate, accruals, deductions, noteText);
 
             return new DataicoPayrollReplacementRequest
             {
@@ -581,8 +671,7 @@ namespace Fel.Infrastructure.Dataico
                 employee = basePayload.employee,
                 accruals = basePayload.accruals,
                 deductions = basePayload.deductions,
-                software = basePayload.software,
-                notes = BuildPayrollNotes(noteText),
+                notes = basePayload.notes,
                 replacement_for = BuildPayrollReference(originalPrefix, originalNumber, originalCune, originalIssueDate)
             };
         }

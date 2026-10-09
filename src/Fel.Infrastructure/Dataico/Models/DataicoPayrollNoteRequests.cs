@@ -25,6 +25,10 @@ namespace Fel.Infrastructure.Dataico.Models
     public class DataicoPayrollDeletionRequest
     {
         public string env { get; set; } = "PRUEBAS";
+
+        [JsonPropertyName("send_dian")]
+        public bool send_dian { get; set; } = true;
+
         public string prefix { get; set; } = string.Empty;
         public long number { get; set; }
 
@@ -33,15 +37,12 @@ namespace Fel.Infrastructure.Dataico.Models
 
         public DataicoPayrollDocumentReference entry { get; set; } = new();
         public List<DataicoPayrollNote> notes { get; set; } = new();
-        public DataicoPayrollSoftware software { get; set; } = new();
     }
 
     // Cuerpo real: POST /direct/payroll-api/v2/payroll-replacements — mismo payload que un
     // comprobante de nómina normal (DataicoPayrollRequest), más la referencia a lo que reemplaza.
     public class DataicoPayrollReplacementRequest : DataicoPayrollRequest
     {
-        public List<DataicoPayrollNote> notes { get; set; } = new();
-
         [JsonPropertyName("replacement-for")]
         public DataicoPayrollDocumentReference replacement_for { get; set; } = new();
     }

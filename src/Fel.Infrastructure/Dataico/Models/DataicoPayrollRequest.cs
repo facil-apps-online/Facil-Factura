@@ -60,6 +60,9 @@ namespace Fel.Infrastructure.Dataico.Models
         public string? second_last_name { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? email { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? bank { get; set; }
 
         [JsonPropertyName("account-type-kw")]
@@ -113,6 +116,14 @@ namespace Fel.Infrastructure.Dataico.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? medical_leave_type { get; set; }
 
+        [JsonPropertyName("private-sanction")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public decimal? private_sanction { get; set; }
+
+        [JsonPropertyName("public-sanction")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public decimal? public_sanction { get; set; }
+
         [JsonPropertyName("cesantias-interest")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public decimal? cesantias_interest { get; set; }
@@ -126,21 +137,15 @@ namespace Fel.Infrastructure.Dataico.Models
         public decimal? extraordinary_compensation { get; set; }
     }
 
-    public class DataicoPayrollSoftware
-    {
-        public string? pin { get; set; }
-
-        [JsonPropertyName("test-set-id")]
-        public string? test_set_id { get; set; }
-
-        [JsonPropertyName("dian-id")]
-        public string? dian_id { get; set; }
-    }
-
-    // Cuerpo real esperado por Dataico: POST /direct/payroll-api/v2/payroll-entries (objeto plano, sin envelope)
+    // Cuerpo real esperado por Dataico: POST /direct/payroll-api/v2/payroll-entries (objeto plano, sin envelope).
+    // Igual que la integración en producción de C:\FEL: no se envía el bloque "software" (Dataico usa el configurado en su cuenta).
     public class DataicoPayrollRequest
     {
         public string env { get; set; } = "PRUEBAS";
+
+        [JsonPropertyName("send_dian")]
+        public bool send_dian { get; set; } = true;
+
         public string prefix { get; set; } = string.Empty;
         public long number { get; set; }
         public int salary { get; set; }
@@ -161,6 +166,6 @@ namespace Fel.Infrastructure.Dataico.Models
         public DataicoPayrollEmployee employee { get; set; } = new();
         public List<DataicoPayrollConcept> accruals { get; set; } = new();
         public List<DataicoPayrollConcept> deductions { get; set; } = new();
-        public DataicoPayrollSoftware software { get; set; } = new();
+        public List<DataicoPayrollNote> notes { get; set; } = new();
     }
 }

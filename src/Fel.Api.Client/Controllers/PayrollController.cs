@@ -589,9 +589,12 @@ namespace Fel.Api.Client.Controllers
                             if (string.IsNullOrEmpty(code)) continue;
 
                             var amount = GetDecimal(row, "VALOR_SALARIAL");
+                            var privateSanction = code == "SANCION" ? GetDecimal(row, "SANCION_PRIVADA") : null;
+                            var publicSanction = code == "SANCION" ? GetDecimal(row, "SANCION_PUBLICA") : null;
                             if (code == "SANCION")
                             {
-                                amount ??= GetDecimal(row, "SANCION_PUBLICA") ?? GetDecimal(row, "SANCION_PRIVADA");
+                                // Dataico recibe las dos sanciones por separado; el monto sirve para los totales del borrador.
+                                amount ??= (privateSanction ?? 0) + (publicSanction ?? 0);
                             }
 
                             var concept = new PayrollConceptItem
@@ -608,7 +611,9 @@ namespace Fel.Api.Client.Controllers
                                 MedicalLeaveType = GetText(row, "TIPO_DE_INCAPACIDAD"),
                                 CesantiasInterest = GetDecimal(row, "INTERESES_DE_CESANTIAS"),
                                 OrdinaryCompensation = GetDecimal(row, "COMPENSACION_ORDINARIA"),
-                                ExtraordinaryCompensation = GetDecimal(row, "COMPENSACION_EXTRAORDINARIA")
+                                ExtraordinaryCompensation = GetDecimal(row, "COMPENSACION_EXTRAORDINARIA"),
+                                PrivateSanction = privateSanction,
+                                PublicSanction = publicSanction
                             };
 
                             if (tipo == "DEDUCCION") deductions.Add(concept); else accruals.Add(concept);
@@ -764,7 +769,9 @@ namespace Fel.Api.Client.Controllers
             MedicalLeaveType = c.MedicalLeaveType,
             CesantiasInterest = c.CesantiasInterest,
             OrdinaryCompensation = c.OrdinaryCompensation,
-            ExtraordinaryCompensation = c.ExtraordinaryCompensation
+            ExtraordinaryCompensation = c.ExtraordinaryCompensation,
+            PrivateSanction = c.PrivateSanction,
+            PublicSanction = c.PublicSanction
         };
 
         private class PayrollDraftData
@@ -793,6 +800,8 @@ namespace Fel.Api.Client.Controllers
         public decimal? CesantiasInterest { get; set; }
         public decimal? OrdinaryCompensation { get; set; }
         public decimal? ExtraordinaryCompensation { get; set; }
+        public decimal? PrivateSanction { get; set; }
+        public decimal? PublicSanction { get; set; }
     }
 
     public class CreatePayrollRequest

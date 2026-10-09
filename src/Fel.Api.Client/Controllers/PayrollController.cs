@@ -230,6 +230,13 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");
                 }
 
+                // Dataico exige ciudad y departamento del empleado, y salen del código DANE. Se valida antes de reservar el consecutivo
+                // para no gastar un número en un envío que Dataico rechazaría. La nota de eliminación no lleva datos del empleado.
+                if (document.TypeCode != DeletionTypeCode && (document.Customer?.CityCode ?? string.Empty).Trim().Length < 5)
+                {
+                    return BadRequest($"El empleado {document.Customer?.Name} no tiene un código DANE de municipio válido (5 dígitos). Edítalo en Empleados e indica el código DANE.");
+                }
+
                 // Nómina no tiene resolución DIAN real (el consecutivo lo administra el empleador,
                 // Anexo Técnico Nómina Electrónica), pero igual necesita ser secuencial de verdad —
                 // se reutiliza la misma entidad Resolution (DocumentType="NE") solo para llevar el
@@ -357,6 +364,30 @@ namespace Fel.Api.Client.Controllers
             {
                 return Unauthorized(ex.Message);
             }
+        }
+
+        // Emisión en lote: los documentos seleccionados se emiten de a uno, en orden de creación, con la misma lógica de "{id}/publish".
+        [HttpPost("batch/publish")]
+        public async Task<IActionResult> BatchPublish([FromBody] BatchRequest request)
+        {
+            var invalid = ValidateBatch(request, out var ids);
+            if (invalid != null) return invalid;
+
+            var clientId = GetCurrentClientId();
+            await StreamBatchAsync(_dbContext, ids, BranchDocuments.Where(d => d.ClientId == clientId && ids.Contains(d.Id) && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode)).OrderBy(d => d.CreatedAt).Select(d => d.Id), id => Publish(id));
+            return new EmptyResult();
+        }
+
+        // Eliminación en lote de borradores y rechazados, con la misma validación de "DELETE {id}".
+        [HttpPost("batch/delete")]
+        public async Task<IActionResult> BatchDelete([FromBody] BatchRequest request)
+        {
+            var invalid = ValidateBatch(request, out var ids);
+            if (invalid != null) return invalid;
+
+            var clientId = GetCurrentClientId();
+            await StreamBatchAsync(_dbContext, ids, BranchDocuments.Where(d => d.ClientId == clientId && ids.Contains(d.Id) && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode)).OrderBy(d => d.CreatedAt).Select(d => d.Id), id => DeleteDraft(id));
+            return new EmptyResult();
         }
 
         [HttpGet("template")]
@@ -724,7 +755,8 @@ namespace Fel.Api.Client.Controllers
                 TotalAmount = accrualsTotal - deductionsTotal,
                 SectorExtensionData = JsonSerializer.Serialize(draft),
                 ReferenceDocumentId = request.ReferenceDocumentId,
-                ReferenceConcept = request.ReferenceConcept
+                // La columna no admite nulos: un borrador que no es nota llega sin concepto.
+                ReferenceConcept = request.ReferenceConcept ?? string.Empty
             };
         }
 

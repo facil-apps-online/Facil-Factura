@@ -38,6 +38,17 @@ interface ResponsiveListProps<T> {
   tableFrom?: TableFrom;
   emptyMessage?: React.ReactNode;
   onRowClick?: (row: T) => void;
+  // Casilla de selección por fila (y "seleccionar todas" en el encabezado de la tabla) para las acciones masivas.
+  selection?: {
+    isSelected: (row: T) => boolean;
+    onToggle: (row: T) => void;
+    // Marca o desmarca todas las filas visibles.
+    onToggleAll: () => void;
+    allSelected: boolean;
+    someSelected: boolean;
+    // Nombre accesible de la casilla de una fila ("Seleccionar factura FE-12").
+    label: (row: T) => string;
+  };
 }
 
 // Los nombres de clase completos deben estar en el código para que Tailwind los genere.
@@ -51,6 +62,23 @@ const HIDE_BELOW: Record<'xl' | '2xl' | 'ultra', string> = {
   xl: 'hidden xl:table-cell', '2xl': 'hidden 2xl:table-cell', ultra: 'hidden min-[1800px]:table-cell',
 };
 
+// Casilla con área táctil de 44 px; no dispara el clic de la fila.
+function SelectBox({ checked, indeterminate, label, onChange, inTable }: { checked: boolean; indeterminate?: boolean; label: string; onChange: () => void; inTable?: boolean }) {
+  return (
+    // En la tabla el área táctil sobresale de la celda (margen negativo) para no agrandar la fila.
+    <label className={cn('flex h-11 w-11 cursor-pointer items-center justify-center', inTable && '-m-3')} onClick={e => e.stopPropagation()}>
+      <input
+        type="checkbox"
+        checked={checked}
+        ref={el => { if (el) el.indeterminate = !!indeterminate && !checked; }}
+        onChange={onChange}
+        aria-label={label}
+        className="h-4 w-4 cursor-pointer accent-primary"
+      />
+    </label>
+  );
+}
+
 // Listado de consulta: tabla desde `tableFrom` y tarjetas por debajo. Las dos presentaciones se
 // renderizan siempre y el CSS decide cuál se ve, así no hay parpadeo ni lógica de ancho en JS.
 export default function ResponsiveList<T>({
@@ -61,6 +89,7 @@ export default function ResponsiveList<T>({
   tableFrom = 'lg',
   emptyMessage = 'No hay registros para mostrar.',
   onRowClick,
+  selection,
 }: ResponsiveListProps<T>) {
   if (rows.length === 0) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{emptyMessage}</div>;
@@ -75,6 +104,11 @@ export default function ResponsiveList<T>({
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
             <tr>
+              {selection && (
+                <th className="w-10 px-3 py-3">
+                  <SelectBox inTable checked={selection.allSelected} indeterminate={selection.someSelected} label="Seleccionar todas las filas de la página" onChange={selection.onToggleAll} />
+                </th>
+              )}
               {columns.map(c => (
                 <th key={c.key} className={cn('px-3 py-3 font-semibold', c.align === 'right' && 'text-right', c.hideBelow && HIDE_BELOW[c.hideBelow])}>{c.header}</th>
               ))}
@@ -86,8 +120,13 @@ export default function ResponsiveList<T>({
               <tr
                 key={rowKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={cn('hover:bg-slate-50', onRowClick && 'cursor-pointer')}
+                className={cn('hover:bg-slate-50', onRowClick && 'cursor-pointer', selection?.isSelected(row) && 'bg-primary/5')}
               >
+                {selection && (
+                  <td className="w-10 px-3 py-3">
+                    <SelectBox inTable checked={selection.isSelected(row)} label={selection.label(row)} onChange={() => selection.onToggle(row)} />
+                  </td>
+                )}
                 {columns.map(c => (
                   <td key={c.key} className={cn('px-3 py-3 align-middle break-words', c.align === 'right' && 'text-right', c.hideBelow && HIDE_BELOW[c.hideBelow], c.cellClassName)}>{c.render(row)}</td>
                 ))}
@@ -108,8 +147,14 @@ export default function ResponsiveList<T>({
           <li
             key={rowKey(row)}
             onClick={onRowClick ? () => onRowClick(row) : undefined}
-            className={cn('min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm', onRowClick && 'cursor-pointer active:bg-slate-50')}
+            className={cn('min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm', onRowClick && 'cursor-pointer active:bg-slate-50', selection?.isSelected(row) && 'border-primary/50 bg-primary/5')}
           >
+            {selection && (
+              <div className="-mt-2 mb-2 flex items-center gap-1">
+                <SelectBox checked={selection.isSelected(row)} label={selection.label(row)} onChange={() => selection.onToggle(row)} />
+                <span className="text-xs font-semibold text-slate-500">Seleccionar</span>
+              </div>
+            )}
             {primary && <div className="break-words font-semibold text-slate-800">{primary.render(row)}</div>}
             {dataColumns.length > 0 && (
               <dl className={cn('grid grid-cols-2 gap-x-4 gap-y-2 text-sm', primary && 'mt-3')}>

@@ -466,6 +466,30 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // Emisión en lote: los documentos seleccionados se emiten de a uno, en orden de creación, con la misma lógica de "{id}/publish".
+        [HttpPost("batch/publish")]
+        public async Task<IActionResult> BatchPublish([FromBody] BatchRequest request)
+        {
+            var invalid = ValidateBatch(request, out var ids);
+            if (invalid != null) return invalid;
+
+            var clientId = GetCurrentClientId();
+            await StreamBatchAsync(_dbContext, ids, BranchDocuments.Where(d => d.ClientId == clientId && ids.Contains(d.Id) && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode)).OrderBy(d => d.CreatedAt).Select(d => d.Id), id => Publish(id));
+            return new EmptyResult();
+        }
+
+        // Eliminación en lote de borradores y rechazados, con la misma validación de "DELETE {id}".
+        [HttpPost("batch/delete")]
+        public async Task<IActionResult> BatchDelete([FromBody] BatchRequest request)
+        {
+            var invalid = ValidateBatch(request, out var ids);
+            if (invalid != null) return invalid;
+
+            var clientId = GetCurrentClientId();
+            await StreamBatchAsync(_dbContext, ids, BranchDocuments.Where(d => d.ClientId == clientId && ids.Contains(d.Id) && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode)).OrderBy(d => d.CreatedAt).Select(d => d.Id), id => DeleteDraft(id));
+            return new EmptyResult();
+        }
+
         // Documentos de la sucursal activa (todas las del usuario si eligió "todas"), para consultar.
         private IQueryable<Document> BranchDocuments => _dbContext.Documents.ForBranch(CurrentBranchScope);
 

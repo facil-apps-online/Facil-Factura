@@ -10,6 +10,8 @@ import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
 import { getNumberFormat, useNumberFormat } from '../lib/numberFormat';
+import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
+import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
 import DecimalInput from '../components/DecimalInput';
 import { todayColombia } from '../lib/colombiaTime';
 
@@ -90,8 +92,9 @@ export default function PayrollPage() {
     setPage(1);
   }, [searchTerm, datePreset, customFrom, customTo]);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async ({ quiet = false } = {}) => {
+    // quiet: refresca la lista sin el spinner de página completa (no desmonta el avance de un lote en curso).
+    if (!quiet) setLoading(true);
     try {
       const range = datePreset === 'custom' ? { from: customFrom, to: customTo } : getDateRangeForPreset(datePreset)!;
       const [entriesRes, empRes] = await Promise.all([
@@ -106,6 +109,14 @@ export default function PayrollPage() {
       setLoading(false);
     }
   };
+
+  // Acciones masivas: emitir o eliminar varios a la vez; el servidor los procesa de a uno.
+  const batchSelection = useBatchSelection();
+  const batch = useBatchRunner('/client/payroll', failedIds => {
+    // Los que fallaron quedan seleccionados para corregirlos y reintentar.
+    batchSelection.replace(failedIds);
+    loadData({ quiet: true });
+  });
 
   const addConcept = (list: 'accruals' | 'deductions') => {
     setFormData({ ...formData, [list]: [...formData[list], { description: '', amount: 0 }] });
@@ -512,6 +523,30 @@ export default function PayrollPage() {
   const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const paginatedEntries = filteredEntries.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const selectedRows = filteredEntries.filter(r => batchSelection.selected.has(r.id));
+  const notEditableCount = selectedRows.filter(r => !isBatchEditable(r.status)).length;
+  const batchRunning = batch.progress !== null && !batch.progress.finished;
+  const batchLabelOf = (id: string) => {
+    const r = entries.find(x => x.id === id);
+    return r ? `${r.consecutiveNumber || 'Borrador'} · ${r.customer?.name || '-'}` : id;
+  };
+  const runBatch = async (kind: 'publish' | 'delete') => {
+    const n = selectedRows.length;
+    const what = n === 1 ? 'nómina' : 'nóminas';
+    const confirmed = kind === 'publish'
+      ? await confirm(`Se emitirán ${n} ${what} a la DIAN, de a uno y en orden. ¿Continuar?`, { title: 'Emitir en lote', confirmText: 'Emitir', destructive: false })
+      : await confirm(`Se eliminarán ${n} ${what}. Esta acción no se puede deshacer. ¿Continuar?`, { title: 'Eliminar en lote', confirmText: 'Eliminar' });
+    if (!confirmed) return;
+    batch.run(kind, selectedRows.map(r => r.id));
+  };
+  const batchSelectionProps = {
+    isSelected: (r: any) => batchSelection.selected.has(r.id),
+    onToggle: (r: any) => batchSelection.toggle(r.id),
+    onToggleAll: () => batchSelection.toggleMany(paginatedEntries.map(r => r.id)),
+    allSelected: paginatedEntries.length > 0 && paginatedEntries.every(r => batchSelection.selected.has(r.id)),
+    someSelected: paginatedEntries.some(r => batchSelection.selected.has(r.id)),
+    label: (r: any) => `Seleccionar nómina ${r.consecutiveNumber || 'borrador'}`,
+  };
   const filteredTotal = filteredEntries.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
   const periodOf = (e: any) => e.initialSettlementDate && e.finalSettlementDate
     ? `${new Date(e.initialSettlementDate).toLocaleDateString('es-CO')} - ${new Date(e.finalSettlementDate).toLocaleDateString('es-CO')}`
@@ -610,8 +645,21 @@ export default function PayrollPage() {
         <p className="w-full text-xs text-slate-400 sm:w-auto sm:pb-2.5">{filteredEntries.length} comprobante{filteredEntries.length === 1 ? '' : 's'} en el periodo</p>
       </div>
 
+      <BatchActionBar
+        count={selectedRows.length}
+        canPublish={notEditableCount === 0}
+        canDelete={notEditableCount === 0}
+        blockedReason={notEditableCount > 0 ? `${notEditableCount} de los seleccionados ya fueron emitidos o están en proceso: solo se pueden emitir o eliminar borradores y rechazados.` : undefined}
+        disabled={batchRunning}
+        onPublish={() => runBatch('publish')}
+        onDelete={() => runBatch('delete')}
+        onClear={batchSelection.clear}
+      />
+      <BatchProgressDialog progress={batch.progress} labelOf={batchLabelOf} noun={{ singular: 'nómina', plural: 'nóminas' }} onClose={batch.close} />
+
       <ResponsiveList
         rows={paginatedEntries}
+        selection={batchSelectionProps}
         columns={columns}
         rowKey={e => e.id}
         tableFrom="2xl"

@@ -15,6 +15,8 @@ import Modal from '../components/Modal';
 import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
 import RowIconButton from '../components/RowIconButton';
 import { Button } from '../components/ui/button';
+import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
+import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
 
 const PAGE_SIZE = 25;
 
@@ -331,8 +333,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       .catch(() => {});
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async ({ quiet = false } = {}) => {
+    // quiet: refresca la lista sin el spinner de página completa (no desmonta el avance de un lote en curso).
+    if (!quiet) setLoading(true);
     try {
       const range = datePreset === 'custom'
         ? { from: appliedCustomFrom, to: appliedCustomTo }
@@ -352,6 +355,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     }
     setLoading(false);
   };
+
+  // Acciones masivas: emitir o eliminar varios a la vez; el servidor los procesa de a uno.
+  const batchSelection = useBatchSelection();
+  const batch = useBatchRunner(cfg.api, failedIds => {
+    // Los que fallaron quedan seleccionados para corregirlos y reintentar.
+    batchSelection.replace(failedIds);
+    loadData({ quiet: true });
+  });
 
   const handleCreateNew = () => {
     setEditingId(null);
@@ -1933,6 +1944,30 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const selectedRows = filteredInvoices.filter(r => batchSelection.selected.has(r.id));
+  const notEditableCount = selectedRows.filter(r => !isBatchEditable(r.status)).length;
+  const batchRunning = batch.progress !== null && !batch.progress.finished;
+  const batchLabelOf = (id: string) => {
+    const r = invoices.find(x => x.id === id);
+    return r ? `${r.number || 'Borrador'} · ${r.customer?.name || '-'}` : id;
+  };
+  const runBatch = async (kind: 'publish' | 'delete') => {
+    const n = selectedRows.length;
+    const what = n === 1 ? 'documento' : 'documentos';
+    const confirmed = kind === 'publish'
+      ? await confirm(`Se emitirán ${n} ${what} a la DIAN, de a uno y en orden. ¿Continuar?`, { title: 'Emitir en lote', confirmText: 'Emitir', destructive: false })
+      : await confirm(`Se eliminarán ${n} ${what}. Esta acción no se puede deshacer. ¿Continuar?`, { title: 'Eliminar en lote', confirmText: 'Eliminar' });
+    if (!confirmed) return;
+    batch.run(kind, selectedRows.map(r => r.id));
+  };
+  const batchSelectionProps = {
+    isSelected: (r: any) => batchSelection.selected.has(r.id),
+    onToggle: (r: any) => batchSelection.toggle(r.id),
+    onToggleAll: () => batchSelection.toggleMany(paginatedInvoices.map(r => r.id)),
+    allSelected: paginatedInvoices.length > 0 && paginatedInvoices.every(r => batchSelection.selected.has(r.id)),
+    someSelected: paginatedInvoices.some(r => batchSelection.selected.has(r.id)),
+    label: (r: any) => `Seleccionar ${cfg.singular} ${r.number || 'borrador'}`,
+  };
   // Nota Crédito resta del saldo (es una devolución/anulación parcial), Nota Débito suma igual
   // que una Factura (aumenta lo adeudado) — antes las dos sumaban en el mismo sentido que las
   // facturas, así que el total del pie de página quedaba doblado en vez de neteado.
@@ -2141,8 +2176,21 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         </button>
       </div>
 
+      <BatchActionBar
+        count={selectedRows.length}
+        canPublish={notEditableCount === 0}
+        canDelete={notEditableCount === 0}
+        blockedReason={notEditableCount > 0 ? `${notEditableCount} de los seleccionados ya fueron emitidos o están en proceso: solo se pueden emitir o eliminar borradores y rechazados.` : undefined}
+        disabled={batchRunning}
+        onPublish={() => runBatch('publish')}
+        onDelete={() => runBatch('delete')}
+        onClear={batchSelection.clear}
+      />
+      <BatchProgressDialog progress={batch.progress} labelOf={batchLabelOf} noun={{ singular: 'documento', plural: 'documentos' }} onClose={batch.close} />
+
       <ResponsiveList
         rows={paginatedInvoices}
+        selection={batchSelectionProps}
         columns={columns}
         rowKey={inv => inv.id}
         tableFrom="wide"

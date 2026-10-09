@@ -27,10 +27,12 @@ namespace Fel.Api.Client.Controllers
             var branches = await _dbContext.Branches.AsNoTracking()
                 .Where(b => allowedIds.Contains(b.Id))
                 .OrderByDescending(b => b.IsMain).ThenBy(b => b.Name)
-                .Select(b => new { b.Id, b.Name, b.Code, b.IsMain })
+                .Select(b => new { b.Id, b.Name, b.Code, b.IsMain, b.CityCode })
                 .ToListAsync();
 
-            var controlsPayments = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == Branch.ClientId).Select(c => c.ControlsPayments).FirstOrDefaultAsync();
+            var client = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == Branch.ClientId)
+                .Select(c => new { c.ControlsPayments, c.Latitude, c.Longitude })
+                .FirstOrDefaultAsync();
 
             return Ok(new
             {
@@ -39,7 +41,9 @@ namespace Fel.Api.Client.Controllers
                 allBranches = Branch.CanViewAllBranches,
                 branches,
                 // Módulos que el Tenant activó para este cliente: el portal oculta el menú y la ruta de lo que esté apagado.
-                features = new { payments = controlsPayments },
+                features = new { payments = client?.ControlsPayments ?? false },
+                // Ubicación de la empresa: el buscador de direcciones la usa para mostrar primero lo que queda cerca.
+                location = client?.Latitude != null && client.Longitude != null ? new { latitude = client.Latitude, longitude = client.Longitude } : null,
                 roles = ClientUserRoles.All.Select(r => new { value = r.Value, label = r.Label }),
                 noteKinds = NoteKinds.All.Select(k => new { value = k.Kind.ToString(), label = k.Label })
             });

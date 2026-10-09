@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
 import { MapPin, FileUp, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import { useSession } from '../context/SessionContext';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import DecimalInput from './DecimalInput';
 import Modal from './Modal';
@@ -91,11 +92,23 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
   };
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const { location, branches, selectedBranchId } = useSession();
+  // Departamento (2 primeros dígitos del DANE) de la sucursal activa: desempata nombres de ciudad repetidos.
+  const branchDepartment = branches.find(b => b.id === selectedBranchId)?.cityCode?.slice(0, 2) ?? branches[0]?.cityCode?.slice(0, 2) ?? '';
   const { isLoaded: isMapsLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     libraries: GOOGLE_MAPS_LIBRARIES
   });
+
+  // Zona de ~40 km alrededor de la empresa: Google muestra primero las direcciones de ahí, pero se puede buscar en cualquier parte de Colombia.
+  const searchBias = useMemo(() => {
+    if (!isMapsLoaded || !location) return undefined;
+    const delta = 0.35;
+    return new google.maps.LatLngBounds(
+      { lat: location.latitude - delta, lng: location.longitude - delta },
+      { lat: location.latitude + delta, lng: location.longitude + delta });
+  }, [isMapsLoaded, location]);
 
   const onLoadAutocomplete = (autocomplete: google.maps.places.Autocomplete) => {
     autocompleteRef.current = autocomplete;
@@ -106,9 +119,11 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
     if (!place?.geometry?.location) return;
 
     let cityName = '';
+    let departmentName = '';
     let postalCode = '';
     place.address_components?.forEach(component => {
       if (component.types.includes('locality')) cityName = component.long_name;
+      if (component.types.includes('administrative_area_level_1')) departmentName = component.long_name;
       if (component.types.includes('postal_code')) postalCode = component.long_name;
     });
 
@@ -120,6 +135,13 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
       latitude: place.geometry.location.lat(),
       longitude: place.geometry.location.lng()
     });
+
+    // El código DANE sale del catálogo DIAN según la ciudad de la dirección; si no hay una coincidencia única se deja el que ya tenía.
+    if (cityName) {
+      api.get('/client/customers/municipality-match', { params: { name: cityName, department: departmentName, preferDepartment: branchDepartment } })
+        .then(res => setFormData(prev => ({ ...prev, cityCode: res.data.code })))
+        .catch(() => { /* sin coincidencia: el usuario puede digitar el código */ });
+    }
   };
 
   // El RUT imprime la dirección abreviada y sin el "#" ("CR 5 7 24 ED PAOLA BABON OF 503"), que
@@ -334,31 +356,36 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
               <input type="text" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
             </div>
 
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Régimen Fiscal</label>
-              <SearchableSelect
-                required
-                value={formData.dataicoRegimen}
-                onChange={v => setFormData({...formData, dataicoRegimen: v})}
-                placeholder="Buscar régimen..."
-                options={regimenCatalog.map(c => ({ value: c.category, label: c.name }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Nivel Tributario</label>
-              <SearchableSelect
-                required
-                value={formData.dataicoTaxLevelCode}
-                onChange={v => setFormData({...formData, dataicoTaxLevelCode: v})}
-                placeholder="Buscar nivel tributario..."
-                options={taxLevelCatalog.map(c => ({ value: c.category, label: c.name }))}
-              />
-            </div>
+            {/* Un empleado no tiene régimen fiscal ni nivel tributario: no se piden. */}
+            {formData.partyType !== 'Empleado' && (
+              <>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Régimen Fiscal</label>
+                <SearchableSelect
+                  required
+                  value={formData.dataicoRegimen}
+                  onChange={v => setFormData({...formData, dataicoRegimen: v})}
+                  placeholder="Buscar régimen..."
+                  options={regimenCatalog.map(c => ({ value: c.category, label: c.name }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Nivel Tributario</label>
+                <SearchableSelect
+                  required
+                  value={formData.dataicoTaxLevelCode}
+                  onChange={v => setFormData({...formData, dataicoTaxLevelCode: v})}
+                  placeholder="Buscar nivel tributario..."
+                  options={taxLevelCatalog.map(c => ({ value: c.category, label: c.name }))}
+                />
+              </div>
+              </>
+            )}
 
             <div className="sm:col-span-2">
               <label className="block text-sm font-bold text-slate-700 mb-1">Dirección</label>
               {isMapsLoaded ? (
-                <Autocomplete onLoad={onLoadAutocomplete} onPlaceChanged={onPlaceChanged}>
+                <Autocomplete onLoad={onLoadAutocomplete} onPlaceChanged={onPlaceChanged} options={{ componentRestrictions: { country: 'co' }, bounds: searchBias, strictBounds: false }}>
                   <input
                     type="text" placeholder="Busca la dirección en Google Maps..."
                     value={formData.address}

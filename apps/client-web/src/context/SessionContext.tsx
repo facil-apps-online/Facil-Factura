@@ -10,6 +10,8 @@ export interface SessionBranch {
   name: string;
   code: string;
   isMain: boolean;
+  // Código DANE del municipio de la sucursal.
+  cityCode?: string | null;
 }
 
 export interface CatalogItem {
@@ -22,6 +24,8 @@ interface SessionData {
   isAdministrator: boolean;
   // true = el usuario puede ver todas las sucursales del cliente (y por tanto elegir "Todas").
   allBranches: boolean;
+  // Ubicación de la empresa, si está registrada.
+  location?: { latitude: number; longitude: number } | null;
   branches: SessionBranch[];
   // Módulos que el Tenant activó para este cliente (apagados por defecto).
   features: { payments: boolean };

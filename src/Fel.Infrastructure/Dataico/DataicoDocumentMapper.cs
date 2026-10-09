@@ -567,6 +567,7 @@ namespace Fel.Infrastructure.Dataico
             DateTime paymentDate,
             IEnumerable<PayrollConceptInput> accruals,
             IEnumerable<PayrollConceptInput> deductions,
+            IReadOnlyCollection<IdentificationType> identificationTypes,
             string? noteText = null)
         {
             var (department, city) = DataicoMapper.SplitCityCode(employee.CityCode);
@@ -587,7 +588,8 @@ namespace Fel.Infrastructure.Dataico
                     payment_means = employee.PaymentMeans ?? string.Empty,
                     worker_type = employee.WorkerType ?? string.Empty,
                     contract_type = employee.ContractType ?? string.Empty,
-                    identification_type = DataicoMapper.MapIdentificationType(employee.IdentificationType),
+                    // El controlador valida antes de emitir que el tipo tenga equivalencia de nómina en datos maestros.
+                    identification_type = IdentificationTypeResolver.PayrollCode(identificationTypes, employee.IdentificationType) ?? employee.IdentificationType,
                     identification = employee.IdentificationNumber,
                     first_name = string.IsNullOrWhiteSpace(employee.FirstName) ? employee.Name : employee.FirstName,
                     other_names = NullIfBlank(employee.SecondName),
@@ -646,10 +648,10 @@ namespace Fel.Infrastructure.Dataico
         public static DataicoPayrollReplacementRequest BuildPayrollReplacementRequest(
             Customer employee, Client client, string prefix, long number,
             DateTime initialSettlement, DateTime finalSettlement, DateTime issueDate, DateTime paymentDate,
-            IEnumerable<PayrollConceptInput> accruals, IEnumerable<PayrollConceptInput> deductions,
+            IEnumerable<PayrollConceptInput> accruals, IEnumerable<PayrollConceptInput> deductions, IReadOnlyCollection<IdentificationType> identificationTypes,
             string originalPrefix, long originalNumber, string originalCune, DateTime originalIssueDate, string? noteText)
         {
-            var basePayload = BuildPayrollRequest(employee, client, prefix, number, initialSettlement, finalSettlement, issueDate, paymentDate, accruals, deductions, noteText);
+            var basePayload = BuildPayrollRequest(employee, client, prefix, number, initialSettlement, finalSettlement, issueDate, paymentDate, accruals, deductions, identificationTypes, noteText);
 
             return new DataicoPayrollReplacementRequest
             {

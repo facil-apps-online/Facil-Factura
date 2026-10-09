@@ -2538,6 +2538,10 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("DataicoCode")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("DataicoPayrollCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -2559,6 +2563,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000001"),
                             Code = "13",
                             DataicoCode = "CC",
+                            DataicoPayrollCode = "CEDULA_DE_CIUDADANIA",
                             IsActive = true,
                             Name = "Cédula de Ciudadanía"
                         },
@@ -2567,6 +2572,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000002"),
                             Code = "22",
                             DataicoCode = "CE",
+                            DataicoPayrollCode = "CEDULA_DE_EXTRANJERIA",
                             IsActive = true,
                             Name = "Cédula de Extranjería"
                         },
@@ -2575,6 +2581,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000003"),
                             Code = "42",
                             DataicoCode = "IE",
+                            DataicoPayrollCode = "DOCUMENTO_DE_IDENTIFICATION_EXTRANJERO",
                             IsActive = true,
                             Name = "Documento de Identificación Extranjero"
                         },
@@ -2583,6 +2590,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000004"),
                             Code = "31",
                             DataicoCode = "NIT",
+                            DataicoPayrollCode = "NIT",
                             IsActive = true,
                             Name = "NIT"
                         },
@@ -2591,6 +2599,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000005"),
                             Code = "50",
                             DataicoCode = "NIT_OTRO_PAIS",
+                            DataicoPayrollCode = "NIT_DE_OTRO_PAIS",
                             IsActive = true,
                             Name = "NIT de Otro País"
                         },
@@ -2599,6 +2608,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000006"),
                             Code = "91",
                             DataicoCode = "NUIP",
+                            DataicoPayrollCode = "NUIP",
                             IsActive = true,
                             Name = "NUIP"
                         },
@@ -2607,6 +2617,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000007"),
                             Code = "41",
                             DataicoCode = "PASAPORTE",
+                            DataicoPayrollCode = "PASAPORTE",
                             IsActive = true,
                             Name = "Pasaporte"
                         },
@@ -2615,6 +2626,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000008"),
                             Code = "11",
                             DataicoCode = "RC",
+                            DataicoPayrollCode = "REGISTRO_CIVIL",
                             IsActive = true,
                             Name = "Registro Civil"
                         },
@@ -2623,6 +2635,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-000000000009"),
                             Code = "21",
                             DataicoCode = "TE",
+                            DataicoPayrollCode = "TARJETA_DE_EXTRANJERIA",
                             IsActive = true,
                             Name = "Tarjeta de Extranjería"
                         },
@@ -2631,6 +2644,7 @@ namespace Fel.Infrastructure.Migrations
                             Id = new Guid("30000000-0000-0000-0000-00000000000a"),
                             Code = "12",
                             DataicoCode = "TI",
+                            DataicoPayrollCode = "TARJETA_DE_IDENTIDAD",
                             IsActive = true,
                             Name = "Tarjeta de Identidad"
                         });

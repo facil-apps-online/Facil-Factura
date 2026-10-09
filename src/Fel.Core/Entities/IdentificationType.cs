@@ -17,5 +17,9 @@ namespace Fel.Core.Entities
         // Null/vacío si no se ha capturado — en ese caso el envío a Dataico usa su propia tabla
         // fija de respaldo (ver DataicoMapper). No aplica a la emisión directa DIAN, que usa Code.
         public string? DataicoCode { get; set; }
+
+        // Equivalencia en el vocabulario de la API de nómina de Dataico, que no es el de facturación (ej. "13" -> "CEDULA_DE_CIUDADANIA").
+        // Si falta, la nómina de un empleado con este tipo de documento no se envía y se pide completarla aquí.
+        public string? DataicoPayrollCode { get; set; }
     }
 }

@@ -34,6 +34,7 @@ namespace Fel.Api.Superadmin.Controllers
             public string Name { get; set; } = string.Empty;
             public bool IsActive { get; set; } = true;
             public string? DataicoCode { get; set; }
+            public string? DataicoPayrollCode { get; set; }
         }
 
         [HttpPost]
@@ -51,7 +52,8 @@ namespace Fel.Api.Superadmin.Controllers
                 Code = code,
                 Name = request.Name.Trim(),
                 IsActive = true,
-                DataicoCode = string.IsNullOrWhiteSpace(request.DataicoCode) ? null : request.DataicoCode.Trim()
+                DataicoCode = string.IsNullOrWhiteSpace(request.DataicoCode) ? null : request.DataicoCode.Trim(),
+                DataicoPayrollCode = string.IsNullOrWhiteSpace(request.DataicoPayrollCode) ? null : request.DataicoPayrollCode.Trim()
             };
 
             _dbContext.IdentificationTypes.Add(type);
@@ -76,6 +78,7 @@ namespace Fel.Api.Superadmin.Controllers
             type.Name = request.Name.Trim();
             type.IsActive = request.IsActive;
             type.DataicoCode = string.IsNullOrWhiteSpace(request.DataicoCode) ? null : request.DataicoCode.Trim();
+            type.DataicoPayrollCode = string.IsNullOrWhiteSpace(request.DataicoPayrollCode) ? null : request.DataicoPayrollCode.Trim();
             await _dbContext.SaveChangesAsync();
 
             return Ok(type);

@@ -644,6 +644,7 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.Code).IsRequired().HasMaxLength(10);
                 entity.HasIndex(e => e.Code).IsUnique();
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+                entity.Property(e => e.DataicoPayrollCode).HasMaxLength(60);
 
                 // Los mismos 10 códigos que ya venían hardcodeados en el frontend (client-web),
                 // con exactamente los mismos valores de Code, para que los clientes y customers ya
@@ -652,17 +653,19 @@ namespace Fel.Infrastructure.Data
                 // DataicoCode: equivalencia confirmada contra el error real de la API de Dataico
                 // ('Tiene que ser uno de estos valores: CC CE IE NIT NIT_OTRO_PAIS NUIP PASAPORTE
                 // PEP PPT RC TE TI') — PEP/PPT no tienen código DIAN en este catálogo todavía.
+                // DataicoPayrollCode: la API de nómina usa nombres largos ('CEDULA_DE_CIUDADANIA'...), confirmados contra su error de
+                // 'invalid-value' en employee.identification-type.
                 entity.HasData(
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000001"), Code = "13", Name = "Cédula de Ciudadanía", IsActive = true, DataicoCode = "CC" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000002"), Code = "22", Name = "Cédula de Extranjería", IsActive = true, DataicoCode = "CE" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000003"), Code = "42", Name = "Documento de Identificación Extranjero", IsActive = true, DataicoCode = "IE" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000004"), Code = "31", Name = "NIT", IsActive = true, DataicoCode = "NIT" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000005"), Code = "50", Name = "NIT de Otro País", IsActive = true, DataicoCode = "NIT_OTRO_PAIS" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000006"), Code = "91", Name = "NUIP", IsActive = true, DataicoCode = "NUIP" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000007"), Code = "41", Name = "Pasaporte", IsActive = true, DataicoCode = "PASAPORTE" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000008"), Code = "11", Name = "Registro Civil", IsActive = true, DataicoCode = "RC" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000009"), Code = "21", Name = "Tarjeta de Extranjería", IsActive = true, DataicoCode = "TE" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-00000000000a"), Code = "12", Name = "Tarjeta de Identidad", IsActive = true, DataicoCode = "TI" }
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000001"), Code = "13", Name = "Cédula de Ciudadanía", IsActive = true, DataicoCode = "CC", DataicoPayrollCode = "CEDULA_DE_CIUDADANIA" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000002"), Code = "22", Name = "Cédula de Extranjería", IsActive = true, DataicoCode = "CE", DataicoPayrollCode = "CEDULA_DE_EXTRANJERIA" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000003"), Code = "42", Name = "Documento de Identificación Extranjero", IsActive = true, DataicoCode = "IE", DataicoPayrollCode = "DOCUMENTO_DE_IDENTIFICATION_EXTRANJERO" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000004"), Code = "31", Name = "NIT", IsActive = true, DataicoCode = "NIT", DataicoPayrollCode = "NIT" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000005"), Code = "50", Name = "NIT de Otro País", IsActive = true, DataicoCode = "NIT_OTRO_PAIS", DataicoPayrollCode = "NIT_DE_OTRO_PAIS" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000006"), Code = "91", Name = "NUIP", IsActive = true, DataicoCode = "NUIP", DataicoPayrollCode = "NUIP" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000007"), Code = "41", Name = "Pasaporte", IsActive = true, DataicoCode = "PASAPORTE", DataicoPayrollCode = "PASAPORTE" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000008"), Code = "11", Name = "Registro Civil", IsActive = true, DataicoCode = "RC", DataicoPayrollCode = "REGISTRO_CIVIL" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000009"), Code = "21", Name = "Tarjeta de Extranjería", IsActive = true, DataicoCode = "TE", DataicoPayrollCode = "TARJETA_DE_EXTRANJERIA" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-00000000000a"), Code = "12", Name = "Tarjeta de Identidad", IsActive = true, DataicoCode = "TI", DataicoPayrollCode = "TARJETA_DE_IDENTIDAD" }
                 );
             });
 

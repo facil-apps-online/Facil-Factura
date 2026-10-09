@@ -230,11 +230,20 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");
                 }
 
+                var identificationTypes = await _dbContext.IdentificationTypes.AsNoTracking().ToListAsync();
+
                 // Dataico exige ciudad y departamento del empleado, y salen del código DANE. Se valida antes de reservar el consecutivo
                 // para no gastar un número en un envío que Dataico rechazaría. La nota de eliminación no lleva datos del empleado.
                 if (document.TypeCode != DeletionTypeCode && (document.Customer?.CityCode ?? string.Empty).Trim().Length < 5)
                 {
                     return BadRequest($"El empleado {document.Customer?.Name} no tiene un código DANE de municipio válido (5 dígitos). Edítalo en Empleados e indica el código DANE.");
+                }
+
+                // El tipo de documento del empleado se envía con el nombre que usa la API de nómina de Dataico, que se parametriza en el
+                // catálogo de tipos de identificación (datos maestros).
+                if (document.TypeCode != DeletionTypeCode && IdentificationTypeResolver.PayrollCode(identificationTypes, document.Customer?.IdentificationType) == null)
+                {
+                    return BadRequest($"El tipo de documento '{document.Customer?.IdentificationType}' del empleado {document.Customer?.Name} no tiene equivalencia para nómina electrónica. Corrígelo en el empleado o configura la equivalencia en Datos maestros > Tipos de identificación.");
                 }
 
                 // Nómina no tiene resolución DIAN real (el consecutivo lo administra el empleador,
@@ -295,7 +304,7 @@ namespace Fel.Api.Client.Controllers
                         var replacementRequest = DataicoDocumentMapper.BuildPayrollReplacementRequest(
                             document.Customer!, client, draft.Prefix, documentNumber,
                             draft.InitialSettlementDate, draft.FinalSettlementDate, Fel.Core.Models.ColombiaTime.Now, draft.PaymentDate,
-                            draft.Accruals.Select(ToConceptInput), draft.Deductions.Select(ToConceptInput),
+                            draft.Accruals.Select(ToConceptInput), draft.Deductions.Select(ToConceptInput), identificationTypes,
                             originalDraft.Prefix, originalNumber, originalDocument.Cufe, originalDocument.IssueDate, document.ReferenceConcept);
                         result = await _dataicoApiService.SendPayrollReplacementAsync(replacementRequest, credentials);
                     }
@@ -312,7 +321,7 @@ namespace Fel.Api.Client.Controllers
                         document, document.Customer!, client,
                         draft.Prefix, documentNumber,
                         draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
-                        draft.Accruals, draft.Deductions);
+                        draft.Accruals, draft.Deductions, identificationTypes);
                 }
 
                 if (result.Success)
@@ -508,6 +517,7 @@ namespace Fel.Api.Client.Controllers
                 }
 
                 var summary = new ImportSummary();
+                var identificationTypes = await _dbContext.IdentificationTypes.AsNoTracking().ToListAsync();
                 using var stream = file.OpenReadStream();
                 using var workbook = new XLWorkbook(stream);
                 var sheet = workbook.Worksheets.First();
@@ -586,7 +596,8 @@ namespace Fel.Api.Client.Controllers
                                 SecondName = secondName,
                                 FirstLastName = firstLastName,
                                 SecondLastName = secondLastName,
-                                IdentificationType = GetTextAny(groupRows, "TIPO_DE_IDENTIFICACION"),
+                                // Se guarda el código DIAN del catálogo sea cual sea la forma en que venga en el Excel (13, CC, CEDULA_DE_CIUDADANIA...).
+                                IdentificationType = IdentificationTypeResolver.Find(identificationTypes, GetTextAny(groupRows, "TIPO_DE_IDENTIFICACION"))?.Code ?? GetTextAny(groupRows, "TIPO_DE_IDENTIFICACION"),
                                 IdentificationNumber = identification,
                                 PartyType = PartyType.Empleado,
                                 Email = GetTextAny(groupRows, "CORREO"),
@@ -769,11 +780,11 @@ namespace Fel.Api.Client.Controllers
         private async Task<Fel.Infrastructure.Dataico.Models.DataicoResult> SubmitPayrollToDataicoAsync(
             Document document, Customer employee, Fel.Core.Entities.Client client,
             string prefix, long number, DateTime initialSettlement, DateTime finalSettlement, DateTime paymentDate,
-            List<PayrollConceptItem> accruals, List<PayrollConceptItem> deductions)
+            List<PayrollConceptItem> accruals, List<PayrollConceptItem> deductions, IReadOnlyCollection<IdentificationType> identificationTypes)
         {
             var dataicoRequest = DataicoDocumentMapper.BuildPayrollRequest(
                 employee, client, prefix, number, initialSettlement, finalSettlement, Fel.Core.Models.ColombiaTime.Now, paymentDate,
-                accruals.Select(ToConceptInput), deductions.Select(ToConceptInput));
+                accruals.Select(ToConceptInput), deductions.Select(ToConceptInput), identificationTypes);
 
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
             var result = await _dataicoApiService.SendPayrollAsync(dataicoRequest, credentials);

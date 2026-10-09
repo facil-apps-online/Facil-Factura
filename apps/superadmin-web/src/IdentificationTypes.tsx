@@ -9,11 +9,12 @@ interface IdentificationTypeItem {
   name: string;
   isActive: boolean;
   dataicoCode: string | null;
+  dataicoPayrollCode: string | null;
 }
 
 export const IdentificationTypes = () => {
   const [items, setItems] = useState<IdentificationTypeItem[]>([]);
-  const [formData, setFormData] = useState({ code: '', name: '', dataicoCode: '' });
+  const [formData, setFormData] = useState({ code: '', name: '', dataicoCode: '', dataicoPayrollCode: '' });
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -30,18 +31,18 @@ export const IdentificationTypes = () => {
   const closeModal = () => {
     setShowModal(false);
     setEditingId(null);
-    setFormData({ code: '', name: '', dataicoCode: '' });
+    setFormData({ code: '', name: '', dataicoCode: '', dataicoPayrollCode: '' });
   };
 
   const openCreateModal = () => {
     setEditingId(null);
-    setFormData({ code: '', name: '', dataicoCode: '' });
+    setFormData({ code: '', name: '', dataicoCode: '', dataicoPayrollCode: '' });
     setShowModal(true);
   };
 
   const startEdit = (item: IdentificationTypeItem) => {
     setEditingId(item.id);
-    setFormData({ code: item.code, name: item.name, dataicoCode: item.dataicoCode || '' });
+    setFormData({ code: item.code, name: item.name, dataicoCode: item.dataicoCode || '', dataicoPayrollCode: item.dataicoPayrollCode || '' });
     setShowModal(true);
   };
 
@@ -64,7 +65,7 @@ export const IdentificationTypes = () => {
 
   const handleToggleActive = async (item: IdentificationTypeItem) => {
     try {
-      await api.put(`/identification-types/${item.id}`, { code: item.code, name: item.name, isActive: !item.isActive, dataicoCode: item.dataicoCode });
+      await api.put(`/identification-types/${item.id}`, { code: item.code, name: item.name, isActive: !item.isActive, dataicoCode: item.dataicoCode, dataicoPayrollCode: item.dataicoPayrollCode });
       loadItems();
     } catch {
       toast.error('Error al actualizar el tipo de identificación');
@@ -110,6 +111,7 @@ export const IdentificationTypes = () => {
               <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Código DIAN</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Equivalencia Dataico</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Dataico nómina</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Estado</th>
               <th className="px-6 py-4 text-right"></th>
             </tr>
@@ -127,6 +129,15 @@ export const IdentificationTypes = () => {
                   {item.dataicoCode ? (
                     <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 font-mono">
                       {item.dataicoCode}
+                    </span>
+                  ) : (
+                    <span className="text-slate-500 text-sm">—</span>
+                  )}
+                </td>
+                <td className="px-6 py-4">
+                  {item.dataicoPayrollCode ? (
+                    <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 font-mono">
+                      {item.dataicoPayrollCode}
                     </span>
                   ) : (
                     <span className="text-slate-500 text-sm">—</span>
@@ -155,7 +166,7 @@ export const IdentificationTypes = () => {
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-medium">
+                <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium">
                   No hay tipos de identificación registrados.
                 </td>
               </tr>
@@ -200,7 +211,18 @@ export const IdentificationTypes = () => {
                   onChange={e => setFormData({ ...formData, dataicoCode: e.target.value.toUpperCase() })}
                   placeholder="Ej. CC"
                 />
-                <p className="text-xs text-slate-500 mt-1">Código usado por el proveedor, si aplica.</p>
+                <p className="text-xs text-slate-500 mt-1">Código usado por el proveedor para facturación, si aplica.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Código del proveedor para nómina (opcional)</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono placeholder:text-slate-500"
+                  value={formData.dataicoPayrollCode}
+                  onChange={e => setFormData({ ...formData, dataicoPayrollCode: e.target.value.toUpperCase() })}
+                  placeholder="Ej. CEDULA_DE_CIUDADANIA"
+                />
+                <p className="text-xs text-slate-500 mt-1">La nómina electrónica usa otro vocabulario que la facturación. Sin este código, no se puede emitir nómina de empleados con este tipo de documento.</p>
               </div>
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">

@@ -556,13 +556,6 @@ namespace Fel.Infrastructure.Dataico
             };
         }
 
-        // Sin ningún dato de dirección no se envía el bloque; Dataico rechaza ciudad o departamento vacíos.
-        private static DataicoEmployeeAddress? BuildEmployeeAddress(string? department, string? city, string? line)
-        {
-            var address = new DataicoEmployeeAddress { department = NullIfBlank(department), city = NullIfBlank(city), line = NullIfBlank(line) };
-            return address.department == null && address.city == null && address.line == null ? null : address;
-        }
-
         public static DataicoPayrollRequest BuildPayrollRequest(
             Customer employee,
             Client client,
@@ -608,7 +601,8 @@ namespace Fel.Infrastructure.Dataico
                     bank = NullIfBlank(employee.Bank),
                     account_type_kw = NullIfBlank(employee.AccountType),
                     account_number = NullIfBlank(employee.AccountNumber),
-                    address = BuildEmployeeAddress(department, city, employee.Address)
+                    // Dataico exige ciudad y departamento (código DANE); el controlador valida que el empleado los tenga antes de emitir.
+                    address = new DataicoEmployeeAddress { department = department, city = city, line = NullIfBlank(employee.Address) }
                 },
                 notes = BuildPayrollNotes(noteText)
             };

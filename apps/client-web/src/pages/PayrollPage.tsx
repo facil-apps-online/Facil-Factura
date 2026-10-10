@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, ArrowLeft, Edit2, Send, AlertCircle, RotateCcw, XCircle, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Loader2, ArrowLeft, Edit2, Send, AlertCircle, Info, Printer, RotateCcw, XCircle, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -9,7 +9,9 @@ import RowIconButton from '../components/RowIconButton';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
-import { statusLabel } from '../lib/documentStatus';
+import { STATUS_FILTER_OPTIONS, statusLabel } from '../lib/documentStatus';
+import DianResponseDialog, { hasDianResponse } from '../components/DianResponseDialog';
+import { usePdfPreview } from '../lib/pdfPreview';
 import { getNumberFormat, useNumberFormat } from '../lib/numberFormat';
 import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
 import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
@@ -64,6 +66,12 @@ export default function PayrollPage() {
   const [datePreset, setDatePreset] = useState<DateRangePreset>('last-2-months');
   const [customFrom, setCustomFrom] = useState(() => getDateRangeForPreset('last-2-months')!.from);
   const [customTo, setCustomTo] = useState(() => getDateRangeForPreset('last-2-months')!.to);
+  // Las fechas Desde/Hasta solo se aplican al pulsar Filtrar, como en facturas.
+  const [appliedCustomFrom, setAppliedCustomFrom] = useState(() => getDateRangeForPreset('last-2-months')!.from);
+  const [appliedCustomTo, setAppliedCustomTo] = useState(() => getDateRangeForPreset('last-2-months')!.to);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [responseEntry, setResponseEntry] = useState<any>(null);
+  const { previewingId, preview: handlePreviewPdf } = usePdfPreview('/client/payroll');
   const [viewingEntry, setViewingEntry] = useState<any>(null);
   const [viewingRelated, setViewingRelated] = useState<any[]>([]);
   const [viewingOriginal, setViewingOriginal] = useState<any>(null);
@@ -87,17 +95,17 @@ export default function PayrollPage() {
 
   useEffect(() => {
     loadData();
-  }, [datePreset, customFrom, customTo]);
+  }, [datePreset, appliedCustomFrom, appliedCustomTo]);
 
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, datePreset, customFrom, customTo]);
+  }, [searchTerm, statusFilter, datePreset, appliedCustomFrom, appliedCustomTo]);
 
   const loadData = async ({ quiet = false } = {}) => {
     // quiet: refresca la lista sin el spinner de página completa (no desmonta el avance de un lote en curso).
     if (!quiet) setLoading(true);
     try {
-      const range = datePreset === 'custom' ? { from: customFrom, to: customTo } : getDateRangeForPreset(datePreset)!;
+      const range = datePreset === 'custom' ? { from: appliedCustomFrom, to: appliedCustomTo } : getDateRangeForPreset(datePreset)!;
       const [entriesRes, empRes] = await Promise.all([
         api.get(`/client/payroll?from=${range.from}&to=${range.to}`),
         api.get('/client/customers?partyType=Empleado')
@@ -276,11 +284,16 @@ export default function PayrollPage() {
   const statusBadge = (status: string) => (
     <span className={`px-3 py-1 rounded-full text-xs font-bold ${
       status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
+      status === 'PROCESSING' ? 'bg-blue-100 text-blue-600' :
       status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' :
       'bg-rose-100 text-rose-600'
     }`}>
       {statusLabel(status)}
     </span>
+  );
+
+  const responseDialog = responseEntry && (
+    <DianResponseDialog doc={responseEntry} label={`Nómina ${responseEntry.consecutiveNumber || responseEntry.number || 'Borrador'}`} onClose={() => setResponseEntry(null)} />
   );
 
   if (view === 'create') {
@@ -435,11 +448,20 @@ export default function PayrollPage() {
                 {statusBadge(entry.status)}
               </div>
               <p className="text-slate-500 break-words">{new Date(entry.issueDate).toLocaleDateString('es-CO')} · {entry.customer?.name || '-'}</p>
-              {entry.status === 'REJECTED' && entry.dianResponseMessage && (
-                <p className="text-sm text-rose-500 mt-2 break-words">{entry.dianResponseMessage}</p>
-              )}
             </div>
             <div className="flex gap-2 flex-wrap">
+              <button onClick={() => handlePreviewPdf(entry.id)} disabled={previewingId === entry.id} className={`${actionButton} text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-50`}>
+                {previewingId === entry.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />} Vista Previa
+              </button>
+              {hasDianResponse(entry) && (
+                <button
+                  onClick={() => setResponseEntry(entry)}
+                  className={`${actionButton} ${entry.status === 'REJECTED' ? 'text-rose-700 bg-rose-50 hover:bg-rose-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
+                >
+                  {entry.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
+                  {entry.status === 'REJECTED' ? 'Motivo del rechazo' : 'Respuesta de la DIAN'}
+                </button>
+              )}
               {(entry.status === 'DRAFT' || entry.status === 'REJECTED') && (
                 <>
                   <button onClick={() => handleEditDraft(entry)} className={`${actionButton} text-slate-600 bg-slate-100 hover:bg-slate-200`}>
@@ -510,11 +532,13 @@ export default function PayrollPage() {
             </div>
           </div>
         </div>
+        {responseDialog}
       </div>
     );
   }
 
   const filteredEntries = entries.filter(e => {
+    if (statusFilter && e.status !== statusFilter) return false;
     if (!searchTerm.trim()) return true;
     const q = searchTerm.trim().toLowerCase();
     return (e.consecutiveNumber || '').toLowerCase().includes(q) ||
@@ -548,13 +572,15 @@ export default function PayrollPage() {
     someSelected: paginatedEntries.some(r => batchSelection.selected.has(r.id)),
     label: (r: any) => `Seleccionar nómina ${r.consecutiveNumber || 'borrador'}`,
   };
+  const filteredAccruals = filteredEntries.reduce((sum, e) => sum + (e.totalAccruals || 0), 0);
+  const filteredDeductions = filteredEntries.reduce((sum, e) => sum + (e.totalDeductions || 0), 0);
   const filteredTotal = filteredEntries.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
   const periodOf = (e: any) => e.initialSettlementDate && e.finalSettlementDate
     ? `${new Date(e.initialSettlementDate).toLocaleDateString('es-CO')} - ${new Date(e.finalSettlementDate).toLocaleDateString('es-CO')}`
     : '-';
 
   const handleExport = () => exportToCsv(
-    `nomina_${customFrom}_a_${customTo}.csv`,
+    `nomina_${appliedCustomFrom}_a_${appliedCustomTo}.csv`,
     filteredEntries.map(e => ({
       consecutivo: e.consecutiveNumber || '',
       empleado: e.customer?.name || '',
@@ -611,7 +637,8 @@ export default function PayrollPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 mb-4">
+      {/* En móvil los filtros van de a dos por fila (menos alto antes del listado); desde sm vuelven a una fila con salto. Igual que en facturas. */}
+      <div className="grid grid-cols-2 gap-3 mb-4 sm:flex sm:flex-wrap sm:items-end">
         <div className="w-full sm:w-52">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Periodo</label>
           <SearchableSelect
@@ -631,19 +658,45 @@ export default function PayrollPage() {
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Hasta</label>
               <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!customFrom || !customTo) {
+                  toast.error('Selecciona las fechas Desde y Hasta');
+                  return;
+                }
+                if (customFrom > customTo) {
+                  toast.error('La fecha Desde no puede ser posterior a Hasta');
+                  return;
+                }
+                setAppliedCustomFrom(customFrom);
+                setAppliedCustomTo(customTo);
+              }}
+              className="col-span-2 w-full self-end px-4 py-3 sm:col-auto sm:w-auto sm:py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-bold transition-colors"
+            >
+              Filtrar
+            </button>
           </>
         )}
-        <div className="w-full sm:w-auto sm:min-w-[220px] sm:flex-1">
+        <div className="w-full sm:w-48">
+          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
+          <SearchableSelect
+            value={statusFilter}
+            onChange={setStatusFilter}
+            placeholder="Todos..."
+            options={STATUS_FILTER_OPTIONS}
+          />
+        </div>
+        <div className="order-4 col-span-2 min-w-0 flex-1 sm:order-none sm:col-auto sm:basis-auto sm:min-w-[220px]">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Buscar</label>
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Consecutivo, empleado o identificación..." className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
         </div>
-        <button onClick={handleExport} disabled={filteredEntries.length === 0} className="flex items-center gap-2 px-4 py-3 md:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition-colors disabled:opacity-50">
-          <Download size={16} /> Exportar CSV
+        <button onClick={handleExport} disabled={filteredEntries.length === 0} title="Exportar CSV" aria-label="Exportar CSV" className="order-3 flex h-11 w-11 items-center justify-center self-end bg-slate-100 sm:order-none hover:bg-slate-200 text-slate-600 rounded-xl transition-colors disabled:opacity-50">
+          <Download size={16} />
         </button>
-        <p className="w-full text-xs text-slate-400 sm:w-auto sm:pb-2.5">{filteredEntries.length} comprobante{filteredEntries.length === 1 ? '' : 's'} en el periodo</p>
       </div>
 
       <BatchActionBar
@@ -669,9 +722,6 @@ export default function PayrollPage() {
           <>
             {(e.status === 'DRAFT' || e.status === 'REJECTED') && (
               <>
-                {e.status === 'REJECTED' && e.dianResponseMessage && (
-                  <span title={e.dianResponseMessage} aria-label={e.dianResponseMessage} className="flex h-11 w-11 items-center justify-center text-rose-500 md:h-9 md:w-9"><AlertCircle size={16} /></span>
-                )}
                 <RowIconButton action="edit" label={`Editar nómina ${e.consecutiveNumber || ''}`.trim()} onClick={() => handleEditDraft(e)} />
                 <button onClick={() => handlePublish(e.id)} disabled={publishingId === e.id} title="Emitir a la DIAN" className="min-h-11 px-3 text-white bg-primary hover:bg-primary/90 rounded-lg shadow-sm transition-all flex items-center gap-1 text-sm font-bold disabled:opacity-50 md:min-h-9">
                   <Send size={16} /> Emitir
@@ -679,31 +729,53 @@ export default function PayrollPage() {
                 <RowIconButton action="delete" label={`Eliminar nómina ${e.consecutiveNumber || ''}`.trim()} onClick={() => handleDeleteDraft(e.id)} />
               </>
             )}
+            {hasDianResponse(e) && (
+              <button
+                onClick={() => setResponseEntry(e)}
+                title={e.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
+                aria-label={e.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
+                className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors md:h-9 md:w-9 ${e.status === 'REJECTED' ? 'text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-primary hover:bg-slate-100'}`}
+              >
+                {e.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
+              </button>
+            )}
             <RowIconButton action="view" label={`Ver detalle de nómina ${e.consecutiveNumber || ''}`.trim()} onClick={() => handleViewDetail(e)} />
+            <button onClick={() => handlePreviewPdf(e.id)} disabled={previewingId === e.id} title="Vista previa de impresión" aria-label="Vista previa de impresión" className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary disabled:opacity-50 md:h-9 md:w-9">
+              {previewingId === e.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+            </button>
           </>
         )}
       />
 
       {filteredEntries.length > 0 && (
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700">
-          <span>Total del periodo:</span>
-          <span className="font-mono">${fmt.number(filteredTotal, 3)}</span>
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700">
+          <p className="mb-2 font-bold">Total del período</p>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+            <div><dt className="text-xs uppercase text-slate-400">Devengado</dt><dd className="font-mono font-bold text-slate-500">${fmt.number(filteredAccruals, 3)}</dd></div>
+            <div><dt className="text-xs uppercase text-slate-400">Deducciones</dt><dd className="font-mono font-bold text-rose-600">-${fmt.number(filteredDeductions, 3)}</dd></div>
+            <div><dt className="text-xs uppercase text-slate-400">Neto</dt><dd className="font-mono font-bold">${fmt.number(filteredTotal, 3)}</dd></div>
+          </dl>
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex justify-between items-center mt-4 gap-3">
-          <p className="text-sm text-slate-500">Página {currentPage} de {totalPages}</p>
-          <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} aria-label="Página anterior" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors md:h-9 md:w-9">
-              <ChevronLeft size={18} />
-            </button>
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} aria-label="Página siguiente" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors md:h-9 md:w-9">
-              <ChevronRight size={18} />
-            </button>
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-slate-400">{filteredEntries.length} comprobante{filteredEntries.length === 1 ? '' : 's'} en el periodo</p>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between gap-3 sm:justify-end">
+            <p className="text-sm text-slate-500">Página {currentPage} de {totalPages}</p>
+            <div className="flex gap-2">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} aria-label="Página anterior" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors lg:h-9 lg:w-9">
+                <ChevronLeft size={18} />
+              </button>
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} aria-label="Página siguiente" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors lg:h-9 lg:w-9">
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {responseDialog}
     </div>
   );
 }

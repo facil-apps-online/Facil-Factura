@@ -123,6 +123,64 @@ test.describe('estados de nómina', () => {
   });
 });
 
+test.describe('nómina igual que facturas', () => {
+  const entries = [
+    { id: 'p1', status: 'DRAFT', consecutiveNumber: null, typeCode: 'NE', issueDate: '2026-10-01T00:00:00', totalAmount: 800, totalAccruals: 1000, totalDeductions: 200, customer: { name: 'Ana Borrador' }, initialSettlementDate: '2026-09-01T00:00:00', finalSettlementDate: '2026-09-30T00:00:00' },
+    { id: 'p2', status: 'REJECTED', consecutiveNumber: null, typeCode: 'NE', issueDate: '2026-10-02T00:00:00', totalAmount: 1500, totalAccruals: 1700, totalDeductions: 200, customer: { name: 'Beto Rechazado' }, initialSettlementDate: '2026-09-01T00:00:00', finalSettlementDate: '2026-09-30T00:00:00',
+      dianResponseMessage: JSON.stringify({ errors: [{ path: ['employee', 'address', 'city'], error: 'Ciudad requerida' }] }) },
+    { id: 'p3', status: 'APPROVED', consecutiveNumber: 'NE-7', typeCode: 'NE', issueDate: '2026-10-03T00:00:00', totalAmount: 2000, totalAccruals: 2300, totalDeductions: 300, customer: { name: 'Cata Emitida' }, initialSettlementDate: '2026-09-01T00:00:00', finalSettlementDate: '2026-09-30T00:00:00' },
+  ];
+
+  async function open(page: Page) {
+    await page.setViewportSize({ width: 1800, height: 900 });
+    await signIn(page);
+    await mockApi(page);
+    await page.route('**/api/client/payroll?*', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(entries) }));
+    await page.goto('/payroll');
+    await page.waitForLoadState('networkidle');
+  }
+
+  test('el filtro por estado deja solo las nóminas de ese estado', async ({ page }) => {
+    await open(page);
+    const table = page.locator('table').first();
+    await expect(table.getByText('Ana Borrador')).toBeVisible();
+    await expect(table.getByText('Cata Emitida')).toBeVisible();
+
+    const estado = page.locator('label', { hasText: 'Estado' }).locator('xpath=..');
+    await estado.locator('input').click();
+    await page.locator('div[style*="position: fixed"]').getByText('Rechazada', { exact: true }).click();
+    await expect(table.getByText('Beto Rechazado')).toBeVisible();
+    await expect(table.getByText('Ana Borrador')).toHaveCount(0);
+    await expect(table.getByText('Cata Emitida')).toHaveCount(0);
+  });
+
+  test('el motivo del rechazo se abre en el mismo diálogo que en facturas', async ({ page }) => {
+    await open(page);
+    await page.getByRole('button', { name: 'Ver motivo del rechazo' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('Motivo del rechazo')).toBeVisible();
+    await expect(dialog.getByText('employee → address → city')).toBeVisible();
+    await expect(dialog.getByText('Ciudad requerida')).toBeVisible();
+  });
+
+  test('la vista previa de impresión pide el PDF de la nómina', async ({ page }) => {
+    await open(page);
+    let requested = '';
+    await page.route('**/api/client/payroll/p3/preview', route => { requested = route.request().url(); return route.fulfill({ status: 200, contentType: 'application/pdf', body: '%PDF-1.4' }); });
+    await page.context().route('blob:**', route => route.abort());
+    await page.locator('table').first().locator('tr', { hasText: 'Cata Emitida' }).getByRole('button', { name: 'Vista previa de impresión' }).click();
+    await expect.poll(() => requested).toContain('/payroll/p3/preview');
+  });
+
+  test('el total del período desglosa devengado, deducciones y neto', async ({ page }) => {
+    await open(page);
+    const totals = page.getByText('Total del período').locator('xpath=..');
+    await expect(totals).toContainText('Devengado');
+    await expect(totals).toContainText('Deducciones');
+    await expect(totals).toContainText('Neto');
+  });
+});
+
 test.describe('ruta de terceros', () => {
   test('/third-parties abre la pantalla y la ruta vieja /customers redirige', async ({ page }) => {
     await signIn(page);

@@ -15,8 +15,10 @@ import Modal from '../components/Modal';
 import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
 import RowIconButton from '../components/RowIconButton';
 import { Button } from '../components/ui/button';
-import { STATUS_LABELS } from '../lib/documentStatus';
+import { STATUS_FILTER_OPTIONS, STATUS_LABELS } from '../lib/documentStatus';
 import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
+import DianResponseDialog from '../components/DianResponseDialog';
+import { usePdfPreview } from '../lib/pdfPreview';
 import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
 
 const PAGE_SIZE = 25;
@@ -49,33 +51,6 @@ const invoiceRetentionsTotal = (inv: any) =>
 // más cargo general — misma fórmula que el "Total:" del formulario de creación/edición.
 const invoiceNetTotal = (inv: any) =>
   (inv.totalAmount || 0) - invoiceRetentionsTotal(inv) - (inv.generalDiscountAmount || 0) + (inv.generalChargeAmount || 0);
-
-// dianResponseMessage guarda la respuesta cruda del integrador (Dataico o DIAN nativo) como texto: en rechazo, un JSON
-// {"errors":[{"path":[...], "error":"..."}]}; en aprobación, un JSON con los datos del documento
-// ya emitido (incluye "dian_status", el estado propio de la DIAN dentro de esa misma respuesta —
-// no hay un campo separado nuestro para eso). Se parsea acá solo para mostrarlo legible en un
-// modal en vez de como texto crudo; si no es JSON válido, se muestra tal cual.
-//
-// La respuesta del integrador trae mucho más de lo que vale la pena mostrarle al cliente (customer e
-// items como objetos/arreglos completos, el SOAP de la DIAN en base64 dentro de "xml", uuid,
-// numbering, etc.) — por eso esto es una lista blanca explícita, no un volcado de todas las
-// claves; lo que no está acá simplemente no se muestra.
-const DIAN_RESPONSE_DISPLAY_FIELDS: { key: string; label: string }[] = [
-  { key: 'number', label: 'Número' },
-  { key: 'issue_date', label: 'Fecha de emisión' },
-  { key: 'dian_status', label: 'Estado DIAN' },
-  { key: 'payment_means_type', label: 'Forma de pago' },
-];
-const parseDianResponse = (raw: string): { errors?: { path?: string[]; error: string }[] } | { fields: Record<string, any> } | null => {
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed?.errors)) return { errors: parsed.errors };
-    if (parsed && typeof parsed === 'object') return { fields: parsed };
-    return null;
-  } catch {
-    return null;
-  }
-};
 
 // Contrato AIU (Administración, Imprevistos, Utilidad) — factura con tipo de operación "09". El
 // formulario pide la base del contrato y los porcentajes y genera las tres líneas; solo la
@@ -370,29 +345,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     setView('create');
   };
 
-  const [previewingId, setPreviewingId] = useState<string | null>(null);
-
-  const handlePreviewPdf = async (invoice: any) => {
-    setPreviewingId(invoice.id);
-    try {
-      const res = await api.get(`${cfg.api}/${invoice.id}/preview`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      window.open(url, '_blank');
-    } catch (err: any) {
-      if (err.response?.data instanceof Blob) {
-        const text = await err.response.data.text();
-        try {
-          toast.error(getErrorMessage({ response: { data: JSON.parse(text) } }, 'Error al generar la vista previa'));
-        } catch {
-          toast.error(text || 'Error al generar la vista previa');
-        }
-      } else {
-        toast.error(getErrorMessage(err, 'Error al generar la vista previa'));
-      }
-    } finally {
-      setPreviewingId(null);
-    }
-  };
+  const { previewingId, preview: handlePreviewPdf } = usePdfPreview(cfg.api);
 
   const openResendModal = (invoice: any) => {
     setResendModalInv(invoice);
@@ -1786,7 +1739,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               <p className="text-slate-500 break-words">{new Date(inv.issueDate).toLocaleDateString('es-CO')} · {inv.customer?.name || 'Consumidor Final'}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={() => handlePreviewPdf(inv)} disabled={previewingId === inv.id} className="px-4 py-3 md:py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 disabled:opacity-50">
+              <button onClick={() => handlePreviewPdf(inv.id)} disabled={previewingId === inv.id} className="px-4 py-3 md:py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 disabled:opacity-50">
                 {previewingId === inv.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />} Vista Previa
               </button>
               {(inv.status === 'REJECTED' || inv.status === 'APPROVED') && inv.dianResponseMessage && (
@@ -2067,8 +2020,6 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     { key: 'status', header: 'Estado', render: inv => statusBadge(inv.status) }
   ];
 
-  const parsedResponse = responseModalInv ? parseDianResponse(responseModalInv.dianResponseMessage) : null;
-  const responseRejected = responseModalInv?.status === 'REJECTED';
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -2147,13 +2098,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             value={statusFilter}
             onChange={setStatusFilter}
             placeholder="Todos..."
-            options={[
-              { value: '', label: 'Todos' },
-              { value: 'DRAFT', label: 'Borrador' },
-              { value: 'REJECTED', label: 'Rechazada' },
-              { value: 'PROCESSING', label: 'Procesando' },
-              { value: 'APPROVED', label: 'Emitida' }
-            ]}
+            options={STATUS_FILTER_OPTIONS}
           />
         </div>
         <div className="order-4 col-span-2 min-w-0 flex-1 sm:order-none sm:col-auto sm:basis-auto sm:min-w-[220px]">
@@ -2214,7 +2159,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </button>
             )}
             <RowIconButton action="view" label={`Ver detalle de ${cfg.singular} ${inv.number || 'borrador'}`} onClick={() => handleViewDetail(inv)} />
-            <button onClick={() => handlePreviewPdf(inv)} disabled={previewingId === inv.id} title="Vista previa de impresión" aria-label="Vista previa de impresión" className={`${iconBtn} text-slate-400 hover:text-primary hover:bg-slate-100 disabled:opacity-50`}>
+            <button onClick={() => handlePreviewPdf(inv.id)} disabled={previewingId === inv.id} title="Vista previa de impresión" aria-label="Vista previa de impresión" className={`${iconBtn} text-slate-400 hover:text-primary hover:bg-slate-100 disabled:opacity-50`}>
               {previewingId === inv.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
             </button>
           </>
@@ -2251,75 +2196,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       </div>
 
       {responseModalInv && (
-        <Modal
-          open
-          onOpenChange={open => { if (!open) setResponseModalInv(null); }}
-          title={
-            <span className="flex items-center gap-2">
-              {responseRejected ? <AlertCircle size={18} className="shrink-0 text-rose-600" /> : <Info size={18} className="shrink-0 text-primary" />}
-              {responseRejected ? 'Motivo del rechazo' : 'Respuesta de la DIAN'}
-            </span>
-          }
-          description={`${cfg.singular} ${responseModalInv.number || 'Borrador'}`}
-          size="md"
-          footer={<Button type="button" onClick={() => setResponseModalInv(null)}>Cerrar</Button>}
-        >
-          <div className="space-y-3">
-            {parsedResponse && 'errors' in parsedResponse && parsedResponse.errors ? (
-              parsedResponse.errors.map((e, idx) => (
-                <div key={idx} className="p-3 bg-rose-50 border border-rose-100 rounded-xl">
-                  {e.path && e.path.length > 0 && (
-                    <p className="text-[10px] font-bold text-rose-400 uppercase mb-1 break-words">{e.path.join(' → ')}</p>
-                  )}
-                  <p className="text-sm text-rose-700 break-words">{e.error}</p>
-                </div>
-              ))
-            ) : parsedResponse && 'fields' in parsedResponse ? (
-              <>
-                <div className="divide-y divide-slate-100">
-                  {DIAN_RESPONSE_DISPLAY_FIELDS.filter(f => parsedResponse.fields[f.key] != null && parsedResponse.fields[f.key] !== '').map(f => (
-                    <div key={f.key} className="flex justify-between items-start gap-4 py-2 text-sm">
-                      <span className="text-slate-400 font-medium">{f.label}</span>
-                      <span className="text-slate-700 font-medium text-right break-all">
-                        {f.key === 'payment_means_type'
-                          ? (parsedResponse.fields[f.key] === 'CREDITO' ? 'Crédito' : 'Contado')
-                          : String(parsedResponse.fields[f.key])}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                {parsedResponse.fields.cufe && (
-                  <div className="py-2 border-t border-slate-100">
-                    <p className="text-slate-400 font-medium text-sm mb-1">CUFE</p>
-                    <p className="text-xs font-mono text-slate-600 break-all">{parsedResponse.fields.cufe}</p>
-                  </div>
-                )}
-                {(parsedResponse.fields.pdf_url || parsedResponse.fields.xml_url) && (
-                  <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 sm:flex-row">
-                    {parsedResponse.fields.pdf_url && (
-                      <a href={parsedResponse.fields.pdf_url} target="_blank" rel="noreferrer" className="flex-1 text-center px-4 py-3 sm:py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors">
-                        Ver PDF
-                      </a>
-                    )}
-                    {parsedResponse.fields.xml_url && (
-                      <a href={parsedResponse.fields.xml_url} target="_blank" rel="noreferrer" className="flex-1 text-center px-4 py-3 sm:py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors">
-                        Descargar XML
-                      </a>
-                    )}
-                  </div>
-                )}
-                {parsedResponse.fields.qrcode && (
-                  <div className="pt-3 border-t border-slate-100">
-                    <p className="text-xs font-bold text-slate-400 uppercase mb-1">Código QR (contenido)</p>
-                    <pre className="text-[11px] bg-slate-50 border border-slate-200 rounded-xl p-3 whitespace-pre-wrap break-all font-mono text-slate-600 max-h-32 overflow-y-auto">{parsedResponse.fields.qrcode}</pre>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-slate-600 whitespace-pre-wrap break-words">{responseModalInv.dianResponseMessage}</p>
-            )}
-          </div>
-        </Modal>
+        <DianResponseDialog doc={responseModalInv} label={`${cfg.singular} ${responseModalInv.number || 'Borrador'}`} onClose={() => setResponseModalInv(null)} />
       )}
 
       {resendModalInv && (

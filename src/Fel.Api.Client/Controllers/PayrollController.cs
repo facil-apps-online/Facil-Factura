@@ -35,9 +35,11 @@ namespace Fel.Api.Client.Controllers
         private readonly ICryptoService _cryptoService;
         private readonly IDataicoApiService _dataicoApiService;
         private readonly DataicoCustomPdfService _customPdfService;
+        private readonly IFacilReportsClient _facilReportsClient;
 
-        public PayrollController(FelDbContext dbContext, ICryptoService cryptoService, IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService)
+        public PayrollController(FelDbContext dbContext, ICryptoService cryptoService, IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, IFacilReportsClient facilReportsClient)
         {
+            _facilReportsClient = facilReportsClient;
             _dbContext = dbContext;
             _cryptoService = cryptoService;
             _dataicoApiService = dataicoApiService;
@@ -72,6 +74,9 @@ namespace Fel.Api.Client.Controllers
                         d.Id,
                         d.Status,
                         d.TotalAmount,
+                        // Subtotal es el devengado y TaxAmount las deducciones (así se guardan al crear el borrador).
+                        TotalAccruals = d.Subtotal,
+                        TotalDeductions = d.TaxAmount,
                         d.IssueDate,
                         d.TypeCode,
                         d.DianResponseMessage,
@@ -84,6 +89,56 @@ namespace Fel.Api.Client.Controllers
                 });
 
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Vista previa impresa (borrador o ya emitida) con la plantilla de nómina del cliente vía Facil Reports; no depende de que
+        // el documento tenga CUNE. Mismo contrato que InvoiceController.Preview.
+        [HttpGet("{id}/preview")]
+        public async Task<IActionResult> Preview(Guid id)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var document = await BranchDocuments
+                    .Include(d => d.Customer)
+                    .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode));
+                if (document == null) return NotFound("Nómina no encontrada.");
+
+                var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
+                if (client == null) return NotFound("Emisor no encontrado.");
+
+                // El pago usa el tipo "NE-PAGO"; las notas de eliminación y reemplazo, el de ajuste.
+                var documentTypeCode = document.TypeCode == TypeCode ? "NE-PAGO" : "NE-AJUSTE";
+                var documentType = await _dbContext.DocumentTypes.FirstOrDefaultAsync(t => t.Code == documentTypeCode);
+                var template = documentType == null ? null : await DocumentTemplateResolver.ResolveAsync(_dbContext, client, documentType.Id);
+                if (template == null)
+                {
+                    return BadRequest("Aún no hay una plantilla de impresión configurada para este tipo de documento.");
+                }
+
+                var draft = DeserializeDraft(document.SectorExtensionData);
+                var approved = document.Status == "APPROVED";
+                var location = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
+                var data = NominaReportDataMapper.Build(
+                    document, document.Customer!, client, location, draft.Prefix, approved && long.TryParse(document.Number, out var number) ? number : 0,
+                    draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
+                    draft.Accruals.Select(c => (c.Code, c.Description, c.Amount ?? 0m)),
+                    draft.Deductions.Select(c => (c.Code, c.Description, c.Amount ?? 0m)));
+                // Mientras Dataico no apruebe no hay consecutivo (se asigna al aprobar): el borrador se identifica como tal.
+                if (!approved && data["Documento"] is Dictionary<string, object?> header) header["DocumentoNumero"] = "Borrador";
+
+                var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
+                if (pdfBytes == null)
+                {
+                    return BadRequest("No se pudo generar la vista previa. Intenta de nuevo en unos segundos.");
+                }
+
+                return File(pdfBytes, "application/pdf");
             }
             catch (UnauthorizedAccessException ex)
             {

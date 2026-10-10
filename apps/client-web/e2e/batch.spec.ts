@@ -100,6 +100,29 @@ test.describe('acciones masivas en nómina', () => {
   });
 });
 
+test.describe('estados de nómina', () => {
+  test('la lista muestra los estados en español, como facturas y documentos soporte', async ({ page }) => {
+    await openPayroll(page);
+    const table = page.locator('table').first();
+    await expect(table.getByText('Borrador').first()).toBeVisible();
+    await expect(table.getByText('Emitida').first()).toBeVisible();
+    await expect(table.getByText('Rechazada').first()).toBeVisible();
+    for (const english of ['DRAFT', 'APPROVED', 'REJECTED']) await expect(table.getByText(english, { exact: true })).toHaveCount(0);
+  });
+
+  test('un borrador no muestra consecutivo en la lista', async ({ page }) => {
+    await openPayroll(page);
+    // El mock trae consecutivos "NE0"... para todas; el servidor real los entrega solo en las emitidas, y la pantalla muestra "-" si no hay.
+    await page.route('**/api/client/payroll?*', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+      { id: 'x1', status: 'DRAFT', consecutiveNumber: null, typeCode: 'NE', issueDate: '2026-10-01T00:00:00', totalAmount: 1, customer: { name: 'Empleado Borrador' }, initialSettlementDate: '2026-09-01T00:00:00', finalSettlementDate: '2026-09-30T00:00:00' },
+    ]) }));
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    const row = page.locator('table').first().locator('tr', { hasText: 'Empleado Borrador' });
+    await expect(row.locator('td').nth(1)).toHaveText('-');
+  });
+});
+
 test.describe('formulario de empleados', () => {
   test('un empleado no muestra régimen fiscal ni nivel tributario; un cliente sí', async ({ page }) => {
     await signIn(page);

@@ -64,6 +64,30 @@ namespace Fel.Infrastructure.Services
             }
         }
 
+        // Consecutivo que le toca a la siguiente emisión, SIN reservarlo: la nómina lo envía a Dataico y solo si el envío es aprobado se
+        // consume con CommitNumberAsync. Si Dataico rechaza, no queda nada guardado y el siguiente intento usa el mismo número.
+        public static async Task<long> PeekNextNumberAsync(FelDbContext dbContext, Guid resolutionId)
+        {
+            var resolution = await dbContext.Resolutions.AsNoTracking()
+                .Where(r => r.Id == resolutionId)
+                .Select(r => new { r.NextNumber, r.NumberStart })
+                .FirstOrDefaultAsync();
+
+            if (resolution == null)
+            {
+                throw new InvalidOperationException("No se encontró la resolución al consultar el consecutivo.");
+            }
+
+            return resolution.NextNumber ?? resolution.NumberStart;
+        }
+
+        // Consume el número tras una emisión aprobada: el siguiente será number + 1. Solo avanza (nunca retrocede), así que si el
+        // contador ya estaba más adelante, o se repite la llamada, no hace daño.
+        public static Task<int> CommitNumberAsync(FelDbContext dbContext, Guid resolutionId, long number) =>
+            dbContext.Resolutions
+                .Where(r => r.Id == resolutionId && (r.NextNumber == null || r.NextNumber <= number))
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.NextNumber, number + 1));
+
         // Numeración que le corresponde a una nota: la propia de la sucursal si la tiene y, si no, la compartida del Client.
         // Las Notas Crédito/Débito y de Ajuste no tienen rango autorizado propio ante la DIAN, así que su consecutivo es
         // interno y no compite con el de Factura.

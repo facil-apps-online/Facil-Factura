@@ -9,6 +9,7 @@ import RowIconButton from '../components/RowIconButton';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
+import { statusLabel } from '../lib/documentStatus';
 import { getNumberFormat, useNumberFormat } from '../lib/numberFormat';
 import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
 import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
@@ -278,7 +279,7 @@ export default function PayrollPage() {
       status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' :
       'bg-rose-100 text-rose-600'
     }`}>
-      {status}
+      {statusLabel(status)}
     </span>
   );
 
@@ -480,7 +481,7 @@ export default function PayrollPage() {
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">
                         {noteTypeOf(r.typeCode) === 'ELIMINACION' ? 'Eliminación' : 'Reemplazo'}
                       </span>
-                      {r.number} · ${fmt.number(r.totalAmount, 3)} · {r.status}
+                      {r.number || 'Borrador'} · ${fmt.number(r.totalAmount, 3)} · {statusLabel(r.status)}
                     </button>
                   ))}
                 </div>
@@ -560,7 +561,7 @@ export default function PayrollPage() {
       identificacion: e.customer?.identificationNumber || '',
       periodo: periodOf(e),
       neto: e.totalAmount || 0,
-      estado: e.status,
+      estado: statusLabel(e.status),
       fecha: new Date(e.issueDate).toLocaleDateString('es-CO')
     })),
     [

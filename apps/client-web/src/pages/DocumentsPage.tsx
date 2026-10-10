@@ -15,6 +15,7 @@ import Modal from '../components/Modal';
 import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
 import RowIconButton from '../components/RowIconButton';
 import { Button } from '../components/ui/button';
+import { STATUS_LABELS } from '../lib/documentStatus';
 import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
 import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
 
@@ -74,15 +75,6 @@ const parseDianResponse = (raw: string): { errors?: { path?: string[]; error: st
   } catch {
     return null;
   }
-};
-
-// Solo la etiqueta visible cambia a español; el valor (DRAFT/PROCESSING/APPROVED/REJECTED) sigue
-// igual porque el resto del código lo usa en comparaciones.
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Borrador',
-  PROCESSING: 'Procesando',
-  APPROVED: 'Emitida',
-  REJECTED: 'Rechazada'
 };
 
 // Contrato AIU (Administración, Imprevistos, Utilidad) — factura con tipo de operación "09". El

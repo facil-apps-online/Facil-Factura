@@ -62,9 +62,8 @@ namespace Fel.Api.Client.Controllers
                     .OrderByDescending(d => d.IssueDate)
                     .ToListAsync();
 
-                // document.Number solo es el consecutivo real (asignado por ResolutionNumbering) una
-                // vez que la nómina se publica — mientras está en Draft/Rejected sigue siendo el
-                // placeholder de creación, así que se muestra igual hasta que se emita.
+                // document.Number solo es el consecutivo real una vez que Dataico aprueba la nómina; mientras es borrador o está
+                // rechazada es el marcador de creación, así que no se muestra.
                 var result = entries.Select(d =>
                 {
                     var draft = DeserializeDraft(d.SectorExtensionData);
@@ -78,7 +77,7 @@ namespace Fel.Api.Client.Controllers
                         d.DianResponseMessage,
                         Customer = d.Customer,
                         draft.Prefix,
-                        ConsecutiveNumber = $"{draft.Prefix}-{d.Number}",
+                        ConsecutiveNumber = d.Status == "APPROVED" ? $"{draft.Prefix}-{d.Number}" : null,
                         draft.InitialSettlementDate,
                         draft.FinalSettlementDate
                     };
@@ -113,7 +112,7 @@ namespace Fel.Api.Client.Controllers
                     document.CreatedAt,
                     document.IssueDate,
                     document.TypeCode,
-                    document.Number,
+                    Number = document.Status == "APPROVED" ? document.Number : null,
                     document.Cufe,
                     document.DianResponseMessage,
                     document.ReferenceDocumentId,
@@ -145,7 +144,7 @@ namespace Fel.Api.Client.Controllers
                 var related = await BranchDocuments
                     .Where(d => d.ClientId == clientId && d.ReferenceDocumentId == id)
                     .OrderByDescending(d => d.IssueDate)
-                    .Select(d => new { d.Id, d.Number, d.TypeCode, d.Status, d.TotalAmount, d.IssueDate })
+                    .Select(d => new { d.Id, Number = d.Status == "APPROVED" ? d.Number : null, d.TypeCode, d.Status, d.TotalAmount, d.IssueDate })
                     .ToListAsync();
 
                 return Ok(related);
@@ -250,6 +249,8 @@ namespace Fel.Api.Client.Controllers
                 // Anexo Técnico Nómina Electrónica), pero igual necesita ser secuencial de verdad —
                 // se reutiliza la misma entidad Resolution (DocumentType="NE") solo para llevar el
                 // NextNumber, con el mismo mecanismo atómico que ya usan las facturas.
+                long documentNumber;
+                Guid? pendingNumberResolutionId = null;
                 if (!document.ResolutionId.HasValue)
                 {
                     var payrollResolution = await _dbContext.Resolutions.ForBranch(_dbContext, document.BranchId)
@@ -263,11 +264,16 @@ namespace Fel.Api.Client.Controllers
                         return BadRequest("No hay una numeración de nómina configurada para este emisor. Configura el número inicial en Resoluciones DIAN.");
                     }
 
-                    document.Number = (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, payrollResolution.Id)).ToString();
-                    document.ResolutionId = payrollResolution.Id;
+                    // El consecutivo no se reserva al intentar: se envía el que sigue y solo queda asignado si Dataico aprueba. Si rechaza,
+                    // el documento no guarda número y el siguiente intento (de este u otro documento) usa el mismo.
+                    documentNumber = await Fel.Infrastructure.Services.ResolutionNumbering.PeekNextNumberAsync(_dbContext, payrollResolution.Id);
+                    pendingNumberResolutionId = payrollResolution.Id;
                 }
-
-                var documentNumber = long.Parse(document.Number);
+                else
+                {
+                    // Reservado en un intento anterior, de cuando el número se tomaba antes de enviar: se conserva para no dejar un hueco.
+                    documentNumber = long.Parse(document.Number);
+                }
 
                 var draft = DeserializeDraft(document.SectorExtensionData);
                 // El prefijo queda guardado en el documento (la nómina lo lleva en su borrador).
@@ -322,6 +328,14 @@ namespace Fel.Api.Client.Controllers
                         draft.Prefix, documentNumber,
                         draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
                         draft.Accruals, draft.Deductions, identificationTypes);
+                }
+
+                if (result.Success && pendingNumberResolutionId.HasValue)
+                {
+                    // Dataico aprobó: recién ahora el número queda asignado al documento y consumido de la numeración.
+                    document.Number = documentNumber.ToString();
+                    document.ResolutionId = pendingNumberResolutionId;
+                    await Fel.Infrastructure.Services.ResolutionNumbering.CommitNumberAsync(_dbContext, pendingNumberResolutionId.Value, documentNumber);
                 }
 
                 if (result.Success)

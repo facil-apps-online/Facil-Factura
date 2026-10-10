@@ -14,7 +14,7 @@ import { setDecimalSeparator, useNumberFormat } from './lib/numberFormat';
 import TemplateSettings from './pages/TemplateSettings';
 import TemplateEditor from './pages/TemplateEditor';
 import ResolutionsSettings from './pages/ResolutionsSettings';
-import CustomersPage from './pages/CustomersPage';
+import ThirdPartiesPage from './pages/ThirdPartiesPage';
 import ProductsPage from './pages/ProductsPage';
 import InvoicesPage from './pages/InvoicesPage';
 import SupportDocumentsPage from './pages/SupportDocumentsPage';
@@ -111,7 +111,7 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed, isDesktop, mobileOpen
     { to: "/support-documents", icon: <Receipt size={20} />, label: "Documentos Soporte" },
     { to: "/payroll", icon: <Banknote size={20} />, label: "Nómina electrónica" },
     { to: "/received-documents", icon: <Inbox size={20} />, label: "Documentos recibidos", adminOnly: true },
-    { to: "/customers", icon: <Users size={20} />, label: "Terceros" },
+    { to: "/third-parties", icon: <Users size={20} />, label: "Terceros" },
     { to: "/products", icon: <Package size={20} />, label: "Productos y servicios" },
     { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos", adminOnly: true, feature: "payments" },
     { to: "/resolutions", icon: <FileSignature size={20} />, label: "Resoluciones DIAN", adminOnly: true },
@@ -325,7 +325,7 @@ const Dashboard = () => {
   const quickActions = [
     { label: 'Emitir factura', to: '/invoices' },
     { label: 'Crear documento soporte', to: '/support-documents' },
-    { label: 'Agregar cliente', to: '/customers' },
+    { label: 'Agregar cliente', to: '/third-parties' },
     { label: 'Agregar producto', to: '/products' },
   ];
 
@@ -516,7 +516,9 @@ function App() {
                         <Route path="/settings" element={<RequireAdmin><TemplateSettings /></RequireAdmin>} />
                         <Route path="/templates/editor" element={<RequireAdmin><TemplateEditor /></RequireAdmin>} />
                         <Route path="/resolutions" element={<RequireAdmin><ResolutionsSettings /></RequireAdmin>} />
-                        <Route path="/customers" element={<CustomersPage />} />
+                        <Route path="/third-parties" element={<ThirdPartiesPage />} />
+                        {/* La ruta se llamaba /customers: se conserva para los marcadores y enlaces que ya existan. */}
+                        <Route path="/customers" element={<Navigate to="/third-parties" replace />} />
                         <Route path="/products" element={<ProductsPage />} />
                         <Route path="/invoices" element={<InvoicesPage />} />
                         <Route path="/support-documents" element={<SupportDocumentsPage />} />

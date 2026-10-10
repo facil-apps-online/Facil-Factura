@@ -424,8 +424,22 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
               <input type="text" value={formData.postalCode} onChange={e => setFormData({...formData, postalCode: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Código DANE</label>
-              <input type="text" placeholder="Ej. 11001" value={formData.cityCode} onChange={e => setFormData({...formData, cityCode: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
+              <label className="block text-sm font-bold text-slate-700 mb-1">Código DANE{formData.partyType === 'Empleado' && ' *'}</label>
+              <input
+                type="text"
+                placeholder="Ej. 11001"
+                value={formData.cityCode}
+                onChange={e => setFormData({...formData, cityCode: e.target.value})}
+                required={formData.partyType === 'Empleado'}
+                pattern={formData.partyType === 'Empleado' ? '\\d{5,}' : undefined}
+                title="Código DANE del municipio (5 dígitos o más)"
+                className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono"
+              />
+              {formData.partyType === 'Empleado' && !/^\d{5,}$/.test(formData.cityCode.trim()) && (
+                <p className="mt-1 text-xs font-bold text-red-600">
+                  Obligatorio para empleados: Dataico exige ciudad y departamento en la nómina. Se completa al elegir la dirección o escribiendo el código.
+                </p>
+              )}
             </div>
           </div>
 

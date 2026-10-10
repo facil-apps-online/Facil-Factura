@@ -18,7 +18,7 @@ test.describe('selector de sucursal', () => {
       if (new URL(req.url()).pathname.endsWith('/client/customers')) sent.push(req.headers()['x-branch-id']);
     });
 
-    await open(page, '/customers');
+    await open(page, '/third-parties');
     await expect(page.getByTestId('branch-selector')).toBeVisible();
     // Arranca en la principal (la primera de la lista).
     expect(sent.length).toBeGreaterThan(0);
@@ -29,7 +29,7 @@ test.describe('selector de sucursal', () => {
   test('quien ve todas las sucursales puede elegir "Todas" y queda guardado', async ({ page }) => {
     await signIn(page);
     await mockApi(page);
-    await open(page, '/customers');
+    await open(page, '/third-parties');
 
     await page.getByTestId('branch-selector').locator('input').click();
     await page.getByText('Todas las sucursales', { exact: true }).click();
@@ -44,7 +44,7 @@ test.describe('selector de sucursal', () => {
   test('con una sola sucursal no se muestra', async ({ page }) => {
     await signIn(page);
     await mockApi(page, { ...ADMIN_SESSION, branches: [BRANCH_MAIN] });
-    await open(page, '/customers');
+    await open(page, '/third-parties');
     await expect(page.getByTestId('branch-selector')).toHaveCount(0);
   });
 
@@ -52,7 +52,7 @@ test.describe('selector de sucursal', () => {
     await signIn(page);
     await mockApi(page, INVOICER_SESSION);
     await page.addInitScript(() => localStorage.setItem('fel_client_branch', 'sucursal-que-ya-no-existe'));
-    await open(page, '/customers');
+    await open(page, '/third-parties');
     expect(await page.evaluate(() => localStorage.getItem('fel_client_branch'))).toBe(INVOICER_SESSION.branches[0].id);
   });
 });

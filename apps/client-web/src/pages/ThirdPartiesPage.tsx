@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useNumberFormat } from '../lib/numberFormat';
 import ImportExcelButton from '../components/ImportExcelButton';
 import CustomerFormModal from '../components/CustomerFormModal';
 import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
@@ -14,7 +15,7 @@ const PARTY_TYPES = [
   { value: 'Empleado', label: 'Empleados' }
 ];
 
-export default function CustomersPage() {
+export default function ThirdPartiesPage() {
   const confirm = useConfirm();
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +24,9 @@ export default function CustomersPage() {
   const [activeType, setActiveType] = useState('Cliente');
   const [search, setSearch] = useState('');
   const [identificationTypeOptions, setIdentificationTypeOptions] = useState<{ value: string, label: string }[]>([]);
+  const [contractLabels, setContractLabels] = useState<Record<string, string>>({});
+  const [workerLabels, setWorkerLabels] = useState<Record<string, string>>({});
+  const fmt = useNumberFormat();
 
   useEffect(() => {
     loadCustomers();
@@ -31,6 +35,13 @@ export default function CustomersPage() {
   useEffect(() => {
     api.get('/client/identification-types')
       .then(res => setIdentificationTypeOptions(res.data.map((t: any) => ({ value: t.code, label: t.name }))))
+      .catch(() => {});
+    // Nombres legibles del tipo de contrato y de trabajador para la lista de empleados.
+    api.get('/client/tax-catalog?kind=ContractType')
+      .then(res => setContractLabels(Object.fromEntries(res.data.map((c: any) => [c.category, c.name]))))
+      .catch(() => {});
+    api.get('/client/tax-catalog?kind=WorkerType')
+      .then(res => setWorkerLabels(Object.fromEntries(res.data.map((c: any) => [c.category, c.name]))))
       .catch(() => {});
   }, []);
 
@@ -104,12 +115,50 @@ export default function CustomersPage() {
         </>
       )
     },
-    {
-      key: 'regime',
-      header: 'Régimen',
-      cellClassName: 'whitespace-nowrap text-sm text-slate-500',
-      render: c => (c.taxRegime === '48' ? 'Resp. IVA' : 'No Resp. IVA')
-    }
+    ...(activeType === 'Empleado'
+      ? [
+          {
+            key: 'contract',
+            header: 'Contrato',
+            cellClassName: 'text-sm text-slate-500',
+            render: (c: any) => (
+              <>
+                {contractLabels[c.contractType] || c.contractType || '—'}
+                <br />
+                {workerLabels[c.workerType] || c.workerType || ''}
+              </>
+            )
+          },
+          {
+            key: 'baseSalary',
+            header: 'Salario base',
+            cellClassName: 'whitespace-nowrap text-sm text-slate-500',
+            render: (c: any) => (c.baseSalary ? `$${fmt.number(c.baseSalary, 3)}` : '—')
+          },
+          {
+            key: 'municipality',
+            header: 'Municipio',
+            cellClassName: 'text-sm text-slate-500',
+            render: (c: any) =>
+              (c.cityCode || '').trim().length >= 5 ? (
+                <>
+                  {c.cityName}
+                  <br />
+                  <span className="font-mono text-xs">{c.cityCode}</span>
+                </>
+              ) : (
+                <span className="font-bold text-red-600">Falta código DANE</span>
+              )
+          }
+        ]
+      : [
+          {
+            key: 'regime',
+            header: 'Régimen',
+            cellClassName: 'whitespace-nowrap text-sm text-slate-500',
+            render: (c: any) => (c.taxRegime === '48' ? 'Resp. IVA' : 'No Resp. IVA')
+          }
+        ])
   ];
 
   return (

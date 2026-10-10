@@ -123,11 +123,22 @@ test.describe('estados de nómina', () => {
   });
 });
 
+test.describe('ruta de terceros', () => {
+  test('/third-parties abre la pantalla y la ruta vieja /customers redirige', async ({ page }) => {
+    await signIn(page);
+    await mockApi(page);
+    await page.goto('/customers');
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/\/third-parties$/);
+    await expect(page.getByRole('heading', { name: 'Terceros' })).toBeVisible();
+  });
+});
+
 test.describe('formulario de empleados', () => {
   test('un empleado no muestra régimen fiscal ni nivel tributario; un cliente sí', async ({ page }) => {
     await signIn(page);
     await mockApi(page);
-    await page.goto('/customers');
+    await page.goto('/third-parties');
     await page.waitForLoadState('networkidle');
 
     await page.getByRole('button', { name: 'Nuevo Cliente' }).click();
@@ -141,5 +152,46 @@ test.describe('formulario de empleados', () => {
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByText('Régimen Fiscal')).toHaveCount(0);
     await expect(page.getByText('Nivel Tributario')).toHaveCount(0);
+  });
+
+  test('la lista de empleados muestra contrato, salario y municipio, y avisa cuando falta el DANE', async ({ page }) => {
+    // La tabla de terceros aparece desde 1400 px; por debajo se ven tarjetas.
+    await page.setViewportSize({ width: 1500, height: 900 });
+    await signIn(page);
+    await mockApi(page);
+    await page.route('**/api/client/customers?partyType=Empleado', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+      { id: 'e1', name: 'Ana Con Dane', identificationType: '13', identificationNumber: '1001', partyType: 'Empleado', contractType: 'TERMINO_INDEFINIDO', workerType: 'DEPENDIENTE', baseSalary: 1300000, cityName: 'Bogotá', cityCode: '11001' },
+      { id: 'e2', name: 'Beto Sin Dane', identificationType: '13', identificationNumber: '1002', partyType: 'Empleado', contractType: 'TERMINO_INDEFINIDO', workerType: 'DEPENDIENTE', baseSalary: 1300000, cityName: '', cityCode: '' }
+    ]) }));
+    await page.goto('/third-parties');
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: 'Empleados', exact: true }).click();
+
+    const table = page.locator('table').first();
+    await expect(table.getByText('Salario base')).toBeVisible();
+    await expect(table.getByText('Régimen')).toHaveCount(0);
+    await expect(table.locator('tr', { hasText: 'Ana Con Dane' }).getByText('11001')).toBeVisible();
+    await expect(table.locator('tr', { hasText: 'Beto Sin Dane' }).getByText('Falta código DANE')).toBeVisible();
+    await expect(table.locator('tr', { hasText: 'Ana Con Dane' }).getByText('Falta código DANE')).toHaveCount(0);
+  });
+
+  test('el código DANE es obligatorio para un empleado y para un cliente no', async ({ page }) => {
+    await signIn(page);
+    await mockApi(page);
+    await page.goto('/third-parties');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByRole('button', { name: 'Nuevo Cliente' }).click();
+    await expect(page.getByPlaceholder('Ej. 11001')).not.toHaveAttribute('required', '');
+    await expect(page.getByText('Obligatorio para empleados')).toHaveCount(0);
+    await page.getByLabel('Cerrar').click();
+    await expect(page.getByRole('dialog')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Empleados', exact: true }).click();
+    await page.getByRole('button', { name: 'Nuevo Empleado' }).click();
+    await expect(page.getByPlaceholder('Ej. 11001')).toHaveAttribute('required', '');
+    await expect(page.getByText('Obligatorio para empleados')).toBeVisible();
+    await page.getByPlaceholder('Ej. 11001').fill('11001');
+    await expect(page.getByText('Obligatorio para empleados')).toHaveCount(0);
   });
 });

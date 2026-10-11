@@ -15,7 +15,7 @@ const PARTY_TYPES = [
   { value: 'Empleado', label: 'Empleados' }
 ];
 
-export default function ThirdPartiesPage() {
+export default function CustomersPage() {
   const confirm = useConfirm();
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

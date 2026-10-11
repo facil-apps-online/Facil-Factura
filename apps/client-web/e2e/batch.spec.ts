@@ -181,22 +181,11 @@ test.describe('nómina igual que facturas', () => {
   });
 });
 
-test.describe('ruta de terceros', () => {
-  test('/third-parties abre la pantalla y la ruta vieja /customers redirige', async ({ page }) => {
-    await signIn(page);
-    await mockApi(page);
-    await page.goto('/customers');
-    await page.waitForLoadState('networkidle');
-    await expect(page).toHaveURL(/\/third-parties$/);
-    await expect(page.getByRole('heading', { name: 'Terceros' })).toBeVisible();
-  });
-});
-
 test.describe('formulario de empleados', () => {
   test('un empleado no muestra régimen fiscal ni nivel tributario; un cliente sí', async ({ page }) => {
     await signIn(page);
     await mockApi(page);
-    await page.goto('/third-parties');
+    await page.goto('/customers');
     await page.waitForLoadState('networkidle');
 
     await page.getByRole('button', { name: 'Nuevo Cliente' }).click();
@@ -221,7 +210,7 @@ test.describe('formulario de empleados', () => {
       { id: 'e1', name: 'Ana Con Dane', identificationType: '13', identificationNumber: '1001', partyType: 'Empleado', contractType: 'TERMINO_INDEFINIDO', workerType: 'DEPENDIENTE', baseSalary: 1300000, cityName: 'Bogotá', cityCode: '11001' },
       { id: 'e2', name: 'Beto Sin Dane', identificationType: '13', identificationNumber: '1002', partyType: 'Empleado', contractType: 'TERMINO_INDEFINIDO', workerType: 'DEPENDIENTE', baseSalary: 1300000, cityName: '', cityCode: '' }
     ]) }));
-    await page.goto('/third-parties');
+    await page.goto('/customers');
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Empleados', exact: true }).click();
 
@@ -236,7 +225,7 @@ test.describe('formulario de empleados', () => {
   test('el código DANE es obligatorio para un empleado y para un cliente no', async ({ page }) => {
     await signIn(page);
     await mockApi(page);
-    await page.goto('/third-parties');
+    await page.goto('/customers');
     await page.waitForLoadState('networkidle');
 
     await page.getByRole('button', { name: 'Nuevo Cliente' }).click();

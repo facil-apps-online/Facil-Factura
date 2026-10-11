@@ -15,7 +15,7 @@ const VIEWPORTS = [
 ];
 
 const PUBLIC_ROUTES = ['/login?tenant=demo', '/forgot-password?tenant=demo', '/reset-password?token=abc'];
-const PORTAL_ROUTES = ['/', '/invoices', '/support-documents', '/payroll', '/received-documents', '/third-parties', '/products', '/payments', '/resolutions', '/settings', '/users'];
+const PORTAL_ROUTES = ['/', '/invoices', '/support-documents', '/payroll', '/received-documents', '/customers', '/products', '/payments', '/resolutions', '/settings', '/users'];
 
 // Falla si la página (o el contenedor con scroll del shell) es más ancha que la pantalla. El scroll
 // horizontal solo se admite dentro de tablas o del lienzo del diseñador, nunca en la página.
@@ -119,7 +119,7 @@ for (const vp of VIEWPORTS) {
       });
 
       test('modal de tercero', async ({ page }) => {
-        await load(page, '/third-parties');
+        await load(page, '/customers');
         await page.locator('button', { hasText: /^\s*Nuevo\s/ }).first().click();
         await expectDialogInsideViewport(page, `${vp.name} modal de tercero`);
         await expectNoHorizontalOverflow(page, `${vp.name} modal de tercero`);

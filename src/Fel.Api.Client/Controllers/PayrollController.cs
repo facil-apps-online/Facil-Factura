@@ -64,6 +64,8 @@ namespace Fel.Api.Client.Controllers
                     .OrderByDescending(d => d.IssueDate)
                     .ToListAsync();
 
+                var annulments = await AnnulmentsAsync(clientId, entries.Select(d => d.Id).ToList());
+
                 // document.Number solo es el consecutivo real una vez que Dataico aprueba la nómina; mientras es borrador o está
                 // rechazada es el marcador de creación, así que no se muestra.
                 var result = entries.Select(d =>
@@ -79,6 +81,7 @@ namespace Fel.Api.Client.Controllers
                         TotalDeductions = d.TaxAmount,
                         d.IssueDate,
                         d.TypeCode,
+                        AnnulledBy = annulments.TryGetValue(d.Id, out var annulledBy) ? annulledBy : null,
                         d.DianResponseMessage,
                         Customer = d.Customer,
                         draft.Prefix,
@@ -159,6 +162,7 @@ namespace Fel.Api.Client.Controllers
                 if (document == null) return NotFound("Nómina no encontrada.");
 
                 var draft = DeserializeDraft(document.SectorExtensionData);
+                var annulments = await AnnulmentsAsync(clientId, new List<Guid> { document.Id });
                 return Ok(new
                 {
                     document.Id,
@@ -167,6 +171,7 @@ namespace Fel.Api.Client.Controllers
                     document.CreatedAt,
                     document.IssueDate,
                     document.TypeCode,
+                    AnnulledBy = annulments.TryGetValue(document.Id, out var annulledBy) ? annulledBy : null,
                     Number = document.Status == "APPROVED" ? document.Number : null,
                     document.Cufe,
                     document.DianResponseMessage,
@@ -220,6 +225,9 @@ namespace Fel.Api.Client.Controllers
                 var employee = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == request.EmployeeId && c.ClientId == clientId && c.PartyType == PartyType.Empleado);
                 if (employee == null) return BadRequest("El empleado seleccionado no existe.");
 
+                var noteError = await ValidateNoteAsync(clientId, request.NoteType, request.ReferenceDocumentId, employee.Id, null);
+                if (noteError != null) return BadRequest(noteError);
+
                 var document = BuildDraftDocument(clientId, GetCurrentBranchId(), employee.Id, request);
                 document.Status = "DRAFT";
 
@@ -246,6 +254,15 @@ namespace Fel.Api.Client.Controllers
 
                 var employee = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == request.EmployeeId && c.ClientId == clientId && c.PartyType == PartyType.Empleado);
                 if (employee == null) return BadRequest("El empleado seleccionado no existe.");
+
+                // Una nota conserva su tipo y su comprobante de referencia; lo único que se edita es el motivo.
+                var isNote = document.TypeCode != TypeCode;
+                if (isNote)
+                {
+                    var noteError = await ValidateNoteAsync(clientId, document.TypeCode == DeletionTypeCode ? "ELIMINACION" : "REEMPLAZO", document.ReferenceDocumentId, employee.Id, document.Id);
+                    if (noteError != null) return BadRequest(noteError);
+                    document.ReferenceConcept = request.ReferenceConcept ?? string.Empty;
+                }
 
                 var updated = BuildDraftDocument(clientId, GetCurrentBranchId(), employee.Id, request);
                 document.CustomerId = employee.Id;
@@ -335,16 +352,23 @@ namespace Fel.Api.Client.Controllers
                 document.Prefix = draft.Prefix;
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
 
+                // Anular y modificar emiten lo mismo ante Dataico (una nota de eliminación). La diferencia es que, al modificar, cuando
+                // Dataico aprueba se crea un borrador nuevo con los datos del original para corregirlo y emitirlo después.
+                Document? originalDocument = null;
                 if (document.TypeCode == DeletionTypeCode || document.TypeCode == ReplacementTypeCode)
                 {
                     if (!document.ReferenceDocumentId.HasValue)
                     {
                         return BadRequest("Esta nota debe referenciar el comprobante de nómina que ajusta.");
                     }
-                    var originalDocument = await _dbContext.Documents.FindAsync(document.ReferenceDocumentId.Value);
+                    originalDocument = await _dbContext.Documents.FindAsync(document.ReferenceDocumentId.Value);
                     if (originalDocument == null || string.IsNullOrEmpty(originalDocument.Cufe))
                     {
                         return BadRequest("El comprobante de nómina original no tiene un CUNE registrado (puede no haberse emitido por Dataico). No se puede generar la nota.");
+                    }
+                    if ((await AnnulmentsAsync(clientId, new List<Guid> { originalDocument.Id })).ContainsKey(originalDocument.Id))
+                    {
+                        return BadRequest("Este comprobante de nómina ya fue anulado.");
                     }
                     var originalDraft = DeserializeDraft(originalDocument.SectorExtensionData);
                     // Nóminas emitidas antes de este cambio no tienen un Number real (era un
@@ -353,22 +377,10 @@ namespace Fel.Api.Client.Controllers
                     var originalNumber = long.Parse(originalDocument.Number);
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
 
-                    if (document.TypeCode == DeletionTypeCode)
-                    {
-                        var deletionRequest = DataicoDocumentMapper.BuildPayrollDeletionRequest(
-                            client, draft.Prefix, documentNumber, Fel.Core.Models.ColombiaTime.Now,
-                            originalDraft.Prefix, originalNumber, originalDocument.Cufe, originalDocument.IssueDate, document.ReferenceConcept);
-                        result = await _dataicoApiService.SendPayrollDeletionAsync(deletionRequest, credentials);
-                    }
-                    else
-                    {
-                        var replacementRequest = DataicoDocumentMapper.BuildPayrollReplacementRequest(
-                            document.Customer!, client, draft.Prefix, documentNumber,
-                            draft.InitialSettlementDate, draft.FinalSettlementDate, Fel.Core.Models.ColombiaTime.Now, draft.PaymentDate,
-                            draft.Accruals.Select(ToConceptInput), draft.Deductions.Select(ToConceptInput), identificationTypes,
-                            originalDraft.Prefix, originalNumber, originalDocument.Cufe, originalDocument.IssueDate, document.ReferenceConcept);
-                        result = await _dataicoApiService.SendPayrollReplacementAsync(replacementRequest, credentials);
-                    }
+                    var deletionRequest = DataicoDocumentMapper.BuildPayrollDeletionRequest(
+                        client, draft.Prefix, documentNumber, Fel.Core.Models.ColombiaTime.Now,
+                        originalDraft.Prefix, originalNumber, originalDocument.Cufe, originalDocument.IssueDate, document.ReferenceConcept);
+                    result = await _dataicoApiService.SendPayrollDeletionAsync(deletionRequest, credentials);
 
                     document.Status = result.Success ? "APPROVED" : "REJECTED";
                     document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
@@ -391,6 +403,13 @@ namespace Fel.Api.Client.Controllers
                     document.Number = documentNumber.ToString();
                     document.ResolutionId = pendingNumberResolutionId;
                     await Fel.Infrastructure.Services.ResolutionNumbering.CommitNumberAsync(_dbContext, pendingNumberResolutionId.Value, documentNumber);
+                }
+
+                Document? regeneratedDraft = null;
+                if (result.Success && document.TypeCode == ReplacementTypeCode && originalDocument != null)
+                {
+                    regeneratedDraft = BuildRegeneratedDraft(originalDocument);
+                    _dbContext.Documents.Add(regeneratedDraft);
                 }
 
                 if (result.Success)
@@ -420,7 +439,7 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest(new { message = "Dataico rechazó la nómina.", detail = document.DianResponseMessage });
                 }
 
-                return Ok(new { message = "Nómina electrónica emitida correctamente.", document });
+                return Ok(new { message = "Nómina electrónica emitida correctamente.", document, newDraftId = regeneratedDraft?.Id });
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -804,6 +823,62 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // Comprobantes anulados: los que tienen una nota de eliminación o de reemplazo aprobada por Dataico. Devuelve, por cada uno,
+        // el tipo de la nota que lo anuló.
+        private async Task<Dictionary<Guid, string>> AnnulmentsAsync(Guid clientId, List<Guid> ids)
+        {
+            var notes = await _dbContext.Documents
+                .Where(d => d.ClientId == clientId && d.ReferenceDocumentId != null && ids.Contains(d.ReferenceDocumentId.Value)
+                            && d.Status == "APPROVED" && (d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode))
+                .Select(d => new { Original = d.ReferenceDocumentId!.Value, d.TypeCode })
+                .ToListAsync();
+            return notes.GroupBy(n => n.Original).ToDictionary(g => g.Key, g => g.First().TypeCode);
+        }
+
+        // Reglas para crear o editar una nota de eliminación/reemplazo: el comprobante debe existir, estar emitido, ser del mismo empleado
+        // y no tener ya otra nota emitida o en curso. Devuelve el mensaje de error o null si todo está bien.
+        private async Task<string?> ValidateNoteAsync(Guid clientId, string? noteType, Guid? referenceId, Guid employeeId, Guid? currentNoteId)
+        {
+            if (string.IsNullOrEmpty(noteType)) return null;
+            if (noteType != "ELIMINACION" && noteType != "REEMPLAZO") return "El tipo de nota no es válido.";
+            if (!referenceId.HasValue) return "La nota debe indicar el comprobante de nómina que anula.";
+
+            var original = await _dbContext.Documents.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.Id == referenceId.Value && d.ClientId == clientId && d.TypeCode == TypeCode);
+            if (original == null) return "El comprobante de nómina que se quiere anular no existe.";
+            if (original.Status != "APPROVED" || string.IsNullOrEmpty(original.Cufe)) return "Solo se puede anular o modificar una nómina que ya fue emitida.";
+            if (original.CustomerId != employeeId) return "La nota debe ser del mismo empleado del comprobante original.";
+
+            var existing = await _dbContext.Documents.AsNoTracking()
+                .Where(d => d.ClientId == clientId && d.ReferenceDocumentId == referenceId && d.Id != currentNoteId
+                            && (d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode) && d.Status != "REJECTED")
+                .Select(d => d.Status)
+                .FirstOrDefaultAsync();
+            if (existing == "APPROVED") return "Este comprobante de nómina ya fue anulado.";
+            if (existing != null) return "Este comprobante de nómina ya tiene una nota en borrador o en proceso. Úsala o elimínala antes de crear otra.";
+            return null;
+        }
+
+        // Borrador nuevo con los datos del comprobante anulado, para que el usuario lo corrija y lo emita. Queda enlazado al original.
+        private static Document BuildRegeneratedDraft(Document original) => new()
+        {
+            Id = Guid.NewGuid(),
+            ClientId = original.ClientId,
+            BranchId = original.BranchId,
+            CustomerId = original.CustomerId,
+            TypeCode = TypeCode,
+            Status = "DRAFT",
+            Number = DateTime.UtcNow.Ticks.ToString(),
+            CreatedAt = DateTime.UtcNow,
+            IssueDate = Fel.Core.Models.ColombiaTime.Now,
+            Subtotal = original.Subtotal,
+            TaxAmount = original.TaxAmount,
+            TotalAmount = original.TotalAmount,
+            SectorExtensionData = original.SectorExtensionData,
+            ReferenceDocumentId = original.Id,
+            ReferenceConcept = string.Empty
+        };
+
         // Documentos de la sucursal activa (todas las del usuario si eligió "todas"), para consultar.
         private IQueryable<Document> BranchDocuments => _dbContext.Documents.ForBranch(CurrentBranchScope);
 
@@ -838,9 +913,10 @@ namespace Fel.Api.Client.Controllers
                 TaxAmount = deductionsTotal,
                 TotalAmount = accrualsTotal - deductionsTotal,
                 SectorExtensionData = JsonSerializer.Serialize(draft),
-                ReferenceDocumentId = request.ReferenceDocumentId,
+                // Solo una nota referencia otro comprobante; el enlace de un borrador regenerado lo pone el servidor, no el cliente.
+                ReferenceDocumentId = request.NoteType is "ELIMINACION" or "REEMPLAZO" ? request.ReferenceDocumentId : null,
                 // La columna no admite nulos: un borrador que no es nota llega sin concepto.
-                ReferenceConcept = request.ReferenceConcept ?? string.Empty
+                ReferenceConcept = request.NoteType is "ELIMINACION" or "REEMPLAZO" ? request.ReferenceConcept ?? string.Empty : string.Empty
             };
         }
 

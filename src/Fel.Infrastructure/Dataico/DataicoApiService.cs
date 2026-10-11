@@ -17,7 +17,6 @@ namespace Fel.Infrastructure.Dataico
         Task<DataicoResult> SendSupportDocAdjustmentAsync(DataicoSupportDocAdjustmentRequest adjustment, DataicoCredentials credentials);
         Task<DataicoResult> SendPayrollAsync(DataicoPayrollRequest payroll, DataicoCredentials credentials);
         Task<DataicoResult> SendPayrollDeletionAsync(DataicoPayrollDeletionRequest deletion, DataicoCredentials credentials);
-        Task<DataicoResult> SendPayrollReplacementAsync(DataicoPayrollReplacementRequest replacement, DataicoCredentials credentials);
 
         // Reenvía/actualiza el documento ya emitido para que Dataico despache el correo
         // (send_dian=false, send_email=true), con PDF propio opcional. Usado tanto por el paso 2 de
@@ -97,11 +96,6 @@ namespace Fel.Infrastructure.Dataico
             return ExecuteAsync(HttpMethod.Post, $"{PayrollBaseUrl}/payroll-deletions", credentials, deletion);
         }
 
-        public Task<DataicoResult> SendPayrollReplacementAsync(DataicoPayrollReplacementRequest replacement, DataicoCredentials credentials)
-        {
-            return ExecuteAsync(HttpMethod.Post, $"{PayrollBaseUrl}/payroll-replacements", credentials, replacement);
-        }
-
         public Task<DataicoResult> SendCustomDocumentPdfAsync(string documentId, string documentTypeCode, byte[]? pdfBytes, string recipientEmail, DataicoCredentials credentials)
         {
             var (baseUrl, resource) = documentTypeCode switch
@@ -112,7 +106,7 @@ namespace Fel.Infrastructure.Dataico
                 "DS-AJUSTE" => (InvoicingBaseUrl, "support_doc_adjustments"),
                 "NE" => (PayrollBaseUrl, "payroll-entries"),
                 "NE-ELIMINACION" => (PayrollBaseUrl, "payroll-deletions"),
-                "NE-REEMPLAZO" => (PayrollBaseUrl, "payroll-replacements"),
+                "NE-REEMPLAZO" => (PayrollBaseUrl, "payroll-deletions"),
                 _ => (InvoicingBaseUrl, "invoices")
             };
 

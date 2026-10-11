@@ -38,12 +38,4 @@ namespace Fel.Infrastructure.Dataico.Models
         public DataicoPayrollDocumentReference entry { get; set; } = new();
         public List<DataicoPayrollNote> notes { get; set; } = new();
     }
-
-    // Cuerpo real: POST /direct/payroll-api/v2/payroll-replacements — mismo payload que un
-    // comprobante de nómina normal (DataicoPayrollRequest), más la referencia a lo que reemplaza.
-    public class DataicoPayrollReplacementRequest : DataicoPayrollRequest
-    {
-        [JsonPropertyName("replacement-for")]
-        public DataicoPayrollDocumentReference replacement_for { get; set; } = new();
-    }
 }

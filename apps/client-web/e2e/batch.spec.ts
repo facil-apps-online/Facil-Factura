@@ -181,6 +181,78 @@ test.describe('nómina igual que facturas', () => {
   });
 });
 
+test.describe('anular y modificar nómina', () => {
+  const period = { initialSettlementDate: '2026-09-01T00:00:00', finalSettlementDate: '2026-09-30T00:00:00' };
+  const entries = [
+    { id: 'v1', status: 'APPROVED', consecutiveNumber: 'NE-7', typeCode: 'NE', issueDate: '2026-10-03T00:00:00', totalAmount: 2000, totalAccruals: 2300, totalDeductions: 300, customer: { name: 'Cata Vigente' }, ...period },
+    { id: 'a1', status: 'APPROVED', consecutiveNumber: 'NE-8', typeCode: 'NE', issueDate: '2026-10-04T00:00:00', totalAmount: 5000, totalAccruals: 5500, totalDeductions: 500, annulledBy: 'NE-ELIMINACION', customer: { name: 'Dani Anulada' }, ...period },
+    { id: 'a2', status: 'APPROVED', consecutiveNumber: 'NE-9', typeCode: 'NE', issueDate: '2026-10-05T00:00:00', totalAmount: 3000, totalAccruals: 3300, totalDeductions: 300, annulledBy: 'NE-REEMPLAZO', customer: { name: 'Eva Reemplazada' }, ...period },
+    { id: 'n1', status: 'APPROVED', consecutiveNumber: 'NE-10', typeCode: 'NE-ELIMINACION', issueDate: '2026-10-06T00:00:00', totalAmount: 5000, totalAccruals: 5500, totalDeductions: 500, customer: { name: 'Dani Anulada' }, ...period },
+    { id: 'd1', status: 'DRAFT', consecutiveNumber: null, typeCode: 'NE', issueDate: '2026-10-07T00:00:00', totalAmount: 100, totalAccruals: 100, totalDeductions: 0, customer: { name: 'Fabio Borrador' }, ...period },
+  ];
+  const detail = (e: any) => ({ ...e, number: e.consecutiveNumber, employeeId: 'emp1', prefix: 'NE', accruals: [{ description: 'Salario', amount: 1000 }], deductions: [], referenceDocumentId: null, referenceConcept: '' });
+
+  async function open(page: Page) {
+    await page.setViewportSize({ width: 1800, height: 900 });
+    await signIn(page);
+    await mockApi(page);
+    await page.route('**/api/client/payroll?*', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(entries) }));
+    for (const e of entries) {
+      await page.route(`**/api/client/payroll/${e.id}`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(detail(e)) }));
+      await page.route(`**/api/client/payroll/${e.id}/related`, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    }
+    await page.goto('/payroll');
+    await page.waitForLoadState('networkidle');
+  }
+
+  test('lo anulado se ve como Anulada o Reemplazada y no suma al total del periodo', async ({ page }) => {
+    await open(page);
+    const table = page.locator('table').first();
+    await expect(table.locator('tr', { hasText: 'Dani Anulada' }).first().getByText('Anulada', { exact: true })).toBeVisible();
+    await expect(table.locator('tr', { hasText: 'Eva Reemplazada' }).getByText('Reemplazada', { exact: true })).toBeVisible();
+    await expect(table.locator('tr', { hasText: 'Cata Vigente' }).getByText('Emitida', { exact: true })).toBeVisible();
+
+    // Solo suman la vigente (2000) y el borrador (100): ni las notas ni lo anulado (5000 y 3000).
+    const totals = page.getByText('Total del período').locator('xpath=..');
+    await expect(totals).toContainText('Devengado');
+    await expect(totals).toContainText(/\$2[.,]400/);
+    await expect(totals).toContainText(/\$2[.,]100/);
+    await expect(totals).not.toContainText(/\$10[.,]/);
+  });
+
+  test('una nómina vigente ofrece anular y modificar; una anulada no', async ({ page }) => {
+    await open(page);
+    await page.getByRole('button', { name: /Ver detalle de nómina NE-7/ }).click();
+    await expect(page.getByRole('button', { name: 'Generar Nota de Reemplazo' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Generar Nota de Eliminación' })).toBeVisible();
+
+    await page.getByRole('button', { name: /Volver/ }).click();
+    await page.getByRole('button', { name: /Ver detalle de nómina NE-8/ }).first().click();
+    await expect(page.getByText('Anulada', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Generar Nota de Reemplazo' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Generar Nota de Eliminación' })).toHaveCount(0);
+  });
+
+  test('la nota de reemplazo pide solo el motivo y explica que se creará un borrador nuevo', async ({ page }) => {
+    await open(page);
+    await page.getByRole('button', { name: /Ver detalle de nómina NE-7/ }).click();
+    await page.getByRole('button', { name: 'Generar Nota de Reemplazo' }).click();
+    await expect(page.getByRole('heading', { name: 'Nota de Reemplazo de Nómina' })).toBeVisible();
+    await expect(page.getByText('se crea un borrador nuevo con los mismos datos')).toBeVisible();
+    await expect(page.getByText('Motivo', { exact: true })).toBeVisible();
+    await expect(page.getByText('Devengado:')).toHaveCount(0);
+  });
+
+  test('al emitir una nota de reemplazo se abre el borrador nuevo para corregirlo', async ({ page }) => {
+    await open(page);
+    const nuevo = { id: 'nuevo1', status: 'DRAFT', typeCode: 'NE', employeeId: 'emp1', prefix: 'NE', totalAmount: 1000, accruals: [{ description: 'Salario', amount: 1000 }], deductions: [], referenceDocumentId: 'v1', referenceConcept: '', ...period };
+    await page.route('**/api/client/payroll/d1/publish', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ newDraftId: 'nuevo1' }) }));
+    await page.route('**/api/client/payroll/nuevo1', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(nuevo) }));
+    await page.locator('table').first().locator('tr', { hasText: 'Fabio Borrador' }).getByRole('button', { name: /Emitir/ }).click();
+    await expect(page.getByRole('heading', { name: 'Editar Nómina Electrónica' })).toBeVisible();
+  });
+});
+
 test.describe('formulario de empleados', () => {
   test('un empleado no muestra régimen fiscal ni nivel tributario; un cliente sí', async ({ page }) => {
     await signIn(page);

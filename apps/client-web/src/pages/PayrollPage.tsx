@@ -206,7 +206,9 @@ export default function PayrollPage() {
     }
   };
 
-  const handleCreateDeletion = async (original: any) => {
+  // Anular (eliminación) y modificar (reemplazo) piden lo mismo: el motivo. Al modificar, cuando Dataico aprueba la eliminación se crea
+  // un borrador nuevo con los datos del original.
+  const handleCreateNote = async (original: any, noteType: 'ELIMINACION' | 'REEMPLAZO') => {
     try {
       const res = await api.get(`/client/payroll/${original.id}`);
       const full = res.data;
@@ -222,30 +224,7 @@ export default function PayrollPage() {
         deductions: full.deductions || [],
         referenceDocumentId: full.id,
         referenceConcept: '',
-        noteType: 'ELIMINACION'
-      });
-      setView('create');
-    } catch {
-      toast.error('Error al cargar la nómina original');
-    }
-  };
-
-  const handleCreateReplacement = async (original: any) => {
-    try {
-      const res = await api.get(`/client/payroll/${original.id}`);
-      const full = res.data;
-      setEditingId(null);
-      setFormData({
-        employeeId: full.employeeId || '',
-        prefix: full.prefix || 'NE',
-        initialSettlementDate: (full.initialSettlementDate || today).substring(0, 10),
-        finalSettlementDate: (full.finalSettlementDate || today).substring(0, 10),
-        paymentDate: (full.paymentDate || today).substring(0, 10),
-        accruals: (full.accruals || []).length ? full.accruals.map((a: any) => ({ ...a, description: a.description || '', amount: a.amount || 0 })) : [{ description: '', amount: 0 }],
-        deductions: (full.deductions || []).map((d: any) => ({ ...d, description: d.description || '', amount: d.amount || 0 })),
-        referenceDocumentId: full.id,
-        referenceConcept: '',
-        noteType: 'REEMPLAZO'
+        noteType
       });
       setView('create');
     } catch {
@@ -256,10 +235,16 @@ export default function PayrollPage() {
   const handlePublish = async (id: string) => {
     setPublishingId(id);
     try {
-      await api.post(`/client/payroll/${id}/publish`);
+      const res = await api.post(`/client/payroll/${id}/publish`);
       toast.success('Nómina electrónica emitida correctamente');
       loadData();
-      if (viewingEntry?.id === id) handleViewDetail({ id });
+      if (res.data?.newDraftId) {
+        // Nota de reemplazo aprobada: se abre el borrador nuevo para que el usuario lo corrija y lo emita.
+        toast.success('Se creó un borrador nuevo con los datos de la nómina anulada. Corrígelo y emítelo.');
+        await handleEditDraft({ id: res.data.newDraftId });
+      } else if (viewingEntry?.id === id) {
+        handleViewDetail({ id });
+      }
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Error al emitir la nómina'));
     } finally {
@@ -291,6 +276,11 @@ export default function PayrollPage() {
       {statusLabel(status)}
     </span>
   );
+
+  // Un comprobante con una nota de eliminación o de reemplazo aprobada está anulado: se muestra así en vez de "Emitida".
+  const entryStatusBadge = (e: any) => e.annulledBy ? (
+    <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-600">{e.annulledBy === 'NE-REEMPLAZO' ? 'Reemplazada' : 'Anulada'}</span>
+  ) : statusBadge(e.status);
 
   const responseDialog = responseEntry && (
     <DianResponseDialog doc={responseEntry} label={`Nómina ${responseEntry.consecutiveNumber || responseEntry.number || 'Borrador'}`} onClose={() => setResponseEntry(null)} />
@@ -355,7 +345,7 @@ export default function PayrollPage() {
               <p className="text-sm text-amber-700 mb-4">
                 {formData.noteType === 'ELIMINACION'
                   ? 'Esta nota anula ante la DIAN el comprobante de nómina original. No reenvía datos de nómina.'
-                  : 'Esta nota anula el comprobante original y genera uno nuevo completo con los cambios que edites abajo.'}
+                  : 'Esta nota anula ante la DIAN el comprobante original. Cuando Dataico la apruebe se crea un borrador nuevo con los mismos datos para que lo corrijas y lo emitas.'}
               </p>
               <div>
                 <label className="block text-sm font-bold text-amber-800 mb-2">Motivo</label>
@@ -364,7 +354,7 @@ export default function PayrollPage() {
             </div>
           )}
 
-          {formData.noteType !== 'ELIMINACION' && (
+          {!formData.noteType && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-1">
@@ -394,7 +384,7 @@ export default function PayrollPage() {
           )}
 
           <div className="flex flex-col gap-4 pt-4 border-t border-slate-100 sm:flex-row sm:items-center sm:justify-between">
-            {formData.noteType !== 'ELIMINACION' ? (
+            {!formData.noteType ? (
               <div className="text-sm text-slate-600">
                 <p>Devengado: <span className="font-bold">${fmt.number(totalAccruals, 3)}</span></p>
                 <p>Deducciones: <span className="font-bold">${fmt.number(totalDeductions, 3)}</span></p>
@@ -445,7 +435,7 @@ export default function PayrollPage() {
               <div className="flex items-center gap-3 mb-1 flex-wrap">
                 {noteBadgeLabel && <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-700">{noteBadgeLabel}</span>}
                 <h2 className="text-2xl font-extrabold text-slate-800 break-words">{entry.number || 'Borrador'}</h2>
-                {statusBadge(entry.status)}
+                {entryStatusBadge(entry)}
               </div>
               <p className="text-slate-500 break-words">{new Date(entry.issueDate).toLocaleDateString('es-CO')} · {entry.customer?.name || '-'}</p>
             </div>
@@ -475,12 +465,12 @@ export default function PayrollPage() {
                   </button>
                 </>
               )}
-              {entry.status === 'APPROVED' && !noteType && (
+              {entry.status === 'APPROVED' && !noteType && !entry.annulledBy && (
                 <>
-                  <button onClick={() => handleCreateReplacement(entry)} className={`${actionButton} text-amber-700 bg-amber-100 hover:bg-amber-200 shadow-sm`}>
+                  <button onClick={() => handleCreateNote(entry, 'REEMPLAZO')} title="Anula la nómina y crea un borrador nuevo para corregirla" className={`${actionButton} text-amber-700 bg-amber-100 hover:bg-amber-200 shadow-sm`}>
                     <RotateCcw size={16} /> Generar Nota de Reemplazo
                   </button>
-                  <button onClick={() => handleCreateDeletion(entry)} className={`${actionButton} text-rose-700 bg-rose-100 hover:bg-rose-200 shadow-sm`}>
+                  <button onClick={() => handleCreateNote(entry, 'ELIMINACION')} title="Anula la nómina" className={`${actionButton} text-rose-700 bg-rose-100 hover:bg-rose-200 shadow-sm`}>
                     <XCircle size={16} /> Generar Nota de Eliminación
                   </button>
                 </>
@@ -495,13 +485,13 @@ export default function PayrollPage() {
                 <div className="space-y-1">
                   {viewingOriginal && (
                     <button onClick={() => handleViewDetail(viewingOriginal)} className="py-1.5 text-sm text-primary hover:underline block text-left">
-                      ← Comprobante original N° {viewingOriginal.number}
+                      ← {noteType ? 'Comprobante original' : 'Nómina anulada que corrige'} N° {viewingOriginal.number}
                     </button>
                   )}
                   {viewingRelated.map(r => (
                     <button key={r.id} onClick={() => handleViewDetail(r)} className="py-1.5 text-sm text-primary hover:underline flex flex-wrap items-center gap-2 text-left">
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">
-                        {noteTypeOf(r.typeCode) === 'ELIMINACION' ? 'Eliminación' : 'Reemplazo'}
+                        {noteTypeOf(r.typeCode) === 'ELIMINACION' ? 'Eliminación' : noteTypeOf(r.typeCode) === 'REEMPLAZO' ? 'Reemplazo' : 'Nómina nueva'}
                       </span>
                       {r.number || 'Borrador'} · ${fmt.number(r.totalAmount, 3)} · {statusLabel(r.status)}
                     </button>
@@ -514,7 +504,7 @@ export default function PayrollPage() {
               <p className="text-sm text-slate-600 break-words"><span className="font-bold">Motivo:</span> {entry.referenceConcept}</p>
             )}
 
-            {noteType !== 'ELIMINACION' && (
+            {!noteType && (
               <>
                 <div>
                   <p className="text-xs font-bold text-slate-500 uppercase mb-2">Devengos</p>
@@ -572,9 +562,11 @@ export default function PayrollPage() {
     someSelected: paginatedEntries.some(r => batchSelection.selected.has(r.id)),
     label: (r: any) => `Seleccionar nómina ${r.consecutiveNumber || 'borrador'}`,
   };
-  const filteredAccruals = filteredEntries.reduce((sum, e) => sum + (e.totalAccruals || 0), 0);
-  const filteredDeductions = filteredEntries.reduce((sum, e) => sum + (e.totalDeductions || 0), 0);
-  const filteredTotal = filteredEntries.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  // Las notas de eliminación/reemplazo y los comprobantes anulados no suman al total del periodo.
+  const countedEntries = filteredEntries.filter(e => !noteTypeOf(e.typeCode) && !e.annulledBy);
+  const filteredAccruals = countedEntries.reduce((sum, e) => sum + (e.totalAccruals || 0), 0);
+  const filteredDeductions = countedEntries.reduce((sum, e) => sum + (e.totalDeductions || 0), 0);
+  const filteredTotal = countedEntries.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
   const periodOf = (e: any) => e.initialSettlementDate && e.finalSettlementDate
     ? `${new Date(e.initialSettlementDate).toLocaleDateString('es-CO')} - ${new Date(e.finalSettlementDate).toLocaleDateString('es-CO')}`
     : '-';
@@ -618,7 +610,7 @@ export default function PayrollPage() {
     },
     { key: 'period', header: 'Período', cellClassName: 'text-slate-500 text-sm', render: periodOf },
     { key: 'net', header: 'Neto', align: 'right', cellClassName: 'font-medium', render: e => `$${fmt.number(e.totalAmount, 3)}` },
-    { key: 'status', header: 'Estado', render: e => statusBadge(e.status) },
+    { key: 'status', header: 'Estado', render: e => entryStatusBadge(e) },
     { key: 'date', header: 'Fecha', hideBelow: 'ultra', cellClassName: 'text-slate-500 text-sm', render: e => new Date(e.issueDate).toLocaleDateString('es-CO') }
   ];
 

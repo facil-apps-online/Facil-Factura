@@ -642,34 +642,5 @@ namespace Fel.Infrastructure.Dataico
                 notes = BuildPayrollNotes(noteText)
             };
         }
-
-        // Nota de Reemplazo: reenvía la nómina completa corregida (mismo payload que un comprobante
-        // normal) más la referencia al comprobante que reemplaza.
-        public static DataicoPayrollReplacementRequest BuildPayrollReplacementRequest(
-            Customer employee, Client client, string prefix, long number,
-            DateTime initialSettlement, DateTime finalSettlement, DateTime issueDate, DateTime paymentDate,
-            IEnumerable<PayrollConceptInput> accruals, IEnumerable<PayrollConceptInput> deductions, IReadOnlyCollection<IdentificationType> identificationTypes,
-            string originalPrefix, long originalNumber, string originalCune, DateTime originalIssueDate, string? noteText)
-        {
-            var basePayload = BuildPayrollRequest(employee, client, prefix, number, initialSettlement, finalSettlement, issueDate, paymentDate, accruals, deductions, identificationTypes, noteText);
-
-            return new DataicoPayrollReplacementRequest
-            {
-                env = basePayload.env,
-                prefix = basePayload.prefix,
-                number = basePayload.number,
-                salary = basePayload.salary,
-                periodicity = basePayload.periodicity,
-                initial_settlement_date = basePayload.initial_settlement_date,
-                final_settlement_date = basePayload.final_settlement_date,
-                issue_date = basePayload.issue_date,
-                payment_date = basePayload.payment_date,
-                employee = basePayload.employee,
-                accruals = basePayload.accruals,
-                deductions = basePayload.deductions,
-                notes = basePayload.notes,
-                replacement_for = BuildPayrollReference(originalPrefix, originalNumber, originalCune, originalIssueDate)
-            };
-        }
     }
 }

@@ -614,11 +614,21 @@ namespace Fel.Api.Tenant.Controllers
             if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
 
             var existing = await _dbContext.ClientEnabledDocumentTypes.Where(e => e.ClientId == id).ToListAsync();
-            _dbContext.ClientEnabledDocumentTypes.RemoveRange(existing);
+            var requestedIds = request.Ids.Distinct().ToList();
 
-            foreach (var documentTypeId in request.Ids.Distinct())
+            // Se quitan solo los tipos que dejan de estar habilitados y se agregan los nuevos: los que se mantienen conservan su interruptor de correo.
+            _dbContext.ClientEnabledDocumentTypes.RemoveRange(existing.Where(e => !requestedIds.Contains(e.DocumentTypeId)));
+            var newIds = requestedIds.Where(documentTypeId => existing.All(e => e.DocumentTypeId != documentTypeId)).ToList();
+            var newCodes = await _dbContext.DocumentTypes.Where(d => newIds.Contains(d.Id)).ToDictionaryAsync(d => d.Id, d => d.Code);
+            foreach (var documentTypeId in newIds)
             {
-                _dbContext.ClientEnabledDocumentTypes.Add(new ClientEnabledDocumentType { Id = Guid.NewGuid(), ClientId = id, DocumentTypeId = documentTypeId });
+                _dbContext.ClientEnabledDocumentTypes.Add(new ClientEnabledDocumentType
+                {
+                    Id = Guid.NewGuid(),
+                    ClientId = id,
+                    DocumentTypeId = documentTypeId,
+                    SendEmailToRecipient = ClientEnabledDocumentType.DefaultSendEmail(newCodes.GetValueOrDefault(documentTypeId))
+                });
             }
 
             await _dbContext.SaveChangesAsync();

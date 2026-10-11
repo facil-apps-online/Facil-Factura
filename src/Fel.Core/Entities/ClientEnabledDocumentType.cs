@@ -14,5 +14,15 @@ namespace Fel.Core.Entities
 
         public Guid DocumentTypeId { get; set; }
         public DocumentType? DocumentType { get; set; }
+
+        // Si al emitir este tipo de documento se le envía por correo al destinatario el PDF con el
+        // diseño del cliente. Lo edita el cliente o el tenant desde las plantillas. Es independiente
+        // del "Reenviar" manual, que siempre funciona.
+        public bool SendEmailToRecipient { get; set; } = true;
+
+        // Valor inicial al habilitar un tipo: la nómina no se envía por correo salvo que se active;
+        // facturas, notas y documentos soporte sí (así funcionaban antes del interruptor).
+        public static bool DefaultSendEmail(string? documentTypeCode)
+            => documentTypeCode == null || !documentTypeCode.StartsWith("NE", StringComparison.OrdinalIgnoreCase);
     }
 }

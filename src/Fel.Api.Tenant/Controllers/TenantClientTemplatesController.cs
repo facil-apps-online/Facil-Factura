@@ -71,11 +71,34 @@ namespace Fel.Api.Tenant.Controllers
                     documentTypeId = e.DocumentTypeId,
                     documentTypeName = e.DocumentType != null ? e.DocumentType.Name : "N/A",
                     selectedTemplateId = setting?.SelectedTemplateId,
-                    selectedTemplateName = setting?.SelectedTemplate?.Name
+                    selectedTemplateName = setting?.SelectedTemplate?.Name,
+                    sendEmailToRecipient = e.SendEmailToRecipient
                 };
             });
 
             return Ok(result);
+        }
+
+        public class SetEmailToRecipientRequest
+        {
+            public Guid DocumentTypeId { get; set; }
+            public bool Enabled { get; set; }
+        }
+
+        // PUT: api/tenant/clients/{clientId}/templates/email — activa o desactiva el envío por correo del PDF al destinatario para un tipo de documento.
+        [HttpPut("email")]
+        public async Task<IActionResult> SetEmailToRecipient(Guid clientId, [FromBody] SetEmailToRecipientRequest request)
+        {
+            var client = await GetOwnedClientAsync(clientId);
+            if (client == null) return StatusCode(StatusCodes.Status403Forbidden);
+
+            var enabledType = await _dbContext.ClientEnabledDocumentTypes
+                .FirstOrDefaultAsync(e => e.ClientId == clientId && e.DocumentTypeId == request.DocumentTypeId);
+            if (enabledType == null) return NotFound("Este tipo de documento no está habilitado para el cliente.");
+
+            enabledType.SendEmailToRecipient = request.Enabled;
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { message = request.Enabled ? "Se enviará el PDF por correo al destinatario." : "No se enviará el PDF por correo al destinatario." });
         }
 
         // GET: api/tenant/clients/{clientId}/templates/available/{documentTypeId}

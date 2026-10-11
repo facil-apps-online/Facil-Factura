@@ -396,6 +396,10 @@ namespace Fel.Api.Client.Controllers
                 if (result.Success)
                 {
                     document.IntegratorId = client.IntegratorId;
+                    // Sin el id de Dataico y el tipo de documento el paso del PDF por correo nunca corría para la nómina.
+                    document.DataicoDocumentId = result.DataicoDocumentId;
+                    var documentTypeCode = document.TypeCode == TypeCode ? "NE-PAGO" : "NE-AJUSTE";
+                    document.DocumentTypeId = await _dbContext.DocumentTypes.Where(t => t.Code == documentTypeCode).Select(t => (Guid?)t.Id).FirstOrDefaultAsync();
 
                     var pdfCredentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);

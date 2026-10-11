@@ -1340,6 +1340,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<Guid>("DocumentTypeId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("SendEmailToRecipient")
+                        .HasColumnType("bit");
+
                     b.HasKey("Id");
 
                     b.HasIndex("DocumentTypeId");

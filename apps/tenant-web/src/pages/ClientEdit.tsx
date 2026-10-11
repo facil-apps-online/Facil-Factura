@@ -261,6 +261,18 @@ export default function ClientEdit() {
     }
   };
 
+  const handleToggleEmail = async (enabled: boolean) => {
+    if (!selectedTemplateSetting) return;
+    try {
+      await api.put(`/tenant/clients/${id}/templates/email`, { documentTypeId: selectedTemplateSetting.documentTypeId, enabled });
+      setSelectedTemplateSetting({ ...selectedTemplateSetting, sendEmailToRecipient: enabled });
+      setTemplateSettings(prev => prev.map(s => s.documentTypeId === selectedTemplateSetting.documentTypeId ? { ...s, sendEmailToRecipient: enabled } : s));
+      toast.success(enabled ? 'Se enviará el PDF por correo al destinatario' : 'No se enviará el PDF por correo al destinatario');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data || 'No se pudo guardar la opción de correo');
+    }
+  };
+
   const handleApplyTemplate = async (templateId: string) => {
     if (!selectedTemplateSetting) return;
     setApplyingTemplateId(templateId);
@@ -1656,6 +1668,19 @@ export default function ClientEdit() {
                       <h2 className="text-xl font-bold text-slate-800 mb-6">
                         Plantillas para {selectedTemplateSetting.documentTypeName}
                       </h2>
+
+                      <label className="mb-6 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedTemplateSetting.sendEmailToRecipient !== false}
+                          onChange={e => handleToggleEmail(e.target.checked)}
+                          className="mt-1 h-4 w-4 rounded border-slate-300"
+                        />
+                        <span>
+                          <span className="block text-sm font-bold text-slate-700">Enviar el PDF por correo al destinatario</span>
+                          <span className="block text-xs text-slate-500">Al emitir, se le envía al correo del destinatario el PDF con la plantilla elegida. Aplica solo si hay una plantilla seleccionada; el reenvío manual no depende de esta opción.</span>
+                        </span>
+                      </label>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {availableTemplates.map(tpl => {

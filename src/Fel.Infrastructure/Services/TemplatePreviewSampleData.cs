@@ -194,7 +194,7 @@ namespace Fel.Infrastructure.Services
         private static Dictionary<string, object?> SampleNominaData(string documentTypeCode)
         {
             var esNota = documentTypeCode == "NE-AJUSTE";
-            // Mismo shape que NominaReportDataMapper.Build: "Documento" + "Devengos" + "Deducciones".
+            // Mismo shape que NominaReportDataMapper.Build: "Documento" + "Conceptos".
             return new Dictionary<string, object?>
             {
                 ["Documento"] = new Dictionary<string, object?>
@@ -206,12 +206,21 @@ namespace Fel.Infrastructure.Services
                     ["EmisorCiudad"] = "Bogotá D.C.",
                     ["EmisorTelefono"] = "601 555 1234",
                     ["EmisorEmail"] = "nomina@ejemplo.com",
+                    ["EmisorActividadEconomica"] = "4711",
+                    ["EmisorGranContribuyente"] = "No somos Gran Contribuyente",
+                    ["EmisorAgenteRetenedorIva"] = "No somos Agente Retenedor del Impuesto sobre las Ventas - IVA",
+                    ["EmisorAutorretenedorRenta"] = "No somos Autorretenedor del Impuesto sobre la Renta y Complementarios",
 
                     ["EmpleadoNombre"] = "María Rodríguez López",
                     ["EmpleadoTipoIdentificacion"] = "CC",
                     ["EmpleadoIdentificacion"] = "1098765432",
                     ["EmpleadoDireccion"] = "Calle 80 # 10-20",
                     ["EmpleadoCiudad"] = "Bogotá D.C.",
+                    ["EmpleadoCodigoDane"] = "11001",
+                    ["EmpleadoEmail"] = "maria.rodriguez@ejemplo.com",
+                    ["EmpleadoContrato"] = "Término indefinido",
+                    ["EmpleadoTipoTrabajador"] = "Dependiente",
+                    ["EmpleadoSalarioBase"] = "2.300.000",
 
                     ["DocumentoTipo"] = esNota ? "NOTA DE AJUSTE - NÓMINA ELECTRÓNICA" : "NÓMINA ELECTRÓNICA",
                     ["DocumentoNumero"] = "NE-1",
@@ -237,16 +246,12 @@ namespace Fel.Infrastructure.Services
                     ["ProveedorTecnologicoNit"] = null
                 },
 
-                ["Devengos"] = new List<Dictionary<string, object?>>
+                ["Conceptos"] = new List<Dictionary<string, object?>>
                 {
-                    new() { ["Codigo"] = "001", ["Descripcion"] = "Salario básico", ["Valor"] = "2.300.000" },
-                    new() { ["Codigo"] = "002", ["Descripcion"] = "Auxilio de transporte", ["Valor"] = "200.000" }
-                },
-
-                ["Deducciones"] = new List<Dictionary<string, object?>>
-                {
-                    new() { ["Codigo"] = "101", ["Descripcion"] = "Salud", ["Valor"] = "100.000" },
-                    new() { ["Codigo"] = "102", ["Descripcion"] = "Pensión", ["Valor"] = "100.000" }
+                    new() { ["Concepto"] = "001 · Salario básico (30 días)", ["Devengado"] = "2.300.000", ["Deduccion"] = "" },
+                    new() { ["Concepto"] = "002 · Auxilio de transporte", ["Devengado"] = "200.000", ["Deduccion"] = "" },
+                    new() { ["Concepto"] = "101 · Salud (4 %)", ["Devengado"] = "", ["Deduccion"] = "100.000" },
+                    new() { ["Concepto"] = "102 · Pensión (4 %)", ["Devengado"] = "", ["Deduccion"] = "100.000" }
                 }
             };
         }

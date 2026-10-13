@@ -13,7 +13,7 @@ namespace Fel.Core.Interfaces
     {
         // data es un único objeto: "Documento" (los campos de encabezado y totales, p. ej.
         // [Documento.Total]) más los arreglos anidados que pida cada tipo de documento — "Items" e
-        // "Impuestos" (factura, notas, documento soporte y POS) o "Devengos" y "Deducciones" (nómina).
+        // "Impuestos" (factura, notas, documento soporte y POS) o "Conceptos" (nómina: una fila por devengo o deducción).
         // Cada arreglo alimenta su propia tabla/banda del reporte. Devuelve null si la plantilla no
         // existe o el servicio no está configurado (sin API key) — no lanza excepción para no tumbar el
         // flujo de emisión.

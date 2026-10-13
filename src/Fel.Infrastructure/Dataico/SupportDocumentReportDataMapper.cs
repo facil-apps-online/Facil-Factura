@@ -22,10 +22,6 @@ namespace Fel.Infrastructure.Dataico
         private const string NombreSoftware = "Facil Factura";
 
 
-        // Redacción idéntica a InvoiceReportDataMapper para el encabezado de responsabilidades.
-        private static string ResponsabilidadTexto(bool activo, string etiqueta) =>
-            (activo ? "Somos " : "No somos ") + etiqueta;
-
         // Ver el comentario equivalente en InvoiceReportDataMapper: client.TaxRegime guarda el
         // código crudo (48/49), la representación gráfica necesita la etiqueta legible.
         private static readonly Dictionary<string, string> CalidadTributariaLabels = new()
@@ -147,9 +143,9 @@ namespace Fel.Infrastructure.Dataico
                     ["SucursalCodigo"] = location.BranchCode,
                     ["EmisorCalidadTributaria"] = CalidadTributaria(client.TaxRegime),
                     ["EmisorActividadEconomica"] = client.EconomicActivity,
-                    ["EmisorGranContribuyente"] = ResponsabilidadTexto(client.IsGranContribuyente, "Gran Contribuyente"),
-                    ["EmisorAgenteRetenedorIva"] = ResponsabilidadTexto(client.IsAgenteRetenedorIva, "Agente Retenedor del Impuesto sobre las Ventas - IVA"),
-                    ["EmisorAutorretenedorRenta"] = ResponsabilidadTexto(client.IsAutorretenedorRenta, "Autorretenedor del Impuesto sobre la Renta y Complementarios"),
+                    ["EmisorGranContribuyente"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsGranContribuyente, "Gran Contribuyente"),
+                    ["EmisorAgenteRetenedorIva"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsAgenteRetenedorIva, "Agente Retenedor del Impuesto sobre las Ventas - IVA"),
+                    ["EmisorAutorretenedorRenta"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsAutorretenedorRenta, "Autorretenedor del Impuesto sobre la Renta y Complementarios"),
 
                     // Proveedor (el tercero a quien se le compra)
                     ["ProveedorNombre"] = proveedor?.Name,

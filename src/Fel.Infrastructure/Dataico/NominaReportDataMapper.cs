@@ -8,17 +8,16 @@ using Fel.Infrastructure.Services;
 
 namespace Fel.Infrastructure.Dataico
 {
-    // Mismo contrato que Invoice/SupportDocumentReportDataMapper ("Documento" + listas), adaptado a
+    // Concepto de nómina tal como lo recibe el mapper. Desacoplado de PayrollConceptItem (que vive en
+    // Fel.Api.Client, una capa por encima de Fel.Infrastructure) a propósito: el llamador lo arma.
+    public record NominaConcepto(string? Codigo, string Descripcion, decimal Valor, int? Dias = null, decimal? Porcentaje = null);
+
+    // Mismo contrato que Invoice/SupportDocumentReportDataMapper ("Documento" + lista), adaptado a
     // Nómina Electrónica: no hay "adquirente" sino un empleado, no hay IVA ni retenciones, y el
-    // detalle se discrimina por conceptos: dos listas, "Devengos" y "Deducciones", cada una con
-    // {Codigo, Descripcion, Valor}. La plantilla estándar las imprime como dos secciones, cada una con
-    // su título y encabezado de columnas (un DetailReportBand por lista). Los totales (Total
-    // Devengado/Total Deducción/Neto) vienen ya calculados en "Documento", no como sumas dentro del
-    // reporte, para no depender de la configuración de Summary de DevExpress. Antes devolvía campos
-    // planos y una sola lista "DataSource" con un campo Tipo.
-    //
-    // Desacoplado de PayrollConceptItem (que vive en Fel.Api.Client, una capa por encima de
-    // Fel.Infrastructure) a propósito: el llamador arma las tuplas simples.
+    // detalle es una sola tabla de conceptos, "Conceptos", con {Concepto, Devengado, Deduccion}: cada
+    // renglón llena una de las dos columnas de valor (devengos primero, luego deducciones). Los totales
+    // (Total Devengado/Total Deducción/Neto) vienen ya calculados en "Documento", no como sumas dentro
+    // del reporte, para no depender de la configuración de Summary de DevExpress.
     public static class NominaReportDataMapper
     {
         // Facil Factura es un producto de SoFactory S.A.S., el fabricante legal del software.
@@ -31,8 +30,10 @@ namespace Fel.Infrastructure.Dataico
             Document document, Customer employee, Client client, EmitterLocation location,
             string prefix, long numeroConsecutivo,
             DateTime initialSettlement, DateTime finalSettlement, DateTime paymentDate,
-            IEnumerable<(string? Codigo, string Descripcion, decimal Valor)> devengos,
-            IEnumerable<(string? Codigo, string Descripcion, decimal Valor)> deducciones)
+            IEnumerable<NominaConcepto> devengos,
+            IEnumerable<NominaConcepto> deducciones,
+            IReadOnlyDictionary<string, string>? workerTypeCatalog = null,
+            IReadOnlyDictionary<string, string>? contractTypeCatalog = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -57,6 +58,16 @@ namespace Fel.Infrastructure.Dataico
             var medioPago = string.Join(" · ", new[] { employee.PaymentMeans, employee.Bank, employee.AccountType, employee.AccountNumber }
                 .Where(s => !string.IsNullOrWhiteSpace(s)));
 
+            // "Salud (4 %)", "Salario (30 días)": el código y los detalles que ya guarda el concepto.
+            string Texto(NominaConcepto c)
+            {
+                var detalle = new List<string>();
+                if (c.Dias.HasValue) detalle.Add($"{c.Dias} días");
+                if (c.Porcentaje.HasValue) detalle.Add($"{c.Porcentaje.Value.ToString("0.##", nf)} %");
+                var nombre = string.IsNullOrWhiteSpace(c.Codigo) ? c.Descripcion : $"{c.Codigo} · {c.Descripcion}";
+                return detalle.Count == 0 ? nombre : $"{nombre} ({string.Join(" · ", detalle)})";
+            }
+
             return new Dictionary<string, object?>
             {
                 ["Documento"] = new Dictionary<string, object?>
@@ -71,6 +82,10 @@ namespace Fel.Infrastructure.Dataico
                     ["EmisorEmail"] = location.Email,
                     ["SucursalNombre"] = location.BranchName,
                     ["SucursalCodigo"] = location.BranchCode,
+                    ["EmisorActividadEconomica"] = client.EconomicActivity,
+                    ["EmisorGranContribuyente"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsGranContribuyente, "Gran Contribuyente"),
+                    ["EmisorAgenteRetenedorIva"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsAgenteRetenedorIva, "Agente Retenedor del Impuesto sobre las Ventas - IVA"),
+                    ["EmisorAutorretenedorRenta"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsAutorretenedorRenta, "Autorretenedor del Impuesto sobre la Renta y Complementarios"),
 
                     // Trabajador
                     ["EmpleadoNombre"] = employee.Name,
@@ -78,6 +93,11 @@ namespace Fel.Infrastructure.Dataico
                     ["EmpleadoIdentificacion"] = employee.IdentificationNumber,
                     ["EmpleadoDireccion"] = employee.Address,
                     ["EmpleadoCiudad"] = employee.CityName,
+                    ["EmpleadoCodigoDane"] = employee.CityCode,
+                    ["EmpleadoEmail"] = employee.Email,
+                    ["EmpleadoContrato"] = InvoiceReportDataMapper.CatalogLabel(employee.ContractType, contractTypeCatalog),
+                    ["EmpleadoTipoTrabajador"] = InvoiceReportDataMapper.CatalogLabel(employee.WorkerType, workerTypeCatalog),
+                    ["EmpleadoSalarioBase"] = employee.BaseSalary.HasValue ? Money(employee.BaseSalary.Value) : string.Empty,
 
                     // Documento ("DocumentoTipo", no "DocumentoTitulo": mismo nombre que Factura)
                     ["DocumentoTipo"] = titulo,
@@ -109,19 +129,10 @@ namespace Fel.Infrastructure.Dataico
                     ["ProveedorTecnologicoNit"] = esIntegradorExterno ? client.Integrator.Nit : null
                 },
 
-                ["Devengos"] = devengosList.Select(d => new Dictionary<string, object?>
-                {
-                    ["Codigo"] = d.Codigo,
-                    ["Descripcion"] = d.Descripcion,
-                    ["Valor"] = Money(d.Valor)
-                }).ToList(),
-
-                ["Deducciones"] = deduccionesList.Select(d => new Dictionary<string, object?>
-                {
-                    ["Codigo"] = d.Codigo,
-                    ["Descripcion"] = d.Descripcion,
-                    ["Valor"] = Money(d.Valor)
-                }).ToList()
+                ["Conceptos"] = devengosList
+                    .Select(d => new Dictionary<string, object?> { ["Concepto"] = Texto(d), ["Devengado"] = Money(d.Valor), ["Deduccion"] = string.Empty })
+                    .Concat(deduccionesList.Select(d => new Dictionary<string, object?> { ["Concepto"] = Texto(d), ["Devengado"] = string.Empty, ["Deduccion"] = Money(d.Valor) }))
+                    .ToList()
             };
         }
     }

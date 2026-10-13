@@ -127,11 +127,12 @@ namespace Fel.Api.Client.Controllers
                 var draft = DeserializeDraft(document.SectorExtensionData);
                 var approved = document.Status == "APPROVED";
                 var location = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
+                var (workerTypes, contractTypes) = await GetEmployeeCatalogsAsync();
                 var data = NominaReportDataMapper.Build(
                     document, document.Customer!, client, location, draft.Prefix, approved && long.TryParse(document.Number, out var number) ? number : 0,
                     draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
-                    draft.Accruals.Select(c => (c.Code, c.Description, c.Amount ?? 0m)),
-                    draft.Deductions.Select(c => (c.Code, c.Description, c.Amount ?? 0m)));
+                    draft.Accruals.Select(ToReportConcept), draft.Deductions.Select(ToReportConcept),
+                    workerTypes, contractTypes);
                 // Mientras Dataico no apruebe no hay consecutivo (se asigna al aprobar): el borrador se identifica como tal.
                 if (!approved && data["Documento"] is Dictionary<string, object?> header) header["DocumentoNumero"] = "Borrador";
 
@@ -147,6 +148,18 @@ namespace Fel.Api.Client.Controllers
             {
                 return Unauthorized(ex.Message);
             }
+        }
+
+        private static NominaConcepto ToReportConcept(PayrollConceptItem c) =>
+            new(c.Code, c.Description, c.Amount ?? 0m, c.Days, c.Percentage);
+
+        // Tipo de trabajador y de contrato los administra Superadmin en el catálogo global (TaxCatalogItem):
+        // se resuelven acá para que el PDF muestre la etiqueta legible y no el código crudo.
+        private async Task<(Dictionary<string, string> WorkerTypes, Dictionary<string, string> ContractTypes)> GetEmployeeCatalogsAsync()
+        {
+            var workerTypes = await _dbContext.TaxCatalogItems.Where(i => i.Kind == TaxCatalogKind.WorkerType).ToDictionaryAsync(i => i.Category, i => i.Name);
+            var contractTypes = await _dbContext.TaxCatalogItems.Where(i => i.Kind == TaxCatalogKind.ContractType).ToDictionaryAsync(i => i.Category, i => i.Name);
+            return (workerTypes, contractTypes);
         }
 
         [HttpGet("{id}")]
@@ -422,13 +435,14 @@ namespace Fel.Api.Client.Controllers
 
                     var pdfCredentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
+                    var (workerTypes, contractTypes) = await GetEmployeeCatalogsAsync();
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
                         _ => NominaReportDataMapper.Build(
                             document, document.Customer!, client, pdfLocation, draft.Prefix, documentNumber,
                             draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
-                            draft.Accruals.Select(c => (c.Code, c.Description, c.Amount ?? 0m)),
-                            draft.Deductions.Select(c => (c.Code, c.Description, c.Amount ?? 0m))),
+                            draft.Accruals.Select(ToReportConcept), draft.Deductions.Select(ToReportConcept),
+                            workerTypes, contractTypes),
                         pdfCredentials);
                 }
 

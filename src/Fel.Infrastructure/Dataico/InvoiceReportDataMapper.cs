@@ -49,7 +49,7 @@ namespace Fel.Infrastructure.Dataico
 
         // Redacción idéntica a la que usan otros software de facturación (ej. Dataico) para
         // declarar Gran Contribuyente / Agente Retenedor de IVA / Autorretenedor en el header.
-        private static string ResponsabilidadTexto(bool activo, string etiqueta) =>
+        internal static string ResponsabilidadTexto(bool activo, string etiqueta) =>
             (activo ? "Somos " : "No somos ") + etiqueta;
 
         // invoice.PaymentMeansType ("CREDITO"/"DEBITO") e invoice.PaymentMeans (ej. "DEBIT_CARD")
@@ -57,7 +57,7 @@ namespace Fel.Infrastructure.Dataico
         // Kind=PaymentMeans, ambos administrados desde Superadmin) — el llamador (InvoiceController)
         // resuelve los catálogos reales desde la base de datos y los pasa acá; no se duplica su
         // contenido en este archivo, para que un cambio en Superadmin se refleje sin tocar código.
-        private static string CatalogLabel(string? category, IReadOnlyDictionary<string, string>? catalog) =>
+        internal static string CatalogLabel(string? category, IReadOnlyDictionary<string, string>? catalog) =>
             !string.IsNullOrEmpty(category) && catalog != null && catalog.TryGetValue(category, out var label) ? label : category ?? string.Empty;
 
         // client.UnitOfMeasureDisplayOverride, si está seteado, manda sobre el formato que trae

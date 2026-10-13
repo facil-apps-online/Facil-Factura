@@ -98,6 +98,14 @@ namespace Fel.Infrastructure.Services
             public bool IsGranContribuyente => ResponsibilityCodes.Contains("13");
             public bool IsAgenteRetenedorIva => ResponsibilityCodes.Contains("09");
             public bool IsAutorretenedorRenta => ResponsibilityCodes.Contains("15");
+
+            // Responsabilidad de renta: 47 = Régimen Simple, 05 = régimen ordinario, 04 = régimen
+            // especial. Son excluyentes; si el RUT no trae ninguna queda vacío.
+            public string IncomeTaxRegimeCode =>
+                ResponsibilityCodes.Contains("47") ? "47"
+                : ResponsibilityCodes.Contains("05") ? "05"
+                : ResponsibilityCodes.Contains("04") ? "04"
+                : string.Empty;
         }
 
         // Un trozo de texto contiguo de la página, con su posición.

@@ -41,7 +41,7 @@
       <Controls>
         <Item1 Ref="19" ControlType="XRLabel" Name="lblActividadEconomica" SizeF="1300,24" LocationFloat="0,0" Dpi="254" Font="DejaVu Sans, 6.5pt" ForeColor="Gray">
           <ExpressionBindings>
-            <Item1 Ref="20" EventName="BeforePrint" PropertyName="Text" Expression="'Actividad Económica Principal: ' + [Documento.EmisorActividadEconomica]" />
+            <Item1 Ref="20" EventName="BeforePrint" PropertyName="Text" Expression="'Actividad Económica Principal: ' + [Documento.EmisorActividadEconomica] + Iif([Documento.EmisorRegimenRenta] = '', '', '   ·   Renta: ' + [Documento.EmisorRegimenRenta])" />
           </ExpressionBindings>
           <StylePriority Ref="21" UseFont="false" UseForeColor="false" />
         </Item1>

@@ -116,39 +116,63 @@ export default function ClientFormFields({ client, setClient, associates, showBi
         return;
       }
 
+      // El RUT es la fuente de verdad: todo dato que trae con valor reemplaza al del formulario
+      // (una empresa puede cambiar de razón social, dirección o representante). Un dato que el
+      // RUT trae vacío no borra el que ya hay, y el NIT con su DV no cambian nunca en un cliente
+      // existente (ya se comprobó arriba que el RUT es del mismo NIT).
       const isExistingClient = Boolean(client.id);
-      const valueOrExisting = (rutValue: unknown, existingValue: unknown) =>
-        isExistingClient && String(existingValue || '').trim() ? existingValue : (rutValue || existingValue);
-      setClient((prev: any) => ({
+      const hasValue = (value: unknown) => String(value ?? '').trim() !== '';
+      const changed: string[] = [];
+      const fromRut = (label: string, rutValue: unknown, existingValue: unknown) => {
+        if (!hasValue(rutValue)) return existingValue;
+        if (isExistingClient && hasValue(existingValue) && String(rutValue).trim() !== String(existingValue).trim()) changed.push(label);
+        return rutValue;
+      };
+      // Las responsabilidades solo se toman si el RUT las trae (casilla 53 legible): si no, un RUT
+      // incompleto dejaría todo en "No somos…".
+      const rutHasResponsibilities = rut.hasResponsibilities === true;
+      const flagFromRut = (label: string, rutValue: boolean, existingValue: boolean) => {
+        if (!rutHasResponsibilities) return existingValue;
+        if (isExistingClient && Boolean(rutValue) !== Boolean(existingValue)) changed.push(label);
+        return Boolean(rutValue);
+      };
+      const prev = client;
+      setClient({
         ...prev,
-        companyName: valueOrExisting(rut.companyName, prev.companyName),
-        personType: valueOrExisting(rut.personType, prev.personType),
-        commercialName: valueOrExisting(rut.commercialName, prev.commercialName),
-        taxId: valueOrExisting(rut.taxId, prev.taxId),
-        verificationDigit: valueOrExisting(rut.verificationDigit, prev.verificationDigit),
-        email: valueOrExisting(rut.email, prev.email),
-        phone: valueOrExisting(rut.phone, prev.phone),
-        address: valueOrExisting(rut.address, prev.address),
-        city: valueOrExisting(rut.city, prev.city),
-        cityCode: valueOrExisting(rut.cityCode, prev.cityCode),
-        organizationDepartment: valueOrExisting(rut.department, prev.organizationDepartment),
-        legalRepresentativeFirstName: valueOrExisting(rut.legalRepresentativeFirstName, prev.legalRepresentativeFirstName),
-        legalRepresentativeOtherNames: valueOrExisting(rut.legalRepresentativeOtherNames, prev.legalRepresentativeOtherNames),
-        legalRepresentativeFirstLastName: valueOrExisting(rut.legalRepresentativeFirstLastName, prev.legalRepresentativeFirstLastName),
-        legalRepresentativeSecondLastName: valueOrExisting(rut.legalRepresentativeSecondLastName, prev.legalRepresentativeSecondLastName),
-        legalRepresentativeDocumentType: valueOrExisting(rut.legalRepresentativeDocumentType, prev.legalRepresentativeDocumentType),
-        legalRepresentativeDocumentNumber: valueOrExisting(rut.legalRepresentativeDocumentNumber, prev.legalRepresentativeDocumentNumber),
-        legalRepresentativeRepresentationCode: valueOrExisting(rut.legalRepresentativeRepresentationCode, prev.legalRepresentativeRepresentationCode),
-        legalRepresentativeStartDate: valueOrExisting(rut.legalRepresentativeStartDate, prev.legalRepresentativeStartDate),
-        economicActivity: valueOrExisting(rut.economicActivity, prev.economicActivity),
-        taxRegime: valueOrExisting(rut.taxRegime, prev.taxRegime),
-        isGranContribuyente: isExistingClient ? prev.isGranContribuyente : (rut.isGranContribuyente ?? prev.isGranContribuyente),
-        isAgenteRetenedorIva: isExistingClient ? prev.isAgenteRetenedorIva : (rut.isAgenteRetenedorIva ?? prev.isAgenteRetenedorIva),
-        isAutorretenedorRenta: isExistingClient ? prev.isAutorretenedorRenta : (rut.isAutorretenedorRenta ?? prev.isAutorretenedorRenta)
-      }));
-      toast.success(isExistingClient
-        ? 'RUT verificado: solo se completaron campos vacíos.'
-        : 'Datos del RUT cargados — revísalos antes de guardar.');
+        companyName: fromRut('razón social', rut.companyName, prev.companyName),
+        personType: fromRut('tipo de persona', rut.personType, prev.personType),
+        commercialName: fromRut('nombre comercial', rut.commercialName, prev.commercialName),
+        taxId: isExistingClient ? prev.taxId : (rut.taxId || prev.taxId),
+        verificationDigit: isExistingClient ? prev.verificationDigit : (rut.verificationDigit || prev.verificationDigit),
+        email: fromRut('correo', rut.email, prev.email),
+        phone: fromRut('teléfono', rut.phone, prev.phone),
+        address: fromRut('dirección', rut.address, prev.address),
+        city: fromRut('ciudad', rut.city, prev.city),
+        cityCode: fromRut('código DANE', rut.cityCode, prev.cityCode),
+        organizationDepartment: fromRut('departamento', rut.department, prev.organizationDepartment),
+        legalRepresentativeFirstName: fromRut('representante legal', rut.legalRepresentativeFirstName, prev.legalRepresentativeFirstName),
+        legalRepresentativeOtherNames: fromRut('representante legal', rut.legalRepresentativeOtherNames, prev.legalRepresentativeOtherNames),
+        legalRepresentativeFirstLastName: fromRut('representante legal', rut.legalRepresentativeFirstLastName, prev.legalRepresentativeFirstLastName),
+        legalRepresentativeSecondLastName: fromRut('representante legal', rut.legalRepresentativeSecondLastName, prev.legalRepresentativeSecondLastName),
+        legalRepresentativeDocumentType: fromRut('documento del representante', rut.legalRepresentativeDocumentType, prev.legalRepresentativeDocumentType),
+        legalRepresentativeDocumentNumber: fromRut('documento del representante', rut.legalRepresentativeDocumentNumber, prev.legalRepresentativeDocumentNumber),
+        legalRepresentativeRepresentationCode: fromRut('representación legal', rut.legalRepresentativeRepresentationCode, prev.legalRepresentativeRepresentationCode),
+        legalRepresentativeStartDate: fromRut('fecha de inicio del representante', rut.legalRepresentativeStartDate, prev.legalRepresentativeStartDate),
+        economicActivity: fromRut('actividad económica', rut.economicActivity, prev.economicActivity),
+        taxRegime: rutHasResponsibilities ? fromRut('régimen de IVA', rut.taxRegime, prev.taxRegime) : prev.taxRegime,
+        incomeTaxRegime: rutHasResponsibilities ? fromRut('régimen de renta', rut.incomeTaxRegime, prev.incomeTaxRegime) : prev.incomeTaxRegime,
+        isGranContribuyente: flagFromRut('Gran Contribuyente', rut.isGranContribuyente, prev.isGranContribuyente),
+        isAgenteRetenedorIva: flagFromRut('Agente Retenedor de IVA', rut.isAgenteRetenedorIva, prev.isAgenteRetenedorIva),
+        isAutorretenedorRenta: flagFromRut('Autorretenedor de renta', rut.isAutorretenedorRenta, prev.isAutorretenedorRenta)
+      });
+      if (!isExistingClient) {
+        toast.success('Datos del RUT cargados — revísalos antes de guardar.');
+      } else if (changed.length > 0) {
+        const unique = Array.from(new Set(changed));
+        toast.success(`RUT cargado — se actualizó: ${unique.join(', ')}. Revísalo y pulsa Guardar para aplicar los cambios.`);
+      } else {
+        toast.success('RUT cargado — los datos ya coincidían, no hay cambios.');
+      }
       geocodeRutAddress(rut.address, rut.city, rut.department);
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.response?.data || 'No se pudo leer el RUT');
@@ -222,6 +246,16 @@ export default function ClientFormFields({ client, setClient, associates, showBi
               <label className="block text-sm font-semibold text-slate-700 mb-2">CIIU</label>
               <input type="text" placeholder="Ej. 6201" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.economicActivity} onChange={e => setClient({ ...client, economicActivity: e.target.value })} />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Régimen de renta</label>
+            <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.incomeTaxRegime || ''} onChange={e => setClient({ ...client, incomeTaxRegime: e.target.value })}>
+              <option value="">Sin definir</option>
+              <option value="05">Ordinario (05)</option>
+              <option value="04">Especial (04)</option>
+              <option value="47">Régimen Simple de Tributación (47)</option>
+            </select>
           </div>
 
           <div>

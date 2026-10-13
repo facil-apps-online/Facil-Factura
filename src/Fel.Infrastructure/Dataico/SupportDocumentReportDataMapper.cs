@@ -143,6 +143,7 @@ namespace Fel.Infrastructure.Dataico
                     ["SucursalCodigo"] = location.BranchCode,
                     ["EmisorCalidadTributaria"] = CalidadTributaria(client.TaxRegime),
                     ["EmisorActividadEconomica"] = client.EconomicActivity,
+                    ["EmisorRegimenRenta"] = IncomeTaxRegimes.Label(client.IncomeTaxRegime),
                     ["EmisorGranContribuyente"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsGranContribuyente, "Gran Contribuyente"),
                     ["EmisorAgenteRetenedorIva"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsAgenteRetenedorIva, "Agente Retenedor del Impuesto sobre las Ventas - IVA"),
                     ["EmisorAutorretenedorRenta"] = InvoiceReportDataMapper.ResponsabilidadTexto(client.IsAutorretenedorRenta, "Autorretenedor del Impuesto sobre la Renta y Complementarios"),

@@ -96,7 +96,9 @@ namespace Fel.Api.Tenant.Controllers
                 isElectronicInvoicer = rut.IsElectronicInvoicer,
                 isGranContribuyente = rut.IsGranContribuyente,
                 isAgenteRetenedorIva = rut.IsAgenteRetenedorIva,
-                isAutorretenedorRenta = rut.IsAutorretenedorRenta
+                isAutorretenedorRenta = rut.IsAutorretenedorRenta,
+                hasResponsibilities = rut.ResponsibilityCodes.Count > 0,
+                incomeTaxRegime = rut.IncomeTaxRegimeCode
             });
         }
 
@@ -192,6 +194,7 @@ namespace Fel.Api.Tenant.Controllers
                 client.IsGranContribuyente,
                 client.IsAgenteRetenedorIva,
                 client.IsAutorretenedorRenta,
+                client.IncomeTaxRegime,
                  client.DecimalSeparator,
                  client.ElectronicInvoiceLegend,
                  client.SupportDocumentLegend,
@@ -213,6 +216,11 @@ namespace Fel.Api.Tenant.Controllers
             if (await _dbContext.Clients.AnyAsync(c => c.TaxId == request.TaxId && c.TenantId == tenantId))
             {
                 return BadRequest("El NIT ya está registrado en este Tenant.");
+            }
+
+            if (!IncomeTaxRegimes.IsValid(request.IncomeTaxRegime))
+            {
+                return BadRequest("El régimen de renta no es válido (05 ordinario, 04 especial o 47 simple).");
             }
 
             var client = new Client
@@ -247,6 +255,7 @@ namespace Fel.Api.Tenant.Controllers
                 IsGranContribuyente = request.IsGranContribuyente,
                 IsAgenteRetenedorIva = request.IsAgenteRetenedorIva,
                 IsAutorretenedorRenta = request.IsAutorretenedorRenta,
+                IncomeTaxRegime = string.IsNullOrEmpty(request.IncomeTaxRegime) ? null : request.IncomeTaxRegime,
                 DecimalSeparator = DecimalSeparators.IsValid(request.DecimalSeparator) ? request.DecimalSeparator! : DecimalSeparators.Point,
                 AssociateId = request.AssociateId,
                 Latitude = request.Latitude,
@@ -304,6 +313,11 @@ namespace Fel.Api.Tenant.Controllers
             
             if (client == null) return NotFound();
 
+            if (!IncomeTaxRegimes.IsValid(request.IncomeTaxRegime))
+            {
+                return BadRequest("El régimen de renta no es válido (05 ordinario, 04 especial o 47 simple).");
+            }
+
             client.CompanyName = request.CompanyName;
             client.PersonType = request.PersonType == "PN" ? "PN" : "PJ";
             client.CommercialName = request.CommercialName;
@@ -332,6 +346,7 @@ namespace Fel.Api.Tenant.Controllers
             client.IsGranContribuyente = request.IsGranContribuyente;
             client.IsAgenteRetenedorIva = request.IsAgenteRetenedorIva;
             client.IsAutorretenedorRenta = request.IsAutorretenedorRenta;
+            client.IncomeTaxRegime = string.IsNullOrEmpty(request.IncomeTaxRegime) ? null : request.IncomeTaxRegime;
             // Solo se cambia si viene un valor válido: un portal con una versión anterior del formulario no lo envía.
              if (DecimalSeparators.IsValid(request.DecimalSeparator)) client.DecimalSeparator = request.DecimalSeparator!;
              client.ElectronicInvoiceLegend = request.ElectronicInvoiceLegend?.Trim() ?? string.Empty;
@@ -715,6 +730,7 @@ namespace Fel.Api.Tenant.Controllers
         public bool IsGranContribuyente { get; set; }
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
+        public string? IncomeTaxRegime { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
          public string? DecimalSeparator { get; set; }
          public string? ElectronicInvoiceLegend { get; set; }
@@ -777,6 +793,7 @@ namespace Fel.Api.Tenant.Controllers
         public bool IsGranContribuyente { get; set; }
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
+        public string? IncomeTaxRegime { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
         public string? DecimalSeparator { get; set; }
         public double? Latitude { get; set; }

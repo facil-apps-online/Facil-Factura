@@ -58,6 +58,11 @@ namespace Fel.Core.Entities
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
 
+        // Responsabilidad de renta del RUT (casilla 53), excluyentes entre sí: 05 = Impuesto de renta
+        // y complementarios régimen ordinario, 04 = régimen especial, 47 = Régimen Simple de
+        // Tributación. Vacío = aún no capturado: la representación gráfica no declara nada.
+        public string? IncomeTaxRegime { get; set; }
+
         // null = usar el DisplayFormat que trae cada fila del catálogo de Unidades de Medida;
         // con valor, el Client fuerza el mismo formato para todas sus unidades en sus facturas
         // (Combined = "94 - EA", CodeOnly = "94", AbbreviationOnly = "EA").

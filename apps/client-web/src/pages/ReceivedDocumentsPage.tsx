@@ -3,7 +3,7 @@ import { Inbox, Mail, Upload, Loader2, CheckCircle2, XCircle, Send, Undo2 } from
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import { useNumberFormat } from '../lib/numberFormat';
-import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import { ALL_BRANCHES, useSession } from '../context/SessionContext';
 import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 
@@ -166,12 +166,12 @@ export default function ReceivedDocumentsPage() {
     { code: '031', label: 'Reclamo' },
   ] as const;
 
-  const columns: ResponsiveListColumn<any>[] = [
-    { key: 'issuer', header: 'Proveedor', primary: true, cellClassName: 'font-semibold text-slate-700', render: doc => doc.issuerName || doc.issuerTaxId },
-    { key: 'documentId', header: 'Documento', cellClassName: 'font-mono text-sm text-slate-600', render: doc => doc.documentId },
-    { key: 'issueDate', header: 'Fecha', cellClassName: 'text-sm text-slate-500', render: doc => new Date(doc.issueDate).toLocaleDateString() },
-    { key: 'total', header: 'Total', cellClassName: 'font-mono text-sm', render: doc => `${fmt.number(Number(doc.totalAmount), 3)}` },
-    { key: 'source', header: 'Origen', hideBelow: 'ultra', cellClassName: 'text-xs text-slate-400', render: doc => (doc.sourceType === 'Email' ? 'Correo' : 'Manual') },
+  const columns: DataTableColumn<any>[] = [
+    { key: 'issuer', header: 'Proveedor', primary: true, cellClassName: 'font-semibold text-slate-700', render: doc => doc.issuerName || doc.issuerTaxId, sortValue: doc => doc.issuerName || doc.issuerTaxId, searchValue: doc => `${doc.issuerName ?? ''} ${doc.issuerTaxId ?? ''}` },
+    { key: 'documentId', header: 'Documento', cellClassName: 'font-mono text-sm text-slate-600', render: doc => doc.documentId, sortValue: doc => doc.documentId, searchValue: doc => doc.documentId },
+    { key: 'issueDate', header: 'Fecha', cellClassName: 'text-sm text-slate-500', render: doc => new Date(doc.issueDate).toLocaleDateString(), sortValue: doc => doc.issueDate },
+    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono text-sm', render: doc => `${fmt.number(Number(doc.totalAmount), 3)}`, sortValue: doc => Number(doc.totalAmount) },
+    { key: 'source', header: 'Origen', hideBelow: 'ultra', cellClassName: 'text-xs text-slate-400', render: doc => (doc.sourceType === 'Email' ? 'Correo' : 'Manual'), sortValue: doc => (doc.sourceType === 'Email' ? 'Correo' : 'Manual') },
     {
       key: 'events',
       header: 'Eventos',
@@ -350,7 +350,7 @@ export default function ReceivedDocumentsPage() {
             <p className="text-slate-500">Aún no tienes documentos recibidos.</p>
           </div>
         ) : (
-          <ResponsiveList rows={documents} columns={columns} rowKey={doc => doc.id} tableFrom="2xl" />
+          <DataTable rows={documents} columns={columns} rowKey={doc => doc.id} tableFrom="2xl" search="Buscar por proveedor, NIT o número de documento..." defaultSort={{ key: 'issueDate', dir: 'desc' }} />
         )}
       </div>
     </div>

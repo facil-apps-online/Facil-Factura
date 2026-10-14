@@ -6,6 +6,7 @@ import axios from 'axios';
 import { api } from './api';
 import { useJsApiLoader, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import { TenantEdit } from './TenantEdit';
 import { Certificates } from './Certificates';
 import { DocumentTypes } from './DocumentTypes';
@@ -283,6 +284,36 @@ interface RegistrationData {
   languages: RegLanguage[];
   currencies: RegCurrency[];
 }
+
+const tenantColumns: DataTableColumn<Tenant>[] = [
+  {
+    key: 'company',
+    header: 'Empresa',
+    primary: true,
+    render: t => (
+      <>
+        <p className="text-white font-semibold">{t.commercialName}</p>
+        <p className="text-xs text-slate-400 mt-0.5 font-normal">{t.name}</p>
+      </>
+    ),
+    sortValue: t => t.commercialName,
+    searchValue: t => `${t.commercialName} ${t.name}`,
+  },
+  { key: 'slug', header: 'Slug', cellClassName: 'text-slate-300 font-mono text-sm', render: t => t.slug, sortValue: t => t.slug, searchValue: t => t.slug },
+  {
+    key: 'status',
+    header: 'Estado',
+    render: t => (
+      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${t.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' : 'bg-red-50 text-red-700 border-red-200/50'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${t.isActive ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+        {t.isActive ? 'Operativo' : 'Suspendido'}
+      </span>
+    ),
+    sortValue: t => (t.isActive ? 0 : 1),
+    searchValue: t => (t.isActive ? 'Operativo' : 'Suspendido'),
+  },
+  { key: 'createdAt', header: 'Creado', cellClassName: 'text-slate-400 text-sm whitespace-nowrap', render: t => new Date(t.createdAt).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' }), sortValue: t => t.createdAt },
+];
 
 const TenantsList = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -712,42 +743,22 @@ const TenantsList = () => {
         </div>
       )}
 
-      <div className="glass-panel rounded-2xl overflow-hidden mt-8">
-        <table className="w-full text-left border-collapse">
-          <thead className="bg-slate-900/50">
-            <tr>
-              <th className="px-6 py-4 text-slate-400 font-semibold text-sm border-b border-slate-700/50">Empresa</th>
-              <th className="px-6 py-4 text-slate-400 font-semibold text-sm border-b border-slate-700/50">Slug</th>
-              <th className="px-6 py-4 text-slate-400 font-semibold text-sm border-b border-slate-700/50">Estado</th>
-              <th className="px-6 py-4 text-slate-400 font-semibold text-sm border-b border-slate-700/50 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {tenants.map(t => (
-              <tr key={t.id} className="hover:bg-slate-800/30 transition-colors group">
-                <td className="px-6 py-4">
-                  <p className="text-white font-semibold">{t.commercialName}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{t.name}</p>
-                </td>
-                <td className="px-6 py-4 text-slate-300 font-mono text-sm">{t.slug}</td>
-                <td className="px-6 py-4">
-                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${t.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' : 'bg-red-50 text-red-700 border-red-200/50'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${t.isActive ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-                    {t.isActive ? 'Operativo' : 'Suspendido'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <button onClick={() => navigate(`/tenants/edit/${t.id}`)} className="text-blue-600 font-semibold text-sm hover:text-blue-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                    Configurar &rarr;
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {tenants.length === 0 && (
-              <tr><td colSpan={4} className="text-center py-12 text-slate-500 font-medium">Aún no hay cuentas registradas.</td></tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-8">
+        <DataTable
+          theme="dark"
+          rows={tenants}
+          rowKey={t => t.id}
+          tableFrom="md"
+          search="Buscar por empresa o slug..."
+          defaultSort={{ key: 'company', dir: 'asc' }}
+          emptyMessage="Aún no hay cuentas registradas."
+          columns={tenantColumns}
+          actions={t => (
+            <button onClick={() => navigate(`/tenants/edit/${t.id}`)} className="text-blue-400 font-semibold text-sm hover:text-blue-300 transition-colors">
+              Configurar &rarr;
+            </button>
+          )}
+        />
       </div>
     </div>
   );

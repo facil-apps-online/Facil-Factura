@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Code2, Mail, RotateCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface Developer {
   id: string;
@@ -78,6 +79,29 @@ export default function Developers() {
     }
   };
 
+  const columns: DataTableColumn<Developer>[] = [
+    {
+      key: 'name',
+      header: 'Nombre',
+      primary: true,
+      cellClassName: 'font-medium text-slate-800',
+      render: d => <span className="inline-flex items-center gap-2"><Code2 size={16} className="text-slate-400" /> {d.name}</span>,
+      sortValue: d => d.name,
+      searchValue: d => d.name,
+    },
+    { key: 'email', header: 'Email', cellClassName: 'text-slate-600', render: d => d.email, sortValue: d => d.email, searchValue: d => d.email },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: d => d.isActive ? (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">Activo</span>
+      ) : (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100 border border-rose-200">Revocado</span>
+      ),
+      sortValue: d => (d.isActive ? 0 : 1),
+    },
+  ];
+
   return (
     <div className="p-10 h-full overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-8">
@@ -97,55 +121,31 @@ export default function Developers() {
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-medium border-b border-slate-100">
-            <tr>
-              <th className="px-6 py-4">Nombre</th>
-              <th className="px-6 py-4">Email</th>
-              <th className="px-6 py-4">Estado</th>
-              <th className="px-6 py-4 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 text-sm">
-            {developers.length === 0 && !loading && (
-              <tr><td colSpan={4} className="text-center py-8 text-slate-500">Aún no has invitado a ningún desarrollador.</td></tr>
-            )}
-            {developers.map(d => (
-              <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-6 py-4 font-medium text-slate-800 flex items-center gap-2">
-                  <Code2 size={16} className="text-slate-400" /> {d.name}
-                </td>
-                <td className="px-6 py-4 text-slate-600">{d.email}</td>
-                <td className="px-6 py-4">
-                  {d.isActive ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">Activo</span>
-                  ) : (
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100 border border-rose-200">Revocado</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 flex items-center justify-end gap-3">
-                  {d.isActive ? (
-                    <>
-                      <button onClick={() => handleResendInvitation(d.id)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Reenviar invitación">
-                        <Mail size={16} />
-                      </button>
-                      <button onClick={() => handleRevoke(d.id)} className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Revocar acceso">
-                        <Trash2 size={16} />
-                      </button>
-                    </>
-                  ) : (
-                    <button onClick={() => handleReactivate(d.id)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Reactivar acceso">
-                      <RotateCcw size={14} />
-                      Reactivar
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        rows={developers}
+        rowKey={d => d.id}
+        loading={loading}
+        tableFrom="md"
+        search="Buscar por nombre o correo..."
+        defaultSort={{ key: 'name', dir: 'asc' }}
+        emptyMessage="Aún no has invitado a ningún desarrollador."
+        columns={columns}
+        actions={d => (d.isActive ? (
+          <>
+            <button onClick={() => handleResendInvitation(d.id)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Reenviar invitación" aria-label={`Reenviar invitación a ${d.name}`}>
+              <Mail size={16} />
+            </button>
+            <button onClick={() => handleRevoke(d.id)} className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Revocar acceso" aria-label={`Revocar acceso de ${d.name}`}>
+              <Trash2 size={16} />
+            </button>
+          </>
+        ) : (
+          <button onClick={() => handleReactivate(d.id)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Reactivar acceso">
+            <RotateCcw size={14} />
+            Reactivar
+          </button>
+        ))}
+      />
 
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center">

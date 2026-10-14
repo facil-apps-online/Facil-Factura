@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, RotateCcw, X, UserPlus, Percent, Search, Download, ChevronLeft, ChevronRight, Printer, Link2, Info, AlertCircle, Mail } from 'lucide-react';
+import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, RotateCcw, X, UserPlus, Percent, Search, Download, Printer, Link2, Info, AlertCircle, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -12,7 +12,7 @@ import { useNumberFormat } from '../lib/numberFormat';
 import DecimalInput from '../components/DecimalInput';
 import { todayColombia } from '../lib/colombiaTime';
 import Modal from '../components/Modal';
-import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import { Button } from '../components/ui/button';
 import { STATUS_FILTER_OPTIONS, STATUS_LABELS } from '../lib/documentStatus';
@@ -21,7 +21,6 @@ import DianResponseDialog from '../components/DianResponseDialog';
 import { usePdfPreview } from '../lib/pdfPreview';
 import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
 
-const PAGE_SIZE = 25;
 
 const IVA_TREATMENTS = [
   { value: 'Gravado', label: 'Gravado' },
@@ -185,7 +184,6 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [resendEmailDraft, setResendEmailDraft] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resolutionFilter, setResolutionFilter] = useState('');
-  const [page, setPage] = useState(1);
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [retentionCatalog, setRetentionCatalog] = useState<{ id: string, category: string, name: string, rate: number }[]>([]);
   const [ivaRateCatalog, setIvaRateCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
@@ -256,10 +254,6 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   useEffect(() => {
     loadData();
   }, [datePreset, appliedCustomFrom, appliedCustomTo]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [searchTerm, statusFilter, resolutionFilter, datePreset, appliedCustomFrom, appliedCustomTo]);
 
   useEffect(() => {
     if (!relatedOpenId) return;
@@ -1356,9 +1350,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     <p className="text-xs text-slate-400 mt-1">Va en la línea de Administración como: "{'Contrato de servicios AIU por concepto de:'} …"</p>
                   </div>
                 </div>
-                <ResponsiveList
+                <DataTable
                   rows={formData.items.map((item, index) => ({ item, index }))}
                   rowKey={row => String(row.index)}
+                  paginate={false}
                   tableFrom="md"
                   columns={[
                     { key: 'name', header: 'Concepto', primary: true, render: (row: any) => row.item.name },
@@ -1827,9 +1822,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </div>
             )}
 
-            <ResponsiveList
+            <DataTable
               rows={(inv.items || []).map((item: any, idx: number) => ({ item, idx }))}
               rowKey={row => String(row.idx)}
+              paginate={false}
               tableFrom="xl"
               columns={[
                 { key: 'name', header: 'Producto', primary: true, cellClassName: 'text-sm text-slate-700', render: (row: any) => row.item.name },
@@ -1886,9 +1882,6 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       if (rankDiff !== 0) return rankDiff;
       return (parseInt(b.number) || 0) - (parseInt(a.number) || 0);
     });
-  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const selectedRows = filteredInvoices.filter(r => batchSelection.selected.has(r.id));
   const notEditableCount = selectedRows.filter(r => !isBatchEditable(r.status)).length;
   const batchRunning = batch.progress !== null && !batch.progress.finished;
@@ -1908,9 +1901,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const batchSelectionProps = {
     isSelected: (r: any) => batchSelection.selected.has(r.id),
     onToggle: (r: any) => batchSelection.toggle(r.id),
-    onToggleAll: () => batchSelection.toggleMany(paginatedInvoices.map(r => r.id)),
-    allSelected: paginatedInvoices.length > 0 && paginatedInvoices.every(r => batchSelection.selected.has(r.id)),
-    someSelected: paginatedInvoices.some(r => batchSelection.selected.has(r.id)),
+    onToggleMany: (rows: any[]) => batchSelection.toggleMany(rows.map(r => r.id)),
     label: (r: any) => `Seleccionar ${cfg.singular} ${r.number || 'borrador'}`,
   };
   // Nota Crédito resta del saldo (es una devolución/anulación parcial), Nota Débito suma igual
@@ -1967,12 +1958,13 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     </span>
   );
 
-  const columns: ResponsiveListColumn<any>[] = [
-    { key: 'date', header: 'Fecha', cellClassName: 'text-slate-500 text-sm', render: inv => new Date(inv.issueDate).toLocaleDateString('es-CO') },
+  const columns: DataTableColumn<any>[] = [
+    { key: 'date', header: 'Fecha', cellClassName: 'text-slate-500 text-sm', render: inv => new Date(inv.issueDate).toLocaleDateString('es-CO'), sortValue: inv => inv.issueDate },
     {
       key: 'number',
       header: 'Número',
       primary: true,
+      sortValue: inv => `${inv.prefix || inv.resolution?.prefix || ''} ${inv.number || ''}`,
       cellClassName: 'font-bold text-slate-700',
       render: inv => (
         <div className="flex flex-wrap items-center gap-2">
@@ -2012,12 +2004,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         </div>
       )
     },
-    { key: 'party', header: cfg.party, cardFullWidth: true, cellClassName: 'text-slate-900 min-w-[180px]', render: inv => inv.customer?.name || 'Consumidor Final' },
-    { key: 'subtotal', header: 'Subtotal', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `$${fmt.money((inv.subtotal || 0))}` },
-    { key: 'tax', header: 'Impuestos', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `$${fmt.money((inv.taxAmount || 0))}` },
-    { key: 'retentions', header: 'Retenciones', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-rose-600', render: inv => `-$${fmt.money(invoiceRetentionsTotal(inv))}` },
-    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-medium', render: inv => `$${fmt.money(invoiceNetTotal(inv))}` },
-    { key: 'status', header: 'Estado', render: inv => statusBadge(inv.status) }
+    { key: 'party', header: cfg.party, cardFullWidth: true, cellClassName: 'text-slate-900 min-w-[180px]', render: inv => inv.customer?.name || 'Consumidor Final', sortValue: inv => inv.customer?.name || 'Consumidor Final' },
+    { key: 'subtotal', header: 'Subtotal', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `$${fmt.money((inv.subtotal || 0))}`, sortValue: inv => inv.subtotal || 0 },
+    { key: 'tax', header: 'Impuestos', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `$${fmt.money((inv.taxAmount || 0))}`, sortValue: inv => inv.taxAmount || 0 },
+    { key: 'retentions', header: 'Retenciones', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-rose-600', render: inv => `-$${fmt.money(invoiceRetentionsTotal(inv))}`, sortValue: inv => invoiceRetentionsTotal(inv) },
+    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-medium', render: inv => `$${fmt.money(invoiceNetTotal(inv))}`, sortValue: inv => invoiceNetTotal(inv) },
+    { key: 'status', header: 'Estado', render: inv => statusBadge(inv.status), sortValue: inv => STATUS_LABELS[inv.status] || inv.status }
   ];
 
 
@@ -2125,8 +2117,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       />
       <BatchProgressDialog progress={batch.progress} labelOf={batchLabelOf} noun={{ singular: 'documento', plural: 'documentos' }} onClose={batch.close} />
 
-      <ResponsiveList
-        rows={paginatedInvoices}
+      <DataTable
+        rows={filteredInvoices}
+        resetKey={`${searchTerm}|${statusFilter}|${resolutionFilter}|${datePreset}|${appliedCustomFrom}|${appliedCustomTo}`}
         selection={batchSelectionProps}
         columns={columns}
         rowKey={inv => inv.id}
@@ -2178,22 +2171,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         </div>
       )}
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-slate-400">{filteredInvoices.length} documento{filteredInvoices.length === 1 ? '' : 's'} en el periodo</p>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between gap-3 sm:justify-end">
-            <p className="text-sm text-slate-500">Página {currentPage} de {totalPages}</p>
-            <div className="flex gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} aria-label="Página anterior" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors lg:h-9 lg:w-9">
-                <ChevronLeft size={18} />
-              </button>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} aria-label="Página siguiente" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors lg:h-9 lg:w-9">
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <p className="mt-4 text-sm text-slate-400">{filteredInvoices.length} documento{filteredInvoices.length === 1 ? '' : 's'} en el periodo</p>
 
       {responseModalInv && (
         <DianResponseDialog doc={responseModalInv} label={`${cfg.singular} ${responseModalInv.number || 'Borrador'}`} onClose={() => setResponseModalInv(null)} />

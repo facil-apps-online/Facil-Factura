@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Play, FileText, CheckCircle, Clock, TrendingUp, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface TenantUsageBreakdown {
   tenantId: string;
@@ -18,6 +19,23 @@ interface SuperadminBillingMetrics {
   totalAmountDueFromTenants: number;
   tenantBreakdown: TenantUsageBreakdown[];
 }
+
+const breakdownColumns: DataTableColumn<TenantUsageBreakdown>[] = [
+  { key: 'tenant', header: 'Tenant', primary: true, cellClassName: 'font-bold text-slate-200 text-lg', render: t => t.tenantName, sortValue: t => t.tenantName, searchValue: t => t.tenantName },
+  {
+    key: 'documents',
+    header: 'Documentos',
+    align: 'right',
+    render: t => (
+      <div className="flex items-center justify-end text-slate-300 font-medium">
+        <FileText className="w-4 h-4 mr-2 text-slate-500" /> {t.documentsEmitted} docs
+      </div>
+    ),
+    sortValue: t => t.documentsEmitted,
+  },
+  { key: 'tariff', header: 'Tarifa aplicada', align: 'right', cellClassName: 'text-slate-400 font-mono', render: t => `$${t.tariffApplied.toLocaleString('es-CO')} c/u`, sortValue: t => t.tariffApplied },
+  { key: 'subtotal', header: 'Subtotal', align: 'right', cellClassName: 'font-bold text-indigo-400 text-lg', render: t => `$ ${t.amountDueToSuperadmin.toLocaleString('es-CO')}`, sortValue: t => t.amountDueToSuperadmin },
+];
 
 export const Billing = () => {
   const [metrics, setMetrics] = useState<SuperadminBillingMetrics | null>(null);
@@ -76,45 +94,16 @@ export const Billing = () => {
         <Users className="w-5 h-5 mr-2 text-slate-400" />
         Desglose por Tenant
       </h2>
-      <div className="glass-panel rounded-3xl overflow-hidden shadow-2xl">
-        <table className="w-full text-left">
-          <thead className="bg-slate-900/50 border-b border-slate-700/50">
-            <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tenant</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Documentos</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tarifa aplicada</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {metrics.tenantBreakdown.map((t, idx) => (
-              <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                <td className="px-6 py-4 font-bold text-slate-200 text-lg">
-                  {t.tenantName}
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center text-slate-300 font-medium">
-                    <FileText className="w-4 h-4 mr-2 text-slate-500" /> {t.documentsEmitted} docs
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-slate-400 font-mono">
-                  ${t.tariffApplied.toLocaleString('es-CO')} c/u
-                </td>
-                <td className="px-6 py-4 font-bold text-indigo-400 text-lg">
-                  $ {t.amountDueToSuperadmin.toLocaleString('es-CO')}
-                </td>
-              </tr>
-            ))}
-            {metrics.tenantBreakdown.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-6 py-12 text-center text-slate-500 font-medium">
-                  No se ha registrado emisión de documentos este mes.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        theme="dark"
+        rows={metrics.tenantBreakdown}
+        rowKey={t => t.tenantId}
+        tableFrom="md"
+        search="Buscar tenant..."
+        defaultSort={{ key: 'tenant', dir: 'asc' }}
+        emptyMessage="No se ha registrado emisión de documentos este mes."
+        columns={breakdownColumns}
+      />
     </div>
   );
 };

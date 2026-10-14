@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Pencil, Mail, Power, PowerOff, X, UserRound, Loader2, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface ClientUserRow {
   id: string;
@@ -53,6 +54,38 @@ export default function ClientUsersTab({ clientId }: { clientId: string }) {
   }, [clientId]);
 
   const branchName = (branchId: string) => branches.find(b => b.id === branchId)?.name ?? '—';
+
+  const branchLabel = (u: ClientUserRow) => (u.allBranches ? 'Todas' : u.branchIds.map(branchName).join(', '));
+  const statusLabel = (u: ClientUserRow) => (u.isActive ? 'Activo' : 'Desactivado');
+
+  const columns: DataTableColumn<ClientUserRow>[] = [
+    {
+      key: 'user',
+      header: 'Usuario',
+      primary: true,
+      render: u => (
+        <>
+          <div className="font-bold text-slate-700">{u.name}</div>
+          <div className="text-xs text-slate-500 font-normal">{u.email}</div>
+        </>
+      ),
+      sortValue: u => u.name,
+      searchValue: u => `${u.name} ${u.email}`,
+    },
+    { key: 'role', header: 'Rol', cellClassName: 'text-slate-600', render: u => u.role, sortValue: u => u.role, searchValue: u => u.role },
+    { key: 'branches', header: 'Sucursales', cellClassName: 'text-slate-600', render: u => branchLabel(u), sortValue: u => branchLabel(u), searchValue: u => branchLabel(u) },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: u => (
+        <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${u.isActive ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>
+          {statusLabel(u)}
+        </span>
+      ),
+      sortValue: u => statusLabel(u),
+      searchValue: u => statusLabel(u),
+    },
+  ];
 
   const openCreate = () => {
     setEditingId(null);
@@ -148,48 +181,28 @@ export default function ClientUsersTab({ clientId }: { clientId: string }) {
             <p className="text-slate-500 max-w-sm mt-1 text-sm">Invita al primer Administrador para que el cliente pueda ingresar al portal.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto mt-6">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 text-sm border-y border-slate-200">
-                  <th className="font-semibold py-3 px-4 rounded-tl-xl">Usuario</th>
-                  <th className="font-semibold py-3 px-4">Rol</th>
-                  <th className="font-semibold py-3 px-4">Sucursales</th>
-                  <th className="font-semibold py-3 px-4">Estado</th>
-                  <th className="font-semibold py-3 px-4 text-center rounded-tr-xl">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 px-4">
-                      <div className="font-bold text-slate-700">{u.name}</div>
-                      <div className="text-xs text-slate-500">{u.email}</div>
-                    </td>
-                    <td className="py-4 px-4 text-sm text-slate-600">{u.role}</td>
-                    <td className="py-4 px-4 text-sm text-slate-600">{u.allBranches ? 'Todas' : u.branchIds.map(branchName).join(', ')}</td>
-                    <td className="py-4 px-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${u.isActive ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'}`}>
-                        {u.isActive ? 'Activo' : 'Desactivado'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => openEdit(u)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar"><Pencil size={16} /></button>
-                        {u.isActive && (
-                          <button onClick={() => resend(u)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Reenviar invitación"><Mail size={16} /></button>
-                        )}
-                        {u.isActive ? (
-                          <button onClick={() => setActive(u, false)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Desactivar"><PowerOff size={16} /></button>
-                        ) : (
-                          <button onClick={() => setActive(u, true)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Reactivar"><Power size={16} /></button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-6">
+            <DataTable
+              rows={users}
+              rowKey={u => u.id}
+              tableFrom="md"
+              search="Buscar por nombre, correo, rol o sucursal..."
+              defaultSort={{ key: 'user', dir: 'asc' }}
+              columns={columns}
+              actions={u => (
+                <>
+                  <button onClick={() => openEdit(u)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar" aria-label={`Editar a ${u.name}`}><Pencil size={16} /></button>
+                  {u.isActive && (
+                    <button onClick={() => resend(u)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Reenviar invitación" aria-label={`Reenviar invitación a ${u.name}`}><Mail size={16} /></button>
+                  )}
+                  {u.isActive ? (
+                    <button onClick={() => setActive(u, false)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Desactivar" aria-label={`Desactivar a ${u.name}`}><PowerOff size={16} /></button>
+                  ) : (
+                    <button onClick={() => setActive(u, true)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Reactivar" aria-label={`Reactivar a ${u.name}`}><Power size={16} /></button>
+                  )}
+                </>
+              )}
+            />
           </div>
         )}
       </div>

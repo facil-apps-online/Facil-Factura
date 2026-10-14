@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FileText, CheckCircle, XCircle, Clock, Loader2, TrendingDown, TrendingUp, Users } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface TenantBillingMetrics {
   year: number;
@@ -12,6 +13,29 @@ interface TenantBillingMetrics {
   amountDueFromClients: number;
   clientBreakdown: any[];
 }
+
+interface ClientConsumption {
+  clientName: string;
+  documentsEmitted: number;
+  priceApplied: number;
+  amountDueToTenant: number;
+  rowId?: string;
+}
+
+const money = (value: number) => `$${value.toLocaleString('es-CO')}`;
+
+const consumptionColumns: DataTableColumn<ClientConsumption>[] = [
+  { key: 'client', header: 'Cliente', primary: true, cellClassName: 'font-bold text-slate-700', render: c => c.clientName, sortValue: c => c.clientName, searchValue: c => c.clientName },
+  {
+    key: 'documents',
+    header: 'Documentos emitidos',
+    align: 'right',
+    render: c => <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-medium">{c.documentsEmitted}</span>,
+    sortValue: c => c.documentsEmitted,
+  },
+  { key: 'price', header: 'Tarifa', align: 'right', cellClassName: 'text-slate-500 font-mono', render: c => money(c.priceApplied), sortValue: c => c.priceApplied },
+  { key: 'subtotal', header: 'Subtotal', align: 'right', cellClassName: 'font-bold text-emerald-600', render: c => money(c.amountDueToTenant), sortValue: c => c.amountDueToTenant },
+];
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState({ totalIssued: 0, totalApproved: 0, totalRejected: 0, totalProcessing: 0 });
@@ -99,44 +123,20 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-12">
-        <div className="p-6 border-b border-slate-100 flex items-center bg-slate-50">
+      <div className="mb-12">
+        <div className="flex items-center mb-4">
           <Users className="w-5 h-5 text-slate-500 mr-2" />
           <h2 className="text-lg font-bold text-slate-800">Consumo por cliente</h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
-                <th className="p-4 font-bold">Cliente</th>
-                <th className="p-4 font-bold text-center">Documentos emitidos</th>
-                <th className="p-4 font-bold text-right">Tarifa</th>
-                <th className="p-4 font-bold text-right">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody className="text-sm">
-              {billingMetrics.clientBreakdown.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="py-8 text-center text-slate-500 font-medium">
-                    No hay clientes emitiendo documentos este mes.
-                  </td>
-                </tr>
-              )}
-              {billingMetrics.clientBreakdown.map((cb, i) => (
-                <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                  <td className="p-4 font-bold text-slate-700">{cb.clientName}</td>
-                  <td className="p-4 text-center text-slate-600 font-medium">
-                    <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full">{cb.documentsEmitted}</span>
-                  </td>
-                  <td className="p-4 text-right text-slate-500 font-mono">${cb.priceApplied.toLocaleString('es-CO')}</td>
-                  <td className="p-4 text-right font-bold text-emerald-600 text-base">
-                    ${cb.amountDueToTenant.toLocaleString('es-CO')}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          rows={(billingMetrics.clientBreakdown as ClientConsumption[]).map((c, i) => ({ ...c, rowId: String(i) }))}
+          rowKey={c => c.rowId ?? c.clientName}
+          tableFrom="md"
+          search="Buscar cliente..."
+          defaultSort={{ key: 'client', dir: 'asc' }}
+          emptyMessage="No hay clientes emitiendo documentos este mes."
+          columns={consumptionColumns}
+        />
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">

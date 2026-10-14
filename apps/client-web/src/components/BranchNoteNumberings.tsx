@@ -7,7 +7,7 @@ import { api, getErrorMessage } from '../lib/api';
 import { useSession } from '../context/SessionContext';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Modal from './Modal';
-import ResponsiveList, { type ResponsiveListColumn } from './ResponsiveList';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from './RowIconButton';
 import { Button } from './ui/button';
 
@@ -97,11 +97,11 @@ export default function BranchNoteNumberings() {
     }
   };
 
-  const columns = useMemo<ResponsiveListColumn<BranchNumbering>[]>(() => [
-    { key: 'branch', header: 'Sucursal', primary: true, render: r => <span className="font-semibold text-slate-800">{r.branchName}</span> },
-    { key: 'kind', header: 'Tipo de nota', render: r => r.kindLabel },
-    { key: 'prefix', header: 'Prefijo', cellClassName: 'font-mono font-bold text-slate-700', render: r => r.prefix },
-    { key: 'next', header: 'Próximo #', cellClassName: 'font-mono font-bold text-slate-700', render: r => r.nextNumber },
+  const columns = useMemo<DataTableColumn<BranchNumbering>[]>(() => [
+    { key: 'branch', header: 'Sucursal', primary: true, render: r => <span className="font-semibold text-slate-800">{r.branchName}</span>, sortValue: r => r.branchName },
+    { key: 'kind', header: 'Tipo de nota', render: r => r.kindLabel, sortValue: r => r.kindLabel },
+    { key: 'prefix', header: 'Prefijo', cellClassName: 'font-mono font-bold text-slate-700', render: r => r.prefix, sortValue: r => r.prefix },
+    { key: 'next', header: 'Próximo #', cellClassName: 'font-mono font-bold text-slate-700', render: r => r.nextNumber, sortValue: r => Number(r.nextNumber) },
   ], []);
 
   return (
@@ -117,11 +117,12 @@ export default function BranchNoteNumberings() {
       {loading ? (
         <div className="flex justify-center p-6"><Loader2 className="animate-spin text-primary" size={24} /></div>
       ) : (
-        <ResponsiveList
+        <DataTable
           rows={rows}
           columns={columns}
           rowKey={r => `${r.branchId}-${r.kind}`}
           tableFrom="lg"
+          defaultSort={{ key: 'branch', dir: 'asc' }}
           emptyMessage="Ninguna sucursal tiene numeración propia."
           actions={r => (
             <>

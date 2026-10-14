@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Modal from '../components/Modal';
-import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import ResolutionBranchesModal from '../components/ResolutionBranchesModal';
 import BranchNoteNumberings from '../components/BranchNoteNumberings';
@@ -421,7 +421,7 @@ export default function ResolutionsSettings() {
   // Botones de icono de las ediciones en línea (guardar/cancelar): 44 px en móvil/tableta.
   const inlineIconButton = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg md:h-8 md:w-8';
 
-  const columns: ResponsiveListColumn<any>[] = [
+  const columns: DataTableColumn<any>[] = [
     {
       key: 'type',
       header: 'Tipo / Prefijo',
@@ -431,14 +431,16 @@ export default function ResolutionsSettings() {
           <span className={`px-2 py-1 rounded-md text-xs font-bold ${r.documentType === 'FE' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{r.documentType === 'POS' ? 'DS' : r.documentType}</span>
           <span className="font-bold text-slate-700 text-lg">{r.prefix || '-'}</span>
         </div>
-      )
+      ),
+      sortValue: r => `${r.documentType === 'POS' ? 'DS' : r.documentType} ${r.prefix ?? ''}`
     },
-    { key: 'number', header: 'No. Resolución', cellClassName: 'font-mono text-sm text-slate-600 font-medium', render: r => r.resolutionNumber },
+    { key: 'number', header: 'No. Resolución', cellClassName: 'font-mono text-sm text-slate-600 font-medium', render: r => r.resolutionNumber, sortValue: r => r.resolutionNumber },
     {
       key: 'range',
       header: 'Rango Autorizado',
       cellClassName: 'text-sm text-slate-600',
-      render: r => (<><span className="font-bold">{r.numberStart}</span> a <span className="font-bold">{r.numberEnd}</span></>)
+      render: r => (<><span className="font-bold">{r.numberStart}</span> a <span className="font-bold">{r.numberEnd}</span></>),
+      sortValue: r => r.numberStart
     },
     {
       key: 'next',
@@ -469,19 +471,22 @@ export default function ResolutionsSettings() {
           {r.nextNumber ?? r.numberStart}
           <Pencil size={13} className="text-slate-300 group-hover:text-primary" />
         </button>
-      )
+      ),
+      sortValue: r => r.nextNumber ?? r.numberStart
     },
     {
       key: 'validity',
       header: 'Vigencia',
       cellClassName: 'text-sm text-slate-500',
-      render: r => (r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} — ${new Date(r.validTo).toLocaleDateString()}`)
+      render: r => (r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} — ${new Date(r.validTo).toLocaleDateString()}`),
+      sortValue: r => (r.documentType === 'NE' ? null : r.validTo)
     },
     ...(hasMultipleBranches ? [{
       key: 'branches',
       header: 'Sucursales',
       cellClassName: 'text-sm text-slate-600',
-      render: (r: any) => branchNames(r.branchIds) || '—'
+      render: (r: any) => branchNames(r.branchIds) || '—',
+      sortValue: (r: any) => branchNames(r.branchIds)
     }] : []),
     {
       key: 'default',
@@ -494,7 +499,8 @@ export default function ResolutionsSettings() {
         <button onClick={() => handleSetDefault(r.id)} className="inline-flex min-h-11 items-center gap-1.5 px-3 rounded-full text-xs font-bold text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors md:min-h-0 md:py-1.5" title="Marcar como predeterminada para este tipo de documento">
           <Star size={14} /> Marcar
         </button>
-      )
+      ),
+      sortValue: r => (r.isDefault ? 0 : 1)
     }
   ];
 
@@ -719,11 +725,12 @@ export default function ResolutionsSettings() {
             <button onClick={openCreateModal} className="mt-6 py-2 text-primary font-bold hover:underline">Configurar ahora</button>
           </div>
         ) : (
-          <ResponsiveList
+          <DataTable
             rows={resolutions}
             columns={columns}
             rowKey={r => r.id}
             tableFrom="ultra"
+            defaultSort={{ key: 'type', dir: 'asc' }}
             actions={r => (
               <>
                 <RowIconButton action="edit" label={`Editar resolución ${r.prefix || ''} ${r.resolutionNumber || ''}`.trim()} onClick={() => startEditResolution(r)} />
@@ -755,10 +762,11 @@ export default function ResolutionsSettings() {
           </p>
         </div>
 
-        <ResponsiveList
+        <DataTable
           rows={[...(['credit', 'debit', 'adjustment'] as const)]}
           rowKey={type => type}
           tableFrom="md"
+          paginate={false}
           columns={[
             {
               key: 'type',

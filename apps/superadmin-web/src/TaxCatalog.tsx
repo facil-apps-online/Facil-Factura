@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Percent, ToggleLeft, ToggleRight, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 type TaxCatalogKind =
   | 'Retention' | 'OtherTax' | 'IvaRate' | 'PaymentTerm' | 'PaymentMeans'
@@ -145,6 +146,43 @@ export const TaxCatalog = () => {
     }
   };
 
+  const columns: DataTableColumn<TaxCatalogItem>[] = [
+    {
+      key: 'kind',
+      header: 'Tipo',
+      render: item => (
+        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${KIND_BADGE_CLASSES[item.kind] || 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'}`}>
+          {KIND_LABELS[item.kind] || item.kind}
+        </span>
+      ),
+      sortValue: item => KIND_LABELS[item.kind] || item.kind,
+      searchValue: item => KIND_LABELS[item.kind] || item.kind,
+    },
+    {
+      key: 'category',
+      header: 'Código (Dataico)',
+      render: item => <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-slate-800 text-slate-300 font-mono">{item.category}</span>,
+      sortValue: item => item.category,
+      searchValue: item => item.category,
+    },
+    { key: 'rate', header: 'Tarifa', align: 'right', cellClassName: 'font-mono text-slate-300', render: item => (item.rate != null ? `${item.rate}%` : '—'), sortValue: item => item.rate },
+    { key: 'name', header: 'Nombre', primary: true, cellClassName: 'font-bold text-white', render: item => item.name, sortValue: item => item.name, searchValue: item => item.name },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: item => (
+        <button onClick={() => handleToggleActive(item)} className="flex items-center gap-1.5 text-xs font-bold">
+          {item.isActive ? (
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700"><ToggleRight className="w-4 h-4" /> Activo</span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-700 text-slate-400"><ToggleLeft className="w-4 h-4" /> Inactivo</span>
+          )}
+        </button>
+      ),
+      sortValue: item => (item.isActive ? 0 : 1),
+    },
+  ];
+
   return (
     <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-10">
@@ -179,63 +217,27 @@ export const TaxCatalog = () => {
         </select>
       </div>
 
-      <div className="glass-panel rounded-3xl overflow-hidden mt-8">
-        <table className="w-full text-left">
-          <thead className="bg-slate-900/50 border-b border-slate-700/50">
-            <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tipo</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Código (Dataico)</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tarifa</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Estado</th>
-              <th className="px-6 py-4 text-right"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {items.filter(i => !kindFilter || i.kind === kindFilter).map(item => (
-              <tr key={item.id} className="hover:bg-slate-800/30 transition-colors group">
-                <td className="px-6 py-4">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${KIND_BADGE_CLASSES[item.kind] || 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'}`}>
-                    {KIND_LABELS[item.kind] || item.kind}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-slate-800 text-slate-300 font-mono">
-                    {item.category}
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-mono text-slate-300">{item.rate != null ? `${item.rate}%` : '—'}</td>
-                <td className="px-6 py-4 font-bold text-white">{item.name}</td>
-                <td className="px-6 py-4">
-                  <button onClick={() => handleToggleActive(item)} className="flex items-center gap-1.5 text-xs font-bold">
-                    {item.isActive ? (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700"><ToggleRight className="w-4 h-4" /> Activo</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-700 text-slate-400"><ToggleLeft className="w-4 h-4" /> Inactivo</span>
-                    )}
-                  </button>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                    <button onClick={() => startEdit(item)} className="p-2 text-slate-300 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl" title="Editar">
-                      <Pencil className="w-5 h-5" />
-                    </button>
-                    <button onClick={() => handleDelete(item.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl" title="Eliminar">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {items.filter(i => !kindFilter || i.kind === kindFilter).length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium">
-                  No hay categorías registradas.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-8">
+        <DataTable
+          theme="dark"
+          rows={items.filter(i => !kindFilter || i.kind === kindFilter)}
+          rowKey={item => item.id}
+          tableFrom="md"
+          search="Buscar por tipo, código o nombre..."
+          defaultSort={{ key: 'kind', dir: 'asc' }}
+          emptyMessage="No hay categorías registradas."
+          columns={columns}
+          actions={item => (
+            <>
+              <button onClick={() => startEdit(item)} className="p-2 text-slate-300 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl" title="Editar" aria-label={`Editar ${item.name}`}>
+                <Pencil className="w-5 h-5" />
+              </button>
+              <button onClick={() => handleDelete(item.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl" title="Eliminar" aria-label={`Eliminar ${item.name}`}>
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        />
       </div>
 
       {showModal && (

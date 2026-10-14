@@ -30,6 +30,8 @@ interface GroupBillingData {
 const formatCurrency = (value: number, currency: string) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value);
 
+const BILLING_STATUS: Record<string, string> = { Pending: 'Pendiente', Paid: 'Pagada', Overdue: 'Vencida' };
+
 const MONTH_NAMES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 export default function GroupBilling() {
@@ -122,7 +124,7 @@ export default function GroupBilling() {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                           b.status === 'Paid' ? 'bg-emerald-50 text-emerald-600' :
                           b.status === 'Overdue' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'
-                        }`}>{b.status}</span>
+                        }`}>{BILLING_STATUS[b.status] ?? b.status}</span>
                       </td>
                     </tr>
                   ))}

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, Save, Trash2, FileText, Server } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface DocumentType {
   id: string;
@@ -11,6 +12,50 @@ interface DocumentType {
   governingEntity: string;
   isActive: boolean;
 }
+
+const columns: DataTableColumn<DocumentType>[] = [
+  {
+    key: 'entity',
+    header: 'Entidad',
+    render: doc => (
+      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${doc.governingEntity === 'DIAN' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30'}`}>
+        {doc.governingEntity || 'DIAN'}
+      </span>
+    ),
+    sortValue: doc => doc.governingEntity || 'DIAN',
+    searchValue: doc => doc.governingEntity || 'DIAN',
+  },
+  {
+    key: 'code',
+    header: 'Código',
+    render: doc => <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-slate-800 text-slate-300 font-mono">{doc.code}</span>,
+    sortValue: doc => doc.code,
+    searchValue: doc => doc.code,
+  },
+  {
+    key: 'name',
+    header: 'Nombre del Documento',
+    primary: true,
+    render: doc => (
+      <div className="flex items-center font-bold text-white">
+        <FileText className="w-4 h-4 mr-2 text-slate-400" />
+        {doc.name}
+      </div>
+    ),
+    sortValue: doc => doc.name,
+    searchValue: doc => doc.name,
+  },
+  {
+    key: 'status',
+    header: 'Estado',
+    render: doc => (
+      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${doc.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-700 text-slate-300'}`}>
+        {doc.isActive ? 'Activo' : 'Inactivo'}
+      </span>
+    ),
+    sortValue: doc => (doc.isActive ? 0 : 1),
+  },
+];
 
 export const DocumentTypes = () => {
   const [docTypes, setDocTypes] = useState<DocumentType[]>([]);
@@ -70,60 +115,27 @@ export const DocumentTypes = () => {
         </button>
       </div>
 
-      <div className="glass-panel rounded-3xl overflow-hidden mt-8">
-        <table className="w-full text-left">
-          <thead className="bg-slate-900/50 border-b border-slate-700/50">
-            <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Entidad</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Código</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre del Documento</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Estado</th>
-              <th className="px-6 py-4 text-right"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {docTypes.map(doc => (
-              <tr key={doc.id} className="hover:bg-slate-800/30 transition-colors group">
-                <td className="px-6 py-4">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${doc.governingEntity === 'DIAN' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30'}`}>
-                    {doc.governingEntity || 'DIAN'}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-slate-800 text-slate-300 font-mono">
-                    {doc.code}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center font-bold text-white">
-                    <FileText className="w-4 h-4 mr-2 text-slate-400" />
-                    {doc.name}
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
-                    Activo
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right space-x-2">
-                  <Link to={`/document-types/${doc.id}/templates`} className="inline-flex items-center justify-center p-2 text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-all" title="Ver Modelos de Diseño">
-                    <FileText className="w-5 h-5" />
-                  </Link>
-                  <button onClick={() => handleDelete(doc.id)} className="inline-flex items-center justify-center p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar Tipo">
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {docTypes.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">
-                  No hay tipos de documentos registrados. Comienza agregando FE (Factura Electrónica).
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-8">
+        <DataTable
+          theme="dark"
+          rows={docTypes}
+          rowKey={d => d.id}
+          tableFrom="md"
+          search="Buscar por código o nombre..."
+          defaultSort={{ key: 'code', dir: 'asc' }}
+          emptyMessage="No hay tipos de documentos registrados. Comienza agregando FE (Factura Electrónica)."
+          columns={columns}
+          actions={doc => (
+            <>
+              <Link to={`/document-types/${doc.id}/templates`} className="inline-flex items-center justify-center p-2 text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-all" title="Ver Modelos de Diseño" aria-label={`Ver modelos de diseño de ${doc.name}`}>
+                <FileText className="w-5 h-5" />
+              </Link>
+              <button onClick={() => handleDelete(doc.id)} className="inline-flex items-center justify-center p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar Tipo" aria-label={`Eliminar ${doc.name}`}>
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        />
       </div>
 
       {/* Modal Creación */}

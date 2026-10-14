@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Percent, ToggleLeft, ToggleRight, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface RetentionConcept {
   id: string;
@@ -33,6 +34,12 @@ const initialConceptForm = {
 };
 
 const initialParameterForm = { code: 'UVT', value: '', effectiveFrom: new Date().toISOString().slice(0, 10) };
+
+const parameterColumns: DataTableColumn<TaxParameter>[] = [
+  { key: 'code', header: 'Código', primary: true, cellClassName: 'font-bold text-white font-mono', render: p => p.code, sortValue: p => p.code },
+  { key: 'value', header: 'Valor', align: 'right', cellClassName: 'font-mono text-slate-300', render: p => `$${p.value.toLocaleString('es-CO')}`, sortValue: p => p.value },
+  { key: 'effectiveFrom', header: 'Vigente desde', cellClassName: 'text-slate-400 text-sm whitespace-nowrap', render: p => new Date(p.effectiveFrom).toLocaleDateString('es-CO'), sortValue: p => p.effectiveFrom },
+];
 
 export const RetentionEngine = () => {
   const [tab, setTab] = useState<'concepts' | 'parameters'>('concepts');
@@ -117,6 +124,39 @@ export const RetentionEngine = () => {
     }
   };
 
+  const conceptColumns: DataTableColumn<RetentionConcept>[] = [
+    { key: 'group', header: 'Concepto', primary: true, cellClassName: 'font-bold text-white', render: c => c.groupLabel, sortValue: c => c.groupLabel, searchValue: c => c.groupLabel },
+    { key: 'name', header: 'Variante', cellClassName: 'text-slate-300 text-sm', render: c => c.name, sortValue: c => c.name, searchValue: c => c.name },
+    {
+      key: 'personType',
+      header: 'Persona',
+      render: c => (
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+          {PERSON_TYPE_LABELS[c.personType] || c.personType}
+        </span>
+      ),
+      sortValue: c => PERSON_TYPE_LABELS[c.personType] || c.personType,
+      searchValue: c => PERSON_TYPE_LABELS[c.personType] || c.personType,
+    },
+    { key: 'baseUvt', header: 'Base mín. (UVT)', align: 'right', cellClassName: 'font-mono text-slate-300', render: c => `${c.baseUvt} UVT`, sortValue: c => c.baseUvt },
+    { key: 'rate', header: 'Tarifa', align: 'right', cellClassName: 'font-mono text-slate-300', render: c => `${c.rate}%`, sortValue: c => c.rate },
+    { key: 'effectiveFrom', header: 'Vigente desde', cellClassName: 'text-slate-400 text-sm whitespace-nowrap', render: c => new Date(c.effectiveFrom).toLocaleDateString('es-CO'), sortValue: c => c.effectiveFrom },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: c => (
+        <button onClick={() => handleToggleConceptActive(c)} className="flex items-center gap-1.5 text-xs font-bold">
+          {c.isActive ? (
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700"><ToggleRight className="w-4 h-4" /> Activo</span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-700 text-slate-400"><ToggleLeft className="w-4 h-4" /> Inactivo</span>
+          )}
+        </button>
+      ),
+      sortValue: c => (c.isActive ? 0 : 1),
+    },
+  ];
+
   return (
     <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-8">
@@ -148,88 +188,39 @@ export const RetentionEngine = () => {
       </div>
 
       {tab === 'concepts' ? (
-        <div className="glass-panel rounded-3xl overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="bg-slate-900/50 border-b border-slate-700/50">
-              <tr>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Concepto</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Variante</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Persona</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Base mín. (UVT)</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tarifa</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Vigente desde</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Estado</th>
-                <th className="px-6 py-4 text-right"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {concepts.map(c => (
-                <tr key={c.id} className="hover:bg-slate-800/30 transition-colors group">
-                  <td className="px-6 py-4 font-bold text-white">{c.groupLabel}</td>
-                  <td className="px-6 py-4 text-slate-300 text-sm">{c.name}</td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                      {PERSON_TYPE_LABELS[c.personType] || c.personType}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 font-mono text-slate-300">{c.baseUvt} UVT</td>
-                  <td className="px-6 py-4 font-mono text-slate-300">{c.rate}%</td>
-                  <td className="px-6 py-4 text-slate-400 text-sm">{new Date(c.effectiveFrom).toLocaleDateString('es-CO')}</td>
-                  <td className="px-6 py-4">
-                    <button onClick={() => handleToggleConceptActive(c)} className="flex items-center gap-1.5 text-xs font-bold">
-                      {c.isActive ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700"><ToggleRight className="w-4 h-4" /> Activo</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-700 text-slate-400"><ToggleLeft className="w-4 h-4" /> Inactivo</span>
-                      )}
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button onClick={() => handleDeleteConcept(c.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all" title="Eliminar">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {concepts.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400 font-medium">No hay conceptos de retención registrados.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="mt-8">
+          <DataTable
+            theme="dark"
+            rows={concepts}
+            rowKey={c => c.id}
+            tableFrom="lg"
+            search="Buscar por concepto, variante o persona..."
+            defaultSort={{ key: 'group', dir: 'asc' }}
+            emptyMessage="No hay conceptos de retención registrados."
+            columns={conceptColumns}
+            actions={c => (
+              <button onClick={() => handleDeleteConcept(c.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${c.groupLabel}`}>
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
+          />
         </div>
       ) : (
-        <div className="glass-panel rounded-3xl overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="bg-slate-900/50 border-b border-slate-700/50">
-              <tr>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Código</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Valor</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Vigente desde</th>
-                <th className="px-6 py-4 text-right"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {parameters.map(p => (
-                <tr key={p.id} className="hover:bg-slate-800/30 transition-colors group">
-                  <td className="px-6 py-4 font-bold text-white font-mono">{p.code}</td>
-                  <td className="px-6 py-4 font-mono text-slate-300">${p.value.toLocaleString('es-CO')}</td>
-                  <td className="px-6 py-4 text-slate-400 text-sm">{new Date(p.effectiveFrom).toLocaleDateString('es-CO')}</td>
-                  <td className="px-6 py-4 text-right">
-                    <button onClick={() => handleDeleteParameter(p.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all" title="Eliminar">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {parameters.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">No hay parámetros registrados.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="mt-8">
+          <DataTable
+            theme="dark"
+            rows={parameters}
+            rowKey={p => p.id}
+            tableFrom="md"
+            defaultSort={{ key: 'code', dir: 'asc' }}
+            emptyMessage="No hay parámetros registrados."
+            columns={parameterColumns}
+            actions={p => (
+              <button onClick={() => handleDeleteParameter(p.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${p.code}`}>
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
+          />
         </div>
       )}
 

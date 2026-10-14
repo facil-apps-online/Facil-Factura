@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Copy, Save, FileText, Upload, Globe, User, GitBranch, Pencil, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface DocumentTemplate {
   id: string;
@@ -99,6 +100,53 @@ export default function DocumentTemplates() {
     }
   };
 
+  const statusLabel: Record<DocumentTemplate['status'], string> = { Published: 'Publicado', Draft: 'Borrador', Archived: 'Archivado' };
+
+  const columns: DataTableColumn<DocumentTemplate>[] = [
+    {
+      key: 'type',
+      header: 'Tipo (Origen)',
+      render: tpl => (
+        <div className="flex items-center gap-2">
+          {tpl.isGlobal ? (
+            <span className="flex items-center gap-1 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100">
+              <Globe size={14} /> Global
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-xs font-bold text-primary bg-blue-50 px-2 py-1 rounded-md border border-blue-100">
+              <User size={14} /> Propio
+            </span>
+          )}
+          <span className="text-sm font-semibold text-slate-600">{tpl.documentType}</span>
+        </div>
+      ),
+      sortValue: tpl => `${tpl.documentType} ${tpl.isGlobal ? 'Global' : 'Propio'}`,
+      searchValue: tpl => `${tpl.documentType} ${tpl.isGlobal ? 'Global' : 'Propio'}`,
+    },
+    {
+      key: 'name',
+      header: 'Nombre del Diseño',
+      primary: true,
+      render: tpl => (
+        <>
+          <div className="font-bold text-slate-800">{tpl.name}</div>
+          <div className="text-xs text-slate-400 font-mono mt-1">Key: {tpl.repxTemplateKey || 'N/A'}</div>
+        </>
+      ),
+      sortValue: tpl => tpl.name,
+      searchValue: tpl => `${tpl.name} ${tpl.repxTemplateKey}`,
+    },
+    {
+      key: 'version',
+      header: 'Versión',
+      render: tpl => (
+        <span className="inline-flex items-center px-2 py-1 rounded-lg text-sm font-bold bg-slate-100 text-slate-600 font-mono">v{tpl.versionNumber}</span>
+      ),
+      sortValue: tpl => tpl.versionNumber,
+    },
+    { key: 'status', header: 'Estado', render: tpl => getStatusBadge(tpl.status), sortValue: tpl => statusLabel[tpl.status], searchValue: tpl => statusLabel[tpl.status] },
+  ];
+
   return (
     <div className="p-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-end mb-8">
@@ -111,110 +159,66 @@ export default function DocumentTemplates() {
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Tipo (Origen)</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Nombre del Diseño</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Versión</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Estado</th>
-              <th className="px-6 py-4 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {templates.map(tpl => (
-              <tr key={tpl.id} className="hover:bg-slate-50/50 transition-colors group">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-2">
-                    {tpl.isGlobal ? (
-                      <span className="flex items-center gap-1 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100">
-                        <Globe size={14} /> Global
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs font-bold text-primary bg-blue-50 px-2 py-1 rounded-md border border-blue-100">
-                        <User size={14} /> Propio
-                      </span>
-                    )}
-                    <span className="text-sm font-semibold text-slate-600">{tpl.documentType}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="font-bold text-slate-800">
-                    {tpl.name}
-                  </div>
-                  <div className="text-xs text-slate-400 font-mono mt-1">Key: {tpl.repxTemplateKey || 'N/A'}</div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-2 py-1 rounded-lg text-sm font-bold bg-slate-100 text-slate-600 font-mono">
-                    v{tpl.versionNumber}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  {getStatusBadge(tpl.status)}
-                </td>
-                <td className="px-6 py-4 text-right space-x-2">
-                  <button
-                    onClick={() => handlePreview(tpl.id)}
-                    disabled={previewingId === tpl.id}
-                    className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all shadow-sm inline-flex items-center disabled:opacity-50"
-                  >
-                    {previewingId === tpl.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Eye className="w-4 h-4 mr-2" />}
-                    Vista Previa
-                  </button>
-                  {tpl.isGlobal && tpl.status === 'Published' && (
-                    <button 
-                      onClick={() => {
-                        setCloneData({ newName: `${tpl.name} (Mi Versión)`, newRepxTemplateKey: '' });
-                        setShowCloneModal(tpl.id);
-                      }} 
-                      className="px-4 py-2 text-sm font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all shadow-sm flex items-center inline-flex"
-                    >
-                      <Copy className="w-4 h-4 mr-2" />
-                      Clonar (Fork)
-                    </button>
-                  )}
-                  
-                  {!tpl.isGlobal && tpl.status === 'Draft' && (
-                    <Link
-                      to={`/templates/editor?key=${encodeURIComponent(tpl.repxTemplateKey)}`}
-                      className="px-4 py-2 text-sm font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all shadow-sm inline-flex items-center"
-                    >
-                      <Pencil className="w-4 h-4 mr-2" />
-                      Editar
-                    </Link>
-                  )}
-                  {!tpl.isGlobal && tpl.status === 'Draft' && (
-                    <button
-                      onClick={() => handlePublish(tpl.id)}
-                      className="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-blue-600 rounded-xl transition-all shadow-md shadow-blue-500/20 flex items-center inline-flex"
-                    >
-                      <Upload className="w-4 h-4 mr-2" />
-                      Publicar
-                    </button>
-                  )}
-                  {!tpl.isGlobal && tpl.status === 'Published' && (
-                    <button
-                      onClick={() => { setVersionKey(''); setShowVersionModal(tpl.id); }}
-                      className="px-4 py-2 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all shadow-sm flex items-center inline-flex"
-                    >
-                      <GitBranch className="w-4 h-4 mr-2" />
-                      Nueva Versión
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {templates.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-500 font-medium bg-slate-50/50">
-                  No hay plantillas registradas. El Superadmin debe publicar diseños base.
-                </td>
-              </tr>
+      <DataTable
+        rows={templates}
+        rowKey={tpl => tpl.id}
+        tableFrom="xl"
+        search="Buscar por nombre, tipo de documento o identificador..."
+        defaultSort={{ key: 'type', dir: 'asc' }}
+        emptyMessage="No hay plantillas registradas. El Superadmin debe publicar diseños base."
+        columns={columns}
+        actions={tpl => (
+          <>
+            <button
+              onClick={() => handlePreview(tpl.id)}
+              disabled={previewingId === tpl.id}
+              className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all shadow-sm inline-flex items-center disabled:opacity-50"
+            >
+              {previewingId === tpl.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Eye className="w-4 h-4 mr-2" />}
+              Vista Previa
+            </button>
+            {tpl.isGlobal && tpl.status === 'Published' && (
+              <button
+                onClick={() => {
+                  setCloneData({ newName: `${tpl.name} (Mi Versión)`, newRepxTemplateKey: '' });
+                  setShowCloneModal(tpl.id);
+                }}
+                className="px-4 py-2 text-sm font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all shadow-sm inline-flex items-center"
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Clonar (Fork)
+              </button>
             )}
-          </tbody>
-        </table>
-      </div>
+            {!tpl.isGlobal && tpl.status === 'Draft' && (
+              <Link
+                to={`/templates/editor?key=${encodeURIComponent(tpl.repxTemplateKey)}`}
+                className="px-4 py-2 text-sm font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all shadow-sm inline-flex items-center"
+              >
+                <Pencil className="w-4 h-4 mr-2" />
+                Editar
+              </Link>
+            )}
+            {!tpl.isGlobal && tpl.status === 'Draft' && (
+              <button
+                onClick={() => handlePublish(tpl.id)}
+                className="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-blue-600 rounded-xl transition-all shadow-md shadow-blue-500/20 inline-flex items-center"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Publicar
+              </button>
+            )}
+            {!tpl.isGlobal && tpl.status === 'Published' && (
+              <button
+                onClick={() => { setVersionKey(''); setShowVersionModal(tpl.id); }}
+                className="px-4 py-2 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all shadow-sm inline-flex items-center"
+              >
+                <GitBranch className="w-4 h-4 mr-2" />
+                Nueva Versión
+              </button>
+            )}
+          </>
+        )}
+      />
 
       {/* Modal Clonado */}
       {showCloneModal && (

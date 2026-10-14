@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Loader2, Search } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useNumberFormat } from '../lib/numberFormat';
 import ImportExcelButton from '../components/ImportExcelButton';
 import CustomerFormModal from '../components/CustomerFormModal';
-import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import { useConfirm } from '@/components/ConfirmDialog';
 
@@ -22,7 +22,6 @@ export default function CustomersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any>(null);
   const [activeType, setActiveType] = useState('Cliente');
-  const [search, setSearch] = useState('');
   const [identificationTypeOptions, setIdentificationTypeOptions] = useState<{ value: string, label: string }[]>([]);
   const [contractLabels, setContractLabels] = useState<Record<string, string>>({});
   const [workerLabels, setWorkerLabels] = useState<Record<string, string>>({});
@@ -81,12 +80,7 @@ export default function CustomersPage() {
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
-  const q = search.trim().toLowerCase();
-  const filteredCustomers = q
-    ? customers.filter(c => [c.name, c.identificationNumber, c.email, c.phone].some((f: string) => f?.toLowerCase().includes(q)))
-    : customers;
-
-  const columns: ResponsiveListColumn<any>[] = [
+  const columns: DataTableColumn<any>[] = [
     {
       key: 'identification',
       header: 'Identificación',
@@ -96,14 +90,18 @@ export default function CustomersPage() {
           {identificationTypeOptions.find(o => o.value === c.identificationType)?.label || c.identificationType} {c.identificationNumber}
           {c.verificationDigit && `-${c.verificationDigit}`}
         </>
-      )
+      ),
+      sortValue: c => c.identificationNumber,
+      searchValue: c => c.identificationNumber
     },
     {
       key: 'name',
       header: 'Razón Social / Nombre',
       primary: true,
       cellClassName: 'font-bold text-slate-900',
-      render: c => c.name
+      render: c => c.name,
+      sortValue: c => c.name,
+      searchValue: c => c.name
     },
     {
       key: 'contact',
@@ -113,7 +111,9 @@ export default function CustomersPage() {
         <>
           {c.email}<br />{c.phone}
         </>
-      )
+      ),
+      sortValue: c => c.email,
+      searchValue: c => `${c.email ?? ''} ${c.phone ?? ''}`
     },
     ...(activeType === 'Empleado'
       ? [
@@ -127,13 +127,16 @@ export default function CustomersPage() {
                 <br />
                 {workerLabels[c.workerType] || c.workerType || ''}
               </>
-            )
+            ),
+            sortValue: (c: any) => contractLabels[c.contractType] || c.contractType
           },
           {
             key: 'baseSalary',
             header: 'Salario base',
             cellClassName: 'whitespace-nowrap text-sm text-slate-500',
-            render: (c: any) => (c.baseSalary ? `$${fmt.number(c.baseSalary, 3)}` : '—')
+            align: 'right' as const,
+            render: (c: any) => (c.baseSalary ? `$${fmt.number(c.baseSalary, 3)}` : '—'),
+            sortValue: (c: any) => c.baseSalary
           },
           {
             key: 'municipality',
@@ -148,7 +151,9 @@ export default function CustomersPage() {
                 </>
               ) : (
                 <span className="font-bold text-red-600">Falta código DANE</span>
-              )
+              ),
+            sortValue: (c: any) => c.cityName,
+            searchValue: (c: any) => c.cityName
           }
         ]
       : [
@@ -156,7 +161,8 @@ export default function CustomersPage() {
             key: 'regime',
             header: 'Régimen',
             cellClassName: 'whitespace-nowrap text-sm text-slate-500',
-            render: (c: any) => (c.taxRegime === '48' ? 'Resp. IVA' : 'No Resp. IVA')
+            render: (c: any) => (c.taxRegime === '48' ? 'Resp. IVA' : 'No Resp. IVA'),
+            sortValue: (c: any) => (c.taxRegime === '48' ? 'Resp. IVA' : 'No Resp. IVA')
           }
         ])
   ];
@@ -191,25 +197,16 @@ export default function CustomersPage() {
             {pt.label}
           </button>
         ))}
-        <div className="relative w-full sm:ml-auto sm:w-80">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, identificación, email o teléfono..."
-            aria-label="Buscar terceros"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
       </div>
 
-      <ResponsiveList
-        rows={filteredCustomers}
+      <DataTable
+        rows={customers}
         columns={columns}
         rowKey={c => c.id}
         tableFrom="wide"
-        emptyMessage={q ? 'Ningún resultado para tu búsqueda.' : `No tienes ${activeType.toLowerCase()}s registrados.`}
+        search="Buscar por nombre, identificación, email o teléfono..."
+        defaultSort={{ key: 'name', dir: 'asc' }}
+        emptyMessage={`No tienes ${activeType.toLowerCase()}s registrados.`}
         actions={c => (
           <>
             <RowIconButton action="edit" label={`Editar ${c.name}`} onClick={() => handleOpenModal(c)} />

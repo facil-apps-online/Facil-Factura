@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Search, RefreshCw, Send, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, RefreshCw, Send, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import ClientFormFields from '../components/ClientFormFields';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 const initialNewClient = {
   companyName: '', personType: 'PJ', commercialName: '', taxId: '', verificationDigit: '',
@@ -133,6 +134,37 @@ export default function Clients() {
   const selectAllNotInvited = () => setSelectedIds(new Set(notInvitedIds));
   const clearSelection = () => setSelectedIds(new Set());
 
+  const portalOrder: Record<Client['portalUserStatus'], number> = { Active: 0, Revoked: 1, NotInvited: 2 };
+
+  const columns: DataTableColumn<Client>[] = [
+    { key: 'companyName', header: 'Razón social', primary: true, cellClassName: 'font-medium text-slate-800', render: c => c.companyName, sortValue: c => c.companyName, searchValue: c => c.companyName },
+    { key: 'taxId', header: 'NIT', cellClassName: 'text-slate-600 whitespace-nowrap', render: c => c.taxId, sortValue: c => c.taxId, searchValue: c => c.taxId },
+    { key: 'email', header: 'Correo de recepción', cellClassName: 'text-slate-600', render: c => c.email, sortValue: c => c.email, searchValue: c => c.email },
+    { key: 'associate', header: 'Asociado', cellClassName: 'text-slate-600', render: c => c.associateName || <span className="text-slate-400">Sin asociado</span>, sortValue: c => c.associateName, searchValue: c => c.associateName },
+    { key: 'createdAt', header: 'Registrado', cellClassName: 'text-slate-600 whitespace-nowrap', render: c => formatDate(c.createdAt), sortValue: c => c.createdAt },
+    {
+      key: 'expiry',
+      header: 'Vencimiento de resolución',
+      render: c => (
+        <button onClick={e => { e.stopPropagation(); navigate(`/clients/edit/${c.id}?tab=resolutions`); }} className="hover:opacity-75 transition-opacity">
+          <ExpiryBadge value={c.nearestResolutionExpiry} />
+        </button>
+      ),
+      sortValue: c => c.nearestResolutionExpiry,
+    },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: c => c.isActive ? (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">Activo</span>
+      ) : (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100 border border-rose-200">Inactivo</span>
+      ),
+      sortValue: c => (c.isActive ? 0 : 1),
+    },
+    { key: 'portal', header: 'Portal', render: c => <PortalStatusBadge status={c.portalUserStatus} />, sortValue: c => portalOrder[c.portalUserStatus] },
+  ];
+
   const handleBulkInvite = async () => {
     if (selectedIds.size === 0) return;
     setBulkInviting(true);
@@ -168,133 +200,84 @@ export default function Clients() {
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <div className="relative w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              type="text"
-              placeholder="Buscar por nombre o NIT..."
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
-            />
+      {(selectedIds.size > 0 || notInvitedIds.length > 0) && (
+        <div className="mb-4 px-4 py-3 rounded-2xl border border-blue-100 bg-blue-50/60 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            {selectedIds.size > 0 ? (
+              <>
+                <span className="font-medium text-slate-700">{selectedIds.size} seleccionado{selectedIds.size === 1 ? '' : 's'}</span>
+                <button onClick={clearSelection} className="text-slate-500 hover:text-slate-700 underline">Limpiar</button>
+              </>
+            ) : (
+              <span className="text-slate-500">{notInvitedIds.length} cliente{notInvitedIds.length === 1 ? '' : 's'} sin invitar al portal</span>
+            )}
+            {notInvitedIds.length > 0 && (
+              <button onClick={selectAllNotInvited} className="text-blue-600 hover:text-blue-700 font-medium underline">
+                Seleccionar todos los sin invitar
+              </button>
+            )}
           </div>
           <button
+            onClick={handleBulkInvite}
+            disabled={selectedIds.size === 0 || bulkInviting}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Send size={16} />
+            {bulkInviting ? 'Enviando...' : 'Invitar seleccionados al portal'}
+          </button>
+        </div>
+      )}
+
+      <DataTable
+        rows={clients}
+        rowKey={c => c.id}
+        loading={loading}
+        tableFrom="xl"
+        search="Buscar por nombre, NIT, correo..."
+        defaultSort={{ key: 'companyName', dir: 'asc' }}
+        emptyMessage="Aún no hay clientes registrados."
+        toolbar={(
+          <button
             onClick={loadClients}
-            className="text-slate-400 hover:text-blue-600 transition-colors p-2 bg-white rounded-lg border border-slate-200 shadow-sm"
+            title="Actualizar"
+            aria-label="Actualizar"
+            className="text-slate-400 hover:text-blue-600 transition-colors p-2.5 bg-white rounded-lg border border-slate-200 shadow-sm"
           >
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
-        </div>
-
-        {(selectedIds.size > 0 || notInvitedIds.length > 0) && (
-          <div className="px-4 py-3 border-b border-slate-100 bg-blue-50/60 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 text-sm">
-              {selectedIds.size > 0 ? (
-                <>
-                  <span className="font-medium text-slate-700">{selectedIds.size} seleccionado{selectedIds.size === 1 ? '' : 's'}</span>
-                  <button onClick={clearSelection} className="text-slate-500 hover:text-slate-700 underline">Limpiar</button>
-                </>
-              ) : (
-                <span className="text-slate-500">{notInvitedIds.length} cliente{notInvitedIds.length === 1 ? '' : 's'} sin invitar al portal</span>
-              )}
-              {notInvitedIds.length > 0 && (
-                <button onClick={selectAllNotInvited} className="text-blue-600 hover:text-blue-700 font-medium underline">
-                  Seleccionar todos los sin invitar
-                </button>
-              )}
-            </div>
-            <button
-              onClick={handleBulkInvite}
-              disabled={selectedIds.size === 0 || bulkInviting}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Send size={16} />
-              {bulkInviting ? 'Enviando...' : 'Invitar seleccionados al portal'}
-            </button>
-          </div>
         )}
-
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-medium border-b border-slate-100">
-            <tr>
-              <th className="px-4 py-4 w-10">
-                <input
-                  type="checkbox"
-                  checked={notInvitedIds.length > 0 && notInvitedIds.every(cid => selectedIds.has(cid))}
-                  onChange={e => e.target.checked ? selectAllNotInvited() : clearSelection()}
-                  className="rounded border-slate-300"
-                />
-              </th>
-              <th className="px-6 py-4">Razón Social</th>
-              <th className="px-6 py-4">NIT</th>
-              <th className="px-6 py-4">Correo de recepción</th>
-              <th className="px-6 py-4">Asociado</th>
-              <th className="px-6 py-4">Registrado</th>
-              <th className="px-6 py-4">Vencimiento de resolución</th>
-              <th className="px-6 py-4">Estado</th>
-              <th className="px-6 py-4">Portal</th>
-              <th className="px-6 py-4 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 text-sm">
-            {clients.length === 0 && !loading && (
-              <tr><td colSpan={10} className="text-center py-8 text-slate-500">Aún no hay clientes registrados.</td></tr>
-            )}
-            {clients.map(client => (
-              <tr key={client.id} className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-4 py-4">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(client.id)}
-                    onChange={() => toggleSelected(client.id)}
-                    className="rounded border-slate-300"
-                  />
-                </td>
-                <td className="px-6 py-4 font-medium text-slate-800">{client.companyName}</td>
-                <td className="px-6 py-4 text-slate-600">{client.taxId}</td>
-                <td className="px-6 py-4 text-slate-600">{client.email}</td>
-                <td className="px-6 py-4 text-slate-600">{client.associateName || <span className="text-slate-400">Sin asociado</span>}</td>
-                <td className="px-6 py-4 text-slate-600 text-sm">{formatDate(client.createdAt)}</td>
-                <td className="px-6 py-4">
-                  <button onClick={() => navigate(`/clients/edit/${client.id}?tab=resolutions`)} className="hover:opacity-75 transition-opacity">
-                    <ExpiryBadge value={client.nearestResolutionExpiry} />
-                  </button>
-                </td>
-                <td className="px-6 py-4">
-                  {client.isActive ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">
-                      Activo
-                    </span>
-                  ) : (
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100 border border-rose-200">
-                      Inactivo
-                    </span>
-                  )}
-                </td>
-                <td className="px-6 py-4">
-                  <PortalStatusBadge status={client.portalUserStatus} />
-                </td>
-                <td className="px-6 py-4 flex items-center justify-end gap-3">
-                  <button
-                    onClick={() => navigate(`/clients/edit/${client.id}`)}
-                    className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
-                    title="Editar"
-                  >
-                    <Edit2 size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(client.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
-                    title="Eliminar"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        selection={{
+          isSelected: c => selectedIds.has(c.id),
+          onToggle: c => toggleSelected(c.id),
+          onToggleMany: (rows, select) => setSelectedIds(prev => {
+            const next = new Set(prev);
+            rows.forEach(c => (select ? next.add(c.id) : next.delete(c.id)));
+            return next;
+          }),
+          label: c => `Seleccionar a ${c.companyName}`,
+        }}
+        columns={columns}
+        actions={client => (
+          <>
+            <button
+              onClick={() => navigate(`/clients/edit/${client.id}`)}
+              className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
+              title="Editar"
+              aria-label={`Editar ${client.companyName}`}
+            >
+              <Edit2 size={16} />
+            </button>
+            <button
+              onClick={() => handleDelete(client.id)}
+              className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
+              title="Eliminar"
+              aria-label={`Eliminar ${client.companyName}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          </>
+        )}
+      />
       {/* Modal Nuevo Cliente */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">

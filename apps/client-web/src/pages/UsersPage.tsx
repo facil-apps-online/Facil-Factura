@@ -6,7 +6,7 @@ import SearchableSelect from '@shared/components/SearchableSelect';
 import { api, getErrorMessage } from '../lib/api';
 import { useSession } from '../context/SessionContext';
 import Modal from '../components/Modal';
-import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import { useConfirm } from '@/components/ConfirmDialog';
 
@@ -122,7 +122,7 @@ export default function UsersPage() {
     }
   };
 
-  const columns = useMemo<ResponsiveListColumn<PortalUser>[]>(() => [
+  const columns = useMemo<DataTableColumn<PortalUser>[]>(() => [
     {
       key: 'name', header: 'Nombre', primary: true,
       render: u => (
@@ -130,14 +130,17 @@ export default function UsersPage() {
           {u.name}{u.isSelf && <span className="ml-2 text-xs font-medium text-slate-400">(tú)</span>}
         </span>
       ),
+      sortValue: u => u.name, searchValue: u => u.name,
     },
-    { key: 'email', header: 'Correo', render: u => <span className="break-all text-slate-600">{u.email}</span> },
-    { key: 'role', header: 'Rol', render: u => roleLabel(u.role) },
+    { key: 'email', header: 'Correo', render: u => <span className="break-all text-slate-600">{u.email}</span>, sortValue: u => u.email, searchValue: u => u.email },
+    { key: 'role', header: 'Rol', render: u => roleLabel(u.role), sortValue: u => roleLabel(u.role), searchValue: u => roleLabel(u.role) },
     {
       key: 'branches', header: 'Sucursales', cardFullWidth: true,
       render: u => (u.allBranches
         ? <span className="text-slate-600">Todas</span>
         : <span className="text-slate-600">{u.branchIds.map(branchName).filter(Boolean).join(', ') || '—'}</span>),
+      sortValue: u => (u.allBranches ? 'Todas' : u.branchIds.map(branchName).filter(Boolean).join(', ')),
+      searchValue: u => (u.allBranches ? 'Todas' : u.branchIds.map(branchName).filter(Boolean).join(', ')),
     },
     {
       key: 'status', header: 'Estado',
@@ -146,6 +149,8 @@ export default function UsersPage() {
           {u.isActive ? 'Activo' : 'Desactivado'}
         </span>
       ),
+      sortValue: u => (u.isActive ? 0 : 1),
+      searchValue: u => (u.isActive ? 'Activo' : 'Desactivado'),
     },
   ], [roleLabel, branchName]);
 
@@ -168,11 +173,13 @@ export default function UsersPage() {
         </button>
       </div>
 
-      <ResponsiveList
+      <DataTable
         rows={users}
         columns={columns}
         rowKey={u => u.id}
         tableFrom="xl"
+        search="Buscar por nombre, correo, rol o sucursal..."
+        defaultSort={{ key: 'name', dir: 'asc' }}
         emptyMessage="Aún no hay usuarios."
         actions={u => (
           <>

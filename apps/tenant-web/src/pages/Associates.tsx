@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Briefcase } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface Associate {
   id: string;
@@ -73,6 +74,31 @@ export default function Associates() {
     }
   };
 
+  const columns: DataTableColumn<Associate>[] = [
+    {
+      key: 'name',
+      header: 'Nombre',
+      primary: true,
+      cellClassName: 'font-medium text-slate-800',
+      render: a => <span className="inline-flex items-center gap-2"><Briefcase size={16} className="text-slate-400" /> {a.name}</span>,
+      sortValue: a => a.name,
+      searchValue: a => a.name,
+    },
+    { key: 'email', header: 'Email', cellClassName: 'text-slate-600', render: a => a.email || '—', sortValue: a => a.email, searchValue: a => a.email },
+    { key: 'phone', header: 'Teléfono', cellClassName: 'text-slate-600', render: a => a.phone || '—', sortValue: a => a.phone, searchValue: a => a.phone },
+    { key: 'clients', header: 'Clientes', align: 'right', cellClassName: 'text-slate-600', render: a => a.clientCount, sortValue: a => a.clientCount },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: a => a.isActive ? (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">Activo</span>
+      ) : (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100 border border-rose-200">Inactivo</span>
+      ),
+      sortValue: a => (a.isActive ? 0 : 1),
+    },
+  ];
+
   return (
     <div className="p-10 h-full overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-8">
@@ -89,50 +115,26 @@ export default function Associates() {
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-medium border-b border-slate-100">
-            <tr>
-              <th className="px-6 py-4">Nombre</th>
-              <th className="px-6 py-4">Email</th>
-              <th className="px-6 py-4">Teléfono</th>
-              <th className="px-6 py-4 text-center">Clientes</th>
-              <th className="px-6 py-4">Estado</th>
-              <th className="px-6 py-4 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 text-sm">
-            {associates.length === 0 && !loading && (
-              <tr><td colSpan={6} className="text-center py-8 text-slate-500">No hay asociados registrados aún.</td></tr>
-            )}
-            {associates.map(a => (
-              <tr key={a.id} className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-6 py-4 font-medium text-slate-800 flex items-center gap-2">
-                  <Briefcase size={16} className="text-slate-400" /> {a.name}
-                </td>
-                <td className="px-6 py-4 text-slate-600">{a.email || '—'}</td>
-                <td className="px-6 py-4 text-slate-600">{a.phone || '—'}</td>
-                <td className="px-6 py-4 text-center text-slate-600">{a.clientCount}</td>
-                <td className="px-6 py-4">
-                  {a.isActive ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">Activo</span>
-                  ) : (
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100 border border-rose-200">Inactivo</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 flex items-center justify-end gap-3">
-                  <button onClick={() => handleOpenModal(a)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200">
-                    <Edit2 size={16} />
-                  </button>
-                  <button onClick={() => handleDelete(a.id)} className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-white rounded shadow-sm border border-slate-200">
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        rows={associates}
+        rowKey={a => a.id}
+        loading={loading}
+        tableFrom="md"
+        search="Buscar por nombre, correo o teléfono..."
+        defaultSort={{ key: 'name', dir: 'asc' }}
+        emptyMessage="No hay asociados registrados aún."
+        columns={columns}
+        actions={a => (
+          <>
+            <button onClick={() => handleOpenModal(a)} title="Editar" aria-label={`Editar ${a.name}`} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200">
+              <Edit2 size={16} />
+            </button>
+            <button onClick={() => handleDelete(a.id)} title="Eliminar" aria-label={`Eliminar ${a.name}`} className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-white rounded shadow-sm border border-slate-200">
+              <Trash2 size={16} />
+            </button>
+          </>
+        )}
+      />
 
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center">

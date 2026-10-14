@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Plus, Trash2, FileText, ArrowLeft, Upload, Loader2, Eye, Pencil, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface DocumentTemplate {
   id: string;
@@ -169,6 +170,35 @@ export const DocumentTemplates = () => {
     }
   };
 
+  const statusLabel: Record<DocumentTemplate['status'], string> = { Published: 'Publicada', Draft: 'Borrador', Archived: 'Archivada' };
+
+  const columns: DataTableColumn<DocumentTemplate>[] = [
+    {
+      key: 'name',
+      header: 'Nombre de la plantilla',
+      primary: true,
+      render: tpl => (
+        <div className="flex items-center font-bold text-white">
+          <FileText className="w-4 h-4 mr-3 text-indigo-400" />
+          {tpl.name}
+          <button onClick={() => handleRename(tpl)} className="ml-3 p-1 text-slate-400 hover:text-indigo-300 rounded transition-colors" title="Cambiar nombre" aria-label={`Cambiar nombre de ${tpl.name}`}>
+            <Pencil className="w-4 h-4" />
+          </button>
+        </div>
+      ),
+      sortValue: tpl => tpl.name,
+      searchValue: tpl => tpl.name,
+    },
+    {
+      key: 'version',
+      header: 'Versión',
+      render: tpl => <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-slate-800 text-slate-300 font-mono">v{tpl.version}</span>,
+      sortValue: tpl => tpl.version,
+    },
+    { key: 'status', header: 'Estado', render: tpl => getStatusBadge(tpl.status), sortValue: tpl => statusLabel[tpl.status], searchValue: tpl => statusLabel[tpl.status] },
+    { key: 'createdAt', header: 'Fecha Creación', cellClassName: 'text-slate-400 font-medium whitespace-nowrap', render: tpl => new Date(tpl.createdAt).toLocaleDateString(), sortValue: tpl => tpl.createdAt },
+  ];
+
   return (
     <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-10">
@@ -191,85 +221,48 @@ export const DocumentTemplates = () => {
         </button>
       </div>
 
-      <div className="glass-panel rounded-3xl overflow-hidden mt-8">
-        <table className="w-full text-left">
-          <thead className="bg-slate-900/50 border-b border-slate-700/50">
-            <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre de la plantilla</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Versión</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Estado</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Fecha Creación</th>
-              <th className="px-6 py-4 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {templates.map(tpl => (
-              <tr key={tpl.id} className="hover:bg-slate-800/30 transition-colors group">
-                <td className="px-6 py-4">
-                  <div className="flex items-center font-bold text-white">
-                    <FileText className="w-4 h-4 mr-3 text-indigo-400" />
-                    {tpl.name}
-                    <button onClick={() => handleRename(tpl)} className="ml-3 p-1 text-slate-400 hover:text-indigo-300 rounded transition-colors" title="Cambiar nombre">
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-slate-800 text-slate-300 font-mono">
-                    v{tpl.version}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  {getStatusBadge(tpl.status)}
-                </td>
-                <td className="px-6 py-4 text-slate-400 font-medium">
-                  {new Date(tpl.createdAt).toLocaleDateString()}
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center justify-end gap-2">
-                    <button onClick={() => handlePreview(tpl.id)} disabled={previewingId === tpl.id} className="w-32 px-3 py-1.5 text-sm font-bold text-indigo-400 hover:bg-indigo-400/10 rounded-xl transition-all disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
-                      {previewingId === tpl.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
-                      Vista Previa
-                    </button>
-                    {tpl.status === 'Draft' ? (
-                      <Link to={`/document-types/${typeId}/templates/${tpl.repxTemplateKey}/edit`} className="w-24 px-3 py-1.5 text-sm font-bold text-amber-400 hover:bg-amber-400/10 rounded-xl transition-all inline-flex items-center justify-center gap-1.5">
-                        <Pencil className="w-4 h-4" /> Editar
-                      </Link>
-                    ) : (
-                      <span className="w-24" />
-                    )}
-                    {tpl.status === 'Draft' && (
-                      <button onClick={() => handlePublish(tpl.id)} className="w-28 px-3 py-1.5 text-sm font-bold text-emerald-400 hover:bg-emerald-400/10 rounded-xl transition-all">
-                        Publicar
-                      </button>
-                    )}
-                    {tpl.status === 'Published' && (
-                      <button onClick={() => handleReturnToDraft(tpl.id)} className="w-32 px-3 py-1.5 text-sm font-bold text-amber-400 hover:bg-amber-400/10 rounded-xl transition-all inline-flex items-center justify-center gap-1.5">
-                        <Undo2 className="w-4 h-4" /> Borrador
-                      </button>
-                    )}
-                    {tpl.status === 'Published' && (
-                      <button onClick={() => setShowVersionModal(tpl.id)} className="w-28 px-3 py-1.5 text-sm font-bold text-blue-400 hover:bg-blue-400/10 rounded-xl transition-all">
-                        Nueva Versión
-                      </button>
-                    )}
-                    {tpl.status === 'Archived' && <span className="w-28" />}
-                    <button onClick={() => handleDelete(tpl.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {templates.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-medium">
-                  No hay plantillas registradas para este documento.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-8">
+        <DataTable
+          theme="dark"
+          rows={templates}
+          rowKey={tpl => tpl.id}
+          tableFrom="xl"
+          search="Buscar por nombre o estado..."
+          defaultSort={{ key: 'createdAt', dir: 'desc' }}
+          emptyMessage="No hay plantillas registradas para este documento."
+          columns={columns}
+          actions={tpl => (
+            <>
+              <button onClick={() => handlePreview(tpl.id)} disabled={previewingId === tpl.id} className="px-3 py-1.5 text-sm font-bold text-indigo-400 hover:bg-indigo-400/10 rounded-xl transition-all disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                {previewingId === tpl.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                Vista Previa
+              </button>
+              {tpl.status === 'Draft' && (
+                <Link to={`/document-types/${typeId}/templates/${tpl.repxTemplateKey}/edit`} className="px-3 py-1.5 text-sm font-bold text-amber-400 hover:bg-amber-400/10 rounded-xl transition-all inline-flex items-center justify-center gap-2">
+                  <Pencil className="w-4 h-4" /> Editar
+                </Link>
+              )}
+              {tpl.status === 'Draft' && (
+                <button onClick={() => handlePublish(tpl.id)} className="px-3 py-1.5 text-sm font-bold text-emerald-400 hover:bg-emerald-400/10 rounded-xl transition-all">
+                  Publicar
+                </button>
+              )}
+              {tpl.status === 'Published' && (
+                <button onClick={() => handleReturnToDraft(tpl.id)} className="px-3 py-1.5 text-sm font-bold text-amber-400 hover:bg-amber-400/10 rounded-xl transition-all inline-flex items-center justify-center gap-2">
+                  <Undo2 className="w-4 h-4" /> Borrador
+                </button>
+              )}
+              {tpl.status === 'Published' && (
+                <button onClick={() => setShowVersionModal(tpl.id)} className="px-3 py-1.5 text-sm font-bold text-blue-400 hover:bg-blue-400/10 rounded-xl transition-all">
+                  Nueva Versión
+                </button>
+              )}
+              <button onClick={() => handleDelete(tpl.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${tpl.name}`}>
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        />
       </div>
 
       {/* Modal Nueva Plantilla */}

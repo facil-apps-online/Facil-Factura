@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, ArrowLeft, Edit2, Send, AlertCircle, Info, Printer, RotateCcw, XCircle, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Loader2, ArrowLeft, Edit2, Send, AlertCircle, Info, Printer, RotateCcw, XCircle, Search, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
-import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
@@ -18,7 +18,6 @@ import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch
 import DecimalInput from '../components/DecimalInput';
 import { todayColombia } from '../lib/colombiaTime';
 
-const PAGE_SIZE = 25;
 
 interface Concept {
   code?: string;
@@ -76,7 +75,6 @@ export default function PayrollPage() {
   const [viewingRelated, setViewingRelated] = useState<any[]>([]);
   const [viewingOriginal, setViewingOriginal] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [page, setPage] = useState(1);
 
   const today = todayColombia();
   const initialForm = {
@@ -96,10 +94,6 @@ export default function PayrollPage() {
   useEffect(() => {
     loadData();
   }, [datePreset, appliedCustomFrom, appliedCustomTo]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [searchTerm, statusFilter, datePreset, appliedCustomFrom, appliedCustomTo]);
 
   const loadData = async ({ quiet = false } = {}) => {
     // quiet: refresca la lista sin el spinner de página completa (no desmonta el avance de un lote en curso).
@@ -535,9 +529,6 @@ export default function PayrollPage() {
       (e.customer?.name || '').toLowerCase().includes(q) ||
       (e.customer?.identificationNumber || '').toLowerCase().includes(q);
   });
-  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedEntries = filteredEntries.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const selectedRows = filteredEntries.filter(r => batchSelection.selected.has(r.id));
   const notEditableCount = selectedRows.filter(r => !isBatchEditable(r.status)).length;
   const batchRunning = batch.progress !== null && !batch.progress.finished;
@@ -557,9 +548,7 @@ export default function PayrollPage() {
   const batchSelectionProps = {
     isSelected: (r: any) => batchSelection.selected.has(r.id),
     onToggle: (r: any) => batchSelection.toggle(r.id),
-    onToggleAll: () => batchSelection.toggleMany(paginatedEntries.map(r => r.id)),
-    allSelected: paginatedEntries.length > 0 && paginatedEntries.every(r => batchSelection.selected.has(r.id)),
-    someSelected: paginatedEntries.some(r => batchSelection.selected.has(r.id)),
+    onToggleMany: (rows: any[]) => batchSelection.toggleMany(rows.map(r => r.id)),
     label: (r: any) => `Seleccionar nómina ${r.consecutiveNumber || 'borrador'}`,
   };
   // Las notas de eliminación/reemplazo y los comprobantes anulados no suman al total del periodo.
@@ -593,8 +582,8 @@ export default function PayrollPage() {
     ]
   );
 
-  const columns: ResponsiveListColumn<any>[] = [
-    { key: 'consecutive', header: 'Consecutivo', cellClassName: 'font-mono text-sm text-slate-600', render: e => e.consecutiveNumber || '-' },
+  const columns: DataTableColumn<any>[] = [
+    { key: 'consecutive', header: 'Consecutivo', cellClassName: 'font-mono text-sm text-slate-600', render: e => e.consecutiveNumber || '-', sortValue: e => e.consecutiveNumber },
     {
       key: 'employee',
       header: 'Empleado',
@@ -606,12 +595,13 @@ export default function PayrollPage() {
           {noteTypeOf(e.typeCode) === 'REEMPLAZO' && <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-700">Reemplazo</span>}
           {e.customer?.name || '-'}
         </div>
-      )
+      ),
+      sortValue: e => e.customer?.name
     },
-    { key: 'period', header: 'Período', cellClassName: 'text-slate-500 text-sm', render: periodOf },
-    { key: 'net', header: 'Neto', align: 'right', cellClassName: 'font-medium', render: e => `$${fmt.number(e.totalAmount, 3)}` },
-    { key: 'status', header: 'Estado', render: e => entryStatusBadge(e) },
-    { key: 'date', header: 'Fecha', hideBelow: 'ultra', cellClassName: 'text-slate-500 text-sm', render: e => new Date(e.issueDate).toLocaleDateString('es-CO') }
+    { key: 'period', header: 'Período', cellClassName: 'text-slate-500 text-sm', render: periodOf, sortValue: e => e.initialSettlementDate },
+    { key: 'net', header: 'Neto', align: 'right', cellClassName: 'font-medium', render: e => `$${fmt.number(e.totalAmount, 3)}`, sortValue: e => e.totalAmount },
+    { key: 'status', header: 'Estado', render: e => entryStatusBadge(e), sortValue: e => e.status },
+    { key: 'date', header: 'Fecha', hideBelow: 'ultra', cellClassName: 'text-slate-500 text-sm', render: e => new Date(e.issueDate).toLocaleDateString('es-CO'), sortValue: e => e.issueDate }
   ];
 
   return (
@@ -703,8 +693,9 @@ export default function PayrollPage() {
       />
       <BatchProgressDialog progress={batch.progress} labelOf={batchLabelOf} noun={{ singular: 'nómina', plural: 'nóminas' }} onClose={batch.close} />
 
-      <ResponsiveList
-        rows={paginatedEntries}
+      <DataTable
+        rows={filteredEntries}
+        resetKey={`${searchTerm}|${statusFilter}|${datePreset}|${appliedCustomFrom}|${appliedCustomTo}`}
         selection={batchSelectionProps}
         columns={columns}
         rowKey={e => e.id}
@@ -750,22 +741,7 @@ export default function PayrollPage() {
         </div>
       )}
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-slate-400">{filteredEntries.length} comprobante{filteredEntries.length === 1 ? '' : 's'} en el periodo</p>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between gap-3 sm:justify-end">
-            <p className="text-sm text-slate-500">Página {currentPage} de {totalPages}</p>
-            <div className="flex gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} aria-label="Página anterior" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors lg:h-9 lg:w-9">
-                <ChevronLeft size={18} />
-              </button>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} aria-label="Página siguiente" className="flex h-11 w-11 items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors lg:h-9 lg:w-9">
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <p className="mt-4 text-sm text-slate-400">{filteredEntries.length} comprobante{filteredEntries.length === 1 ? '' : 's'} en el periodo</p>
 
       {responseDialog}
     </div>

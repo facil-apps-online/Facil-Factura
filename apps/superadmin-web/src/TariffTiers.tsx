@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Coins, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 interface Tier {
   id: string;
@@ -19,6 +20,37 @@ interface IntegratorOption {
   code: string;
   name: string;
 }
+
+const tierColumns: DataTableColumn<Tier>[] = [
+  { key: 'name', header: 'Nombre', primary: true, cellClassName: 'font-bold text-white', render: t => t.name, sortValue: t => t.name, searchValue: t => t.name },
+  {
+    key: 'integrator',
+    header: 'Integrador',
+    render: t => (t.integratorName ? (
+      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30">{t.integratorName}</span>
+    ) : (
+      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300">Global</span>
+    )),
+    sortValue: t => t.integratorName ?? 'Global',
+    searchValue: t => t.integratorName ?? 'Global',
+  },
+  {
+    key: 'range',
+    header: 'Rango',
+    cellClassName: 'text-slate-300 text-sm whitespace-nowrap',
+    render: t => `${t.minDocuments.toLocaleString('es-CO')} — ${t.maxDocuments ? t.maxDocuments.toLocaleString('es-CO') : '∞'}`,
+    sortValue: t => t.minDocuments,
+  },
+  { key: 'price', header: 'Tarifa / documento', align: 'right', cellClassName: 'text-slate-300 font-mono text-sm', render: t => `$${t.pricePerDocument.toLocaleString('es-CO')}`, sortValue: t => t.pricePerDocument },
+  {
+    key: 'status',
+    header: 'Estado',
+    render: t => (
+      <span className={`px-2 py-1 rounded-md text-xs font-bold ${t.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-700 text-slate-300'}`}>{t.isActive ? 'Activo' : 'Inactivo'}</span>
+    ),
+    sortValue: t => (t.isActive ? 0 : 1),
+  },
+];
 
 export const TariffTiers = () => {
   const [tiers, setTiers] = useState<Tier[]>([]);
@@ -113,53 +145,27 @@ export const TariffTiers = () => {
         </button>
       </div>
 
-      <div className="glass-panel rounded-3xl overflow-hidden mt-8">
-        <table className="w-full text-left">
-          <thead className="bg-slate-900/50 border-b border-slate-700/50">
-            <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Nombre</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Integrador</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Rango</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Tarifa / documento</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Estado</th>
-              <th className="px-6 py-4 text-right"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {tiers.map(t => (
-              <tr key={t.id} className="hover:bg-slate-800/30 transition-colors group">
-                <td className="px-6 py-4 font-bold text-white">{t.name}</td>
-                <td className="px-6 py-4">
-                  {t.integratorName ? (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30">{t.integratorName}</span>
-                  ) : (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300">Global</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-slate-300 text-sm">{t.minDocuments.toLocaleString('es-CO')} — {t.maxDocuments ? t.maxDocuments.toLocaleString('es-CO') : '∞'}</td>
-                <td className="px-6 py-4 text-slate-300 font-mono text-sm">${t.pricePerDocument.toLocaleString('es-CO')}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded-md text-xs font-bold ${t.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-700 text-slate-300'}`}>
-                    {t.isActive ? 'Activo' : 'Inactivo'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right space-x-1">
-                  <button onClick={() => openEdit(t)} className="p-2 text-slate-400 hover:bg-slate-700/40 rounded-xl opacity-0 group-hover:opacity-100 transition-all" title="Editar">
-                    <Pencil className="w-5 h-5" />
-                  </button>
-                  <button onClick={() => handleDelete(t)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all" title="Eliminar">
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {tiers.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium">Sin tiers registrados.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-8">
+        <DataTable
+          theme="dark"
+          rows={tiers}
+          rowKey={t => t.id}
+          tableFrom="md"
+          search="Buscar por nombre o integrador..."
+          defaultSort={{ key: 'range', dir: 'asc' }}
+          emptyMessage="Sin tiers registrados."
+          columns={tierColumns}
+          actions={t => (
+            <>
+              <button onClick={() => openEdit(t)} className="p-2 text-slate-400 hover:bg-slate-700/40 rounded-xl transition-all" title="Editar" aria-label={`Editar ${t.name}`}>
+                <Pencil className="w-5 h-5" />
+              </button>
+              <button onClick={() => handleDelete(t)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${t.name}`}>
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        />
       </div>
 
       {showModal && (

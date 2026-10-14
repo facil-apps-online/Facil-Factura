@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, Search } from 'lucide-react';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
 import Modal from '../components/Modal';
-import ResponsiveList, { type ResponsiveListColumn } from '../components/ResponsiveList';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import { Button } from '../components/ui/button';
 import SearchableSelect from '@shared/components/SearchableSelect';
@@ -38,7 +38,6 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
-  const [search, setSearch] = useState('');
   const [otherTaxCatalog, setOtherTaxCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [ivaRateCatalog, setIvaRateCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [unitOfMeasureCatalog, setUnitOfMeasureCatalog] = useState<{ id: string, dianCode: string, abbreviation: string, name: string }[]>([]);
@@ -117,38 +116,39 @@ export default function ProductsPage() {
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
-  const q = search.trim().toLowerCase();
-  const filteredProducts = q
-    ? products.filter(p => [p.code, p.name, p.standardCode].some((f: string) => f?.toLowerCase().includes(q)))
-    : products;
-
-  const columns: ResponsiveListColumn<any>[] = [
+  const columns: DataTableColumn<any>[] = [
     {
       key: 'code',
       header: 'Código (SKU)',
       cellClassName: 'font-mono text-sm font-medium text-slate-500',
-      render: p => p.code
+      render: p => p.code,
+      sortValue: p => p.code,
+      searchValue: p => `${p.code ?? ''} ${p.standardCode ?? ''}`
     },
     {
       key: 'name',
       header: 'Nombre o descripción',
       primary: true,
       cellClassName: 'font-bold text-slate-900',
-      render: p => p.name
+      render: p => p.name,
+      sortValue: p => p.name,
+      searchValue: p => p.name
     },
     {
       key: 'price',
       header: 'Precio Base',
       align: 'right',
       cellClassName: 'font-medium',
-      render: p => `$${fmt.number(p.unitPrice, 3)}`
+      render: p => `$${fmt.number(p.unitPrice, 3)}`,
+      sortValue: p => p.unitPrice
     },
     {
       key: 'iva',
       header: 'IVA',
       align: 'right',
       cellClassName: 'text-sm text-slate-500',
-      render: p => (p.ivaTreatment === 'Gravado' ? `${p.ivaRate}%` : IVA_TREATMENTS.find(t => t.value === p.ivaTreatment)?.label || p.ivaTreatment)
+      render: p => (p.ivaTreatment === 'Gravado' ? `${p.ivaRate}%` : IVA_TREATMENTS.find(t => t.value === p.ivaTreatment)?.label || p.ivaTreatment),
+      sortValue: p => (p.ivaTreatment === 'Gravado' ? p.ivaRate : -1)
     },
     {
       key: 'otherTaxes',
@@ -190,24 +190,14 @@ export default function ProductsPage() {
         ))}
       </div>
 
-      <div className="relative mb-6 w-full sm:w-80">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Buscar por código o nombre..."
-          aria-label="Buscar productos"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary"
-        />
-      </div>
-
-      <ResponsiveList
-        rows={filteredProducts}
+      <DataTable
+        rows={products}
         columns={columns}
         rowKey={p => p.id}
         tableFrom="wide"
-        emptyMessage={q ? 'Ningún resultado para tu búsqueda.' : 'No tienes productos registrados.'}
+        search="Buscar por código o nombre..."
+        defaultSort={{ key: 'name', dir: 'asc' }}
+        emptyMessage="No tienes productos registrados."
         actions={p => (
           <>
             <RowIconButton action="edit" label={`Editar ${p.name}`} onClick={() => handleOpenModal(p)} />

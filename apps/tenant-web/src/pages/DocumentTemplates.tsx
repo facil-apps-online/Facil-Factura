@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, Save, FileText, Upload, Globe, User, GitBranch, Pencil, Eye, Loader2 } from 'lucide-react';
+import { Copy, Save, FileText, Upload, Globe, User, GitBranch, Pencil, Eye, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
@@ -77,6 +77,17 @@ export default function DocumentTemplates() {
       loadTemplates();
     } catch (err: any) {
       toast.error(err.response?.data || "Error al crear la versión");
+    }
+  };
+
+  const handleDelete = async (tpl: DocumentTemplate) => {
+    if (!window.confirm(`¿Eliminar el borrador "${tpl.name}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await api.delete(`/tenant/templates/${tpl.id}`);
+      toast.success("Plantilla eliminada.");
+      loadTemplates();
+    } catch (err: any) {
+      toast.error(err.response?.data || "Error al eliminar la plantilla");
     }
   };
 
@@ -205,6 +216,16 @@ export default function DocumentTemplates() {
               >
                 <Upload className="w-4 h-4 mr-2" />
                 Publicar
+              </button>
+            )}
+            {!tpl.isGlobal && tpl.status === 'Draft' && (
+              <button
+                onClick={() => handleDelete(tpl)}
+                title="Eliminar borrador"
+                aria-label={`Eliminar el borrador ${tpl.name}`}
+                className="p-2 text-rose-500 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-xl transition-all"
+              >
+                <Trash2 className="w-5 h-5" />
               </button>
             )}
             {!tpl.isGlobal && tpl.status === 'Published' && (

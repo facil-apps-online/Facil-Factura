@@ -207,6 +207,46 @@ namespace Fel.Api.Tenant.Controllers
             }
         }
 
+        // DELETE: api/tenant/templates/{id} — solo un borrador propio que nunca se publicó ni se usó. Un borrador del
+        // Tenant nunca estuvo publicado (el Tenant solo puede publicar, no devolver a borrador), pero igual se valida que
+        // ningún cliente lo tenga seleccionado, que ningún documento lo haya usado y que ninguna versión dependa de él.
+        // Las plantillas publicadas o archivadas no se borran: se retiran publicando una versión nueva.
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> DeleteTemplate(Guid id)
+        {
+            try
+            {
+                var tenantId = GetCurrentTenantId();
+
+                var template = await _dbContext.DocumentTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId && t.ClientId == null);
+
+                if (template == null)
+                    return NotFound("Plantilla no encontrada o no le pertenece a este Tenant.");
+
+                if (template.Status != TemplateStatus.Draft)
+                    return BadRequest("Solo se pueden eliminar plantillas en borrador. Una plantilla publicada se reemplaza publicando una nueva versión.");
+
+                if (await _dbContext.ClientDocumentSettings.AnyAsync(s => s.SelectedTemplateId == id))
+                    return BadRequest("No puedes eliminar esta plantilla: un cliente la tiene seleccionada.");
+
+                if (await _dbContext.Documents.AnyAsync(d => d.UsedTemplateId == id))
+                    return BadRequest("No puedes eliminar esta plantilla: ya se emitieron documentos con ella.");
+
+                if (await _dbContext.DocumentTemplates.AnyAsync(t => t.PreviousVersionId == id || t.ClonedFromId == id))
+                    return BadRequest("No puedes eliminar esta plantilla: hay otra plantilla que depende de ella.");
+
+                _dbContext.DocumentTemplates.Remove(template);
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new { message = "Plantilla eliminada." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         public class NewVersionRequest
         {
             public string NewRepxTemplateKey { get; set; } = string.Empty;

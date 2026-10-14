@@ -44,6 +44,11 @@ namespace Fel.Core.Entities
         public string EventCode { get; set; } = string.Empty; // 030 Acuse, 031 Reclamo, 032 Recibo del bien, 033 Aceptación
         public string Cude { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty; // "SENT" | "REJECTED"
+
+        // Solo los eventos enviados por Dataico: el consecutivo con el que se emitió (Client.ReceptionEventPrefix + número)
+        // y el uuid que Dataico le asignó. En el envío directo a la DIAN quedan vacíos.
+        public int? EventNumber { get; set; }
+        public string? ProviderUid { get; set; }
         public string? DianResponseMessage { get; set; }
         public DateTime SentAt { get; set; }
     }

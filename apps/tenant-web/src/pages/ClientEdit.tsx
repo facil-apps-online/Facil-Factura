@@ -7,6 +7,7 @@ import SearchableSelect from '@shared/components/SearchableSelect';
 import ClientFormFields from '../components/ClientFormFields';
 import BranchesTab from '../components/BranchesTab';
 import ClientUsersTab from '../components/ClientUsersTab';
+import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import { MinSaludCard, IhceCard, ReceptionMailboxCard, ReceptionEventsCard } from '../components/BranchCredentials';
 import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
 import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
@@ -82,6 +83,7 @@ export default function ClientEdit() {
   const [manualTrackId, setManualTrackId] = useState('');
   const [checkingManualTrackId, setCheckingManualTrackId] = useState(false);
   const [manualTrackIdOutcome, setManualTrackIdOutcome] = useState<any>(null);
+  const [savedProvider, setSavedProvider] = useState<string | null>(null);
   const [docProvider, setDocProvider] = useState({
     documentProvider: 'Native',
     dataicoApiUser: '',
@@ -89,6 +91,8 @@ export default function ClientEdit() {
     dataicoAuthToken: '',
     dataicoAccountId: '',
     dataicoEnvironment: 'PRUEBAS',
+    receptionEventPrefix: 'EV',
+    receptionEventStartNumber: 1,
     hasApiPassword: false,
     hasAuthToken: false
   });
@@ -387,9 +391,14 @@ export default function ClientEdit() {
 
   const loadDocProvider = () => {
     api.get(`/tenant/clients/${id}/document-provider`)
-      .then(res => { setDocProvider(prev => ({ ...prev, ...res.data, dataicoApiPassword: '', dataicoAuthToken: '' })); docLock.lock(); })
+      .then(res => { setDocProvider(prev => ({ ...prev, ...res.data, dataicoApiPassword: '', dataicoAuthToken: '' })); setSavedProvider(res.data.documentProvider); docLock.lock(); })
       .catch(() => {});
   };
+
+  // El proveedor guardado decide qué pestañas aplican (certificado solo con emisión directa a la DIAN).
+  useEffect(() => {
+    api.get(`/tenant/clients/${id}/document-provider`).then(res => setSavedProvider(res.data.documentProvider)).catch(() => {});
+  }, [id]);
 
   const loadPrepaid = () => {
     api.get(`/tenant/clients/${id}/prepaid/packages`).then(res => setPrepaidPackages(res.data)).catch(() => {});
@@ -849,6 +858,123 @@ export default function ClientEdit() {
     }
   };
 
+  const money = (value: number) => `$${value.toLocaleString('es-CO')}`;
+
+  const resolutionBranchNames = (r: any) =>
+    (r.branchIds || []).map((bid: string) => branches.find(b => b.id === bid)?.name).filter(Boolean).join(', ') || '—';
+
+  const resolutionColumns: DataTableColumn<any>[] = [
+    {
+      key: 'type',
+      header: 'Tipo / Prefijo',
+      primary: true,
+      render: r => (
+        <div className="flex items-center gap-3">
+          <span className={`px-2 py-1 rounded-md text-xs font-bold ${r.documentType === 'FE' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{r.documentType}</span>
+          <span className="font-bold text-slate-700">{r.prefix || '-'}</span>
+        </div>
+      ),
+      sortValue: r => `${r.documentType} ${r.prefix ?? ''}`,
+    },
+    { key: 'resolution', header: 'Resolución', cellClassName: 'font-mono text-slate-600', render: r => r.resolutionNumber, sortValue: r => r.resolutionNumber },
+    { key: 'range', header: 'Rango', cellClassName: 'text-slate-600 whitespace-nowrap', render: r => `${r.numberStart} a ${r.numberEnd}`, sortValue: r => r.numberStart },
+    {
+      key: 'next',
+      header: 'Próximo #',
+      render: r => (editingNextNumberId === r.id ? (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={r.numberStart}
+            max={r.numberEnd}
+            autoFocus
+            className="w-24 px-2 py-1.5 bg-white border border-blue-500 rounded-lg outline-none text-sm font-mono"
+            value={nextNumberDraft}
+            onChange={e => setNextNumberDraft(e.target.value)}
+            disabled={savingNextNumber}
+          />
+          <button onClick={() => saveNextNumber(r)} disabled={savingNextNumber} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Guardar" aria-label="Guardar consecutivo">
+            {savingNextNumber ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+          </button>
+          <button onClick={() => setEditingNextNumberId(null)} disabled={savingNextNumber} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Cancelar" aria-label="Cancelar edición">
+            <X size={16} />
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => startEditNextNumber(r)} className="flex items-center gap-1.5 font-mono font-bold text-slate-700 hover:text-blue-600 group">
+          {r.nextNumber ?? r.numberStart}
+          <Pencil size={13} className="text-slate-300 group-hover:text-blue-600" />
+        </button>
+      )),
+      sortValue: r => r.nextNumber ?? r.numberStart,
+    },
+    ...(branches.length > 1 ? [{
+      key: 'branches',
+      header: 'Sucursales',
+      cellClassName: 'text-xs text-slate-600',
+      render: (r: any) => resolutionBranchNames(r),
+      sortValue: (r: any) => resolutionBranchNames(r),
+    } as DataTableColumn<any>] : []),
+    {
+      key: 'validity',
+      header: 'Vigencia',
+      cellClassName: 'text-slate-500',
+      render: r => (r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} - ${new Date(r.validTo).toLocaleDateString()}`),
+      sortValue: r => (r.documentType === 'NE' ? null : r.validTo),
+    },
+    {
+      key: 'default',
+      header: 'Predeterminada',
+      align: 'right',
+      render: r => (r.isDefault ? (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+          <Star size={14} fill="currentColor" /> Predeterminada
+        </span>
+      ) : (
+        <button onClick={() => handleSetDefaultResolution(r.id)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors" title="Marcar como predeterminada para este tipo de documento">
+          <Star size={14} /> Marcar
+        </button>
+      )),
+      sortValue: r => (r.isDefault ? 0 : 1),
+    },
+  ];
+
+  const packageColumns: DataTableColumn<any>[] = [
+    { key: 'name', header: 'Paquete', primary: true, cellClassName: 'font-semibold text-slate-700', render: p => p.name, sortValue: p => p.name },
+    { key: 'integrator', header: 'Integrador', cellClassName: 'text-slate-600', render: p => p.integratorName, sortValue: p => p.integratorName },
+    { key: 'total', header: 'Precio total', align: 'right', cellClassName: 'text-slate-600 font-mono', render: p => money(p.totalPrice), sortValue: p => p.totalPrice },
+    { key: 'rate', header: 'Tarifa / documento', align: 'right', cellClassName: 'text-slate-600 font-mono', render: p => money(p.discountedPricePerDocument), sortValue: p => p.discountedPricePerDocument },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: p => (
+        <span className={`px-2 py-1 rounded-md text-xs font-bold ${p.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{p.isActive ? 'Activo' : 'Inactivo'}</span>
+      ),
+      sortValue: p => (p.isActive ? 0 : 1),
+    },
+  ];
+
+  const bagStatusLabel = (status: string) => (status === 'Active' ? 'Activa' : status === 'Depleted' ? 'Agotada' : 'Cancelada');
+
+  const bagColumns: DataTableColumn<any>[] = [
+    { key: 'name', header: 'Paquete', primary: true, cellClassName: 'font-semibold text-slate-700', render: b => b.packageName, sortValue: b => b.packageName },
+    { key: 'integrator', header: 'Integrador', cellClassName: 'text-slate-600', render: b => b.integratorName, sortValue: b => b.integratorName },
+    { key: 'balance', header: 'Saldo restante', align: 'right', cellClassName: 'text-slate-600 font-mono', render: b => money(b.remainingBalance), sortValue: b => b.remainingBalance },
+    { key: 'rate', header: 'Tarifa preferencial', align: 'right', cellClassName: 'text-slate-600 font-mono', render: b => money(b.discountedPricePerDocument), sortValue: b => b.discountedPricePerDocument },
+    { key: 'paid', header: 'Pagado', align: 'right', cellClassName: 'text-slate-600 font-mono', render: b => money(b.amountPaid), sortValue: b => b.amountPaid },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: b => (
+        <span className={`px-2 py-1 rounded-md text-xs font-bold ${b.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : b.status === 'Depleted' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+          {bagStatusLabel(b.status)}
+        </span>
+      ),
+      sortValue: b => bagStatusLabel(b.status),
+    },
+    { key: 'purchasedAt', header: 'Activada', cellClassName: 'text-slate-500', render: b => new Date(b.purchasedAt).toLocaleDateString(), sortValue: b => b.purchasedAt },
+  ];
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -901,22 +1027,28 @@ export default function ClientEdit() {
           >
             <FileSignature size={18} /> Resoluciones y Consecutivos
           </button>
-          <button 
-            onClick={() => setActiveTab('dian')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'dian' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Zap size={18} /> Habilitación DIAN
-          </button>
-          <button 
-            onClick={() => setActiveTab('certificate')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'certificate' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <FileKey size={18} /> Certificado Digital
-          </button>
+          {/* La habilitación ante la DIAN la hace Dataico con su propio software: solo aplica a la emisión directa. */}
+          {savedProvider !== 'Dataico' && (
+            <button
+              onClick={() => setActiveTab('dian')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'dian' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <Zap size={18} /> Habilitación DIAN
+            </button>
+          )}
+          {/* Con Dataico firma y transmite Dataico con su propio certificado: aquí no se carga ninguno. */}
+          {savedProvider !== 'Dataico' && (
+            <button
+              onClick={() => setActiveTab('certificate')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'certificate' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <FileKey size={18} /> Certificado Digital
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('credentials')}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
@@ -1049,102 +1181,34 @@ export default function ClientEdit() {
                     <p className="text-slate-500 max-w-sm mt-2">No hay rangos de numeración activos para este emisor.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-500 text-sm border-y border-slate-200">
-                          <th className="font-semibold py-3 px-4 rounded-tl-xl">Tipo / Prefijo</th>
-                          <th className="font-semibold py-3 px-4">Resolución</th>
-                          <th className="font-semibold py-3 px-4">Rango</th>
-                          <th className="font-semibold py-3 px-4">Próximo #</th>
-                          {branches.length > 1 && <th className="font-semibold py-3 px-4">Sucursales</th>}
-                          <th className="font-semibold py-3 px-4">Vigencia</th>
-                          <th className="font-semibold py-3 px-4 text-center">Predeterminada</th>
-                          <th className="font-semibold py-3 px-4 text-center rounded-tr-xl">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {resolutions.map(r => (
-                          <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                            <td className="py-4 px-4">
-                              <div className="flex items-center gap-3">
-                                <span className={`px-2 py-1 rounded-md text-xs font-bold ${r.documentType === 'FE' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{r.documentType}</span>
-                                <span className="font-bold text-slate-700">{r.prefix || '-'}</span>
-                              </div>
-                            </td>
-                            <td className="py-4 px-4 font-mono text-sm text-slate-600">{r.resolutionNumber}</td>
-                            <td className="py-4 px-4 text-sm text-slate-600">{r.numberStart} a {r.numberEnd}</td>
-                            <td className="py-4 px-4 text-sm">
-                              {editingNextNumberId === r.id ? (
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="number"
-                                    min={r.numberStart}
-                                    max={r.numberEnd}
-                                    autoFocus
-                                    className="w-24 px-2 py-1.5 bg-white border border-blue-500 rounded-lg outline-none text-sm font-mono"
-                                    value={nextNumberDraft}
-                                    onChange={e => setNextNumberDraft(e.target.value)}
-                                    disabled={savingNextNumber}
-                                  />
-                                  <button onClick={() => saveNextNumber(r)} disabled={savingNextNumber} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Guardar">
-                                    {savingNextNumber ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                                  </button>
-                                  <button onClick={() => setEditingNextNumberId(null)} disabled={savingNextNumber} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Cancelar">
-                                    <X size={16} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <button onClick={() => startEditNextNumber(r)} className="flex items-center gap-1.5 font-mono font-bold text-slate-700 hover:text-blue-600 group">
-                                  {r.nextNumber ?? r.numberStart}
-                                  <Pencil size={13} className="text-slate-300 group-hover:text-blue-600" />
-                                </button>
-                              )}
-                            </td>
-                            {branches.length > 1 && (
-                              <td className="py-4 px-4 text-xs text-slate-600">
-                                {(r.branchIds || []).map((bid: string) => branches.find(b => b.id === bid)?.name).filter(Boolean).join(', ') || '—'}
-                              </td>
-                            )}
-                            <td className="py-4 px-4 text-sm text-slate-500">
-                              {r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} - ${new Date(r.validTo).toLocaleDateString()}`}
-                            </td>
-                            <td className="py-4 px-4 text-center">
-                              {r.isDefault ? (
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
-                                  <Star size={14} fill="currentColor" /> Predeterminada
-                                </span>
-                              ) : (
-                                <button onClick={() => handleSetDefaultResolution(r.id)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors" title="Marcar como predeterminada para este tipo de documento">
-                                  <Star size={14} /> Marcar
-                                </button>
-                              )}
-                            </td>
-                            <td className="py-4 px-4 text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                {r.documentType === 'FE' && (
-                                  <button
-                                    onClick={() => handleFetchTechnicalKey(r.id)}
-                                    disabled={fetchingTechnicalKeyId === r.id}
-                                    className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-50"
-                                    title="Consultar Clave Técnica real en la DIAN (GetNumberingRange)"
-                                  >
-                                    {fetchingTechnicalKeyId === r.id ? <Loader2 size={16} className="animate-spin" /> : <FileKey size={16} />}
-                                  </button>
-                                )}
-                                <button onClick={() => startEditResolution(r)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar">
-                                  <Pencil size={16} />
-                                </button>
-                                <button onClick={() => handleDeleteResolution(r.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar">
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DataTable
+                    rows={resolutions}
+                    rowKey={(r: any) => r.id}
+                    tableFrom="xl"
+                    defaultSort={{ key: 'type', dir: 'asc' }}
+                    columns={resolutionColumns}
+                    actions={(r: any) => (
+                      <>
+                        {r.documentType === 'FE' && (
+                          <button
+                            onClick={() => handleFetchTechnicalKey(r.id)}
+                            disabled={fetchingTechnicalKeyId === r.id}
+                            className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-50"
+                            title="Consultar Clave Técnica real en la DIAN (GetNumberingRange)"
+                            aria-label="Consultar clave técnica en la DIAN"
+                          >
+                            {fetchingTechnicalKeyId === r.id ? <Loader2 size={16} className="animate-spin" /> : <FileKey size={16} />}
+                          </button>
+                        )}
+                        <button onClick={() => startEditResolution(r)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar" aria-label="Editar resolución">
+                          <Pencil size={16} />
+                        </button>
+                        <button onClick={() => handleDeleteResolution(r.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar" aria-label="Eliminar resolución">
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    )}
+                  />
                 )}
               </div>
 
@@ -1207,7 +1271,7 @@ export default function ClientEdit() {
               </>
             )}
 
-            {activeTab === 'certificate' && (
+            {activeTab === 'certificate' && savedProvider !== 'Dataico' && (
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                 <div className="flex items-center gap-4 mb-8">
                   <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
@@ -1411,6 +1475,16 @@ export default function ClientEdit() {
                           </label>
                           <input {...lockedInputProps(docLock.unlocked)} type="password" placeholder={docProvider.hasAuthToken ? 'Dejar vacío para no cambiar' : ''} value={docProvider.dataicoAuthToken} onChange={e => setDocProvider({ ...docProvider, dataicoAuthToken: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm")} />
                         </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Prefijo de eventos de recepción</label>
+                          <input {...lockedInputProps(docLock.unlocked)} type="text" maxLength={10} value={docProvider.receptionEventPrefix} onChange={e => setDocProvider({ ...docProvider, receptionEventPrefix: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm")} />
+                          <p className="text-xs text-slate-400 mt-1">El de la numeración de eventos en Dataico (por defecto EV).</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Número inicial de eventos</label>
+                          <input {...lockedInputProps(docLock.unlocked)} type="number" min={1} value={docProvider.receptionEventStartNumber} onChange={e => setDocProvider({ ...docProvider, receptionEventStartNumber: Number(e.target.value) || 1 })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm")} />
+                          <p className="text-xs text-slate-400 mt-1">Si ya enviaba eventos desde otra herramienta, el siguiente al último que usó. Nunca se baja de ahí.</p>
+                        </div>
                       </div>
                     )}
 
@@ -1455,53 +1529,31 @@ export default function ClientEdit() {
                       <p className="text-slate-500 max-w-sm mt-2">Crea un paquete para poder ofrecerle documentos prepago a este Client.</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-500 text-sm border-y border-slate-200">
-                            <th className="font-semibold py-3 px-4 rounded-tl-xl">Paquete</th>
-                            <th className="font-semibold py-3 px-4">Integrador</th>
-                            <th className="font-semibold py-3 px-4">Precio total</th>
-                            <th className="font-semibold py-3 px-4">Tarifa / documento</th>
-                            <th className="font-semibold py-3 px-4">Estado</th>
-                            <th className="font-semibold py-3 px-4 text-center rounded-tr-xl">Acciones</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {prepaidPackages.map((p: any) => (
-                            <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                              <td className="py-4 px-4 font-semibold text-slate-700">{p.name}</td>
-                              <td className="py-4 px-4 text-sm text-slate-600">{p.integratorName}</td>
-                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${p.totalPrice.toLocaleString('es-CO')}</td>
-                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${p.discountedPricePerDocument.toLocaleString('es-CO')}</td>
-                              <td className="py-4 px-4">
-                                <span className={`px-2 py-1 rounded-md text-xs font-bold ${p.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                  {p.isActive ? 'Activo' : 'Inactivo'}
-                                </span>
-                              </td>
-                              <td className="py-4 px-4">
-                                <div className="flex items-center justify-center gap-1">
-                                  <button
-                                    onClick={() => handleActivateBag(p.id)}
-                                    disabled={!p.isActive || activatingBagPackageId === p.id}
-                                    title="Activar bolsa para este Client"
-                                    className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                  >
-                                    {activatingBagPackageId === p.id ? 'Activando...' : 'Activar bolsa'}
-                                  </button>
-                                  <button onClick={() => openEditPackageModal(p)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="Editar">
-                                    <Pencil size={16} />
-                                  </button>
-                                  <button onClick={() => handleTogglePackageActive(p)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title={p.isActive ? 'Desactivar' : 'Reactivar'}>
-                                    {p.isActive ? <PowerOff size={16} /> : <Power size={16} />}
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DataTable
+                      rows={prepaidPackages}
+                      rowKey={(p: any) => p.id}
+                      tableFrom="lg"
+                      defaultSort={{ key: 'name', dir: 'asc' }}
+                      columns={packageColumns}
+                      actions={(p: any) => (
+                        <>
+                          <button
+                            onClick={() => handleActivateBag(p.id)}
+                            disabled={!p.isActive || activatingBagPackageId === p.id}
+                            title="Activar bolsa para este Client"
+                            className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {activatingBagPackageId === p.id ? 'Activando...' : 'Activar bolsa'}
+                          </button>
+                          <button onClick={() => openEditPackageModal(p)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="Editar" aria-label={`Editar ${p.name}`}>
+                            <Pencil size={16} />
+                          </button>
+                          <button onClick={() => handleTogglePackageActive(p)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title={p.isActive ? 'Desactivar' : 'Reactivar'} aria-label={`${p.isActive ? 'Desactivar' : 'Reactivar'} ${p.name}`}>
+                            {p.isActive ? <PowerOff size={16} /> : <Power size={16} />}
+                          </button>
+                        </>
+                      )}
+                    />
                   )}
                 </div>
 
@@ -1514,40 +1566,13 @@ export default function ClientEdit() {
                       <p className="text-slate-500">Este Client todavía no tiene ninguna bolsa activada.</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-500 text-sm border-y border-slate-200">
-                            <th className="font-semibold py-3 px-4 rounded-tl-xl">Paquete</th>
-                            <th className="font-semibold py-3 px-4">Integrador</th>
-                            <th className="font-semibold py-3 px-4">Saldo restante</th>
-                            <th className="font-semibold py-3 px-4">Tarifa preferencial</th>
-                            <th className="font-semibold py-3 px-4">Pagado</th>
-                            <th className="font-semibold py-3 px-4">Estado</th>
-                            <th className="font-semibold py-3 px-4 rounded-tr-xl">Activada</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {prepaidBags.map((b: any) => (
-                            <tr key={b.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                              <td className="py-4 px-4 font-semibold text-slate-700">{b.packageName}</td>
-                              <td className="py-4 px-4 text-sm text-slate-600">{b.integratorName}</td>
-                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${b.remainingBalance.toLocaleString('es-CO')}</td>
-                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${b.discountedPricePerDocument.toLocaleString('es-CO')}</td>
-                              <td className="py-4 px-4 text-sm text-slate-600 font-mono">${b.amountPaid.toLocaleString('es-CO')}</td>
-                              <td className="py-4 px-4">
-                                <span className={`px-2 py-1 rounded-md text-xs font-bold ${
-                                  b.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : b.status === 'Depleted' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
-                                }`}>
-                                  {b.status === 'Active' ? 'Activa' : b.status === 'Depleted' ? 'Agotada' : 'Cancelada'}
-                                </span>
-                              </td>
-                              <td className="py-4 px-4 text-sm text-slate-500">{new Date(b.purchasedAt).toLocaleDateString()}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DataTable
+                      rows={prepaidBags}
+                      rowKey={(b: any) => b.id}
+                      tableFrom="lg"
+                      defaultSort={{ key: 'purchasedAt', dir: 'desc' }}
+                      columns={bagColumns}
+                    />
                   )}
                 </div>
               </div>
@@ -1735,7 +1760,7 @@ export default function ClientEdit() {
               </div>
             )}
 
-            {activeTab === 'dian' && (
+            {activeTab === 'dian' && savedProvider !== 'Dataico' && (
               <div className="relative">
                 {/* Splash Screen Overlay for DIAN Tab */}
                 {(isHabilitating || habilitationStatus?.status === 'Approved') && (

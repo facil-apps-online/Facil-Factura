@@ -143,6 +143,13 @@ namespace Fel.Core.Entities
         public string DataicoAccountId { get; set; } = string.Empty;
         public string DataicoEnvironment { get; set; } = "PRUEBAS"; // PRUEBAS o PRODUCCION
 
+        // Numeración de los eventos de recepción (RADIAN) que Dataico emite por este Client: el consecutivo es de
+        // la cuenta de Dataico, no de FacilFactura. El prefijo es el que tiene configurado en Dataico (sirve para
+        // consultar un evento ya enviado: prefijo + número) y el número inicial evita repetir los que se enviaron
+        // antes desde otra herramienta; el siguiente es max(inicial, último enviado + 1).
+        public string ReceptionEventPrefix { get; set; } = "EV";
+        public int ReceptionEventStartNumber { get; set; } = 1;
+
         // Leyendas generales usadas cuando no existe una leyenda específica para el tipo y prefijo.
         public string ElectronicInvoiceLegend { get; set; } = string.Empty;
         public string SupportDocumentLegend { get; set; } = string.Empty;

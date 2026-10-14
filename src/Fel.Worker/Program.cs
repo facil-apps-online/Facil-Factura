@@ -19,6 +19,8 @@ builder.ConfigureServices((hostContext, services) =>
     // CUDE) — sin esto, cualquier factura que pasara por Fel.Worker fallaba al resolver
     // IUblGenerator, antes incluso de llegar a construir el XML.
     services.AddSingleton<ICryptoService, Fel.Infrastructure.Security.CryptoService>();
+    // Los eventos de recepción automáticos de los clientes Dataico se envían por su API.
+    services.AddSingleton<Fel.Infrastructure.Dataico.IDataicoApiService, Fel.Infrastructure.Dataico.DataicoApiService>();
     services.AddScoped<IUblGenerator, Fel.Infrastructure.Ubl.UblGenerator>();
     services.AddScoped<IXmlSigner, Fel.Infrastructure.Security.XadesSigner>();
     services.AddSingleton<IMessageQueue, Fel.Infrastructure.Messaging.RedisMessageQueue>();

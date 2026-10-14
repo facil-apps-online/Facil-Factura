@@ -469,6 +469,8 @@ namespace Fel.Api.Tenant.Controllers
                 dataicoApiUser = client.DataicoApiUser,
                 dataicoAccountId = client.DataicoAccountId,
                 dataicoEnvironment = client.DataicoEnvironment,
+                receptionEventPrefix = client.ReceptionEventPrefix,
+                receptionEventStartNumber = client.ReceptionEventStartNumber,
                 hasApiPassword = !string.IsNullOrEmpty(client.DataicoApiPasswordEncrypted),
                 hasAuthToken = !string.IsNullOrEmpty(client.DataicoAuthTokenEncrypted)
             });
@@ -512,6 +514,18 @@ namespace Fel.Api.Tenant.Controllers
             client.DataicoApiUser = request.DataicoApiUser ?? string.Empty;
             client.DataicoAccountId = request.DataicoAccountId ?? string.Empty;
             client.DataicoEnvironment = string.IsNullOrWhiteSpace(request.DataicoEnvironment) ? "PRUEBAS" : request.DataicoEnvironment;
+
+            if (request.ReceptionEventPrefix != null)
+            {
+                var prefix = request.ReceptionEventPrefix.Trim();
+                if (prefix.Length > 10) return BadRequest("El prefijo de los eventos de recepción no puede tener más de 10 caracteres.");
+                client.ReceptionEventPrefix = prefix.Length == 0 ? "EV" : prefix;
+            }
+            if (request.ReceptionEventStartNumber.HasValue)
+            {
+                if (request.ReceptionEventStartNumber.Value < 1) return BadRequest("El número inicial de los eventos de recepción debe ser 1 o mayor.");
+                client.ReceptionEventStartNumber = request.ReceptionEventStartNumber.Value;
+            }
 
             if (!string.IsNullOrEmpty(request.DataicoApiPassword))
             {
@@ -748,6 +762,8 @@ namespace Fel.Api.Tenant.Controllers
         public string? DataicoAuthToken { get; set; }
         public string? DataicoAccountId { get; set; }
         public string? DataicoEnvironment { get; set; }
+        public string? ReceptionEventPrefix { get; set; }
+        public int? ReceptionEventStartNumber { get; set; }
     }
 
     public class UpdateNoteCountersRequest

@@ -16,7 +16,8 @@ namespace Fel.Infrastructure.Dataico
             };
             _httpClient = new HttpClient(handler)
             {
-                Timeout = TimeSpan.FromSeconds(100)
+                // El tiempo máximo se fija por solicitud (DataicoApiService.ExecuteAsync): 100 s por defecto y 180 s en los eventos.
+                Timeout = System.Threading.Timeout.InfiniteTimeSpan
             };
         }
 

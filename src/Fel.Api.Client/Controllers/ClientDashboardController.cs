@@ -104,8 +104,17 @@ namespace Fel.Api.Client.Controllers
                 var pendingSetupItems = new List<string>();
                 var hasActiveResolution = await _dbContext.Resolutions.ForBranch(_dbContext, CurrentBranchScope).AnyAsync(r => r.ClientId == clientId && r.IsActive);
                 if (!hasActiveResolution) pendingSetupItems.Add("no-resolution");
-                var hasActiveCertificate = await _dbContext.Certificates.AnyAsync(c => c.ClientId == clientId && c.IsActive && c.ExpirationDate > now);
-                if (!hasActiveCertificate) pendingSetupItems.Add("no-certificate");
+                // Con Dataico quien firma y transmite es Dataico con su propio certificado; solo la
+                // emisión directa a la DIAN (NATIVE) necesita uno cargado aquí.
+                var integratorCode = await _dbContext.Clients.AsNoTracking()
+                    .Where(c => c.Id == clientId)
+                    .Select(c => c.Integrator.Code)
+                    .FirstOrDefaultAsync();
+                if (integratorCode != "DATAICO")
+                {
+                    var hasActiveCertificate = await _dbContext.Certificates.AnyAsync(c => c.ClientId == clientId && c.IsActive && c.ExpirationDate > now);
+                    if (!hasActiveCertificate) pendingSetupItems.Add("no-certificate");
+                }
 
                 return Ok(new
                 {

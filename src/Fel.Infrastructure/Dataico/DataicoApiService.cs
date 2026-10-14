@@ -32,6 +32,11 @@ namespace Fel.Infrastructure.Dataico
         // producción. pdfBytes es opcional: si es null, Dataico reenvía con su propio PDF ya
         // generado en vez de uno personalizado.
         Task<DataicoResult> SendCustomDocumentPdfAsync(string documentId, string documentTypeCode, byte[]? pdfBytes, string recipientEmail, DataicoCredentials credentials);
+
+        // Evento de recepción (RADIAN) sobre una factura recibida: Dataico lo firma y lo envía a la DIAN. El GET
+        // recupera uno ya enviado por su número (prefijo + consecutivo), por ejemplo "EV58".
+        Task<DataicoResult> SendReceptionEventAsync(DataicoReceptionEventEnvelope eventRequest, DataicoCredentials credentials);
+        Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials);
     }
 
     public class DataicoApiService : IDataicoApiService
@@ -129,7 +134,14 @@ namespace Fel.Infrastructure.Dataico
             return ExecuteAsync(HttpMethod.Put, $"{baseUrl}/{resource}/{documentId}", credentials, envelope);
         }
 
-        private async Task<DataicoResult> ExecuteAsync(HttpMethod method, string url, DataicoCredentials credentials, object body)
+        public Task<DataicoResult> SendReceptionEventAsync(DataicoReceptionEventEnvelope eventRequest, DataicoCredentials credentials)
+            => ExecuteAsync(HttpMethod.Post, $"{InvoicingBaseUrl}/reception_events", credentials, eventRequest, TimeSpan.FromSeconds(180));
+
+        public Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials)
+            => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/reception_events?number={Uri.EscapeDataString(number)}", credentials, null);
+
+        // timeout: la pasarela de la DIAN a veces tarda; el legacy espera hasta 180 s en los eventos para no recibir 504.
+        private async Task<DataicoResult> ExecuteAsync(HttpMethod method, string url, DataicoCredentials credentials, object? body, TimeSpan? timeout = null)
         {
             try
             {
@@ -148,11 +160,12 @@ namespace Fel.Infrastructure.Dataico
                     request.Headers.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(authBytes));
                 }
 
-                var json = JsonSerializer.Serialize(body, JsonOpts);
-                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                var json = body == null ? null : JsonSerializer.Serialize(body, JsonOpts);
+                if (json != null) request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                using var response = await client.SendAsync(request);
-                var content = await response.Content.ReadAsStringAsync();
+                using var cts = new System.Threading.CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(100));
+                using var response = await client.SendAsync(request, cts.Token);
+                var content = await response.Content.ReadAsStringAsync(cts.Token);
 
                 var result = new DataicoResult
                 {
@@ -186,6 +199,36 @@ namespace Fel.Infrastructure.Dataico
                 using var doc = JsonDocument.Parse(content);
                 var root = doc.RootElement;
 
+                // La consulta de eventos devuelve una lista, y el evento puede venir anidado en "reception_event":
+                // se lee primero el nivel de arriba y, si falta algo, el anidado.
+                if (root.ValueKind == JsonValueKind.Array)
+                {
+                    if (root.GetArrayLength() == 0) return;
+                    root = root[0];
+                }
+                if (root.ValueKind != JsonValueKind.Object) return;
+
+                ExtractFrom(root, result);
+                if (root.TryGetProperty("reception_event", out var nested) && nested.ValueKind == JsonValueKind.Object)
+                {
+                    var fromNested = new DataicoResult { Success = result.Success };
+                    ExtractFrom(nested, fromNested);
+                    result.Cufe ??= fromNested.Cufe;
+                    result.DataicoDocumentId ??= fromNested.DataicoDocumentId;
+                    result.QrCode ??= fromNested.QrCode;
+                    result.DocumentNumber ??= fromNested.DocumentNumber;
+                }
+            }
+            catch (JsonException)
+            {
+                // Respuesta no-JSON (ej. HTML de error de gateway): se conserva solo el RawResponse.
+            }
+        }
+
+        private static void ExtractFrom(JsonElement root, DataicoResult result)
+        {
+            try
+            {
                 foreach (var key in new[] { "cufe", "cude", "cune", "trackId" })
                 {
                     if (root.TryGetProperty(key, out var val) && val.ValueKind == JsonValueKind.String)

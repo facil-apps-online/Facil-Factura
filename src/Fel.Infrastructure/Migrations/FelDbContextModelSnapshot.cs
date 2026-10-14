@@ -1202,6 +1202,18 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("ReceptionEventPrefix")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("EV");
+
+                    b.Property<int>("ReceptionEventStartNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("SmtpFromEmail")
                         .HasColumnType("nvarchar(max)");
 
@@ -2968,6 +2980,12 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<string>("EventCode")
                         .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("EventNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProviderUid")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("ReceivedDocumentId")

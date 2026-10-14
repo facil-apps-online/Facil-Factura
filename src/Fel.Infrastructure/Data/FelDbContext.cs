@@ -348,6 +348,8 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.OrganizationType).HasMaxLength(30);
                 entity.Property(e => e.PersonType).HasMaxLength(2).IsRequired();
                 entity.Property(e => e.IncomeTaxRegime).HasMaxLength(2);
+                entity.Property(e => e.ReceptionEventPrefix).HasMaxLength(10).IsRequired().HasDefaultValue("EV");
+                entity.Property(e => e.ReceptionEventStartNumber).HasDefaultValue(1);
                 entity.Property(e => e.DecimalSeparator).HasMaxLength(1).IsRequired().HasDefaultValue(".");
                 entity.Property(e => e.LegalRepresentativeFirstName).HasMaxLength(100);
                 entity.Property(e => e.LegalRepresentativeOtherNames).HasMaxLength(100);

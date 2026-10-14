@@ -196,7 +196,7 @@ namespace Fel.Infrastructure.Services
         private static Dictionary<string, object?> SampleNominaData(string documentTypeCode)
         {
             var esNota = documentTypeCode == "NE-AJUSTE";
-            // Mismo shape que NominaReportDataMapper.Build: "Documento" + "Conceptos".
+            // Mismo shape que NominaReportDataMapper.Build: "Documento" + bloques de devengos y deducciones con su total.
             return new Dictionary<string, object?>
             {
                 ["Documento"] = new Dictionary<string, object?>
@@ -236,10 +236,8 @@ namespace Fel.Infrastructure.Services
                     ["QrCode"] = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
                     ["QrImageUrl"] = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + Uri.EscapeDataString("c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"),
 
-                    ["TotalDevengado"] = "2.500.000",
-                    ["TotalDeduccion"] = "200.000",
-                    ["NetoPagar"] = "2.300.000",
-                    ["NetoPagarEnLetras"] = "DOS MILLONES TRESCIENTOS MIL PESOS M/CTE",
+                    ["NetoPagar"] = "5.039.690",
+                    ["NetoPagarEnLetras"] = "CINCO MILLONES TREINTA Y NUEVE MIL SEISCIENTOS NOVENTA PESOS M/CTE",
 
                     ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
                     ["FabricanteSoftwareNit"] = "900.303.194-6",
@@ -249,12 +247,28 @@ namespace Fel.Infrastructure.Services
                     ["ProveedorTecnologicoNit"] = null
                 },
 
-                ["Conceptos"] = new List<Dictionary<string, object?>>
+                ["Devengos"] = new List<Dictionary<string, object?>>
                 {
-                    new() { ["Concepto"] = "001 · Salario básico (30 días)", ["Devengado"] = "2.300.000", ["Deduccion"] = "" },
-                    new() { ["Concepto"] = "002 · Auxilio de transporte", ["Devengado"] = "200.000", ["Deduccion"] = "" },
-                    new() { ["Concepto"] = "101 · Salud (4 %)", ["Devengado"] = "", ["Deduccion"] = "100.000" },
-                    new() { ["Concepto"] = "102 · Pensión (4 %)", ["Devengado"] = "", ["Deduccion"] = "100.000" }
+                    new() { ["Concepto"] = "Básico", ["Porcentaje"] = "", ["Dias"] = "30", ["Salarial"] = "1.423.500", ["NoSalarial"] = "", ["Total"] = "1.423.500" },
+                    new() { ["Concepto"] = "Auxilio de transporte", ["Porcentaje"] = "", ["Dias"] = "30", ["Salarial"] = "200.000", ["NoSalarial"] = "", ["Total"] = "200.000" },
+                    new() { ["Concepto"] = "Bonificación", ["Porcentaje"] = "", ["Dias"] = "", ["Salarial"] = "", ["NoSalarial"] = "400.000", ["Total"] = "400.000" },
+                    new() { ["Concepto"] = "Prima", ["Porcentaje"] = "", ["Dias"] = "180", ["Salarial"] = "", ["NoSalarial"] = "811.750", ["Total"] = "811.750" },
+                    new() { ["Concepto"] = "Cesantías", ["Porcentaje"] = "", ["Dias"] = "360", ["Salarial"] = "", ["NoSalarial"] = "1.623.500", ["Total"] = "1.623.500" },
+                    new() { ["Concepto"] = "Intereses de cesantías", ["Porcentaje"] = "12", ["Dias"] = "", ["Salarial"] = "", ["NoSalarial"] = "194.820", ["Total"] = "194.820" },
+                    new() { ["Concepto"] = "Auxilio", ["Porcentaje"] = "", ["Dias"] = "", ["Salarial"] = "", ["NoSalarial"] = "500.000", ["Total"] = "500.000" }
+                },
+                ["TotalDevengos"] = new List<Dictionary<string, object?>>
+                {
+                    new() { ["Etiqueta"] = "Total Devengados", ["Salarial"] = "1.623.500", ["NoSalarial"] = "3.530.070", ["Total"] = "5.153.570" }
+                },
+                ["Deducciones"] = new List<Dictionary<string, object?>>
+                {
+                    new() { ["Concepto"] = "Salud", ["Porcentaje"] = "4", ["Dias"] = "", ["Salarial"] = "56.940", ["NoSalarial"] = "", ["Total"] = "- 56.940" },
+                    new() { ["Concepto"] = "Fondo de pensión", ["Porcentaje"] = "4", ["Dias"] = "", ["Salarial"] = "56.940", ["NoSalarial"] = "", ["Total"] = "- 56.940" }
+                },
+                ["TotalDeducciones"] = new List<Dictionary<string, object?>>
+                {
+                    new() { ["Etiqueta"] = "Total Deducciones", ["Salarial"] = "113.880", ["NoSalarial"] = "", ["Total"] = "- 113.880" }
                 }
             };
         }

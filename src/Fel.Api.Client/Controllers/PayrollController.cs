@@ -131,7 +131,7 @@ namespace Fel.Api.Client.Controllers
                 var data = NominaReportDataMapper.Build(
                     document, document.Customer!, client, location, draft.Prefix, approved && long.TryParse(document.Number, out var number) ? number : 0,
                     draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
-                    draft.Accruals.Select(ToReportConcept), draft.Deductions.Select(ToReportConcept),
+                    draft.Accruals.SelectMany(ToReportConcepts), draft.Deductions.SelectMany(ToReportConcepts),
                     workerTypes, contractTypes);
                 // Mientras Dataico no apruebe no hay consecutivo (se asigna al aprobar): el borrador se identifica como tal.
                 if (!approved && data["Documento"] is Dictionary<string, object?> header) header["DocumentoNumero"] = "Borrador";
@@ -150,8 +150,25 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
-        private static NominaConcepto ToReportConcept(PayrollConceptItem c) =>
-            new(c.Code, c.Description, c.Amount ?? 0m, c.Days, c.Percentage);
+        // Un concepto del borrador puede dar una o dos filas del PDF. El valor no siempre está en Amount:
+        // las compensaciones y las sanciones guardan sus partes por separado, y los intereses de cesantías
+        // (con el porcentaje, que es el de los intereses) van en su propia fila, en la columna no salarial.
+        private static IEnumerable<NominaConcepto> ToReportConcepts(PayrollConceptItem c)
+        {
+            var salarial = c.Code?.ToUpperInvariant() switch
+            {
+                "COMPENSACION" => (c.OrdinaryCompensation ?? 0m) + (c.ExtraordinaryCompensation ?? 0m),
+                "SANCION" => c.Amount ?? (c.PrivateSanction ?? 0m) + (c.PublicSanction ?? 0m),
+                _ => c.Amount ?? 0m
+            };
+            var conIntereses = string.Equals(c.Code, "CESANTIAS", StringComparison.OrdinalIgnoreCase) && c.CesantiasInterest is > 0;
+
+            yield return new NominaConcepto(c.Code, c.Description, salarial, c.AmountNs ?? 0m, c.Days, conIntereses ? null : c.Percentage, c.Hours);
+            if (conIntereses)
+            {
+                yield return new NominaConcepto("INTERESES_DE_CESANTIAS", "Intereses de cesantías", 0m, c.CesantiasInterest!.Value, null, c.Percentage);
+            }
+        }
 
         // Tipo de trabajador y de contrato los administra Superadmin en el catálogo global (TaxCatalogItem):
         // se resuelven acá para que el PDF muestre la etiqueta legible y no el código crudo.
@@ -441,7 +458,7 @@ namespace Fel.Api.Client.Controllers
                         _ => NominaReportDataMapper.Build(
                             document, document.Customer!, client, pdfLocation, draft.Prefix, documentNumber,
                             draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
-                            draft.Accruals.Select(ToReportConcept), draft.Deductions.Select(ToReportConcept),
+                            draft.Accruals.SelectMany(ToReportConcepts), draft.Deductions.SelectMany(ToReportConcepts),
                             workerTypes, contractTypes),
                         pdfCredentials);
                 }

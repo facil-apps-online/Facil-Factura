@@ -10,14 +10,17 @@ namespace Fel.Infrastructure.Dataico
 {
     // Concepto de nómina tal como lo recibe el mapper. Desacoplado de PayrollConceptItem (que vive en
     // Fel.Api.Client, una capa por encima de Fel.Infrastructure) a propósito: el llamador lo arma.
-    public record NominaConcepto(string? Codigo, string Descripcion, decimal Valor, int? Dias = null, decimal? Porcentaje = null);
+    // Salarial y NoSalarial son las dos columnas de valor; el total de la fila es su suma.
+    public record NominaConcepto(string? Codigo, string Descripcion, decimal Salarial, decimal NoSalarial,
+        int? Dias = null, decimal? Porcentaje = null, decimal? Horas = null);
 
-    // Mismo contrato que Invoice/SupportDocumentReportDataMapper ("Documento" + lista), adaptado a
-    // Nómina Electrónica: no hay "adquirente" sino un empleado, no hay IVA ni retenciones, y el
-    // detalle es una sola tabla de conceptos, "Conceptos", con {Concepto, Devengado, Deduccion}: cada
-    // renglón llena una de las dos columnas de valor (devengos primero, luego deducciones). Los totales
-    // (Total Devengado/Total Deducción/Neto) vienen ya calculados en "Documento", no como sumas dentro
-    // del reporte, para no depender de la configuración de Summary de DevExpress.
+    // Mismo contrato que Invoice/SupportDocumentReportDataMapper ("Documento" + listas), adaptado a
+    // Nómina Electrónica: no hay "adquirente" sino un empleado, no hay IVA ni retenciones, y el detalle
+    // son dos bloques de filas, "Devengos" y "Deducciones", con las columnas {Concepto, Porcentaje, Dias,
+    // Salarial, NoSalarial, Total}. Cada bloque cierra con una fila de total ("TotalDevengos" y
+    // "TotalDeducciones", vacías si el bloque no tiene filas). Los totales vienen ya calculados, no como
+    // sumas dentro del reporte, para no depender de la configuración de Summary de DevExpress, y salen de
+    // las mismas filas que se imprimen: lo impreso siempre cuadra.
     public static class NominaReportDataMapper
     {
         // Facil Factura es un producto de SoFactory S.A.S., el fabricante legal del software.
@@ -41,8 +44,8 @@ namespace Fel.Infrastructure.Dataico
             var esIntegradorExterno = client.Integrator.Kind == IntegratorKind.ThirdPartyIntegrator;
             var devengosList = devengos.ToList();
             var deduccionesList = deducciones.ToList();
-            var totalDevengado = devengosList.Sum(d => d.Valor);
-            var totalDeduccion = deduccionesList.Sum(d => d.Valor);
+            var totalDevengado = devengosList.Sum(d => d.Salarial + d.NoSalarial);
+            var totalDeduccion = deduccionesList.Sum(d => d.Salarial + d.NoSalarial);
             var neto = totalDevengado - totalDeduccion;
 
             var esNota = document.TypeCode is "NE-ELIMINACION" or "NE-REEMPLAZO";
@@ -58,14 +61,38 @@ namespace Fel.Infrastructure.Dataico
             var medioPago = string.Join(" · ", new[] { employee.PaymentMeans, employee.Bank, employee.AccountType, employee.AccountNumber }
                 .Where(s => !string.IsNullOrWhiteSpace(s)));
 
-            // "Salud (4 %)", "Salario (30 días)": el código y los detalles que ya guarda el concepto.
-            string Texto(NominaConcepto c)
+            // Una columna de valor en cero queda en blanco; el total de la fila siempre se imprime.
+            string Opcional(decimal value) => value == 0 ? string.Empty : Money(value);
+
+            // Las deducciones restan: su total sale con signo, como en el resto de la representación.
+            Dictionary<string, object?> Fila(NominaConcepto c, bool deduccion)
             {
-                var detalle = new List<string>();
-                if (c.Dias.HasValue) detalle.Add($"{c.Dias} días");
-                if (c.Porcentaje.HasValue) detalle.Add($"{c.Porcentaje.Value.ToString("0.##", nf)} %");
-                var nombre = string.IsNullOrWhiteSpace(c.Codigo) ? c.Descripcion : $"{c.Codigo} · {c.Descripcion}";
-                return detalle.Count == 0 ? nombre : $"{nombre} ({string.Join(" · ", detalle)})";
+                var total = c.Salarial + c.NoSalarial;
+                return new Dictionary<string, object?>
+                {
+                    ["Concepto"] = NombreConcepto(c, nf),
+                    ["Porcentaje"] = c.Porcentaje.HasValue ? c.Porcentaje.Value.ToString("0.##", nf) : string.Empty,
+                    ["Dias"] = c.Dias.HasValue ? c.Dias.Value.ToString(nf) : string.Empty,
+                    ["Salarial"] = Opcional(c.Salarial),
+                    ["NoSalarial"] = Opcional(c.NoSalarial),
+                    ["Total"] = deduccion ? "- " + Money(total) : Money(total)
+                };
+            }
+
+            List<Dictionary<string, object?>> FilaTotal(string etiqueta, List<NominaConcepto> conceptos, bool deduccion)
+            {
+                if (conceptos.Count == 0) return new();
+                var total = conceptos.Sum(c => c.Salarial + c.NoSalarial);
+                return new()
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["Etiqueta"] = etiqueta,
+                        ["Salarial"] = Opcional(conceptos.Sum(c => c.Salarial)),
+                        ["NoSalarial"] = Opcional(conceptos.Sum(c => c.NoSalarial)),
+                        ["Total"] = deduccion ? "- " + Money(total) : Money(total)
+                    }
+                };
             }
 
             return new Dictionary<string, object?>
@@ -114,8 +141,6 @@ namespace Fel.Infrastructure.Dataico
                     // localmente; con el motor DevExpress se descarga de ese servicio.
                     ["QrImageUrl"] = QrImageDataUri.FromText(document.QrCode ?? document.Cufe),
 
-                    ["TotalDevengado"] = Money(totalDevengado),
-                    ["TotalDeduccion"] = Money(totalDeduccion),
                     ["NetoPagar"] = Money(neto),
                     ["NetoPagarEnLetras"] = NumberToWordsEs.ConvertirPesos(neto),
 
@@ -130,11 +155,40 @@ namespace Fel.Infrastructure.Dataico
                     ["ProveedorTecnologicoNit"] = esIntegradorExterno ? client.Integrator.Nit : null
                 },
 
-                ["Conceptos"] = devengosList
-                    .Select(d => new Dictionary<string, object?> { ["Concepto"] = Texto(d), ["Devengado"] = Money(d.Valor), ["Deduccion"] = string.Empty })
-                    .Concat(deduccionesList.Select(d => new Dictionary<string, object?> { ["Concepto"] = Texto(d), ["Devengado"] = string.Empty, ["Deduccion"] = Money(d.Valor) }))
-                    .ToList()
+                ["Devengos"] = devengosList.Select(d => Fila(d, false)).ToList(),
+                ["TotalDevengos"] = FilaTotal("Total Devengados", devengosList, false),
+                ["Deducciones"] = deduccionesList.Select(d => Fila(d, true)).ToList(),
+                ["TotalDeducciones"] = FilaTotal("Total Deducciones", deduccionesList, true)
             };
+        }
+
+        // Las palabras de los códigos de Dataico que llevan tilde; los códigos vienen sin ellas.
+        private static readonly Dictionary<string, string> Tildes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["basico"] = "básico", ["bonificacion"] = "bonificación", ["comision"] = "comisión",
+            ["compensacion"] = "compensación", ["cesantias"] = "cesantías", ["deduccion"] = "deducción",
+            ["dotacion"] = "dotación", ["educacion"] = "educación", ["indemnizacion"] = "indemnización",
+            ["pension"] = "pensión", ["practica"] = "práctica", ["retencion"] = "retención",
+            ["sancion"] = "sanción", ["viatico"] = "viático", ["alimentacion"] = "alimentación",
+            ["vacacion"] = "vacación", ["intereses"] = "intereses"
+        };
+        private static readonly HashSet<string> Articulos = new(StringComparer.OrdinalIgnoreCase) { "de", "del", "la", "el", "y", "en", "por" };
+
+        // La descripción libre si el concepto la trae; si no, el código de Dataico vuelto legible
+        // ("AUXILIO_DE_TRANSPORTE" -> "Auxilio de transporte"). Las horas, si las hay, van entre paréntesis.
+        private static string NombreConcepto(NominaConcepto c, IFormatProvider nf)
+        {
+            string nombre;
+            if (!string.IsNullOrWhiteSpace(c.Descripcion)) nombre = c.Descripcion.Trim();
+            else if (string.IsNullOrWhiteSpace(c.Codigo)) nombre = string.Empty;
+            else
+            {
+                var palabras = c.Codigo.ToLowerInvariant().Split('_', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(w => Tildes.TryGetValue(w, out var conTilde) ? conTilde : w).ToArray();
+                if (palabras.Length > 0) palabras[0] = char.ToUpperInvariant(palabras[0][0]) + palabras[0][1..];
+                nombre = string.Join(' ', palabras);
+            }
+            return c.Horas.HasValue ? $"{nombre} ({c.Horas.Value.ToString("0.##", nf)} h)" : nombre;
         }
     }
 }

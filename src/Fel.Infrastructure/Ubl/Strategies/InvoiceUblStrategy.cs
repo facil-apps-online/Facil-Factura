@@ -34,6 +34,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cbc + "IssueDate", DianTimeFormat.IssueDate(data.IssueDate)),
                 new XElement(cbc + "IssueTime", DianTimeFormat.IssueTime(data.IssueTime)),
                 new XElement(cbc + "InvoiceTypeCode", data.DianCode),
+                BuildNotes(data),
                 // listAgencyID/listAgencyName/listID (confirmados contra el ejemplo oficial
                 // Generica.xml de la Caja de Herramientas y contra un firmador Python de
                 // referencia en producción activa) faltaban por completo.

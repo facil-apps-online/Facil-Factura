@@ -103,7 +103,8 @@ namespace Fel.Infrastructure.Dataico
             Client client,
             string paymentMeans,
             string paymentMeansType,
-            IReadOnlyDictionary<string, string>? identificationTypeOverrides = null)
+            IReadOnlyDictionary<string, string>? identificationTypeOverrides = null,
+            bool isMandate = false)
         {
             var request = new DataicoInvoiceRequest
             {
@@ -113,6 +114,8 @@ namespace Fel.Infrastructure.Dataico
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
                 payment_date = BuildPaymentDate(document),
                 order_reference = document.PurchaseOrderReference,
+                operation = isMandate ? MandateOperation : null,
+                notes = BuildNotes(document),
                 payment_means = ResolvePaymentMeans(paymentMeans, paymentMeansType),
                 payment_means_type = paymentMeansType,
                 numbering = new DataicoNumbering
@@ -142,6 +145,15 @@ namespace Fel.Infrastructure.Dataico
                     retentions = BuildRetentions(item.Retentions)
                 };
 
+                // Cada línea de una factura de mandato declara su mandante (tipo con el nombre corto de Dataico: NIT, CC...).
+                if (isMandate)
+                {
+                    dataicoItem.mandante_identification = item.MandanteIdentification;
+                    dataicoItem.mandante_identification_type = string.IsNullOrWhiteSpace(item.MandanteIdentificationType)
+                        ? null
+                        : DataicoMapper.MapIdentificationType(item.MandanteIdentificationType, identificationTypeOverrides);
+                }
+
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);
                 if (ivaTax != null)
                 {
@@ -152,6 +164,16 @@ namespace Fel.Infrastructure.Dataico
             }
 
             return request;
+        }
+
+        // Valor de "operation" que Dataico espera para el tipo de operación 11 (Mandatos).
+        private const string MandateOperation = "MANDATO";
+
+        // Observaciones del documento en su orden, una por entrada; null si no tiene (Dataico no recibe "notes" vacío).
+        private static List<string>? BuildNotes(Document document)
+        {
+            var notes = document.Observations.OrderBy(o => o.Position).Select(o => o.Text).Where(t => !string.IsNullOrWhiteSpace(t)).ToList();
+            return notes.Count == 0 ? null : notes;
         }
 
         // Catálogo de Dataico (DEVOLUCION/ANULACION/OTROS para nota crédito; para nota débito nunca
@@ -180,6 +202,7 @@ namespace Fel.Infrastructure.Dataico
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
                 reason = MapReasonToDataico(document.DiscrepancyResponseCode, reasonDianCodes),
                 number = document.Number,
+                notes = BuildNotes(document),
                 // Dataico no maneja numeración registrada para notas: a diferencia de las facturas,
                 // acá solo se envía el prefijo (confirmado contra la integración de escritorio ya en
                 // producción, que nunca incluye resolution_number para notas).
@@ -224,6 +247,7 @@ namespace Fel.Infrastructure.Dataico
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
                 reason = MapReasonToDataico(document.DiscrepancyResponseCode, reasonDianCodes),
                 number = document.Number,
+                notes = BuildNotes(document),
                 // Ver comentario equivalente en BuildCreditNoteRequest: las notas no llevan
                 // resolution_number en Dataico.
                 numbering = new DataicoNumbering { prefix = string.IsNullOrWhiteSpace(document.Prefix) ? resolution.Prefix : document.Prefix, flexible = true },

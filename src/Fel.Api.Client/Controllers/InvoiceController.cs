@@ -22,9 +22,11 @@ namespace Fel.Api.Client.Controllers
     public class InvoiceController : ClientPortalControllerBase
     {
         // Facturas y notas tienen esta pantalla; documento soporte y nómina tienen endpoints propios.
+        // Siempre trae las observaciones (ver DocumentObservation): las leen el formulario, el envío al integrador y el PDF.
         private static IQueryable<Document> InvoiceDocuments(IQueryable<Document> query, Guid clientId, Guid? branchScope) =>
             query.Where(d => d.ClientId == clientId &&
-                ((d.TypeCode.StartsWith("FE") && d.TypeCode != "FE-TEST") || d.TypeCode == "NC" || d.TypeCode == "ND")).ForBranch(branchScope);
+                ((d.TypeCode.StartsWith("FE") && d.TypeCode != "FE-TEST") || d.TypeCode == "NC" || d.TypeCode == "ND")).ForBranch(branchScope)
+                .Include(d => d.Observations.OrderBy(o => o.Position));
 
         // Editable/publicable/eliminable mientras no haya llegado exitosamente a Dataico/DIAN:
         // un DRAFT nunca se envió, y un REJECTED fue rechazado por Dataico, así que tampoco llegó.
@@ -299,6 +301,18 @@ namespace Fel.Api.Client.Controllers
                     generalRetention.DocumentId = invoice.Id;
                 }
 
+                // Las observaciones viven en su tabla (consecutivo 1, 2, 3...), no en Notes.
+                invoice.Notes = string.Empty;
+                var observationPosition = 1;
+                foreach (var observation in invoice.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)).ToList())
+                {
+                    observation.Id = Guid.NewGuid();
+                    observation.DocumentId = invoice.Id;
+                    observation.Position = observationPosition++;
+                    observation.Text = observation.Text.Trim();
+                }
+                invoice.Observations = invoice.Observations.Where(o => o.Position > 0).ToList();
+
                 _dbContext.Documents.Add(invoice);
                 await _dbContext.SaveChangesAsync();
 
@@ -330,7 +344,20 @@ namespace Fel.Api.Client.Controllers
 
                 invoice.CustomerId = invoiceData.CustomerId;
                 invoice.DocumentTypeId = invoiceData.DocumentTypeId;
-                invoice.Notes = invoiceData.Notes;
+                // Observaciones: reemplazo completo, con consecutivo 1, 2, 3... en el orden recibido.
+                _dbContext.DocumentObservations.RemoveRange(invoice.Observations);
+                invoice.Observations.Clear();
+                var observationPosition = 1;
+                foreach (var observation in invoiceData.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)))
+                {
+                    _dbContext.DocumentObservations.Add(new DocumentObservation
+                    {
+                        Id = Guid.NewGuid(),
+                        DocumentId = invoice.Id,
+                        Position = observationPosition++,
+                        Text = observation.Text.Trim()
+                    });
+                }
                 // Datos de sector (hoy: contrato AIU) — se guardan tal cual los arma el formulario.
                 invoice.SectorExtensionData = string.IsNullOrWhiteSpace(invoiceData.SectorExtensionData) ? "{}" : invoiceData.SectorExtensionData;
                 invoice.SectorExtensionData = invoiceData.SectorExtensionData;
@@ -417,10 +444,20 @@ namespace Fel.Api.Client.Controllers
                 if (invoice.Customer == null)
                     return BadRequest("La factura no tiene un cliente asociado.");
 
+                // Factura de mandato (operación 11): cada línea debe declarar su mandante, con la DIAN directa y con Dataico.
+                var operationType = invoice.DocumentTypeId.HasValue
+                    ? await _dbContext.DocumentTypes.AsNoTracking().Where(t => t.Id == invoice.DocumentTypeId.Value).Select(t => t.OperationType).FirstOrDefaultAsync()
+                    : null;
+                if (operationType == Fel.Core.Entities.DocumentType.MandateOperationType && !invoice.ReferenceDocumentId.HasValue
+                    && invoice.Items.Any(i => string.IsNullOrWhiteSpace(i.MandanteIdentification) || string.IsNullOrWhiteSpace(i.MandanteIdentificationType)))
+                {
+                    return BadRequest("En una factura de mandato cada línea debe tener su mandante.");
+                }
+
                 var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
                 if (client == null) return NotFound("Emisor no encontrado.");
 
-                var provider = _submissionProviders.FirstOrDefault(p => p.IntegratorCode == client.Integrator.Code);
+                var provider =_submissionProviders.FirstOrDefault(p => p.IntegratorCode == client.Integrator.Code);
                 if (provider == null)
                 {
                     return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");

@@ -91,6 +91,8 @@ namespace Fel.Core.Entities
         public decimal Subtotal { get; set; }
         public decimal TaxAmount { get; set; }
         public decimal TotalAmount { get; set; }
+        // Observaciones en texto libre: hoy solo las usa el documento soporte. Las facturas y sus notas llevan
+        // una lista ordenada en Observations.
         public string Notes { get; set; } = string.Empty;
         public string SectorExtensionData { get; set; } = "{}";
 
@@ -132,6 +134,9 @@ namespace Fel.Core.Entities
         public string? DiscrepancyResponseCode { get; set; }
 
         public ICollection<DocumentItem> Items { get; set; } = new List<DocumentItem>();
+
+        // Observaciones de la factura o nota, en el orden en que se capturaron (ver DocumentObservation).
+        public ICollection<DocumentObservation> Observations { get; set; } = new List<DocumentObservation>();
 
         // Solo para el listado del portal de clientes (ver InvoiceController.GetAll): notas que
         // referencian esta factura, calculado aparte con una sola consulta extra — no es una

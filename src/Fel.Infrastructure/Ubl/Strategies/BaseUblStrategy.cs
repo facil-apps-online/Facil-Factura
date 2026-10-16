@@ -338,6 +338,29 @@ namespace Fel.Infrastructure.Ubl.Strategies
             return total;
         }
 
+        // Observaciones del documento: un cbc:Note por cada una, en su orden. Va justo después del tipo de documento y antes
+        // de DocumentCurrencyCode (secuencia UBL; igual que en el ejemplo oficial Mandatos.xml de la Caja de Herramientas).
+        protected static IEnumerable<XElement> BuildNotes(UblInvoiceData data) =>
+            data.Notes.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => new XElement(cbc + "Note", n));
+
+        // Mandante de la línea (factura de mandato): cac:Item/cac:InformationContentProviderParty/cac:PowerOfAttorney/
+        // cac:AgentParty/cac:PartyIdentification/cbc:ID, como en el ejemplo oficial Mandatos.xml. Con NIT (schemeName 31) el
+        // schemeID es el dígito de verificación (reglas HD04b/HD05 del schematron); con otros documentos va sin schemeID.
+        private static XElement? BuildMandante(InvoiceLine line)
+        {
+            if (string.IsNullOrWhiteSpace(line.MandanteIdentification) || string.IsNullOrWhiteSpace(line.MandanteIdentificationCode)) return null;
+
+            var id = new XElement(cbc + "ID", new XAttribute("schemeAgencyID", "195"));
+            if (line.MandanteIdentificationCode == "31")
+                id.Add(new XAttribute("schemeID", NitValidation.CalculateCheckDigit(line.MandanteIdentification)));
+            id.Add(new XAttribute("schemeName", line.MandanteIdentificationCode), line.MandanteIdentification);
+
+            return new XElement(cac + "InformationContentProviderParty",
+                new XElement(cac + "PowerOfAttorney",
+                    new XElement(cac + "AgentParty",
+                        new XElement(cac + "PartyIdentification", id))));
+        }
+
         // "index" es el consecutivo real de la línea (1, 2, 3...) — antes quedaba fijo en "1" para
         // todas, lo que hace inválida ante la DIAN cualquier factura con más de una línea (IDs
         // duplicados).
@@ -378,6 +401,10 @@ namespace Fel.Infrastructure.Ubl.Strategies
                     )
                 );
             }
+
+            // Orden UBL dentro de Item: el mandante va después de las propiedades adicionales.
+            var mandante = BuildMandante(line);
+            if (mandante != null) itemElement.Add(mandante);
 
             var lineElement = new XElement(cac + lineElementName,
                 idElement);

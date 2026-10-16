@@ -65,6 +65,8 @@ interface AiuParams {
 }
 const AIU_DEFAULT: AiuParams = { baseAmount: 0, adminPercent: 10, unforeseenPercent: 5, profitPercent: 5, ivaRate: 19, contractObject: '' };
 const AIU_OPERATION_TYPE = '09';
+const MANDATE_OPERATION_TYPE = '11';
+const OBSERVATION_MAX_LENGTH = 500;
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const buildAiuItems = (aiu: AiuParams) => {
@@ -206,6 +208,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedRetentions, setExpandedRetentions] = useState<Record<number, boolean>>({});
+  const [mandantes, setMandantes] = useState<any[]>([]);
   const [paymentTermCustom, setPaymentTermCustom] = useState(false);
   // Una retención (por ítem o general) queda "bloqueada" (solo texto) apenas se elige su valor,
   // para que el scroll del mouse u otra interacción accidental sobre el select no la cambie sin
@@ -224,6 +227,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     resolutionId: '',
     issueDate: todayIso(),
     notes: '',
+    // Observaciones de facturas y notas: una por fila, en orden (el documento soporte sigue usando "notes").
+    observations: [] as string[],
     items: [] as any[],
     generalDiscountReason: '',
     generalDiscountAmount: 0,
@@ -301,16 +306,19 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const range = datePreset === 'custom'
         ? { from: appliedCustomFrom, to: appliedCustomTo }
         : getDateRangeForPreset(datePreset)!;
-      const [invRes, custRes, prodRes, docTypesRes] = await Promise.all([
+      const [invRes, custRes, prodRes, docTypesRes, mandantesRes] = await Promise.all([
         api.get(`${cfg.api}?from=${range.from}&to=${range.to}`),
         api.get(`/client/customers?partyType=${cfg.partyType}`),
         api.get(`/client/products?scope=${isSupport ? 'Support' : 'Invoice'}`),
-        cfg.documentTypes ? api.get('/client/invoices/document-types') : Promise.resolve({ data: [] })
+        cfg.documentTypes ? api.get('/client/invoices/document-types') : Promise.resolve({ data: [] }),
+        // Terceros marcados como mandante: los elige cada línea de una factura de mandato.
+        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/customers?partyType=Mandante')
       ]);
       setInvoices(invRes.data);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
       setDocumentTypes(docTypesRes.data);
+      setMandantes(mandantesRes.data);
     } catch (err) {
       toast.error('Error cargando datos');
     }
@@ -396,6 +404,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         resolutionId: full.resolutionId || '',
         issueDate: full.issueDate ? String(full.issueDate).slice(0, 10) : todayIso(),
         notes: full.notes || '',
+        observations: (full.observations || []).map((o: any) => o.text),
         items: full.items.map((i: any) => ({
           productId: i.productId || '',
           code: i.code,
@@ -410,6 +419,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           discountRate: i.discountRate || 0,
           taxAmount: i.taxAmount,
           totalAmount: i.totalAmount,
+          mandanteCustomerId: i.mandanteCustomerId || null,
+          mandanteIdentificationType: i.mandanteIdentificationType || null,
+          mandanteIdentification: i.mandanteIdentification || null,
+          mandanteName: i.mandanteName || null,
           retentions: (i.retentions || []).map((r: any) => {
             const concept = autoRetentionCatalog.find((c: any) => c.taxCategory === r.taxCategory && c.rate === r.rate);
             return {
@@ -651,6 +664,28 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   const selectedDocType = documentTypes.find(d => d.id === formData.documentTypeId);
   const isAiu = !isSupport && selectedDocType?.operationType === AIU_OPERATION_TYPE && !formData.referenceDocumentId;
+  // Factura de mandato (operación 11): cada línea declara su mandante.
+  const isMandate = !isSupport && selectedDocType?.operationType === MANDATE_OPERATION_TYPE && !formData.referenceDocumentId;
+
+  const setItemMandante = (index: number, customerId: string) => {
+    const mandante = mandantes.find(m => m.id === customerId);
+    const newItems = [...formData.items];
+    newItems[index] = {
+      ...newItems[index],
+      mandanteCustomerId: customerId || null,
+      mandanteIdentificationType: mandante?.identificationType ?? null,
+      mandanteIdentification: mandante?.identificationNumber ?? null,
+      mandanteName: mandante?.name ?? null
+    };
+    setFormData({ ...formData, items: newItems });
+  };
+
+  // Observaciones: una por fila, en el orden en que se agregan (ese orden es el que se envía y se imprime).
+  const setObservation = (index: number, text: string) =>
+    setFormData({ ...formData, observations: formData.observations.map((o, i) => (i === index ? text : o)) });
+  const addObservation = () => setFormData({ ...formData, observations: [...formData.observations, ''] });
+  const removeObservation = (index: number) =>
+    setFormData({ ...formData, observations: formData.observations.filter((_, i) => i !== index) });
 
   // Cambia algún dato del contrato AIU: se regeneran las tres líneas y los totales.
   const applyAiu = (next: AiuParams) => {
@@ -936,6 +971,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       if (a.baseAmount <= 0) { toast.error('Indica el valor base del contrato AIU.'); return; }
       if (a.contractObject.trim().length < 10) { toast.error('Describe el objeto del contrato (es obligatorio en la factura AIU).'); return; }
     }
+    if (isMandate && formData.items.some(i => !i.mandanteCustomerId)) {
+      toast.error('En una factura de mandato cada línea debe tener su mandante.');
+      return;
+    }
     // Hora de Colombia: la fecha de emisión no puede ser anterior a hoy (de hoy en adelante).
     if (formData.issueDate && formData.issueDate < todayColombia()) {
       toast.error('La fecha de emisión no puede ser anterior a hoy.');
@@ -944,9 +983,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
     setSavingDraft(true);
     try {
-      const { aiu: aiuParams, ...formRest } = formData;
+      const { aiu: aiuParams, observations, ...formRest } = formData;
       const payload = {
         ...formRest,
+        // Facturas y notas mandan la lista de observaciones; el documento soporte sigue con el texto "notes".
+        ...(isSupport ? {} : { notes: '', observations: observations.filter(o => o.trim()).map(text => ({ text: text.trim() })) }),
         sectorExtensionData: isAiu && aiuParams ? JSON.stringify({ aiu: aiuParams }) : '{}',
         paymentTermDays: formData.paymentTermDays === '' ? null : formData.paymentTermDays,
         // Las notas no traen resolutionId (el selector queda oculto) — "" no es un Guid? válido
@@ -1094,6 +1135,16 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             />
           )}
         </div>
+      ),
+      mandante: (
+        <SearchableSelect
+          className={table ? 'w-56' : 'w-full'}
+          inputClassName={`w-full p-2 border rounded-lg text-sm outline-none ${item.mandanteCustomerId ? 'border-slate-200' : 'border-amber-300'}`}
+          value={item.mandanteCustomerId || ''}
+          onChange={v => setItemMandante(index, v)}
+          placeholder={mandantes.length === 0 ? 'Crea un mandante en Terceros' : 'Buscar mandante...'}
+          options={mandantes.map(m => ({ value: m.id, label: `${m.name} - ${m.identificationNumber}`, shortLabel: m.name }))}
+        />
       ),
       retention: expandedRetentions[index] ? (
         <div className="flex items-center gap-1">
@@ -1378,6 +1429,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   <thead>
                     <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
                       <th className="p-2 pl-3 w-1/3">Producto</th>
+                      {isMandate && <th className="p-2">Mandante</th>}
                       <th className="p-2">Cant.</th>
                       <th className="p-2">Precio unitario</th>
                       <th className="p-2">Descuento %</th>
@@ -1393,6 +1445,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                       return (
                         <tr key={index} className="bg-white">
                           <td className="p-2 pl-3">{f.product}</td>
+                          {isMandate && <td className="p-2">{f.mandante}</td>}
                           <td className="p-2">{f.quantity}</td>
                           <td className="p-2">{f.unitPrice}</td>
                           <td className="p-2">{f.discount}</td>
@@ -1407,7 +1460,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     })}
                     {formData.items.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-slate-400">Sin ítems agregados.</td>
+                        <td colSpan={isMandate ? 9 : 8} className="p-8 text-center text-slate-400">Sin ítems agregados.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1428,6 +1481,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                         <span className={label}>Producto</span>
                         {f.product}
                       </div>
+                      {isMandate && (
+                        <div>
+                          <span className={label}>Mandante</span>
+                          {f.mandante}
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <span className={label}>Cantidad</span>
@@ -1552,15 +1611,45 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </div>
 
               <div className="w-full lg:flex-1">
-                <h3 className="text-lg font-bold text-slate-800 mb-4">Observaciones (opcional)</h3>
-                <input
-                  type="text"
-                  placeholder="Notas adicionales para este documento..."
-                  value={formData.notes}
-                  onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                  maxLength={500}
-                  className="w-full p-3 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"
-                />
+                <div className="flex items-end justify-between gap-3 mb-4">
+                  <h3 className="text-lg font-bold text-slate-800">Observaciones (opcional)</h3>
+                  {!isSupport && (
+                    <button type="button" onClick={addObservation} className="px-3 py-2 text-primary font-bold flex items-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all text-sm">
+                      <PlusCircle size={16} /> Agregar observación
+                    </button>
+                  )}
+                </div>
+                {isSupport ? (
+                  <input
+                    type="text"
+                    placeholder="Notas adicionales para este documento..."
+                    value={formData.notes}
+                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                    maxLength={500}
+                    className="w-full p-3 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"
+                  />
+                ) : formData.observations.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-400">Sin observaciones. Se envían a la DIAN en el orden en que las agregues.</p>
+                ) : (
+                  <ol className="space-y-2">
+                    {formData.observations.map((text, index) => (
+                      <li key={index} className="flex items-center gap-2">
+                        <span className="w-6 shrink-0 text-right text-sm font-bold text-slate-400">{index + 1}.</span>
+                        <input
+                          type="text"
+                          value={text}
+                          onChange={e => setObservation(index, e.target.value)}
+                          placeholder="Observación..."
+                          maxLength={OBSERVATION_MAX_LENGTH}
+                          className="min-w-0 flex-1 p-3 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <button type="button" onClick={() => removeObservation(index)} title="Quitar observación" aria-label={`Quitar observación ${index + 1}`} className="flex h-11 w-11 shrink-0 items-center justify-center text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                          <X size={16} />
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </div>
 
               <div className="flex-1 bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200 h-fit">
@@ -1796,10 +1885,18 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Total</p><p className="text-slate-800 font-bold font-mono">${fmt.money(invoiceNetTotal(inv))}</p></div>
             </div>
 
-            {inv.notes && (
+            {(inv.notes || (inv.observations || []).length > 0) && (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <p className="text-xs font-bold text-slate-500 uppercase mb-1">Observaciones</p>
-                <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{inv.notes}</p>
+                {(inv.observations || []).length > 0 ? (
+                  <ol className="space-y-1 text-sm text-slate-700">
+                    {inv.observations.map((o: any) => (
+                      <li key={o.position} className="break-words"><span className="font-bold text-slate-400">{o.position}.</span> {o.text}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{inv.notes}</p>
+                )}
               </div>
             )}
 

@@ -39,6 +39,7 @@ namespace Fel.Infrastructure.Dian
             // crédito/débito sobre una factura AIU los toma de la factura original (aiuSource).
             var aiu = AiuContractData.TryRead((aiuSource ?? document).SectorExtensionData);
             var isAiu = aiu != null && (documentType?.OperationType == "09" || aiuSource != null);
+            var isMandate = documentType?.OperationType == DocumentType.MandateOperationType && aiuSource == null;
 
             municipalitiesByCode.TryGetValue(location.CityCode ?? string.Empty, out var issuerMuni);
             municipalitiesByCode.TryGetValue(customer.CityCode ?? string.Empty, out var customerMuni);
@@ -95,6 +96,8 @@ namespace Fel.Infrastructure.Dian
                     Email = customer.Email
                 }
             };
+
+            data.Notes.AddRange(document.Observations.OrderBy(o => o.Position).Select(o => o.Text));
 
             // Grupo obligatorio (numeral 6.5.10, FAN01-05): antes no se llenaba en este mapper (el
             // que arma el XML de facturas reales ya guardadas), a diferencia de BuildInvoiceDataFromRequest
@@ -161,6 +164,12 @@ namespace Fel.Infrastructure.Dian
                 };
                 // La línea de Administración lleva la nota obligatoria con el objeto del contrato.
                 if (isAiu && item.Code == AiuContractData.AdminCode) line.Note = aiu!.BuildAdminNote();
+                // Mandatos (operación 11): cada línea declara su mandante. Solo en la factura de mandato, no en sus notas.
+                if (isMandate)
+                {
+                    line.MandanteIdentificationCode = item.MandanteIdentificationType;
+                    line.MandanteIdentification = item.MandanteIdentification;
+                }
 
                 if (!outsideTaxBase)
                 {

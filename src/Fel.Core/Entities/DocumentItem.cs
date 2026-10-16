@@ -46,5 +46,14 @@ namespace Fel.Core.Entities
         // este interruptor permite anularla puntualmente en una línea excepcional sin tocar el
         // producto ni el catálogo.
         public bool RetentionOverridden { get; set; }
+
+        // Factura de mandato (operación 11): el mandante de esta línea, es decir, el tercero por cuenta de quien se vende. Se guarda
+        // el tercero elegido y una copia congelada de sus datos, igual que Code/Name/UnitPrice: si el tercero cambia después, una
+        // factura ya emitida no cambia. Vacíos en cualquier otra factura.
+        public Guid? MandanteCustomerId { get; set; }
+        public Customer? MandanteCustomer { get; set; }
+        public string? MandanteIdentificationType { get; set; } // Código DIAN del tipo de documento (31 = NIT, 13 = cédula...)
+        public string? MandanteIdentification { get; set; } // Número, sin dígito de verificación
+        public string? MandanteName { get; set; }
     }
 }

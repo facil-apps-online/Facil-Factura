@@ -22,6 +22,16 @@ namespace Fel.Infrastructure.Dataico.Models
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<DataicoTax>? retentions { get; set; }
+
+        // Factura de mandato: Dataico recibe el mandante de cada línea y marca el documento con el tipo de operación "Mandatos".
+        // Confirmado contra el ejemplo "Enviar factura - Mandato" del Postman de Dataico y contra la integración de escritorio (FEL).
+        [JsonPropertyName("mandante_identification")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? mandante_identification { get; set; }
+
+        [JsonPropertyName("mandante_identification_type")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? mandante_identification_type { get; set; }
     }
 
     public class DataicoInvoiceActions
@@ -69,6 +79,14 @@ namespace Fel.Infrastructure.Dataico.Models
 
         [JsonPropertyName("payment_means_type")]
         public string payment_means_type { get; set; } = string.Empty; // catálogo Dataico, ej. CREDITO, DEBITO
+
+        // "MANDATO" para la factura de mandato (operación 11); sin valor en la factura estándar.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? operation { get; set; }
+
+        // Observaciones del documento, una por entrada y en orden.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? notes { get; set; }
 
         public DataicoNumbering numbering { get; set; } = new();
         public DataicoParty customer { get; set; } = new();

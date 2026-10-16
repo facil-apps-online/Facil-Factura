@@ -107,6 +107,10 @@ namespace Fel.Infrastructure.Dataico
                 _ => "FACTURA ELECTRÓNICA DE VENTA"
             };
 
+            var observaciones = invoice.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)).OrderBy(o => o.Position).ToList();
+            // Una factura de mandato declara un mandante en cada línea; así se reconoce sin depender del tipo de documento.
+            var esMandato = items.Any(i => !string.IsNullOrWhiteSpace(i.MandanteIdentification));
+
             string? notaReferencia = null;
             if (originalDocument != null)
             {
@@ -257,7 +261,10 @@ namespace Fel.Infrastructure.Dataico
                     ["MedioPago"] = CatalogLabel(invoice.PaymentMeans, paymentMeansCatalog),
                     ["FormaPago"] = CatalogLabel(invoice.PaymentMeansType, formaPagoCatalog),
                     ["OrdenCompra"] = invoice.PurchaseOrderReference,
-                    ["Notas"] = invoice.Notes,
+                    // Todas las observaciones en un solo texto, una por línea: lo que leen las plantillas que todavía usan un
+                    // solo campo. Las plantillas que quieran una fila por observación usan la lista "Observaciones".
+                    ["Notas"] = string.Join("\n", observaciones.Select(o => o.Text)),
+                    ["TipoOperacion"] = esMandato ? "Mandatos" : "Estándar",
                     ["Leyenda"] = leyenda,
 
                     // Totales — ya formateados como texto (separadores según Client.DecimalSeparator, 2 decimales).
@@ -303,7 +310,20 @@ namespace Fel.Infrastructure.Dataico
                     ["TratamientoIva"] = i.IvaTreatment.ToString(),
                     ["PorcentajeIva"] = Pct(i.TaxRate),
                     ["ValorIva"] = Money(i.TaxAmount),
-                    ["TotalLinea"] = Money(i.TotalAmount)
+                    ["TotalLinea"] = Money(i.TotalAmount),
+                    // Factura de mandato: mandante de la línea, y el texto que se imprime bajo la descripción (como en la
+                    // representación gráfica de Dataico: "Mandante NIT: 800168654"). Vacíos en cualquier otra factura.
+                    ["MandanteNombre"] = i.MandanteName,
+                    ["MandanteIdentificacion"] = i.MandanteIdentification,
+                    ["MandanteTexto"] = string.IsNullOrWhiteSpace(i.MandanteIdentification) ? null
+                        : $"Mandante {DataicoMapper.MapIdentificationType(i.MandanteIdentificationType ?? string.Empty)}: {i.MandanteIdentification}"
+                }).ToList(),
+
+                // Una fila por observación, en su orden: la plantilla la pinta como un grupo de detalle, justo después de los ítems.
+                ["Observaciones"] = observaciones.Select(o => new Dictionary<string, object?>
+                {
+                    ["Numero"] = o.Position.ToString(),
+                    ["Texto"] = o.Text
                 }).ToList(),
 
                 ["Impuestos"] = impuestos

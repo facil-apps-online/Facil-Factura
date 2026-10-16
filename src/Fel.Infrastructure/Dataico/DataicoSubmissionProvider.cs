@@ -41,17 +41,19 @@ namespace Fel.Infrastructure.Dataico
             Document invoice, Customer customer, ICollection<DocumentItem> items,
             Client client, Resolution resolution, string paymentMeans, string paymentMeansType)
         {
-            // Con Dataico solo se emiten factura estándar y notas crédito/débito: los demás tipos de
-            // factura (AIU, mandato, salud, transporte) llevan información propia que este envío no
-            // manda, y saldrían como una venta común. Solo están disponibles con emisión directa a la DIAN.
+            // Con Dataico se emiten factura estándar, factura de mandato y notas crédito/débito: los demás tipos de
+            // factura (AIU, salud, transporte) llevan información propia que este envío no manda, y saldrían como
+            // una venta común. Solo están disponibles con emisión directa a la DIAN.
+            var isMandate = false;
             if (invoice.DocumentTypeId.HasValue)
             {
-                var typeCode = await _dbContext.DocumentTypes.AsNoTracking()
-                    .Where(t => t.Id == invoice.DocumentTypeId.Value).Select(t => t.Code).FirstOrDefaultAsync();
-                if (typeCode != null && typeCode is not ("FE-STD" or "NC" or "ND"))
+                var documentType = await _dbContext.DocumentTypes.AsNoTracking()
+                    .Where(t => t.Id == invoice.DocumentTypeId.Value).Select(t => new { t.Code, t.OperationType }).FirstOrDefaultAsync();
+                if (documentType != null && documentType.Code is not ("FE-STD" or "FE-MANDATO" or "NC" or "ND"))
                 {
-                    throw new NotSupportedException("Este tipo de factura solo está disponible con emisión directa a la DIAN; con el integrador configurado solo se emite factura estándar y notas crédito/débito.");
+                    throw new NotSupportedException("Este tipo de factura solo está disponible con emisión directa a la DIAN; con el integrador configurado solo se emite factura estándar, de mandato y notas crédito/débito.");
                 }
+                isMandate = documentType?.OperationType == DocumentType.MandateOperationType;
             }
 
             if (string.IsNullOrEmpty(invoice.Number))
@@ -116,7 +118,7 @@ namespace Fel.Infrastructure.Dataico
                     .Where(t => t.DataicoCode != null && t.DataicoCode != "")
                     .ToDictionaryAsync(t => t.Code, t => t.DataicoCode!);
 
-                var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType, identificationTypeOverrides);
+                var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType, identificationTypeOverrides, isMandate);
                 result = await _dataicoApiService.SendInvoiceAsync(dataicoRequest, credentials);
             }
 

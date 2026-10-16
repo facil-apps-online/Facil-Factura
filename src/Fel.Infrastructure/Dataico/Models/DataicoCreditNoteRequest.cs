@@ -36,6 +36,10 @@ namespace Fel.Infrastructure.Dataico.Models
 
         public string number { get; set; } = string.Empty;
 
+        // Observaciones de la nota, una por entrada y en orden.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? notes { get; set; }
+
         public DataicoNumbering numbering { get; set; } = new();
         public List<DataicoInvoiceItem> items { get; set; } = new();
 

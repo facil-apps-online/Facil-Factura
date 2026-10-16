@@ -30,6 +30,7 @@ namespace Fel.Infrastructure.Services
                 _ => "FACTURA ELECTRÓNICA DE VENTA"
             };
             var esNota = documentTypeCode is "NC" or "ND";
+            var esMandato = documentTypeCode == "FE-MANDATO";
 
             // Mismo shape que InvoiceReportDataMapper.Build: "Documento" (campos de un solo valor)
             // más los arreglos anidados ("Items", "Impuestos") que JsonDataSource resuelve como
@@ -74,7 +75,8 @@ namespace Fel.Infrastructure.Services
                     ["MedioPago"] = "10",
                     ["FormaPago"] = "Contado",
                     ["OrdenCompra"] = "OC-2026-001",
-                    ["Notas"] = "Documento de ejemplo — vista previa de diseño.",
+                    ["Notas"] = "Documento de ejemplo — vista previa de diseño.\nSegunda observación de ejemplo.\nTercera observación de ejemplo.",
+                    ["TipoOperacion"] = esMandato ? "Mandatos" : "Estándar",
                     ["NotaReferencia"] = esNota ? "Ajusta el documento N° SETP 1 · CUFE a1b2c3d4e5f6...ejemplo · Motivo: Devolución parcial" : null,
 
                     ["Subtotal"] = "198.000",
@@ -93,15 +95,35 @@ namespace Fel.Infrastructure.Services
                     ["ProveedorTecnologicoNit"] = null
                 },
 
-                ["Items"] = new List<Dictionary<string, object?>>
+                ["Items"] = WithSampleMandante(new List<Dictionary<string, object?>>
                 {
                     new() { ["Ordinal"] = "1", ["Codigo"] = "PRD001", ["Nombre"] = "Producto de ejemplo A", ["Cantidad"] = "2", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "50.000", ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = "Gravado", ["PorcentajeIva"] = "19%", ["ValorIva"] = "19.000", ["TotalLinea"] = "119.000" },
                     new() { ["Ordinal"] = "2", ["Codigo"] = "PRD002", ["Nombre"] = "Servicio de asistencia técnica agropecuaria mediante la metodología de taller de fortalecimiento socioempresarial dirigido a los productores de la Asociación de Mujeres Campesinas — nombre de ejemplo intencionalmente largo para probar el crecimiento de la celda", ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "68.000", ["PorcentajeDescuento"] = "10%", ["TratamientoIva"] = "Gravado", ["PorcentajeIva"] = "19%", ["ValorIva"] = "12.920", ["TotalLinea"] = "80.920" },
                     new() { ["Ordinal"] = "3", ["Codigo"] = "PRD003", ["Nombre"] = "Producto de ejemplo C (excluido)", ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "30.000", ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = "Excluido", ["PorcentajeIva"] = "0%", ["ValorIva"] = "0", ["TotalLinea"] = "30.000" }
+                }, esMandato),
+
+                // Mismo shape que InvoiceReportDataMapper.Build: una fila por observación, en su orden.
+                ["Observaciones"] = new List<Dictionary<string, object?>>
+                {
+                    new() { ["Numero"] = "1", ["Texto"] = "Documento de ejemplo — vista previa de diseño." },
+                    new() { ["Numero"] = "2", ["Texto"] = "Segunda observación de ejemplo." },
+                    new() { ["Numero"] = "3", ["Texto"] = "Tercera observación de ejemplo." }
                 },
 
                 ["Impuestos"] = BuildSampleImpuestos(mostrarRetenciones)
             };
+        }
+
+        // Factura de mandato: cada línea de ejemplo declara un mandante (mismos campos que InvoiceReportDataMapper); vacíos en el resto.
+        private static List<Dictionary<string, object?>> WithSampleMandante(List<Dictionary<string, object?>> items, bool esMandato)
+        {
+            foreach (var item in items)
+            {
+                item["MandanteNombre"] = esMandato ? "Mandante de Ejemplo S.A.S." : null;
+                item["MandanteIdentificacion"] = esMandato ? "800168654" : null;
+                item["MandanteTexto"] = esMandato ? "Mandante NIT: 800168654" : null;
+            }
+            return items;
         }
 
         // Mismo criterio que InvoiceReportDataMapper.Build: IVA discriminado por tarifa siempre

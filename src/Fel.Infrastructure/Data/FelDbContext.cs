@@ -47,6 +47,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<DocumentItem> DocumentItems { get; set; }
         public DbSet<DocumentRetention> DocumentRetentions => Set<DocumentRetention>();
         public DbSet<DocumentGeneralRetention> DocumentGeneralRetentions => Set<DocumentGeneralRetention>();
+        public DbSet<DocumentObservation> DocumentObservations => Set<DocumentObservation>();
         public DbSet<TenantUserPricing> TenantUserPricings => Set<TenantUserPricing>();
         public DbSet<PrepaidPackage> PrepaidPackages => Set<PrepaidPackage>();
         public DbSet<TenantPrepaidBag> TenantPrepaidBags => Set<TenantPrepaidBag>();
@@ -550,6 +551,16 @@ namespace Fel.Infrastructure.Data
                       .WithMany()
                       .HasForeignKey(e => e.ProductId)
                       .OnDelete(DeleteBehavior.SetNull);
+
+                entity.Property(e => e.MandanteIdentificationType).HasMaxLength(10);
+                entity.Property(e => e.MandanteIdentification).HasMaxLength(30);
+                entity.Property(e => e.MandanteName).HasMaxLength(250);
+
+                // El mandante es un Customer (PartyType = Mandante). Restrict: un tercero con facturas de mandato no se borra.
+                entity.HasOne(e => e.MandanteCustomer)
+                      .WithMany()
+                      .HasForeignKey(e => e.MandanteCustomerId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<DocumentRetention>(entity =>
@@ -576,6 +587,20 @@ namespace Fel.Infrastructure.Data
 
                 entity.HasOne(e => e.Document)
                       .WithMany(d => d.GeneralRetentions)
+                      .HasForeignKey(e => e.DocumentId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<DocumentObservation>(entity =>
+            {
+                entity.ToTable("DocumentObservations");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Text).IsRequired().HasMaxLength(DocumentObservation.MaxTextLength);
+                // El consecutivo es único por documento: define el orden de envío e impresión.
+                entity.HasIndex(e => new { e.DocumentId, e.Position }).IsUnique();
+
+                entity.HasOne(e => e.Document)
+                      .WithMany(d => d.Observations)
                       .HasForeignKey(e => e.DocumentId)
                       .OnDelete(DeleteBehavior.Cascade);
             });

@@ -12,7 +12,9 @@ import { useConfirm } from '@/components/ConfirmDialog';
 const PARTY_TYPES = [
   { value: 'Cliente', label: 'Clientes' },
   { value: 'Proveedor', label: 'Proveedores' },
-  { value: 'Empleado', label: 'Empleados' }
+  { value: 'Empleado', label: 'Empleados' },
+  // Solo para clientes con el tipo de factura de mandato habilitado (ver hasMandates).
+  { value: 'Mandante', label: 'Mandantes' }
 ];
 
 export default function CustomersPage() {
@@ -25,6 +27,8 @@ export default function CustomersPage() {
   const [identificationTypeOptions, setIdentificationTypeOptions] = useState<{ value: string, label: string }[]>([]);
   const [contractLabels, setContractLabels] = useState<Record<string, string>>({});
   const [workerLabels, setWorkerLabels] = useState<Record<string, string>>({});
+  // La pestaña de mandantes solo aparece si el tenant le habilitó al cliente el tipo de factura de mandato.
+  const [hasMandates, setHasMandates] = useState(false);
   const fmt = useNumberFormat();
 
   useEffect(() => {
@@ -34,6 +38,9 @@ export default function CustomersPage() {
   useEffect(() => {
     api.get('/client/identification-types')
       .then(res => setIdentificationTypeOptions(res.data.map((t: any) => ({ value: t.code, label: t.name }))))
+      .catch(() => {});
+    api.get('/client/invoices/document-types')
+      .then(res => setHasMandates(res.data.some((t: any) => t.operationType === '11')))
       .catch(() => {});
     // Nombres legibles del tipo de contrato y de trabajador para la lista de empleados.
     api.get('/client/tax-catalog?kind=ContractType')
@@ -186,7 +193,7 @@ export default function CustomersPage() {
       </div>
 
       <div className="mb-6 flex flex-wrap items-center gap-2">
-        {PARTY_TYPES.map(pt => (
+        {PARTY_TYPES.filter(pt => pt.value !== 'Mandante' || hasMandates).map(pt => (
           <button
             key={pt.value}
             onClick={() => setActiveType(pt.value)}

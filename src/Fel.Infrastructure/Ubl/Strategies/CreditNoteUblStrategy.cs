@@ -40,6 +40,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cbc + "IssueDate", DianTimeFormat.IssueDate(data.IssueDate)),
                 new XElement(cbc + "IssueTime", DianTimeFormat.IssueTime(data.IssueTime)),
                 new XElement(cbc + "CreditNoteTypeCode", data.DianCode),
+                BuildNotes(data),
                 new XElement(cbc + "DocumentCurrencyCode", new XAttribute("listAgencyID", "6"), new XAttribute("listAgencyName", "United Nations Economic Commission for Europe"), new XAttribute("listID", "ISO 4217 Alpha"), data.Currency),
                 new XElement(cbc + "LineCountNumeric", data.Lines.Count.ToString()),
 

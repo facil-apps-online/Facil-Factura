@@ -2024,6 +2024,21 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<int>("LineNumber")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("MandanteCustomerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MandanteIdentification")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("MandanteIdentificationType")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("MandanteName")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -2069,6 +2084,8 @@ namespace Fel.Infrastructure.Migrations
 
                     b.HasIndex("DocumentId");
 
+                    b.HasIndex("MandanteCustomerId");
+
                     b.HasIndex("ProductId");
 
                     b.ToTable("DocumentItems", (string)null);
@@ -2110,6 +2127,31 @@ namespace Fel.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("DocumentLegendByPrefixes", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentObservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId", "Position")
+                        .IsUnique();
+
+                    b.ToTable("DocumentObservations", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentRetention", b =>
@@ -5658,12 +5700,19 @@ namespace Fel.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Fel.Core.Entities.Customer", "MandanteCustomer")
+                        .WithMany()
+                        .HasForeignKey("MandanteCustomerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Fel.Core.Entities.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Document");
+
+                    b.Navigation("MandanteCustomer");
 
                     b.Navigation("Product");
                 });
@@ -5677,6 +5726,17 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Client");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentObservation", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Document", "Document")
+                        .WithMany("Observations")
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Document");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentRetention", b =>
@@ -6056,6 +6116,8 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("GeneralRetentions");
 
                     b.Navigation("Items");
+
+                    b.Navigation("Observations");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>

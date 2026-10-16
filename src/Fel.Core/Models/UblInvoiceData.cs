@@ -49,6 +49,9 @@ namespace Fel.Core.Models
         public string? DiscrepancyResponseCode { get; set; }
         public string? DiscrepancyDescription { get; set; }
 
+        // Observaciones del documento, en orden: cada una sale como un cbc:Note del encabezado.
+        public List<string> Notes { get; set; } = new List<string>();
+
         public List<PaymentMeansData> PaymentMeans { get; set; } = new List<PaymentMeansData>();
         public List<AllowanceChargeData> AllowanceCharges { get; set; } = new List<AllowanceChargeData>();
         public List<TaxSubtotal> Taxes { get; set; } = new List<TaxSubtotal>();
@@ -131,6 +134,11 @@ namespace Fel.Core.Models
         // Información adicional del artículo (cbc:Note de la línea): obligatoria en la línea de
         // Administración de un contrato AIU (ver AiuContractData.NotePrefix).
         public string? Note { get; set; }
+
+        // Factura de mandato (operación 11): mandante de la línea (cac:InformationContentProviderParty). Tipo de documento DIAN
+        // (31 = NIT, 13 = cédula...) y número sin dígito de verificación; null en cualquier otra factura.
+        public string? MandanteIdentificationCode { get; set; }
+        public string? MandanteIdentification { get; set; }
         public decimal Quantity { get; set; }
         public string UnitCode { get; set; } = "94"; // Código DIAN de la unidad de medida (ver UnitOfMeasure)
         public decimal UnitPrice { get; set; }

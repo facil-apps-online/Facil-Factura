@@ -21,14 +21,16 @@ namespace Fel.Api.Tenant.Controllers
         private readonly IDianSoapClient _dianSoapClient;
         private readonly ICryptoVault _cryptoVault;
         private readonly ResolutionBranchService _resolutionBranches;
+        private readonly DataicoResolutionSyncService _dataicoSync;
 
-        public TenantResolutionsController(FelDbContext dbContext, DianResolutionParserService parserService, IDianSoapClient dianSoapClient, ICryptoVault cryptoVault, ResolutionBranchService resolutionBranches)
+        public TenantResolutionsController(FelDbContext dbContext, DianResolutionParserService parserService, IDianSoapClient dianSoapClient, ICryptoVault cryptoVault, ResolutionBranchService resolutionBranches, DataicoResolutionSyncService dataicoSync)
         {
             _dbContext = dbContext;
             _parserService = parserService;
             _dianSoapClient = dianSoapClient;
             _cryptoVault = cryptoVault;
             _resolutionBranches = resolutionBranches;
+            _dataicoSync = dataicoSync;
         }
 
         private Guid GetCurrentTenantId()
@@ -137,6 +139,9 @@ namespace Fel.Api.Tenant.Controllers
                 _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, branchId));
             await _dbContext.SaveChangesAsync();
 
+            // Cliente Dataico: Dataico toma la resolución de la DIAN al sincronizar; se comprueba que ya la tenga.
+            var dataicoWarning = await _dataicoSync.CheckAfterCreateAsync(clientId, resolution);
+
             return Ok(new {
                 resolution.Id,
                 resolution.ResolutionNumber,
@@ -146,8 +151,22 @@ namespace Fel.Api.Tenant.Controllers
                 resolution.ValidFrom,
                 resolution.ValidTo,
                 resolution.DocumentType,
-                resolution.IsDefault
+                resolution.IsDefault,
+                dataicoWarning
             });
+        }
+
+        // Trae las resoluciones vigentes que Dataico tiene vinculadas al NIT del cliente (carga inicial y resoluciones nuevas que el
+        // cliente habilitó en la DIAN). Solo para clientes que facturan por Dataico.
+        [HttpPost("sync-dataico")]
+        public async Task<IActionResult> SyncDataico(Guid clientId)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId)) return StatusCode(StatusCodes.Status403Forbidden);
+            if (!await _dataicoSync.UsesDataicoAsync(clientId)) return BadRequest("Este cliente no factura por Dataico.");
+
+            var report = await _dataicoSync.SyncAsync(clientId);
+            return Ok(new { report.Created, report.Updated, report.Unchanged, report.Notes, report.Errors });
         }
 
         public class UpdateResolutionRequest

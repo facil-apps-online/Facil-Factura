@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, UserRound } from 'lucide-react';
+import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, UserRound, RefreshCw } from 'lucide-react';
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
@@ -41,6 +41,7 @@ export default function ClientEdit() {
   const [associates, setAssociates] = useState<{ id: string, name: string, isActive: boolean }[]>([]);
   const [showResModal, setShowResModal] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [syncingDataico, setSyncingDataico] = useState(false);
   const [newRes, setNewRes] = useState({
     resolutionNumber: '',
     prefix: '',
@@ -652,13 +653,36 @@ export default function ClientEdit() {
         if (branches.length > 1) await api.put(`/tenant/clients/${id}/resolutions/${editingResolutionId}/branches`, { branchIds: resBranchIds });
         toast.success("Resolución actualizada");
       } else {
-        await api.post(`/tenant/clients/${id}/resolutions`, { ...payload, branchIds: resBranchIds });
+        const created = await api.post(`/tenant/clients/${id}/resolutions`, { ...payload, branchIds: resBranchIds });
         toast.success("Resolución agregada");
+        if (created.data?.dataicoWarning) toast.warning(created.data.dataicoWarning, { duration: 15000 });
       }
       closeResModal();
       loadResolutions();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || err?.response?.data || (editingResolutionId ? "Error al actualizar resolución" : "Error al crear resolución"));
+    }
+  };
+
+  // Trae las resoluciones vigentes que Dataico tiene vinculadas al NIT del cliente.
+  const handleSyncDataico = async () => {
+    setSyncingDataico(true);
+    try {
+      const { data } = await api.post(`/tenant/clients/${id}/resolutions/sync-dataico`);
+      const parts = [
+        data.created && `${data.created} nueva${data.created === 1 ? '' : 's'}`,
+        data.updated && `${data.updated} actualizada${data.updated === 1 ? '' : 's'}`,
+        data.unchanged && `${data.unchanged} sin cambios`
+      ].filter(Boolean);
+      if (data.created || data.updated) toast.success(`Resoluciones de Dataico: ${parts.join(', ')}.`);
+      else if (!data.errors?.length) toast.info(parts.length ? `Resoluciones de Dataico: ${parts.join(', ')}.` : 'Dataico no tiene resoluciones vigentes para este cliente.');
+      (data.errors || []).forEach((m: string) => toast.error(m, { duration: 15000 }));
+      (data.notes || []).forEach((m: string) => toast.info(m, { duration: 10000 }));
+      loadResolutions();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data || 'No se pudo sincronizar con Dataico');
+    } finally {
+      setSyncingDataico(false);
     }
   };
 
@@ -692,9 +716,10 @@ export default function ClientEdit() {
         // Soporte) — se cargan todas directamente en vez de pasar por el modal una por una;
         // el cliente elimina después la que no necesite.
         let created = 0;
+        const dataicoWarnings = new Set<string>();
         for (const parsed of parsedList) {
           try {
-            await api.post(`/tenant/clients/${id}/resolutions`, {
+            const saved = await api.post(`/tenant/clients/${id}/resolutions`, {
               resolutionNumber: parsed.resolutionNumber || '',
               prefix: parsed.prefix || '',
               numberStart: parsed.numberStart || 0,
@@ -705,11 +730,13 @@ export default function ClientEdit() {
               documentType: parsed.documentType || 'FE'
             });
             created++;
+            if (saved.data?.dataicoWarning) dataicoWarnings.add(saved.data.dataicoWarning);
           } catch {
             // Sigue con las demás aunque una falle (ej. duplicada) — se reporta el conteo real al final.
           }
         }
         toast.success(`${created} de ${parsedList.length} resoluciones cargadas desde el PDF.`);
+        dataicoWarnings.forEach(w => toast.warning(w, { duration: 15000 }));
         closeResModal();
         loadResolutions();
       } else {
@@ -1167,9 +1194,16 @@ export default function ClientEdit() {
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-bold text-slate-800">Resoluciones de Facturación</h2>
-                  <button onClick={openCreateResolutionModal} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium shadow-md transition-colors flex items-center gap-2 text-sm">
-                    <Plus size={16} /> Nueva Resolución
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {savedProvider === 'Dataico' && (
+                      <button onClick={handleSyncDataico} disabled={syncingDataico} title="Trae las resoluciones vigentes que Dataico tiene vinculadas al NIT del cliente" className="bg-white hover:bg-slate-50 disabled:opacity-60 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2 text-sm">
+                        {syncingDataico ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} Sincronizar con Dataico
+                      </button>
+                    )}
+                    <button onClick={openCreateResolutionModal} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium shadow-md transition-colors flex items-center gap-2 text-sm">
+                      <Plus size={16} /> Nueva Resolución
+                    </button>
+                  </div>
                 </div>
 
                 {resolutions.length === 0 ? (

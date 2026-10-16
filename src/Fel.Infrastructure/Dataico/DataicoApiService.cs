@@ -37,6 +37,11 @@ namespace Fel.Infrastructure.Dataico
         // recupera uno ya enviado por su número (prefijo + consecutivo), por ejemplo "EV58".
         Task<DataicoResult> SendReceptionEventAsync(DataicoReceptionEventEnvelope eventRequest, DataicoCredentials credentials);
         Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials);
+
+        // Pide a Dataico que consulte a la DIAN las resoluciones del NIT y devuelve las numeraciones de la cuenta. module es
+        // "invoice" (facturas) o "support-doc" (documento soporte); Dataico no sincroniza otros. Con cuerpo vacío no envía
+        // resoluciones: solo sincroniza y lista.
+        Task<DataicoNumberingSyncResult> SyncNumberingsAsync(string module, DataicoCredentials credentials);
     }
 
     public class DataicoApiService : IDataicoApiService
@@ -139,6 +144,13 @@ namespace Fel.Infrastructure.Dataico
 
         public Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials)
             => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/reception_events?number={Uri.EscapeDataString(number)}", credentials, null);
+
+        public async Task<DataicoNumberingSyncResult> SyncNumberingsAsync(string module, DataicoCredentials credentials)
+        {
+            var call = await ExecuteAsync(HttpMethod.Post, $"{InvoicingBaseUrl}/numberings/sync_dian/{module}", credentials,
+                new { numberings = Array.Empty<object>() }, TimeSpan.FromSeconds(120));
+            return DataicoNumberingSyncResult.Parse(call);
+        }
 
         // timeout: la pasarela de la DIAN a veces tarda; el legacy espera hasta 180 s en los eventos para no recibir 504.
         private async Task<DataicoResult> ExecuteAsync(HttpMethod method, string url, DataicoCredentials credentials, object? body, TimeSpan? timeout = null)

@@ -150,9 +150,10 @@ export default function ResolutionsSettings() {
         // Soporte) — se cargan todas directamente en vez de pasar por el modal una por una;
         // se pueden eliminar después las que no se necesiten.
         let created = 0;
+        const dataicoWarnings = new Set<string>();
         for (const parsed of parsedList) {
           try {
-            await api.post('/client/resolutions', {
+            const saved = await api.post('/client/resolutions', {
               resolutionNumber: parsed.resolutionNumber || '',
               prefix: parsed.prefix || '',
               numberStart: parsed.numberStart || 0,
@@ -164,11 +165,13 @@ export default function ResolutionsSettings() {
               branchIds: newRes.branchIds
             });
             created++;
+            if (saved.data?.dataicoWarning) dataicoWarnings.add(saved.data.dataicoWarning);
           } catch {
             // Sigue con las demás aunque una falle (ej. duplicada) — se reporta el conteo real al final.
           }
         }
         toast.success(`${created} de ${parsedList.length} resoluciones cargadas desde el PDF.`);
+        dataicoWarnings.forEach(w => toast.warning(w, { duration: 15000 }));
         closeResModal();
         loadResolutions();
       } else {
@@ -251,8 +254,9 @@ export default function ResolutionsSettings() {
         await api.put(`/client/resolutions/${editingId}`, payload);
         toast.success("Resolución actualizada");
       } else {
-        await api.post('/client/resolutions', payload);
+        const saved = await api.post('/client/resolutions', payload);
         toast.success("Resolución agregada");
+        if (saved.data?.dataicoWarning) toast.warning(saved.data.dataicoWarning, { duration: 15000 });
       }
       closeResModal();
       loadResolutions();

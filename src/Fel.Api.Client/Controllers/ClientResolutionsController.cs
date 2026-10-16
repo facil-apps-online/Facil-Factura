@@ -21,12 +21,14 @@ namespace Fel.Api.Client.Controllers
         private readonly FelDbContext _dbContext;
         private readonly DianResolutionParserService _parserService;
         private readonly ResolutionBranchService _resolutionBranches;
+        private readonly DataicoResolutionSyncService _dataicoSync;
 
-        public ClientResolutionsController(FelDbContext dbContext, DianResolutionParserService parserService, ResolutionBranchService resolutionBranches)
+        public ClientResolutionsController(FelDbContext dbContext, DianResolutionParserService parserService, ResolutionBranchService resolutionBranches, DataicoResolutionSyncService dataicoSync)
         {
             _dbContext = dbContext;
             _parserService = parserService;
             _resolutionBranches = resolutionBranches;
+            _dataicoSync = dataicoSync;
         }
 
         [HttpGet]
@@ -135,8 +137,11 @@ namespace Fel.Api.Client.Controllers
                 // Si es la primera resolución activa de este tipo de documento para el cliente, se
                 // marca como predeterminada de una vez — así nunca queda un tipo sin default cuando
                 // solo hay una opción.
+                // Las que se acaban de desactivar no cuentan (todavía figuran activas en la base); si la reemplazada era la
+                // predeterminada, la nueva hereda ese lugar para que el tipo no se quede sin predeterminada.
+                var replacedIds = existingActive.Select(r => r.Id).ToList();
                 var hasOtherActiveOfType = await _dbContext.Resolutions
-                    .AnyAsync(r => r.ClientId == clientId && r.DocumentType == request.DocumentType && r.IsActive);
+                    .AnyAsync(r => r.ClientId == clientId && r.DocumentType == request.DocumentType && r.IsActive && !replacedIds.Contains(r.Id));
 
                 var resolution = new Resolution
                 {
@@ -151,13 +156,16 @@ namespace Fel.Api.Client.Controllers
                     TechnicalKey = request.TechnicalKey ?? "",
                     DocumentType = request.DocumentType,
                     IsActive = true,
-                    IsDefault = !hasOtherActiveOfType
+                    IsDefault = !hasOtherActiveOfType || existingActive.Any(r => r.IsDefault)
                 };
 
                 _dbContext.Resolutions.Add(resolution);
                 foreach (var branchId in resolutionBranchIds)
                     _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, branchId));
                 await _dbContext.SaveChangesAsync();
+
+                // Cliente Dataico: Dataico toma la resolución de la DIAN al sincronizar; se comprueba que ya la tenga.
+                var dataicoWarning = await _dataicoSync.CheckAfterCreateAsync(clientId, resolution);
 
                 return Ok(new {
                     resolution.Id,
@@ -168,7 +176,8 @@ namespace Fel.Api.Client.Controllers
                     resolution.ValidFrom,
                     resolution.ValidTo,
                     resolution.DocumentType,
-                    resolution.IsDefault
+                    resolution.IsDefault,
+                    dataicoWarning
                 });
             }
             catch (Exception ex)

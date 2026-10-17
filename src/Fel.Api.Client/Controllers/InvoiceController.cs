@@ -276,10 +276,15 @@ namespace Fel.Api.Client.Controllers
                 if (invoice.IssueDate == default) invoice.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
                 // Fetch the actual document type (for DianCode etc)
+                var isMandate = false;
                 if (invoice.DocumentTypeId.HasValue)
                 {
                     var docType = await _dbContext.DocumentTypes.FindAsync(invoice.DocumentTypeId.Value);
-                    if (docType != null) invoice.TypeCode = docType.Code;
+                    if (docType != null)
+                    {
+                        invoice.TypeCode = docType.Code;
+                        isMandate = docType.OperationType == Fel.Core.Entities.DocumentType.MandateOperationType;
+                    }
                 }
 
                 var itemLine = 0;
@@ -301,17 +306,19 @@ namespace Fel.Api.Client.Controllers
                     generalRetention.DocumentId = invoice.Id;
                 }
 
-                // Las observaciones viven en su tabla (consecutivo 1, 2, 3...), no en Notes.
-                invoice.Notes = string.Empty;
-                var observationPosition = 1;
-                foreach (var observation in invoice.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)).ToList())
+                // Mandato: lista de observaciones (consecutivo 1, 2, 3...) en su tabla; cualquier otra factura o nota: solo la observación general (Notes).
+                var observations = invoice.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)).Select(o => o.Text.Trim()).ToList();
+                invoice.Observations = new List<DocumentObservation>();
+                if (isMandate)
                 {
-                    observation.Id = Guid.NewGuid();
-                    observation.DocumentId = invoice.Id;
-                    observation.Position = observationPosition++;
-                    observation.Text = observation.Text.Trim();
+                    invoice.Notes = string.Empty;
+                    for (var i = 0; i < observations.Count; i++)
+                        invoice.Observations.Add(new DocumentObservation { Id = Guid.NewGuid(), DocumentId = invoice.Id, Position = i + 1, Text = observations[i] });
                 }
-                invoice.Observations = invoice.Observations.Where(o => o.Position > 0).ToList();
+                else
+                {
+                    invoice.Notes = (invoice.Notes ?? string.Empty).Trim();
+                }
 
                 _dbContext.Documents.Add(invoice);
                 await _dbContext.SaveChangesAsync();
@@ -344,19 +351,30 @@ namespace Fel.Api.Client.Controllers
 
                 invoice.CustomerId = invoiceData.CustomerId;
                 invoice.DocumentTypeId = invoiceData.DocumentTypeId;
-                // Observaciones: reemplazo completo, con consecutivo 1, 2, 3... en el orden recibido.
+                // Mandato: lista de observaciones (reemplazo completo, consecutivo 1, 2, 3... en el orden recibido);
+                // cualquier otra factura o nota: solo la observación general (Notes).
+                var isMandate = invoiceData.DocumentTypeId.HasValue
+                    && await _dbContext.DocumentTypes.AsNoTracking().AnyAsync(t => t.Id == invoiceData.DocumentTypeId.Value && t.OperationType == Fel.Core.Entities.DocumentType.MandateOperationType);
                 _dbContext.DocumentObservations.RemoveRange(invoice.Observations);
                 invoice.Observations.Clear();
-                var observationPosition = 1;
-                foreach (var observation in invoiceData.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)))
+                if (isMandate)
                 {
-                    _dbContext.DocumentObservations.Add(new DocumentObservation
+                    invoice.Notes = string.Empty;
+                    var observationPosition = 1;
+                    foreach (var observation in invoiceData.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)))
                     {
-                        Id = Guid.NewGuid(),
-                        DocumentId = invoice.Id,
-                        Position = observationPosition++,
-                        Text = observation.Text.Trim()
-                    });
+                        _dbContext.DocumentObservations.Add(new DocumentObservation
+                        {
+                            Id = Guid.NewGuid(),
+                            DocumentId = invoice.Id,
+                            Position = observationPosition++,
+                            Text = observation.Text.Trim()
+                        });
+                    }
+                }
+                else
+                {
+                    invoice.Notes = (invoiceData.Notes ?? string.Empty).Trim();
                 }
                 // Datos de sector (hoy: contrato AIU) — se guardan tal cual los arma el formulario.
                 invoice.SectorExtensionData = string.IsNullOrWhiteSpace(invoiceData.SectorExtensionData) ? "{}" : invoiceData.SectorExtensionData;

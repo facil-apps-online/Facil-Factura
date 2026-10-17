@@ -172,7 +172,7 @@ namespace Fel.Infrastructure.Dataico
         // Observaciones del documento en su orden, una por entrada; null si no tiene (Dataico no recibe "notes" vacío).
         private static List<string>? BuildNotes(Document document)
         {
-            var notes = document.Observations.OrderBy(o => o.Position).Select(o => o.Text).Where(t => !string.IsNullOrWhiteSpace(t)).ToList();
+            var notes = Fel.Core.Models.DocumentNotes.Texts(document).ToList();
             return notes.Count == 0 ? null : notes;
         }
 

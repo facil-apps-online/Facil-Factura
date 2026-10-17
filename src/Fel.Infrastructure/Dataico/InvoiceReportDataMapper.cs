@@ -107,7 +107,8 @@ namespace Fel.Infrastructure.Dataico
                 _ => "FACTURA ELECTRÓNICA DE VENTA"
             };
 
-            var observaciones = invoice.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)).OrderBy(o => o.Position).ToList();
+            // Mandato: la lista de observaciones; cualquier otra factura o nota: la observación general como única fila.
+            var observaciones = DocumentNotes.Texts(invoice).Select((text, idx) => (Position: idx + 1, Text: text)).ToList();
             // Una factura de mandato declara un mandante en cada línea; así se reconoce sin depender del tipo de documento.
             var esMandato = items.Any(i => !string.IsNullOrWhiteSpace(i.MandanteIdentification));
 

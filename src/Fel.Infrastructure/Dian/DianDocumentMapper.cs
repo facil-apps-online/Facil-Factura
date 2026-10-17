@@ -97,7 +97,7 @@ namespace Fel.Infrastructure.Dian
                 }
             };
 
-            data.Notes.AddRange(document.Observations.OrderBy(o => o.Position).Select(o => o.Text));
+            data.Notes.AddRange(DocumentNotes.Texts(document));
 
             // Grupo obligatorio (numeral 6.5.10, FAN01-05): antes no se llenaba en este mapper (el
             // que arma el XML de facturas reales ya guardadas), a diferencia de BuildInvoiceDataFromRequest

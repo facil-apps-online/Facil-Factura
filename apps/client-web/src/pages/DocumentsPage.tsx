@@ -211,6 +211,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [mandantes, setMandantes] = useState<any[]>([]);
   // Línea para la que se está creando un mandante nuevo (mismo formulario de terceros, con el tipo Mandante).
   const [mandanteModalForItemIndex, setMandanteModalForItemIndex] = useState<number | null>(null);
+  // Carga de varias observaciones de mandato de una vez (una por línea).
+  const [showBulkObservations, setShowBulkObservations] = useState(false);
+  const [bulkObservations, setBulkObservations] = useState('');
   const [paymentTermCustom, setPaymentTermCustom] = useState(false);
   // Una retención (por ítem o general) queda "bloqueada" (solo texto) apenas se elige su valor,
   // para que el scroll del mouse u otra interacción accidental sobre el select no la cambie sin
@@ -686,6 +689,35 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const setObservation = (index: number, text: string) =>
     setFormData({ ...formData, observations: formData.observations.map((o, i) => (i === index ? text : o)) });
   const addObservation = () => setFormData({ ...formData, observations: [...formData.observations, ''] });
+
+  // Líneas de un texto pegado o cargado de una vez: una observación por línea (Enter), sin renglones vacíos.
+  const splitObservationLines = (text: string) => text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  // Carga varias de una vez: cada línea del cuadro pasa a ser una observación, al final de la lista y en el mismo orden.
+  const addBulkObservations = () => {
+    const lines = splitObservationLines(bulkObservations);
+    const tooLong = lines.findIndex(l => l.length > OBSERVATION_MAX_LENGTH);
+    if (tooLong >= 0) {
+      toast.error(`La línea ${tooLong + 1} supera los ${OBSERVATION_MAX_LENGTH} caracteres. Divídela en dos observaciones.`);
+      return;
+    }
+    if (lines.length === 0) return;
+    setFormData({ ...formData, observations: [...formData.observations.filter(o => o.trim()), ...lines] });
+    setBulkObservations('');
+    setShowBulkObservations(false);
+    toast.success(`${lines.length} observación${lines.length === 1 ? '' : 'es'} agregada${lines.length === 1 ? '' : 's'}`);
+  };
+
+  // Si se pega en una fila un texto con varias líneas, cada línea pasa a ser su propia observación (desde esa fila).
+  const handleObservationPaste = (index: number, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text');
+    if (!/\r?\n/.test(text.trim())) return;
+    e.preventDefault();
+    const lines = splitObservationLines(text).map(l => l.slice(0, OBSERVATION_MAX_LENGTH));
+    const observations = [...formData.observations];
+    observations.splice(index, 1, ...(observations[index].trim() ? [observations[index], ...lines] : lines));
+    setFormData({ ...formData, observations });
+  };
   const removeObservation = (index: number) =>
     setFormData({ ...formData, observations: formData.observations.filter((_, i) => i !== index) });
 
@@ -1008,7 +1040,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const payload = {
         ...formRest,
         // Facturas y notas mandan la lista de observaciones; el documento soporte sigue con el texto "notes".
-        ...(isSupport ? {} : { notes: '', observations: observations.filter(o => o.trim()).map(text => ({ text: text.trim() })) }),
+        // Mandato: lista de observaciones. Cualquier otro documento: solo la observación general ("notes").
+        ...(isMandate
+          ? { notes: '', observations: observations.filter(o => o.trim()).map(text => ({ text: text.trim() })) }
+          : { observations: [] as { text: string }[] }),
         sectorExtensionData: isAiu && aiuParams ? JSON.stringify({ aiu: aiuParams }) : '{}',
         paymentTermDays: formData.paymentTermDays === '' ? null : formData.paymentTermDays,
         // Las notas no traen resolutionId (el selector queda oculto) — "" no es un Guid? válido
@@ -1637,15 +1672,20 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </div>
 
               <div className="w-full lg:flex-1">
-                <div className="flex items-end justify-between gap-3 mb-4">
+                <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
                   <h3 className="text-lg font-bold text-slate-800">Observaciones (opcional)</h3>
-                  {!isSupport && (
-                    <button type="button" onClick={addObservation} className="px-3 py-2 text-primary font-bold flex items-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all text-sm">
-                      <PlusCircle size={16} /> Agregar observación
-                    </button>
+                  {isMandate && (
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setShowBulkObservations(s => !s)} className="px-3 py-2 text-slate-600 font-bold flex items-center gap-2 rounded-xl border-2 border-slate-200 hover:bg-slate-50 transition-all text-sm">
+                        Cargar varias
+                      </button>
+                      <button type="button" onClick={addObservation} className="px-3 py-2 text-primary font-bold flex items-center gap-2 rounded-xl border-2 border-primary/30 hover:bg-primary/5 hover:border-primary transition-all text-sm">
+                        <PlusCircle size={16} /> Agregar observación
+                      </button>
+                    </div>
                   )}
                 </div>
-                {isSupport ? (
+                {!isMandate ? (
                   <input
                     type="text"
                     placeholder="Notas adicionales para este documento..."
@@ -1654,27 +1694,48 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     maxLength={500}
                     className="w-full p-3 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"
                   />
-                ) : formData.observations.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-400">Sin observaciones. Se envían a la DIAN en el orden en que las agregues.</p>
                 ) : (
-                  <ol className="space-y-2">
-                    {formData.observations.map((text, index) => (
-                      <li key={index} className="flex items-center gap-2">
-                        <span className="w-6 shrink-0 text-right text-sm font-bold text-slate-400">{index + 1}.</span>
-                        <input
-                          type="text"
-                          value={text}
-                          onChange={e => setObservation(index, e.target.value)}
-                          placeholder="Observación..."
-                          maxLength={OBSERVATION_MAX_LENGTH}
-                          className="min-w-0 flex-1 p-3 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"
+                  <>
+                    {showBulkObservations && (
+                      <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Una observación por línea (separadas con Enter)</label>
+                        <textarea
+                          value={bulkObservations}
+                          onChange={e => setBulkObservations(e.target.value)}
+                          rows={5}
+                          placeholder={'Canon de arrendamiento de octubre\nPago por consignación bancaria\n...'}
+                          className="w-full p-3 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary bg-white"
                         />
-                        <button type="button" onClick={() => removeObservation(index)} title="Quitar observación" aria-label={`Quitar observación ${index + 1}`} className="flex h-11 w-11 shrink-0 items-center justify-center text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                          <X size={16} />
-                        </button>
-                      </li>
-                    ))}
-                  </ol>
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button type="button" onClick={() => { setBulkObservations(''); setShowBulkObservations(false); }} className="px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                          <button type="button" onClick={addBulkObservations} disabled={!bulkObservations.trim()} className="px-3 py-2 text-sm font-bold text-white bg-primary rounded-lg disabled:opacity-50">Agregar al listado</button>
+                        </div>
+                      </div>
+                    )}
+                    {formData.observations.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-400">Sin observaciones. Se envían en el orden en que las agregues; también puedes cargar varias de una vez.</p>
+                    ) : (
+                      <ol className="space-y-2">
+                        {formData.observations.map((text, index) => (
+                          <li key={index} className="flex items-center gap-2">
+                            <span className="w-6 shrink-0 text-right text-sm font-bold text-slate-400">{index + 1}.</span>
+                            <input
+                              type="text"
+                              value={text}
+                              onChange={e => setObservation(index, e.target.value)}
+                              onPaste={e => handleObservationPaste(index, e)}
+                              placeholder="Observación..."
+                              maxLength={OBSERVATION_MAX_LENGTH}
+                              className="min-w-0 flex-1 p-3 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary"
+                            />
+                            <button type="button" onClick={() => removeObservation(index)} title="Quitar observación" aria-label={`Quitar observación ${index + 1}`} className="flex h-11 w-11 shrink-0 items-center justify-center text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                              <X size={16} />
+                            </button>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </>
                 )}
               </div>
 

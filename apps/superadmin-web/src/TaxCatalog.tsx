@@ -14,6 +14,7 @@ interface TaxCatalogItem {
   name: string;
   kind: TaxCatalogKind;
   rate: number | null;
+  wordsName: string | null;
   isActive: boolean;
 }
 
@@ -30,7 +31,7 @@ const KIND_LABELS: Record<string, string> = {
   Regimen: 'Régimen (tercero)',
   AccountType: 'Cuenta bancaria',
   FormaPago: 'Forma de Pago (Facturas)',
-  Currency: 'Moneda extranjera (Facturas)',
+  Currency: 'Moneda (Facturas)',
   Country: 'País (tercero)',
   Incoterm: 'Condición de entrega (Exportación)'
 };
@@ -79,7 +80,7 @@ const KIND_FILTER_OPTIONS = Object.keys(KIND_LABELS) as TaxCatalogKind[];
 
 export const TaxCatalog = () => {
   const [items, setItems] = useState<TaxCatalogItem[]>([]);
-  const [formData, setFormData] = useState({ category: '', name: '', kind: 'Retention', rate: '' });
+  const [formData, setFormData] = useState({ category: '', name: '', kind: 'Retention', rate: '', wordsName: '' });
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<string>('');
@@ -97,12 +98,12 @@ export const TaxCatalog = () => {
   const closeModal = () => {
     setShowModal(false);
     setEditingId(null);
-    setFormData({ category: '', name: '', kind: 'Retention', rate: '' });
+    setFormData({ category: '', name: '', kind: 'Retention', rate: '', wordsName: '' });
   };
 
   const openCreateModal = () => {
     setEditingId(null);
-    setFormData({ category: '', name: '', kind: 'Retention', rate: '' });
+    setFormData({ category: '', name: '', kind: 'Retention', rate: '', wordsName: '' });
     setShowModal(true);
   };
 
@@ -112,14 +113,15 @@ export const TaxCatalog = () => {
       category: item.category,
       name: item.name,
       kind: item.kind,
-      rate: item.rate != null ? String(item.rate) : ''
+      rate: item.rate != null ? String(item.rate) : '',
+      wordsName: item.wordsName ?? ''
     });
     setShowModal(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...formData, rate: formData.kind === 'Retention' && formData.rate !== '' ? parseFloat(formData.rate) : null };
+    const payload = { ...formData, rate: formData.kind === 'Retention' && formData.rate !== '' ? parseFloat(formData.rate) : null, wordsName: formData.kind === 'Currency' ? formData.wordsName : null };
     try {
       if (editingId) {
         await api.put(`/tax-catalog/${editingId}`, { ...payload, isActive: items.find(i => i.id === editingId)?.isActive ?? true });
@@ -274,7 +276,7 @@ export const TaxCatalog = () => {
                   <option value="Regimen">Régimen (tercero)</option>
                   <option value="AccountType">Cuenta bancaria</option>
                   <option value="FormaPago">Forma de Pago (Facturas)</option>
-                  <option value="Currency">Moneda extranjera (Facturas)</option>
+                  <option value="Currency">Moneda (Facturas)</option>
                   <option value="Country">País (tercero)</option>
                   <option value="Incoterm">Condición de entrega (Exportación)</option>
                 </select>
@@ -314,6 +316,21 @@ export const TaxCatalog = () => {
                   placeholder="Retención en la Fuente"
                 />
               </div>
+              {formData.kind === 'Currency' && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-300 mb-2">Nombre en letras</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={50}
+                    className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500"
+                    value={formData.wordsName}
+                    onChange={e => setFormData({ ...formData, wordsName: e.target.value.toUpperCase() })}
+                    placeholder="DÓLARES"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Así se nombra la moneda en el valor en letras de la factura, en plural (PESOS, DÓLARES, EUROS).</p>
+                </div>
+              )}
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
                   Cancelar

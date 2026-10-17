@@ -94,7 +94,7 @@ namespace Fel.Infrastructure.Services
                     ["TotalRetenciones"] = mostrarRetenciones ? "6.862" : null,
                     ["NetoAPagar"] = mostrarRetenciones ? "223.058" : null,
                     ["Total"] = "229.920",
-                    ["TotalEnLetras"] = "DOSCIENTOS VEINTINUEVE MIL NOVECIENTOS VEINTE PESOS M/CTE",
+                    ["TotalEnLetras"] = "DOSCIENTOS VEINTINUEVE MIL NOVECIENTOS VEINTE PESOS",
 
                     ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
                     ["FabricanteSoftwareNit"] = "900.303.194-6",
@@ -208,7 +208,7 @@ namespace Fel.Infrastructure.Services
                     ["TotalRetenciones"] = null,
                     ["NetoAPagar"] = null,
                     ["Total"] = "120.000",
-                    ["TotalEnLetras"] = "CIENTO VEINTE MIL PESOS M/CTE",
+                    ["TotalEnLetras"] = "CIENTO VEINTE MIL PESOS",
 
                     ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
                     ["FabricanteSoftwareNit"] = "900.303.194-6",
@@ -270,7 +270,7 @@ namespace Fel.Infrastructure.Services
                     ["QrImageUrl"] = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + Uri.EscapeDataString("c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"),
 
                     ["NetoPagar"] = "5.039.690",
-                    ["NetoPagarEnLetras"] = "CINCO MILLONES TREINTA Y NUEVE MIL SEISCIENTOS NOVENTA PESOS M/CTE",
+                    ["NetoPagarEnLetras"] = "CINCO MILLONES TREINTA Y NUEVE MIL SEISCIENTOS NOVENTA PESOS",
 
                     ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
                     ["FabricanteSoftwareNit"] = "900.303.194-6",

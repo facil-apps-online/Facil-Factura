@@ -61,7 +61,7 @@ namespace Fel.Infrastructure.Dataico
             };
         }
 
-        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null)
+        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -192,7 +192,7 @@ namespace Fel.Infrastructure.Dataico
                     ["NetoAPagar"] = totalRetenciones > 0 ? Money(totalNeto - totalRetenciones) : null,
                     // TotalAmount es el bruto (subtotal + IVA); el total a pagar aplica descuento y cargo general.
                     ["Total"] = Money(totalNeto),
-                    ["TotalEnLetras"] = NumberToWordsEs.ConvertirPesos(totalNeto),
+                    ["TotalEnLetras"] = NumberToWordsEs.Convertir(totalNeto, CurrencyWords.Resolve(currencyWords, document.Currency)),
 
                     ["FabricanteSoftwareNombre"] = FabricanteSoftwareNombre,
                     ["FabricanteSoftwareNit"] = FabricanteSoftwareNit,

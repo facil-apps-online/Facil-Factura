@@ -27,7 +27,7 @@ namespace Fel.Api.Superadmin.Controllers
         {
             var items = await _dbContext.TaxCatalogItems
                 .OrderBy(i => i.Kind).ThenBy(i => i.Category).ThenBy(i => i.Rate)
-                .Select(i => new { i.Id, i.Category, i.Name, Kind = i.Kind.ToString(), i.Rate, i.IsActive })
+                .Select(i => new { i.Id, i.Category, i.Name, Kind = i.Kind.ToString(), i.Rate, i.WordsName, i.IsActive })
                 .ToListAsync();
 
             return Ok(items);
@@ -40,6 +40,9 @@ namespace Fel.Api.Superadmin.Controllers
             {
                 return BadRequest("Tipo inválido. Debe ser Retention u OtherTax.");
             }
+
+            var wordsName = NormalizeWordsName(kind, request.WordsName, out var wordsError);
+            if (wordsError != null) return BadRequest(wordsError);
 
             var category = request.Category.Trim().ToUpperInvariant();
             if (await _dbContext.TaxCatalogItems.AnyAsync(i => i.Category == category && i.Kind == kind && i.Rate == request.Rate))
@@ -56,6 +59,7 @@ namespace Fel.Api.Superadmin.Controllers
                 Name = request.Name.Trim(),
                 Kind = kind,
                 Rate = request.Rate,
+                WordsName = wordsName,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -77,14 +81,34 @@ namespace Fel.Api.Superadmin.Controllers
                 return BadRequest("Tipo inválido. Debe ser Retention u OtherTax.");
             }
 
+            var wordsName = NormalizeWordsName(kind, request.WordsName, out var wordsError);
+            if (wordsError != null) return BadRequest(wordsError);
+
             item.Category = request.Category.Trim().ToUpperInvariant();
             item.Name = request.Name.Trim();
             item.Kind = kind;
             item.Rate = request.Rate;
+            item.WordsName = wordsName;
             item.IsActive = request.IsActive;
 
             await _dbContext.SaveChangesAsync();
             return Ok(item);
+        }
+
+        // El nombre en letras solo existe en las monedas y allí es obligatorio: sin él el valor en letras de una factura en esa moneda no sabría
+        // cómo nombrarla. En los demás tipos se descarta.
+        private static string? NormalizeWordsName(TaxCatalogKind kind, string? value, out string? error)
+        {
+            error = null;
+            if (kind != TaxCatalogKind.Currency) return null;
+            var name = value?.Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(name))
+            {
+                error = "La moneda necesita el nombre en letras (por ejemplo PESOS, DÓLARES, EUROS).";
+                return null;
+            }
+            if (name.Length > 50) error = "El nombre en letras no puede pasar de 50 caracteres.";
+            return name;
         }
 
         [HttpDelete("{id}")]
@@ -106,6 +130,7 @@ namespace Fel.Api.Superadmin.Controllers
         public string Name { get; set; } = string.Empty;
         public string Kind { get; set; } = "Retention";
         public decimal? Rate { get; set; }
+        public string? WordsName { get; set; }
         public bool IsActive { get; set; } = true;
     }
 }

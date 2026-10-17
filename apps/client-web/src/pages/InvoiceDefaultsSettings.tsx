@@ -182,7 +182,7 @@ export default function InvoiceDefaultsSettings() {
               onChange={v => setForm({ ...form, currency: v })}
               placeholder="Pesos colombianos (COP)"
               emptyLabel="Pesos colombianos (COP)"
-              options={currencies.map(c => ({ value: c.category, label: `${c.category} - ${c.name}` }))}
+              options={currencies.filter(c => c.category !== 'COP').map(c => ({ value: c.category, label: `${c.category} - ${c.name}` }))}
             />
           </div>
         )}

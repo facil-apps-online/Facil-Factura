@@ -61,6 +61,9 @@ namespace Fel.Core.Entities
         //   (DEVOLUCION/ANULACION/OTROS) para el código DIAN que trae Category — varios códigos DIAN
         //   caen en el mismo valor de Dataico, que tiene un catálogo más reducido.
         public string? DianCode { get; set; }
+        // Solo Kind = Currency: el nombre de la moneda en plural tal como va en el valor en letras ("PESOS", "DÓLARES", "EUROS"). Es
+        // obligatorio para las monedas; así una moneda nueva sale bien en el texto sin tocar código.
+        public string? WordsName { get; set; }
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }

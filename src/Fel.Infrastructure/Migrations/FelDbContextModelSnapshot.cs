@@ -3464,6 +3464,10 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<decimal?>("Rate")
                         .HasColumnType("decimal(6,3)");
 
+                    b.Property<string>("WordsName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.HasKey("Id");
 
                     b.ToTable("TaxCatalogItems", (string)null);
@@ -3830,7 +3834,8 @@ namespace Fel.Infrastructure.Migrations
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             Kind = 14,
-                            Name = "Dólar estadounidense"
+                            Name = "Dólar estadounidense",
+                            WordsName = "DÓLARES"
                         },
                         new
                         {
@@ -3839,7 +3844,18 @@ namespace Fel.Infrastructure.Migrations
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             Kind = 14,
-                            Name = "Euro"
+                            Name = "Euro",
+                            WordsName = "EUROS"
+                        },
+                        new
+                        {
+                            Id = new Guid("a0000000-0000-0000-0000-000000000003"),
+                            Category = "COP",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 14,
+                            Name = "Peso colombiano",
+                            WordsName = "PESOS"
                         },
                         new
                         {

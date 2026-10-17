@@ -1509,7 +1509,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                       value={formData.currency}
                       onChange={v => setFormData({ ...formData, currency: v || 'COP', exchangeRate: v && v !== 'COP' ? formData.exchangeRate : '' })}
                       placeholder="Moneda..."
-                      options={[{ value: 'COP', label: 'COP - Peso colombiano', shortLabel: 'COP' }, ...currencyCatalog.map(c => ({ value: c.category, label: `${c.category} - ${c.name}`, shortLabel: c.category }))]}
+                      options={currencyCatalog.map(c => ({ value: c.category, label: `${c.category} - ${c.name}`, shortLabel: c.category }))}
                     />
                   )}
                   {formData.currency !== 'COP' && !isNote && <p className="text-xs text-slate-400 mt-1">Los precios y totales de este documento van en {formData.currency}.</p>}

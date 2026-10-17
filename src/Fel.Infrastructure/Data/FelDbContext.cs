@@ -1199,6 +1199,7 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
                 entity.Property(e => e.Rate).HasColumnType("decimal(6,3)");
                 entity.Property(e => e.DianCode).HasMaxLength(10);
+                entity.Property(e => e.WordsName).HasMaxLength(50);
 
                 // Precargados con lo que ya venía escrito a mano en el frontend, más los catálogos
                 // completos confirmados contra C:\FEL (Postman real de Dataico + la plantilla de
@@ -1268,8 +1269,9 @@ namespace Fel.Infrastructure.Data
                     new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000003"), Category = "3", Name = "Cambio del valor", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
                     new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000004"), Category = "4", Name = "Otros", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
                     // Monedas extranjeras en las que se puede facturar (ISO 4217); el superadmin agrega las demás.
-                    new TaxCatalogItem { Id = Guid.Parse("a0000000-0000-0000-0000-000000000001"), Category = "USD", Name = "Dólar estadounidense", Kind = TaxCatalogKind.Currency, IsActive = true, CreatedAt = seedDate },
-                    new TaxCatalogItem { Id = Guid.Parse("a0000000-0000-0000-0000-000000000002"), Category = "EUR", Name = "Euro", Kind = TaxCatalogKind.Currency, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("a0000000-0000-0000-0000-000000000001"), Category = "USD", Name = "Dólar estadounidense", Kind = TaxCatalogKind.Currency, WordsName = "DÓLARES", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("a0000000-0000-0000-0000-000000000002"), Category = "EUR", Name = "Euro", Kind = TaxCatalogKind.Currency, WordsName = "EUROS", IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("a0000000-0000-0000-0000-000000000003"), Category = "COP", Name = "Peso colombiano", Kind = TaxCatalogKind.Currency, WordsName = "PESOS", IsActive = true, CreatedAt = seedDate },
                     // Tipo de trabajador (Nómina Electrónica) — catálogo completo confirmado contra la
                     // hoja POSIBLE_LISTA_DE_VALORES de la plantilla real de nómina.
                     new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000001"), Category = "DEPENDIENTE", Name = "Dependiente", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },

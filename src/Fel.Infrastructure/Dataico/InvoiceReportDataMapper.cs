@@ -87,7 +87,7 @@ namespace Fel.Infrastructure.Dataico
         // resuelta para este documento — decide si las filas de retención entran a "Impuestos" y
         // si se calcula "NetoAPagar". El IVA discriminado se arma siempre, independiente de este
         // flag.
-        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null)
+        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -307,7 +307,7 @@ namespace Fel.Infrastructure.Dataico
                     // descuento y el cargo general, y el neto a pagar resta las retenciones a ese total.
                     ["NetoAPagar"] = mostrarRetenciones && totalRetenciones > 0 ? Money(totalNeto - totalRetenciones) : null,
                     ["Total"] = Money(totalNeto),
-                    ["TotalEnLetras"] = NumberToWordsEs.ConvertirPesos(totalNeto),
+                    ["TotalEnLetras"] = NumberToWordsEs.Convertir(totalNeto, CurrencyWords.Resolve(currencyWords, invoice.Currency)),
 
                     // Identificación de software (numeral 18, Art. 11 Res. 000165 de 2023) — el
                     // Proveedor Tecnológico solo aplica si el Client factura a través de un

@@ -24,11 +24,31 @@ namespace Fel.Infrastructure.Services
             "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS"
         };
 
-        public static string ConvertirPesos(decimal valor)
+        // Valor en letras de un documento en la moneda indicada: parte entera, nombre de la moneda y, si hay centavos, "CON 65/100".
+        // "moneda" es el nombre en plural que trae el catálogo de monedas (PESOS, DÓLARES, EUROS). El valor se redondea a 2 decimales como
+        // el que se imprime, para que el texto y la cifra no discrepen.
+        public static string Convertir(decimal valor, string moneda)
         {
-            var entero = (long)Math.Truncate(Math.Abs(valor));
+            var total = Math.Round(Math.Abs(valor), 2, MidpointRounding.AwayFromZero);
+            var entero = (long)Math.Truncate(total);
+            var centavos = (int)((total - entero) * 100m);
             var texto = entero == 0 ? "CERO" : ConvertirEntero(entero);
-            return $"{texto} PESOS M/CTE";
+            // Con millones exactos el nombre va con "de": "UN MILLÓN DE PESOS", "DOS MILLONES DE DÓLARES".
+            var de = entero >= 1_000_000 && entero % 1_000_000 == 0 ? " DE" : "";
+            var resultado = $"{texto}{de} {(entero == 1 ? Singular(moneda) : moneda)}";
+            return centavos > 0 ? $"{resultado} CON {centavos:00}/100" : resultado;
+        }
+
+        // La nómina siempre se liquida en pesos (no hay otra moneda posible), por eso no consulta el catálogo de monedas.
+        public static string ConvertirPesos(decimal valor) => Convertir(valor, "PESOS");
+
+        // "UN DÓLARES" no se dice: con exactamente una unidad el nombre va en singular. Solo se deriva para nombres de una palabra
+        // (DÓLARES -> DÓLAR, PESOS -> PESO); uno compuesto ("LIBRAS ESTERLINAS") se deja como viene.
+        private static string Singular(string plural)
+        {
+            if (plural.Contains(' ') || plural.Length < 4 || !plural.EndsWith('S')) return plural;
+            var sinS = plural[..^1];
+            return sinS.EndsWith('E') && !"AEIOUÁÉÍÓÚ".Contains(sinS[^2]) ? sinS[..^1] : sinS;
         }
 
         private static string ConvertirEntero(long numero)

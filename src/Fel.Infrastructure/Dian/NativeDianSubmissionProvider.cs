@@ -124,6 +124,10 @@ namespace Fel.Infrastructure.Dian
             invoice.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
             var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
+            // Nombre en español de cada país (catálogo de países): el XML lo lleva en la dirección del adquirente.
+            var countryNames = await _dbContext.TaxCatalogItems.AsNoTracking()
+                .Where(t => t.Kind == TaxCatalogKind.Country)
+                .ToDictionaryAsync(t => t.Category, t => t.Name);
             // Dirección del emisor en el XML: la de la sucursal que emite (o la del Client si la sucursal no tiene propia).
             var location = await Fel.Infrastructure.Services.BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
             var paymentMeansDianCodes = await _dbContext.TaxCatalogItems.AsNoTracking()
@@ -144,13 +148,13 @@ namespace Fel.Infrastructure.Dian
                     ?? throw new InvalidOperationException("El documento original referenciado por esta nota ya no existe.");
 
                 ublData = documentType.Code == "ND"
-                    ? DianDocumentMapper.BuildDebitNoteData(invoice, originalDocument, customer, items, resolution, client, location, municipalities, documentType, paymentMeansDianCodes)
-                    : DianDocumentMapper.BuildCreditNoteData(invoice, originalDocument, customer, items, resolution, client, location, municipalities, documentType, paymentMeansDianCodes);
+                    ? DianDocumentMapper.BuildDebitNoteData(invoice, originalDocument, customer, items, resolution, client, location, municipalities, documentType, paymentMeansDianCodes, countryNames)
+                    : DianDocumentMapper.BuildCreditNoteData(invoice, originalDocument, customer, items, resolution, client, location, municipalities, documentType, paymentMeansDianCodes, countryNames);
                 filePrefix = documentType.Code == "ND" ? Fel.Infrastructure.Services.DianFileNaming.NotaDebito : Fel.Infrastructure.Services.DianFileNaming.NotaCredito;
             }
             else
             {
-                ublData = DianDocumentMapper.BuildInvoiceData(invoice, customer, items, resolution, client, location, municipalities, paymentMeansDianCodes, documentType);
+                ublData = DianDocumentMapper.BuildInvoiceData(invoice, customer, items, resolution, client, location, municipalities, paymentMeansDianCodes, documentType, null, countryNames);
                 filePrefix = Fel.Infrastructure.Services.DianFileNaming.FacturaVenta;
             }
 

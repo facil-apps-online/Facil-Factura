@@ -27,7 +27,10 @@ namespace Fel.Core.Entities
         DebitNoteReason = 13,
         // Monedas en las que se puede facturar además de COP (ISO 4217). Category es el código de tres letras que se envía
         // (Document.Currency, "USD", "EUR"); Name, el nombre legible.
-        Currency = 14
+        Currency = 14,
+        // Países (tabla 13.4.1 del anexo técnico de la DIAN, ISO 3166-1): Category es el código alfa-2 ("CO", "VE") y Name el nombre
+        // común en español. Es lo que se elige en la dirección de un tercero y lo que sale como Country en el XML.
+        Country = 15
     }
 
     // Catálogo global de valores válidos (impuestos, retenciones, tarifas de IVA, plazos de pago,

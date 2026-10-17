@@ -17,7 +17,7 @@ const initialForm = {
   name: '', firstName: '', secondName: '', firstLastName: '', secondLastName: '',
   identificationType: '13', identificationNumber: '', verificationDigit: '',
   partyType: 'Cliente',
-  email: '', phone: '', address: '', cityCode: '', cityName: '', postalCode: '',
+  email: '', phone: '', address: '', countryCode: 'CO', stateName: '', cityCode: '', cityName: '', postalCode: '',
   latitude: null as number | null, longitude: null as number | null,
   taxRegime: '49', fiscalResponsibilities: 'R-99-PN',
   dataicoTaxLevelCode: '', dataicoRegimen: '',
@@ -45,6 +45,8 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
   const [payrollPaymentMeansCatalog, setPayrollPaymentMeansCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [accountTypeCatalog, setAccountTypeCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [identificationTypeOptions, setIdentificationTypeOptions] = useState<{ value: string, label: string }[]>([]);
+  // Países (tabla 13.4.1 de la DIAN): fuera de Colombia no hay código DANE; ciudad y estado se escriben.
+  const [countryCatalog, setCountryCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [uploadingRut, setUploadingRut] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -57,6 +59,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
     loadCatalog('ContractType', setContractTypeCatalog);
     loadCatalog('PayrollPaymentMeans', setPayrollPaymentMeansCatalog);
     loadCatalog('AccountType', setAccountTypeCatalog);
+    loadCatalog('Country', setCountryCatalog);
     api.get('/client/identification-types')
       .then(res => setIdentificationTypeOptions(res.data.map((t: any) => ({ value: t.code, label: t.name }))))
       .catch(() => {});
@@ -73,6 +76,8 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
         ...initialForm,
         ...editingCustomer,
         personType: inferredPersonType,
+        countryCode: editingCustomer.countryCode || 'CO',
+        stateName: editingCustomer.stateName || '',
         firstName: editingCustomer.firstName || '',
         secondName: editingCustomer.secondName || '',
         firstLastName: editingCustomer.firstLastName || '',
@@ -415,14 +420,40 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
                 )}
               </div>
             )}
+            {formData.partyType !== 'Empleado' && (
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">País</label>
+                <SearchableSelect
+                  value={formData.countryCode}
+                  onChange={v => setFormData({
+                    ...formData,
+                    countryCode: v || 'CO',
+                    // Fuera de Colombia no hay código DANE; en Colombia no hay estado como texto.
+                    cityCode: v && v !== 'CO' ? '' : formData.cityCode,
+                    stateName: !v || v === 'CO' ? '' : formData.stateName
+                  })}
+                  placeholder="Buscar país..."
+                  options={countryCatalog.length === 0
+                    ? [{ value: 'CO', label: 'Colombia', shortLabel: 'CO' }]
+                    : countryCatalog.map(c => ({ value: c.category, label: `${c.name} (${c.category})`, shortLabel: c.category }))}
+                />
+              </div>
+            )}
+            {formData.countryCode !== 'CO' && (
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Departamento o estado</label>
+                <input type="text" value={formData.stateName} onChange={e => setFormData({...formData, stateName: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
+              </div>
+            )}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Ciudad</label>
-              <input type="text" value={formData.cityName} onChange={e => setFormData({...formData, cityName: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
+              <label className="block text-sm font-bold text-slate-700 mb-1">Ciudad{formData.countryCode !== 'CO' && ' *'}</label>
+              <input type="text" required={formData.countryCode !== 'CO'} value={formData.cityName} onChange={e => setFormData({...formData, cityName: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Código Postal</label>
               <input type="text" value={formData.postalCode} onChange={e => setFormData({...formData, postalCode: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
             </div>
+            {formData.countryCode === 'CO' && (
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Código DANE{formData.partyType === 'Empleado' && ' *'}</label>
               <input
@@ -441,6 +472,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
                 </p>
               )}
             </div>
+            )}
           </div>
 
           {formData.partyType === 'Empleado' && (

@@ -21,6 +21,31 @@ namespace Fel.Infrastructure.Dian
         // (DataicoDocumentMapper.CreditoDefaultPaymentMeans = "MUTUAL_AGREEMENT").
         private const string CreditoPaymentMeansCode = "ZZZ";
 
+        // Datos del adquirente para el XML. En Colombia el departamento y el municipio salen del catálogo DANE; en otro país no hay
+        // códigos: la ciudad y el estado van como texto, con el país (código y nombre del catálogo de países).
+        private static CustomerData BuildCustomerData(Customer customer, DianMunicipality? municipality, IReadOnlyDictionary<string, string>? countryNames)
+        {
+            var countryCode = string.IsNullOrWhiteSpace(customer.CountryCode) ? "CO" : customer.CountryCode;
+            string? countryName = null;
+            countryNames?.TryGetValue(countryCode, out countryName);
+            var isForeign = countryCode != "CO";
+
+            return new CustomerData
+            {
+                TaxId = customer.IdentificationNumber,
+                IdentificationCode = customer.IdentificationType,
+                Name = customer.Name,
+                CountryCode = countryCode,
+                CountryName = countryName ?? (isForeign ? countryCode : "Colombia"),
+                DepartmentCode = isForeign ? string.Empty : municipality?.DepartmentCode ?? DeriveDepartmentCode(customer.CityCode),
+                DepartmentName = isForeign ? customer.StateName ?? string.Empty : municipality?.DepartmentName ?? string.Empty,
+                CityCode = isForeign ? string.Empty : customer.CityCode ?? string.Empty,
+                CityName = isForeign ? customer.CityName : municipality?.Name ?? customer.CityName,
+                Address = customer.Address,
+                Email = customer.Email
+            };
+        }
+
         public static UblInvoiceData BuildInvoiceData(
             Document document,
             Customer customer,
@@ -31,7 +56,8 @@ namespace Fel.Infrastructure.Dian
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
             IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null,
             DocumentType? documentType = null,
-            Document? aiuSource = null)
+            Document? aiuSource = null,
+            IReadOnlyDictionary<string, string>? countryNames = null)
         {
             var itemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();
 
@@ -93,18 +119,7 @@ namespace Fel.Infrastructure.Dian
                     Address = location.Address,
                     Email = location.Email
                 },
-                Customer = new CustomerData
-                {
-                    TaxId = customer.IdentificationNumber,
-                    IdentificationCode = customer.IdentificationType,
-                    Name = customer.Name,
-                    DepartmentCode = customerMuni?.DepartmentCode ?? DeriveDepartmentCode(customer.CityCode),
-                    DepartmentName = customerMuni?.DepartmentName ?? string.Empty,
-                    CityCode = customer.CityCode ?? string.Empty,
-                    CityName = customerMuni?.Name ?? customer.CityName,
-                    Address = customer.Address,
-                    Email = customer.Email
-                }
+                Customer = BuildCustomerData(customer, customerMuni, countryNames)
             };
 
             data.Notes.AddRange(DocumentNotes.Texts(document));
@@ -258,9 +273,10 @@ namespace Fel.Infrastructure.Dian
             EmitterLocation location,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
             DocumentType documentType,
-            IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null)
+            IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null,
+            IReadOnlyDictionary<string, string>? countryNames = null)
         {
-            var data = BuildInvoiceData(document, customer, items, resolution, client, location, municipalitiesByCode, paymentMeansDianCodes, documentType, originalDocument);
+            var data = BuildInvoiceData(document, customer, items, resolution, client, location, municipalitiesByCode, paymentMeansDianCodes, documentType, originalDocument, countryNames);
             data.DiscrepancyResponseCode = document.DiscrepancyResponseCode ?? string.Empty;
             data.DiscrepancyDescription = document.ReferenceConcept;
             data.BillingReferenceCufe = originalDocument.Cufe ?? string.Empty;
@@ -281,9 +297,10 @@ namespace Fel.Infrastructure.Dian
             EmitterLocation location,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
             DocumentType documentType,
-            IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null)
+            IReadOnlyDictionary<string, string>? paymentMeansDianCodes = null,
+            IReadOnlyDictionary<string, string>? countryNames = null)
         {
-            return BuildCreditNoteData(document, originalDocument, customer, items, resolution, client, location, municipalitiesByCode, documentType, paymentMeansDianCodes);
+            return BuildCreditNoteData(document, originalDocument, customer, items, resolution, client, location, municipalitiesByCode, documentType, paymentMeansDianCodes, countryNames);
         }
 
         // Equivalente de BuildInvoiceData para el API B2B (Fel.Api.Integration): el caller externo ya

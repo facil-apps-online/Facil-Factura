@@ -922,7 +922,9 @@ namespace Fel.Infrastructure.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(250);
                 entity.Property(e => e.IdentificationNumber).IsRequired().HasMaxLength(50);
-                
+                entity.Property(e => e.CountryCode).IsRequired().HasMaxLength(2).HasDefaultValue("CO");
+                entity.Property(e => e.StateName).HasMaxLength(100);
+
                 entity.HasOne(e => e.Client)
                       .WithMany(c => c.Customers)
                       .HasForeignKey(e => e.ClientId)

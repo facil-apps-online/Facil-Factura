@@ -126,13 +126,37 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // País del tercero: alfa-2 en mayúscula ("CO" si no viene) y debe existir en el catálogo de países. Fuera de Colombia no hay
+        // código DANE: la ciudad (obligatoria) y el departamento o estado van como texto. Devuelve el mensaje de error o null.
+        private async Task<string?> NormalizeCountryAsync(Customer customer)
+        {
+            var code = (customer.CountryCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (code.Length == 0) code = "CO";
+            if (code != "CO" && !await _dbContext.TaxCatalogItems.AsNoTracking().AnyAsync(i => i.Kind == TaxCatalogKind.Country && i.Category == code && i.IsActive))
+                return $"El país {code} no está en el catálogo de países.";
+
+            customer.CountryCode = code;
+            if (code == "CO")
+            {
+                customer.StateName = null;
+                return null;
+            }
+
+            customer.CityCode = string.Empty;
+            customer.StateName = string.IsNullOrWhiteSpace(customer.StateName) ? null : customer.StateName.Trim();
+            return string.IsNullOrWhiteSpace(customer.CityName) ? "Indica la ciudad del tercero." : null;
+        }
+
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Customer customer)
         {
             try
             {
                 var clientId = GetCurrentClientId();
-                
+
+                var countryError = await NormalizeCountryAsync(customer);
+                if (countryError != null) return BadRequest(countryError);
+
                 // Validar si ya existe
                 var existing = await _dbContext.Customers
                     .FirstOrDefaultAsync(c => c.ClientId == clientId &&
@@ -169,6 +193,9 @@ namespace Fel.Api.Client.Controllers
 
                 if (customer == null) return NotFound("Cliente no encontrado.");
 
+                var countryError = await NormalizeCountryAsync(updateData);
+                if (countryError != null) return BadRequest(countryError);
+
                 var duplicate = await _dbContext.Customers.AnyAsync(c => c.ClientId == clientId &&
                     c.Id != id &&
                     c.IdentificationNumber == updateData.IdentificationNumber &&
@@ -188,6 +215,8 @@ namespace Fel.Api.Client.Controllers
                 customer.Email = updateData.Email;
                 customer.Phone = updateData.Phone;
                 customer.Address = updateData.Address;
+                customer.CountryCode = updateData.CountryCode;
+                customer.StateName = updateData.StateName;
                 customer.CityCode = updateData.CityCode;
                 customer.CityName = updateData.CityName;
                 customer.PostalCode = updateData.PostalCode;

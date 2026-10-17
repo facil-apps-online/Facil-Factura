@@ -40,8 +40,9 @@ namespace Fel.Infrastructure.Dataico
             return IdentificationTypeMap.TryGetValue(dianCode ?? string.Empty, out var mapped) ? mapped : (dianCode ?? string.Empty);
         }
 
+        // NIT (31) y NIT de otro país (50) identifican personas jurídicas; cualquier otro documento, personas naturales.
         public static string MapPartyType(string dianIdentificationTypeCode) =>
-            dianIdentificationTypeCode == "31" ? "PERSONA_JURIDICA" : "PERSONA_NATURAL";
+            dianIdentificationTypeCode is "31" or "50" ? "PERSONA_JURIDICA" : "PERSONA_NATURAL";
 
         // Nuestro CityCode es el código DANE completo (depto+municipio, ej. "11001" Bogotá);
         // Dataico espera esos dos segmentos por separado.
@@ -57,8 +58,10 @@ namespace Fel.Infrastructure.Dataico
 
         public static DataicoParty ToDataicoParty(Customer customer, IReadOnlyDictionary<string, string>? identificationTypeOverrides = null)
         {
-            var (department, city) = SplitCityCode(customer.CityCode);
-            var isJuridica = customer.IdentificationType == "31";
+            // Fuera de Colombia no hay código DANE: el departamento o estado y la ciudad viajan como texto, con el país del tercero.
+            var isForeign = !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO";
+            var (department, city) = isForeign ? (customer.StateName ?? string.Empty, customer.CityName ?? string.Empty) : SplitCityCode(customer.CityCode);
+            var isJuridica = customer.IdentificationType is "31" or "50";
 
             // Persona jurídica: solo razón social. Persona natural: nombres y apellidos por
             // separado (Dataico distingue company_name de first_name/family_name); si el tercero
@@ -83,7 +86,7 @@ namespace Fel.Infrastructure.Dataico
                 department = department,
                 city = city,
                 address_line = customer.Address,
-                country_code = "CO",
+                country_code = isForeign ? customer.CountryCode : "CO",
                 company_name = isJuridica ? customer.Name : string.Empty,
                 first_name = isJuridica ? string.Empty : firstName,
                 family_name = isJuridica ? string.Empty : familyName

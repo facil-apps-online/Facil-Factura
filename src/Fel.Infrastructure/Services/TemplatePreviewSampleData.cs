@@ -57,7 +57,8 @@ namespace Fel.Infrastructure.Services
 
                     ["AdquirenteNombre"] = "Juan Pérez Gómez",
                     ["AdquirenteTipoIdentificacion"] = "CC",
-                    ["AdquirenteIdentificacion"] = "1234567890",
+                    ["AdquirenteDocumento"] = "CC 1234567890",
+                    ["AdquirenteIdentificacion"] ="1234567890",
                     ["AdquirenteDireccion"] = "Carrera 15 # 40-50",
                     ["AdquirenteCiudad"] = "Bogotá D.C.",
                     ["AdquirenteTelefono"] = "310 555 6789",

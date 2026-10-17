@@ -25,6 +25,10 @@ namespace Fel.Core.Entities
         public string Email { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
+        // País de la dirección (alfa-2 del catálogo de países; "CO" por defecto). Fuera de Colombia no hay código DANE: la ciudad
+        // (CityName) y el departamento o estado (StateName) van como texto.
+        public string CountryCode { get; set; } = "CO";
+        public string? StateName { get; set; }
         public string CityCode { get; set; } = string.Empty; // Código DANE del municipio
         public string CityName { get; set; } = string.Empty;
         public string? PostalCode { get; set; }

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
 using Fel.Core.Models;
@@ -196,55 +196,61 @@ namespace Fel.Infrastructure.Ubl.Strategies
             );
         }
 
+        // Adquirente. El tipo de documento (schemeName) sale del documento del tercero (13 cédula, 31 NIT, 42 extranjero, 50 NIT de otro país...)
+        // y no fijo; con NIT lleva el dígito de verificación como schemeID (reglas HD04b/HD05 del schematron). El tipo de organización
+        // (AdditionalAccountID) es 1 para personas jurídicas (NIT y NIT de otro país) y 2 para las naturales. La dirección usa los códigos
+        // DANE solo en Colombia; en otro país van la ciudad y el estado como texto, con el país del tercero.
         protected XElement BuildAccountingCustomerParty(UblInvoiceData data)
         {
+            var customer = data.Customer;
+            var identificationCode = string.IsNullOrWhiteSpace(customer.IdentificationCode) ? "13" : customer.IdentificationCode;
+            var isNit = identificationCode == "31";
+            var isForeign = !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO";
+            var organizationType = identificationCode is "31" or "50" ? "1" : "2";
+
+            XElement CustomerId(XName element, bool withTaxSchemeId)
+            {
+                var id = new XElement(element,
+                    new XAttribute("schemeAgencyID", "195"),
+                    new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"));
+                if (isNit) id.Add(new XAttribute("schemeID", NitValidation.CalculateCheckDigit(customer.TaxId)));
+                else if (withTaxSchemeId) id.Add(new XAttribute("schemeID", "1"));
+                id.Add(new XAttribute("schemeName", identificationCode), customer.TaxId);
+                return id;
+            }
+
+            var address = new XElement(cac + "Address");
+            if (!isForeign) address.Add(new XElement(cbc + "ID", customer.CityCode));
+            address.Add(
+                new XElement(cbc + "CityName", customer.CityName),
+                new XElement(cbc + "CountrySubentity", customer.DepartmentName));
+            if (!isForeign) address.Add(new XElement(cbc + "CountrySubentityCode", customer.DepartmentCode));
+            address.Add(
+                new XElement(cac + "AddressLine", new XElement(cbc + "Line", customer.Address)),
+                new XElement(cac + "Country",
+                    new XElement(cbc + "IdentificationCode", isForeign ? customer.CountryCode : "CO"),
+                    new XElement(cbc + "Name", new XAttribute("languageID", "es"), isForeign ? customer.CountryName : "Colombia")));
+
             return new XElement(cac + "AccountingCustomerParty",
-                new XElement(cbc + "AdditionalAccountID", "1"),
+                new XElement(cbc + "AdditionalAccountID", organizationType),
                 new XElement(cac + "Party",
-                    // PartyIdentification (confirmado contra la factura real de Comcel y contra un
-                    // firmador Python de referencia en producción activa, ambos con adquirente
-                    // identificado por cédula — schemeName="13", igual que nuestro cliente de
-                    // pruebas) faltaba por completo.
-                    new XElement(cac + "PartyIdentification",
-                        new XElement(cbc + "ID",
-                            new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"),
-                            new XAttribute("schemeName", "13"),
-                            data.Customer.TaxId)
-                    ),
-                    new XElement(cac + "PartyName", new XElement(cbc + "Name", data.Customer.Name)),
-                    new XElement(cac + "PhysicalLocation",
-                        new XElement(cac + "Address",
-                            new XElement(cbc + "ID", data.Customer.CityCode),
-                            new XElement(cbc + "CityName", data.Customer.CityName),
-                            new XElement(cbc + "CountrySubentity", data.Customer.DepartmentName),
-                            new XElement(cbc + "CountrySubentityCode", data.Customer.DepartmentCode),
-                            new XElement(cac + "AddressLine", new XElement(cbc + "Line", data.Customer.Address)),
-                            new XElement(cac + "Country", new XElement(cbc + "IdentificationCode", "CO"), new XElement(cbc + "Name", new XAttribute("languageID", "es"), "Colombia"))
-                        )
-                    ),
+                    new XElement(cac + "PartyIdentification", CustomerId(cbc + "ID", false)),
+                    new XElement(cac + "PartyName", new XElement(cbc + "Name", customer.Name)),
+                    new XElement(cac + "PhysicalLocation", address),
                     new XElement(cac + "PartyTaxScheme",
-                        new XElement(cbc + "RegistrationName", data.Customer.Name),
-                        new XElement(cbc + "CompanyID",
-                            new XAttribute("schemeID", "1"), new XAttribute("schemeName", "13"),
-                            new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"),
-                            data.Customer.TaxId),
-                        new XElement(cbc + "TaxLevelCode", new XAttribute("listName", "04"), string.Join(";", data.Customer.TaxLevelCodes)),
-                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", data.Customer.TaxSchemeId), new XElement(cbc + "Name", "No aplica"))
+                        new XElement(cbc + "RegistrationName", customer.Name),
+                        CustomerId(cbc + "CompanyID", true),
+                        new XElement(cbc + "TaxLevelCode", new XAttribute("listName", "04"), string.Join(";", customer.TaxLevelCodes)),
+                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", customer.TaxSchemeId), new XElement(cbc + "Name", "No aplica"))
                     ),
-                    // PartyLegalEntity (confirmado contra el ejemplo oficial Generica.xml y contra
-                    // un firmador Python de referencia en producción activa) faltaba por completo
-                    // para el adquirente — a diferencia del emisor, no lleva
+                    // PartyLegalEntity (confirmado contra el ejemplo oficial Generica.xml): a diferencia del emisor, no lleva
                     // CorporateRegistrationScheme.
                     new XElement(cac + "PartyLegalEntity",
-                        new XElement(cbc + "RegistrationName", data.Customer.Name),
-                        new XElement(cbc + "CompanyID",
-                            new XAttribute("schemeID", "1"), new XAttribute("schemeName", "13"),
-                            new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"),
-                            data.Customer.TaxId)
+                        new XElement(cbc + "RegistrationName", customer.Name),
+                        CustomerId(cbc + "CompanyID", true)
                     ),
-                    // Igual que en el emisor (FAJ71) — confirmado contra la factura real de Comcel,
-                    // el adquirente también lleva su propio Contact/ElectronicMail al final de Party.
-                    new XElement(cac + "Contact", new XElement(cbc + "ElectronicMail", data.Customer.Email))
+                    // Igual que en el emisor (FAJ71): el adquirente también lleva su Contact/ElectronicMail al final de Party.
+                    new XElement(cac + "Contact", new XElement(cbc + "ElectronicMail", customer.Email))
                 )
             );
         }

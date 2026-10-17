@@ -92,6 +92,10 @@ namespace Fel.Core.Models
         public string CityName { get; set; } = string.Empty;
         public string PostalZone { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
+        // País de la dirección (alfa-2 y nombre en español del catálogo). Fuera de Colombia no hay código de municipio ni de departamento:
+        // DepartmentName lleva el estado o departamento como texto.
+        public string CountryCode { get; set; } = "CO";
+        public string CountryName { get; set; } = "Colombia";
     }
 
     public class TaxSubtotal

@@ -111,7 +111,17 @@ namespace Fel.Infrastructure.Dataico
             var observaciones = DocumentNotes.Texts(invoice).Select((text, idx) => (Position: idx + 1, Text: text)).ToList();
             // Una factura de mandato declara un mandante en cada línea; así se reconoce sin depender del tipo de documento.
             var esMandato = items.Any(i => !string.IsNullOrWhiteSpace(i.MandanteIdentification));
-            var esMonedaExtranjera = !string.IsNullOrWhiteSpace(invoice.Currency) && invoice.Currency != "COP" && invoice.ExchangeRate > 0 && invoice.ExchangeRateDate.HasValue;
+            // NIT lleva su dígito de verificación (el del tercero o, si no lo tiene guardado, el calculado).
+            var documentoAdquirente = customer == null ? null
+                : $"{DataicoMapper.MapIdentificationType(customer.IdentificationType)} {customer.IdentificationNumber}"
+                  + (customer.IdentificationType == "31"
+                      ? "-" + (string.IsNullOrWhiteSpace(customer.VerificationDigit) ? Fel.Infrastructure.Dian.NitValidation.CalculateCheckDigit(customer.IdentificationNumber).ToString() : customer.VerificationDigit)
+                      : string.Empty);
+            var ciudadAdquirente = customer == null ? null
+                : !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO"
+                    ? $"{customer.CityName}{(string.IsNullOrWhiteSpace(customer.StateName) ? string.Empty : ", " + customer.StateName)} ({customer.CountryCode})"
+                    : customer.CityName;
+            var esMonedaExtranjera =!string.IsNullOrWhiteSpace(invoice.Currency) && invoice.Currency != "COP" && invoice.ExchangeRate > 0 && invoice.ExchangeRateDate.HasValue;
 
             string? notaReferencia = null;
             if (originalDocument != null)
@@ -237,8 +247,12 @@ namespace Fel.Infrastructure.Dataico
                     ["AdquirenteNombre"] = customer?.Name ?? "Consumidor Final",
                     ["AdquirenteTipoIdentificacion"] = customer?.IdentificationType,
                     ["AdquirenteIdentificacion"] = customer?.IdentificationNumber,
+                    // Tipo y número del documento listos para imprimir: "NIT 900108281-3", "CC 41556867", "IE J070080752".
+                    ["AdquirenteDocumento"] = documentoAdquirente,
                     ["AdquirenteDireccion"] = customer?.Address,
-                    ["AdquirenteCiudad"] = customer?.CityName,
+                    // Fuera de Colombia la ciudad lleva el estado y el país: "Lima, Lima (PE)".
+                    ["AdquirenteCiudad"] = ciudadAdquirente,
+                    ["AdquirentePais"] = customer?.CountryCode,
                     ["AdquirenteTelefono"] = customer?.Phone,
                     ["AdquirenteEmail"] = customer?.Email,
 

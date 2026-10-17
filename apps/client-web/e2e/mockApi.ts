@@ -121,6 +121,7 @@ function respond(pathname: string, search: string, session: MockSession): unknow
   if (pathname.endsWith('/client/payroll')) return list(5, payroll);
   if (pathname.endsWith('/client/received-documents')) return list(4, received);
   if (pathname.endsWith('/client/resolutions')) return list(3, resolution);
+  if (pathname.endsWith('/client/invoice-defaults')) return { documentTypeId: null, paymentMeans: null, paymentMeansType: null, paymentTermDays: null, currency: null, notes: null };
   if (pathname.endsWith('/client/resolutions/note-counters')) return { nextCreditNoteNumber: 1, nextDebitNoteNumber: 1, nextSupportAdjustmentNumber: 1, supportAdjustmentPrefix: 'DSA' };
   if (pathname.endsWith('/client/dian/habilitation-status')) return { status: 'Production' };
   if (pathname.endsWith('/client/reception-settings')) return { receptionEmailEnabled: true, receptionEmailHost: 'imap.gmail.com', receptionEmailPort: 993, receptionEmailUseSsl: true, receptionEmailUser: LONG_EMAIL, hasPassword: true, autoSendAcuseRecibo: false, autoSendReciboBien: false, autoSendAceptacion: false, autoSendReclamo: false };
@@ -137,7 +138,8 @@ function respond(pathname: string, search: string, session: MockSession): unknow
     const kind = new URLSearchParams(search).get('kind');
     if (kind === 'IvaRate') return [{ id: 'iv1', category: '19', name: '19%' }, { id: 'iv2', category: '5', name: '5%' }];
     if (kind === 'FormaPago') return [{ id: 'fp1', category: 'DEBITO', name: 'Contado' }, { id: 'fp2', category: 'CREDITO', name: 'Crédito' }];
-    if (kind === 'PaymentMeans') return [{ id: 'pm1', category: 'CASH', name: 'Efectivo' }];
+    if (kind === 'PaymentMeans') return [{ id: 'pm1', category: 'CASH', name: 'Efectivo' }, { id: 'pm2', category: 'TRANSFER', name: 'Transferencia' }];
+    if (kind === 'PaymentTerm') return [{ id: 'pt1', category: '30', name: '30 días' }, { id: 'pt2', category: '60', name: '60 días' }];
     return [];
   }
   return [];

@@ -1464,6 +1464,50 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("ClientIntegratorBillings", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.ClientInvoiceDefaults", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<Guid?>("DocumentTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("PaymentMeans")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PaymentMeansType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("PaymentTermDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.HasIndex("DocumentTypeId");
+
+                    b.ToTable("ClientInvoiceDefaults", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.ClientPrepaidBag", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5581,6 +5625,24 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Client");
 
                     b.Navigation("Integrator");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ClientInvoiceDefaults", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fel.Core.Entities.DocumentType", "DocumentType")
+                        .WithMany()
+                        .HasForeignKey("DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Client");
+
+                    b.Navigation("DocumentType");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.ClientPrepaidBag", b =>

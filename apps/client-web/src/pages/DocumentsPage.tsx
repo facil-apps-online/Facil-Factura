@@ -217,6 +217,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [currencyCatalog, setCurrencyCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   // Condiciones de entrega (Incoterms, tabla 13.3.7 de la DIAN) para la factura de exportación.
   const [incotermCatalog, setIncotermCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  // Valores por defecto de "Nueva factura" que definió el administrador (vacío = sin valor).
+  const [invoiceDefaults, setInvoiceDefaults] = useState<{ documentTypeId: string | null, paymentMeans: string | null, paymentMeansType: string | null, paymentTermDays: number | null, currency: string | null, notes: string | null } | null>(null);
   // Línea para la que se está creando un mandante nuevo (mismo formulario de terceros, con el tipo Mandante).
   const [mandanteModalForItemIndex, setMandanteModalForItemIndex] = useState<number | null>(null);
   // Carga de varias observaciones de mandato de una vez (una por línea).
@@ -325,7 +327,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const range = datePreset === 'custom'
         ? { from: appliedCustomFrom, to: appliedCustomTo }
         : getDateRangeForPreset(datePreset)!;
-      const [invRes, custRes, prodRes, docTypesRes, mandantesRes, currencyRes, incotermRes] = await Promise.all([
+      const [invRes, custRes, prodRes, docTypesRes, mandantesRes, currencyRes, incotermRes, defaultsRes] = await Promise.all([
         api.get(`${cfg.api}?from=${range.from}&to=${range.to}`),
         api.get(`/client/customers?partyType=${cfg.partyType}`),
         api.get(`/client/products?scope=${isSupport ? 'Support' : 'Invoice'}`),
@@ -333,10 +335,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         // Terceros marcados como mandante: los elige cada línea de una factura de mandato.
         isSupport ? Promise.resolve({ data: [] }) : api.get('/client/customers?partyType=Mandante'),
         !isSupport && features.foreignCurrency ? api.get('/client/tax-catalog?kind=Currency') : Promise.resolve({ data: [] }),
-        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/tax-catalog?kind=Incoterm')
+        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/tax-catalog?kind=Incoterm'),
+        isSupport ? Promise.resolve({ data: null }) : api.get('/client/invoice-defaults')
       ]);
       setCurrencyCatalog(currencyRes.data);
       setIncotermCatalog(incotermRes.data);
+      setInvoiceDefaults(defaultsRes.data);
       setInvoices(invRes.data);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
@@ -358,10 +362,24 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   const handleCreateNew = () => {
     setEditingId(null);
-    setPaymentTermCustom(false);
+    // Valores por defecto del cliente: solo los que siguen siendo válidos (un tipo deshabilitado o un código que salió del catálogo se ignora).
+    const d = invoiceDefaults;
+    const defaultType = d?.documentTypeId ? documentTypes.find(t => t.id === d.documentTypeId) : undefined;
+    const typeId = (defaultType || documentTypes.find(t => t.typeCode === 'FE-STD') || documentTypes.find(t => t.code === '01'))?.id || '';
+    const typeCode = documentTypes.find(t => t.id === typeId)?.typeCode;
+    const paymentTypeOk = !!d?.paymentMeansType && formaPagoCatalog.some(c => c.category === d.paymentMeansType);
+    const termDays = paymentTypeOk && d!.paymentMeansType === 'CREDITO' && d!.paymentTermDays != null ? d!.paymentTermDays : '';
+    const currencyOk = !!d?.currency && features.foreignCurrency && (typeCode === 'FE-STD' || typeCode === 'FE-EXP')
+      && currencyCatalog.some(c => c.category === d.currency);
+    setPaymentTermCustom(termDays !== '' && !paymentTermCatalog.some(c => c.category === String(termDays)));
     setFormData({
       ...initialForm,
-      documentTypeId: (documentTypes.find(d => d.typeCode === 'FE-STD') || documentTypes.find(d => d.code === '01'))?.id || '',
+      documentTypeId: typeId,
+      paymentMeansType: paymentTypeOk ? d!.paymentMeansType! : '',
+      paymentTermDays: termDays,
+      paymentMeans: d?.paymentMeans && paymentMeansCatalog.some(c => c.category === d.paymentMeans) ? d.paymentMeans : '',
+      currency: currencyOk ? d!.currency! : 'COP',
+      notes: d?.notes ?? '',
       // Preselecciona la resolución marcada como default para Factura (FE); antes siempre
       // arrancaba vacía aunque el cliente ya tuviera una definida, y quedaba editable por si
       // hay que emitir con otra.

@@ -65,6 +65,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<ClientPrepaidPackage> ClientPrepaidPackages => Set<ClientPrepaidPackage>();
         public DbSet<ClientPrepaidBag> ClientPrepaidBags => Set<ClientPrepaidBag>();
         public DbSet<ClientEnabledDocumentType> ClientEnabledDocumentTypes => Set<ClientEnabledDocumentType>();
+        public DbSet<ClientInvoiceDefaults> ClientInvoiceDefaults => Set<ClientInvoiceDefaults>();
         public DbSet<ClientEnabledRetentionConcept> ClientEnabledRetentionConcepts => Set<ClientEnabledRetentionConcept>();
         public DbSet<DeveloperUser> DeveloperUsers => Set<DeveloperUser>();
 
@@ -897,6 +898,27 @@ namespace Fel.Infrastructure.Data
                 entity.HasOne(e => e.ClonedFrom)
                       .WithMany()
                       .HasForeignKey(e => e.ClonedFromId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<ClientInvoiceDefaults>(entity =>
+            {
+                entity.ToTable("ClientInvoiceDefaults");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.ClientId).IsUnique();
+                entity.Property(e => e.PaymentMeans).HasMaxLength(50);
+                entity.Property(e => e.PaymentMeansType).HasMaxLength(50);
+                entity.Property(e => e.Currency).HasMaxLength(3);
+                entity.Property(e => e.Notes).HasMaxLength(500);
+
+                entity.HasOne(e => e.Client)
+                      .WithMany()
+                      .HasForeignKey(e => e.ClientId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.DocumentType)
+                      .WithMany()
+                      .HasForeignKey(e => e.DocumentTypeId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 

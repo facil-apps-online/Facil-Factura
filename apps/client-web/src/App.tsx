@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { Home, FileText, Settings, CreditCard, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight, Menu, X, CheckCircle2, Clock, AlertTriangle, DollarSign, ArrowRight, Wallet, UserCog } from 'lucide-react';
+import { Home, FileText, Settings, CreditCard, FileSignature, Users, Package, Receipt, Banknote, Inbox, ChevronLeft, ChevronRight, Menu, X, CheckCircle2, Clock, AlertTriangle, DollarSign, ArrowRight, Wallet, UserCog, SlidersHorizontal } from 'lucide-react';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { ConfirmDialogProvider } from '@/components/ConfirmDialog';
@@ -14,6 +14,7 @@ import { setDecimalSeparator, useNumberFormat } from './lib/numberFormat';
 import TemplateSettings from './pages/TemplateSettings';
 import TemplateEditor from './pages/TemplateEditor';
 import ResolutionsSettings from './pages/ResolutionsSettings';
+import InvoiceDefaultsSettings from './pages/InvoiceDefaultsSettings';
 import CustomersPage from './pages/CustomersPage';
 import ProductsPage from './pages/ProductsPage';
 import InvoicesPage from './pages/InvoicesPage';
@@ -115,6 +116,7 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed, isDesktop, mobileOpen
     { to: "/products", icon: <Package size={20} />, label: "Productos y servicios" },
     { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos", adminOnly: true, feature: "payments" },
     { to: "/resolutions", icon: <FileSignature size={20} />, label: "Resoluciones DIAN", adminOnly: true },
+    { to: "/invoice-defaults", icon: <SlidersHorizontal size={20} />, label: "Valores por defecto", adminOnly: true },
     { to: "/settings", icon: <Settings size={20} />, label: "Diseño y Ajustes", adminOnly: true },
     { to: "/users", icon: <UserCog size={20} />, label: "Usuarios", adminOnly: true },
   ];
@@ -516,6 +518,7 @@ function App() {
                         <Route path="/settings" element={<RequireAdmin><TemplateSettings /></RequireAdmin>} />
                         <Route path="/templates/editor" element={<RequireAdmin><TemplateEditor /></RequireAdmin>} />
                         <Route path="/resolutions" element={<RequireAdmin><ResolutionsSettings /></RequireAdmin>} />
+                        <Route path="/invoice-defaults" element={<RequireAdmin><InvoiceDefaultsSettings /></RequireAdmin>} />
                         <Route path="/customers" element={<CustomersPage />} />
                         <Route path="/products" element={<ProductsPage />} />
                         <Route path="/invoices" element={<InvoicesPage />} />

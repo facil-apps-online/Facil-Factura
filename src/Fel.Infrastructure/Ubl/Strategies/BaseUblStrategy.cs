@@ -20,7 +20,12 @@ namespace Fel.Infrastructure.Ubl.Strategies
         protected static readonly XNamespace xades = "http://uri.etsi.org/01903/v1.3.2#";
         protected static readonly XNamespace xades141 = "http://uri.etsi.org/01903/v1.4.1#";
         protected static readonly XNamespace ds = "http://www.w3.org/2000/09/xmldsig#";
-        
+
+        // Cantidad y precio unitario de la línea: la DIAN admite hasta 6 decimales y el valor de la línea (LineExtensionAmount) sale de
+        // cantidad x precio sin redondear antes. Con 2 decimales fijos, un precio de 1.234,5678 viajaba como 1.234,57 y la línea no cuadraba.
+        // Mínimo 2 decimales para que lo que ya salía con 2 siga igual.
+        internal static string QuantityOrPrice(decimal value) => value.ToString("0.00####", System.Globalization.CultureInfo.InvariantCulture);
+
         public BaseUblStrategy(ICryptoService cryptoService)
         {
             _cryptoService = cryptoService;
@@ -458,7 +463,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
             // Orden UBL: ID, Note, cantidad... — la nota solo se emite cuando la línea la trae.
             if (!string.IsNullOrWhiteSpace(line.Note)) lineElement.Add(new XElement(cbc + "Note", line.Note));
             lineElement.Add(
-                new XElement(cbc + quantityElementName, new XAttribute("unitCode", line.UnitCode), line.Quantity.ToString("0.00").Replace(",", ".")),
+                new XElement(cbc + quantityElementName, new XAttribute("unitCode", line.UnitCode), QuantityOrPrice(line.Quantity)),
                 new XElement(cbc + "LineExtensionAmount", new XAttribute("currencyID", currency), line.LineExtensionAmount.ToString("0.00").Replace(",", ".")),
                 // Confirmado contra el ejemplo oficial Generica.xml y contra un firmador Python de
                 // referencia en producción activa — presente en cada línea de ambos. Faltaba por
@@ -496,7 +501,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 // Explicaba la notificación FBB04 ("No se informó la cantidad real sobre la cual
                 // el precio aplica").
                 new XElement(cac + "Price",
-                    new XElement(cbc + "PriceAmount", new XAttribute("currencyID", currency), line.UnitPrice.ToString("0.00").Replace(",", ".")),
+                    new XElement(cbc + "PriceAmount", new XAttribute("currencyID", currency), QuantityOrPrice(line.UnitPrice)),
                     new XElement(cbc + "BaseQuantity", new XAttribute("unitCode", line.UnitCode), "1.0")
                 )
             );

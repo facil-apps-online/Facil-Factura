@@ -273,7 +273,7 @@ namespace Fel.Infrastructure.Dataico
                     ["Trm"] = esMonedaExtranjera ? invoice.ExchangeRate!.Value.ToString("N2", nf) : null,
                     ["TrmFecha"] = esMonedaExtranjera ? invoice.ExchangeRateDate!.Value.ToString("dd/MM/yyyy") : null,
                     ["MonedaTexto"] = esMonedaExtranjera
-                        ? $"Moneda: {invoice.Currency} · TRM: {invoice.ExchangeRate!.Value.ToString("N2", nf)} ({invoice.ExchangeRateDate!.Value:dd/MM/yyyy})"
+                        ? $"{invoice.Currency} ({invoice.ExchangeRate!.Value.ToString("N2", nf)} - {invoice.ExchangeRateDate!.Value:dd/MM/yyyy})"
                         : null,
                     ["Leyenda"] = leyenda,
 

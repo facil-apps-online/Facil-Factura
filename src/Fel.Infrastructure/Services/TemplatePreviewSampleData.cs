@@ -27,7 +27,6 @@ namespace Fel.Infrastructure.Services
                 "NC" => "NOTA CRÉDITO ELECTRÓNICA",
                 "ND" => "NOTA DÉBITO ELECTRÓNICA",
                 "DE-POS" => "DOCUMENTO EQUIVALENTE - TIQUETE POS",
-                "FE-EXP" => "FACTURA ELECTRÓNICA DE EXPORTACIÓN",
                 _ => "FACTURA ELECTRÓNICA DE VENTA"
             };
             var esNota = documentTypeCode is "NC" or "ND";
@@ -79,7 +78,7 @@ namespace Fel.Infrastructure.Services
                     ["FormaPago"] = "Contado",
                     ["OrdenCompra"] = "OC-2026-001",
                     ["Notas"] = "Documento de ejemplo — vista previa de diseño.\nSegunda observación de ejemplo.\nTercera observación de ejemplo.",
-                    ["TipoOperacion"] = esMandato ? "Mandatos" : "Estándar",
+                    ["TipoOperacion"] = esMandato ? "Mandatos" : esExportacion ? "Exportación" : "Estándar",
                     ["Moneda"] = esExportacion ? "USD" : "COP",
                     ["Trm"] = esExportacion ? "3,912.45" : null,
                     ["TrmFecha"] = esExportacion ? "15/01/2026" : null,

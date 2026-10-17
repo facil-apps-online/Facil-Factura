@@ -104,7 +104,6 @@ namespace Fel.Infrastructure.Dataico
                 "NC" => "NOTA CRÉDITO ELECTRÓNICA",
                 "ND" => "NOTA DÉBITO ELECTRÓNICA",
                 "DE-POS" => "DOCUMENTO EQUIVALENTE - TIQUETE POS",
-                "FE-EXP" => "FACTURA ELECTRÓNICA DE EXPORTACIÓN",
                 _ => "FACTURA ELECTRÓNICA DE VENTA"
             };
 
@@ -281,7 +280,7 @@ namespace Fel.Infrastructure.Dataico
                     // Todas las observaciones en un solo texto, una por línea: lo que leen las plantillas que todavía usan un
                     // solo campo. Las plantillas que quieran una fila por observación usan la lista "Observaciones".
                     ["Notas"] = string.Join("\n", observaciones.Select(o => o.Text)),
-                    ["TipoOperacion"] = esMandato ? "Mandatos" : "Estándar",
+                    ["TipoOperacion"] = esMandato ? "Mandatos" : invoice.TypeCode == "FE-EXP" ? "Exportación" : "Estándar",
                     // Factura de exportación: condición de entrega lista para imprimir ("CFR - Costo y flete"); vacía en otra factura.
                     ["Incoterm"] = string.IsNullOrWhiteSpace(invoice.DeliveryTermsCode) ? null
                         : string.IsNullOrWhiteSpace(invoice.DeliveryTermsName) ? invoice.DeliveryTermsCode : $"{invoice.DeliveryTermsCode} - {invoice.DeliveryTermsName}",

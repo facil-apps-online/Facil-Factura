@@ -43,6 +43,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
 
                 BuildAccountingSupplierParty(data),
                 BuildAccountingCustomerParty(data),
+                BuildDeliveryTerms(data),
                 BuildPaymentMeans(data),
                 BuildAllowanceCharges(data),
                 BuildPaymentExchangeRate(data),

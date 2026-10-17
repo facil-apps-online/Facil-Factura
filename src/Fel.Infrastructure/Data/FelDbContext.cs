@@ -479,6 +479,8 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.Prefix).HasMaxLength(20);
                 entity.Property(e => e.Currency).HasMaxLength(3).IsRequired().HasDefaultValue("COP");
                 entity.Property(e => e.ExchangeRate).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.DeliveryTermsCode).HasMaxLength(3);
+                entity.Property(e => e.DeliveryTermsName).HasMaxLength(100);
                 entity.HasOne(e => e.Branch)
                       .WithMany()
                       .HasForeignKey(e => e.BranchId)
@@ -555,6 +557,9 @@ namespace Fel.Infrastructure.Data
                       .HasForeignKey(e => e.ProductId)
                       .OnDelete(DeleteBehavior.SetNull);
 
+                entity.Property(e => e.BrandName).HasMaxLength(100);
+                entity.Property(e => e.ModelName).HasMaxLength(100);
+                entity.Property(e => e.TariffCode).HasMaxLength(10);
                 entity.Property(e => e.MandanteIdentificationType).HasMaxLength(10);
                 entity.Property(e => e.MandanteIdentification).HasMaxLength(30);
                 entity.Property(e => e.MandanteName).HasMaxLength(250);

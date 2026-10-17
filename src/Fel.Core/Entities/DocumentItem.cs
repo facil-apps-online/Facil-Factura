@@ -50,6 +50,11 @@ namespace Fel.Core.Entities
         // Factura de mandato (operación 11): el mandante de esta línea, es decir, el tercero por cuenta de quien se vende. Se guarda
         // el tercero elegido y una copia congelada de sus datos, igual que Code/Name/UnitPrice: si el tercero cambia después, una
         // factura ya emitida no cambia. Vacíos en cualquier otra factura.
+        // Factura de exportación: marca, modelo y subpartida arancelaria (10 dígitos) del ítem; todos opcionales. Vacíos en cualquier otra factura.
+        public string? BrandName { get; set; }
+        public string? ModelName { get; set; }
+        public string? TariffCode { get; set; }
+
         public Guid? MandanteCustomerId { get; set; }
         public Customer? MandanteCustomer { get; set; }
         public string? MandanteIdentificationType { get; set; } // Código DIAN del tipo de documento (31 = NIT, 13 = cédula...)

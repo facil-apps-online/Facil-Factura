@@ -6,7 +6,7 @@ import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 type TaxCatalogKind =
   | 'Retention' | 'OtherTax' | 'IvaRate' | 'PaymentTerm' | 'PaymentMeans'
-  | 'WorkerType' | 'ContractType' | 'PayrollPaymentMeans' | 'TaxLevelCode' | 'Regimen' | 'AccountType' | 'FormaPago' | 'Currency';
+  | 'WorkerType' | 'ContractType' | 'PayrollPaymentMeans' | 'TaxLevelCode' | 'Regimen' | 'AccountType' | 'FormaPago' | 'Currency' | 'Country' | 'Incoterm';
 
 interface TaxCatalogItem {
   id: string;
@@ -30,7 +30,9 @@ const KIND_LABELS: Record<string, string> = {
   Regimen: 'Régimen (tercero)',
   AccountType: 'Cuenta bancaria',
   FormaPago: 'Forma de Pago (Facturas)',
-  Currency: 'Moneda extranjera (Facturas)'
+  Currency: 'Moneda extranjera (Facturas)',
+  Country: 'País (tercero)',
+  Incoterm: 'Condición de entrega (Exportación)'
 };
 
 // Ayuda a que el campo "Código" de la modal tenga sentido según el tipo elegido.
@@ -47,7 +49,9 @@ const CATEGORY_FIELD_LABEL: Record<string, string> = {
   Regimen: 'Código (Dataico)',
   AccountType: 'Código (Dataico)',
   FormaPago: 'Código interno',
-  Currency: 'Código ISO 4217 (USD, EUR...)'
+  Currency: 'Código ISO 4217 (USD, EUR...)',
+  Country: 'Código ISO 3166 alfa-2 (CO, VE...)',
+  Incoterm: 'Código Incoterm (CFR, FOB...)'
 };
 
 const NUMERIC_KINDS: TaxCatalogKind[] = ['IvaRate', 'PaymentTerm'];
@@ -65,7 +69,9 @@ const KIND_BADGE_CLASSES: Record<string, string> = {
   Regimen: 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30',
   AccountType: 'bg-lime-500/20 text-lime-400 border border-lime-500/30',
   FormaPago: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
-  Currency: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+  Currency: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30',
+  Country: 'bg-pink-500/20 text-pink-400 border border-pink-500/30',
+  Incoterm: 'bg-stone-500/20 text-stone-300 border border-stone-500/30'
 };
 
 // Para filtrar la tabla dado el volumen creciente de catálogos (ej. 53 medios de pago de nómina).
@@ -269,6 +275,8 @@ export const TaxCatalog = () => {
                   <option value="AccountType">Cuenta bancaria</option>
                   <option value="FormaPago">Forma de Pago (Facturas)</option>
                   <option value="Currency">Moneda extranjera (Facturas)</option>
+                  <option value="Country">País (tercero)</option>
+                  <option value="Incoterm">Condición de entrega (Exportación)</option>
                 </select>
               </div>
               <div>

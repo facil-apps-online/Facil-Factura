@@ -104,10 +104,14 @@ namespace Fel.Infrastructure.Dataico
             string paymentMeans,
             string paymentMeansType,
             IReadOnlyDictionary<string, string>? identificationTypeOverrides = null,
-            bool isMandate = false)
+            bool isMandate = false,
+            bool isExport = false)
         {
+            // La condición de entrega (Incoterm) y la marca, modelo y subpartida de los ítems de una exportación se guardan en el documento y
+            // salen en el XML de la DIAN y en el PDF, pero no viajan aquí: el cuerpo de Dataico para exportación no trae esos campos.
             var request = new DataicoInvoiceRequest
             {
+                invoice_type_code = isExport ? "FACTURA_EXPORTACION" : "FACTURA_VENTA",
                 env = client.DataicoEnvironment,
                 dataico_account_id = string.IsNullOrEmpty(client.DataicoAccountId) ? null : client.DataicoAccountId,
                 number = document.Number,

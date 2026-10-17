@@ -45,15 +45,17 @@ namespace Fel.Infrastructure.Dataico
             // factura (AIU, salud, transporte) llevan información propia que este envío no manda, y saldrían como
             // una venta común. Solo están disponibles con emisión directa a la DIAN.
             var isMandate = false;
+            var isExport = false;
             if (invoice.DocumentTypeId.HasValue)
             {
                 var documentType = await _dbContext.DocumentTypes.AsNoTracking()
                     .Where(t => t.Id == invoice.DocumentTypeId.Value).Select(t => new { t.Code, t.OperationType }).FirstOrDefaultAsync();
-                if (documentType != null && documentType.Code is not ("FE-STD" or "FE-MANDATO" or "NC" or "ND"))
+                if (documentType != null && documentType.Code is not ("FE-STD" or "FE-MANDATO" or "FE-EXP" or "NC" or "ND"))
                 {
-                    throw new NotSupportedException("Este tipo de factura solo está disponible con emisión directa a la DIAN; con el integrador configurado solo se emite factura estándar, de mandato y notas crédito/débito.");
+                    throw new NotSupportedException("Este tipo de factura solo está disponible con emisión directa a la DIAN; con el integrador configurado solo se emite factura estándar, de mandato, de exportación y notas crédito/débito.");
                 }
                 isMandate = documentType?.OperationType == DocumentType.MandateOperationType;
+                isExport = documentType?.Code == "FE-EXP";
             }
 
             if (string.IsNullOrEmpty(invoice.Number))
@@ -118,7 +120,7 @@ namespace Fel.Infrastructure.Dataico
                     .Where(t => t.DataicoCode != null && t.DataicoCode != "")
                     .ToDictionaryAsync(t => t.Code, t => t.DataicoCode!);
 
-                var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType, identificationTypeOverrides, isMandate);
+                var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType, identificationTypeOverrides, isMandate, isExport);
                 result = await _dataicoApiService.SendInvoiceAsync(dataicoRequest, credentials);
             }
 

@@ -215,6 +215,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [mandantes, setMandantes] = useState<any[]>([]);
   // Monedas extranjeras disponibles (catálogo del superadmin); solo se cargan si el tenant habilitó al cliente.
   const [currencyCatalog, setCurrencyCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  // Condiciones de entrega (Incoterms, tabla 13.3.7 de la DIAN) para la factura de exportación.
+  const [incotermCatalog, setIncotermCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   // Línea para la que se está creando un mandante nuevo (mismo formulario de terceros, con el tipo Mandante).
   const [mandanteModalForItemIndex, setMandanteModalForItemIndex] = useState<number | null>(null);
   // Carga de varias observaciones de mandato de una vez (una por línea).
@@ -241,6 +243,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     currency: 'COP',
     exchangeRate: '' as number | '',
     exchangeRateDate: todayIso(),
+    // Factura de exportación: condición de entrega (código Incoterm, opcional).
+    deliveryTermsCode: '',
     notes: '',
     // Observaciones de facturas y notas: una por fila, en orden (el documento soporte sigue usando "notes").
     observations: [] as string[],
@@ -321,16 +325,18 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const range = datePreset === 'custom'
         ? { from: appliedCustomFrom, to: appliedCustomTo }
         : getDateRangeForPreset(datePreset)!;
-      const [invRes, custRes, prodRes, docTypesRes, mandantesRes, currencyRes] = await Promise.all([
+      const [invRes, custRes, prodRes, docTypesRes, mandantesRes, currencyRes, incotermRes] = await Promise.all([
         api.get(`${cfg.api}?from=${range.from}&to=${range.to}`),
         api.get(`/client/customers?partyType=${cfg.partyType}`),
         api.get(`/client/products?scope=${isSupport ? 'Support' : 'Invoice'}`),
         cfg.documentTypes ? api.get('/client/invoices/document-types') : Promise.resolve({ data: [] }),
         // Terceros marcados como mandante: los elige cada línea de una factura de mandato.
         isSupport ? Promise.resolve({ data: [] }) : api.get('/client/customers?partyType=Mandante'),
-        !isSupport && features.foreignCurrency ? api.get('/client/tax-catalog?kind=Currency') : Promise.resolve({ data: [] })
+        !isSupport && features.foreignCurrency ? api.get('/client/tax-catalog?kind=Currency') : Promise.resolve({ data: [] }),
+        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/tax-catalog?kind=Incoterm')
       ]);
       setCurrencyCatalog(currencyRes.data);
+      setIncotermCatalog(incotermRes.data);
       setInvoices(invRes.data);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
@@ -423,6 +429,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         currency: full.currency || 'COP',
         exchangeRate: full.exchangeRate ?? '',
         exchangeRateDate: full.exchangeRateDate ? String(full.exchangeRateDate).slice(0, 10) : todayIso(),
+        deliveryTermsCode: full.deliveryTermsCode || '',
         notes: full.notes || '',
         observations: (full.observations || []).map((o: any) => o.text),
         items: full.items.map((i: any) => ({
@@ -439,6 +446,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           discountRate: i.discountRate || 0,
           taxAmount: i.taxAmount,
           totalAmount: i.totalAmount,
+          brandName: i.brandName || '',
+          modelName: i.modelName || '',
+          tariffCode: i.tariffCode || '',
           mandanteCustomerId: i.mandanteCustomerId || null,
           mandanteIdentificationType: i.mandanteIdentificationType || null,
           mandanteIdentification: i.mandanteIdentification || null,
@@ -694,6 +704,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const isAiu = !isSupport && selectedDocType?.operationType === AIU_OPERATION_TYPE && !formData.referenceDocumentId;
   // Factura de mandato (operación 11): cada línea declara su mandante.
   const isMandate = !isSupport && selectedDocType?.operationType === MANDATE_OPERATION_TYPE && !formData.referenceDocumentId;
+  // Factura de exportación (tipo FE-EXP): condición de entrega y, por ítem, marca, modelo y subpartida arancelaria.
+  const isExport = !isSupport && selectedDocType?.typeCode === 'FE-EXP' && !formData.referenceDocumentId;
 
   const setItemMandante = (index: number, customerId: string) => {
     const mandante = mandantes.find(m => m.id === customerId);
@@ -1223,6 +1235,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           )}
         </div>
       ),
+      // Factura de exportación: marca, modelo y subpartida arancelaria del ítem (todos opcionales).
+      exportFields: (
+        <>
+          <input type="text" placeholder="Marca (opcional)" maxLength={100} value={item.brandName || ''} onChange={e => updateItem(index, 'brandName', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" />
+          <input type="text" placeholder="Modelo (opcional)" maxLength={100} value={item.modelName || ''} onChange={e => updateItem(index, 'modelName', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" />
+          <input type="text" inputMode="numeric" placeholder="Subpartida arancelaria (4-10 dígitos)" maxLength={10} value={item.tariffCode || ''} onChange={e => updateItem(index, 'tariffCode', e.target.value.replace(/\D/g, ''))} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono" />
+        </>
+      ),
       mandante: (
         <div className="flex gap-1">
           <SearchableSelect
@@ -1460,7 +1480,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               );
             })()}
 
-            {!isSupport && ((features.foreignCurrency && selectedDocType?.typeCode === 'FE-STD') || formData.currency !== 'COP') && (
+            {!isSupport && ((features.foreignCurrency && (selectedDocType?.typeCode === 'FE-STD' || selectedDocType?.typeCode === 'FE-EXP')) || formData.currency !== 'COP') && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">Moneda</label>
@@ -1505,6 +1525,20 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     </div>
                   </>
                 )}
+              </div>
+            )}
+
+            {isExport && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Condición de entrega (Incoterm)</label>
+                  <SearchableSelect
+                    value={formData.deliveryTermsCode}
+                    onChange={v => setFormData({ ...formData, deliveryTermsCode: v })}
+                    placeholder="Opcional..."
+                    options={[{ value: '', label: 'Sin condición de entrega', shortLabel: '—' }, ...incotermCatalog.map(c => ({ value: c.category, label: `${c.category} - ${c.name}`, shortLabel: c.category }))]}
+                  />
+                </div>
               </div>
             )}
 
@@ -1583,7 +1617,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     {formData.items.map((item, index) => {
                       const f = itemFields(item, index, true);
                       return (
-                        <tr key={index} className="bg-white">
+                        <React.Fragment key={index}>
+                        <tr className="bg-white">
                           <td className="p-2 pl-3">{f.product}</td>
                           {isMandate && <td className="p-2">{f.mandante}</td>}
                           <td className="p-2">{f.quantity}</td>
@@ -1596,6 +1631,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                           </td>
                           <td className="p-1 text-right whitespace-nowrap">{f.remove}</td>
                         </tr>
+                        {isExport && (
+                          <tr className="bg-white">
+                            <td colSpan={8} className="px-3 pb-3 pt-0">
+                              <div className="grid grid-cols-3 gap-2">{f.exportFields}</div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       );
                     })}
                     {formData.items.length === 0 && (
@@ -1649,6 +1692,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                         <span className={label}>Retención</span>
                         {f.retention}
                       </div>
+                      {isExport && (
+                        <div>
+                          <span className={label}>Marca, modelo y subpartida arancelaria</span>
+                          <div className="grid grid-cols-1 gap-2">{f.exportFields}</div>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between border-t border-slate-100 pt-3">
                         <span className="text-sm font-bold text-slate-500">Total</span>
                         <span className="font-mono font-bold text-slate-700">{symOf(formData)}{fmt.money(item.totalAmount)}</span>

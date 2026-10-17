@@ -123,6 +123,8 @@ namespace Fel.Infrastructure.Dian
             };
 
             data.Notes.AddRange(DocumentNotes.Texts(document));
+            data.DeliveryTermsCode = document.DeliveryTermsCode;
+            data.DeliveryTermsName = document.DeliveryTermsName;
 
             // Grupo obligatorio (numeral 6.5.10, FAN01-05): antes no se llenaba en este mapper (el
             // que arma el XML de facturas reales ya guardadas), a diferencia de BuildInvoiceDataFromRequest
@@ -189,6 +191,10 @@ namespace Fel.Infrastructure.Dian
                 };
                 // La línea de Administración lleva la nota obligatoria con el objeto del contrato.
                 if (isAiu && item.Code == AiuContractData.AdminCode) line.Note = aiu!.BuildAdminNote();
+                // Exportación: marca, modelo y subpartida arancelaria del ítem (opcionales).
+                line.BrandName = item.BrandName;
+                line.ModelName = item.ModelName;
+                line.TariffCode = item.TariffCode;
                 // Mandatos (operación 11): cada línea declara su mandante. Solo en la factura de mandato, no en sus notas.
                 if (isMandate)
                 {

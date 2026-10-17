@@ -344,6 +344,17 @@ namespace Fel.Infrastructure.Ubl.Strategies
             return total;
         }
 
+        // Condición de entrega de una factura de exportación (cac:DeliveryTerms): código Incoterm y su significado. Va antes de PaymentMeans
+        // (secuencia UBL; igual que el ejemplo oficial Exportacion.xml). Solo se emite si el documento trae la condición.
+        protected static IEnumerable<XElement> BuildDeliveryTerms(UblInvoiceData data)
+        {
+            if (string.IsNullOrWhiteSpace(data.DeliveryTermsCode)) yield break;
+
+            var terms = new XElement(cac + "DeliveryTerms", new XElement(cbc + "LossRiskResponsibilityCode", data.DeliveryTermsCode));
+            if (!string.IsNullOrWhiteSpace(data.DeliveryTermsName)) terms.Add(new XElement(cbc + "LossRisk", data.DeliveryTermsName));
+            yield return terms;
+        }
+
         // Tasa de cambio del documento en moneda extranjera (reglas M01, M03 y M05 de la DIAN): la moneda origen es la del documento, la
         // destino es COP y la TRM es obligatoria; solo se emite cuando el documento no está en COP. Va después de los descuentos/cargos
         // y antes de los totales de impuestos (secuencia UBL; igual que el ejemplo oficial Exportacion.xml).
@@ -402,6 +413,19 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cac + "SellersItemIdentification", new XElement(cbc + "ID", line.ItemCode)),
                 new XElement(cac + "StandardItemIdentification", new XElement(cbc + "ID", new XAttribute("schemeID", "999"), line.ItemCode))
             );
+
+            // Factura de exportación (opcionales): marca y modelo van justo después de la descripción (secuencia UBL, como en el ejemplo oficial
+            // Exportacion.xml); la subpartida arancelaria reemplaza al estándar del ítem con schemeID 020 "Partida Arancelarias" (tabla 13.3.5).
+            var descriptionElement = itemElement.Element(cbc + "Description")!;
+            if (!string.IsNullOrWhiteSpace(line.ModelName)) descriptionElement.AddAfterSelf(new XElement(cbc + "ModelName", line.ModelName));
+            if (!string.IsNullOrWhiteSpace(line.BrandName)) descriptionElement.AddAfterSelf(new XElement(cbc + "BrandName", line.BrandName));
+            if (!string.IsNullOrWhiteSpace(line.TariffCode))
+            {
+                itemElement.Element(cac + "StandardItemIdentification")!.ReplaceWith(new XElement(cac + "StandardItemIdentification",
+                    new XElement(cbc + "ID",
+                        new XAttribute("schemeID", "020"), new XAttribute("schemeName", "Partida Arancelarias"), new XAttribute("schemeAgencyID", "195"),
+                        line.TariffCode)));
+            }
 
             // Sector Transporte de Carga (Guía de Factura Electrónica de Transporte, Mintransporte —
             // ver docs/dian-transporte/): cada línea marcada como remesa RNDC lleva estos 3 datos

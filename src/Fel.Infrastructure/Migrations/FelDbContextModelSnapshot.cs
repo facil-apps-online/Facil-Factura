@@ -1866,6 +1866,14 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("DataicoDocumentId")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("DeliveryTermsCode")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<string>("DeliveryTermsName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("DianResponseCode")
                         .HasColumnType("nvarchar(max)");
 
@@ -2036,6 +2044,10 @@ namespace Fel.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("BrandName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -2068,6 +2080,10 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<string>("ModelName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -2084,6 +2100,10 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("SectorExtensionData")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TariffCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<decimal>("TaxAmount")
                         .HasColumnType("decimal(18,4)");

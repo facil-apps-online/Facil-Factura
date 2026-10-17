@@ -104,6 +104,7 @@ namespace Fel.Infrastructure.Dataico
                 "NC" => "NOTA CRÉDITO ELECTRÓNICA",
                 "ND" => "NOTA DÉBITO ELECTRÓNICA",
                 "DE-POS" => "DOCUMENTO EQUIVALENTE - TIQUETE POS",
+                "FE-EXP" => "FACTURA ELECTRÓNICA DE EXPORTACIÓN",
                 _ => "FACTURA ELECTRÓNICA DE VENTA"
             };
 
@@ -281,6 +282,9 @@ namespace Fel.Infrastructure.Dataico
                     // solo campo. Las plantillas que quieran una fila por observación usan la lista "Observaciones".
                     ["Notas"] = string.Join("\n", observaciones.Select(o => o.Text)),
                     ["TipoOperacion"] = esMandato ? "Mandatos" : "Estándar",
+                    // Factura de exportación: condición de entrega lista para imprimir ("CFR - Costo y flete"); vacía en otra factura.
+                    ["Incoterm"] = string.IsNullOrWhiteSpace(invoice.DeliveryTermsCode) ? null
+                        : string.IsNullOrWhiteSpace(invoice.DeliveryTermsName) ? invoice.DeliveryTermsCode : $"{invoice.DeliveryTermsCode} - {invoice.DeliveryTermsName}",
                     // Moneda del documento: todos los valores del PDF están en esa moneda. En COP, Trm y TrmFecha van vacíos y
                     // MonedaTexto queda en blanco para que la plantilla oculte la línea.
                     ["Moneda"] = string.IsNullOrWhiteSpace(invoice.Currency) ? "COP" : invoice.Currency,
@@ -337,6 +341,10 @@ namespace Fel.Infrastructure.Dataico
                     ["TotalLinea"] = Money(i.TotalAmount),
                     // Factura de mandato: mandante de la línea, y el texto que se imprime bajo la descripción (como en la
                     // representación gráfica de Dataico: "Mandante NIT: 800168654"). Vacíos en cualquier otra factura.
+                    // Exportación: marca, modelo y subpartida arancelaria del ítem; vacíos en otra factura.
+                    ["Marca"] = i.BrandName,
+                    ["Modelo"] = i.ModelName,
+                    ["PartidaArancelaria"] = i.TariffCode,
                     ["MandanteNombre"] = i.MandanteName,
                     ["MandanteIdentificacion"] = i.MandanteIdentification,
                     ["MandanteTexto"] = string.IsNullOrWhiteSpace(i.MandanteIdentification) ? null

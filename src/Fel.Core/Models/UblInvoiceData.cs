@@ -52,6 +52,10 @@ namespace Fel.Core.Models
         // Observaciones del documento, en orden: cada una sale como un cbc:Note del encabezado.
         public List<string> Notes { get; set; } = new List<string>();
 
+        // Factura de exportación: condición de entrega (cac:DeliveryTerms), con el código Incoterm y su significado. Vacíos en otra factura.
+        public string? DeliveryTermsCode { get; set; }
+        public string? DeliveryTermsName { get; set; }
+
         public List<PaymentMeansData> PaymentMeans { get; set; } = new List<PaymentMeansData>();
         public List<AllowanceChargeData> AllowanceCharges { get; set; } = new List<AllowanceChargeData>();
         public List<TaxSubtotal> Taxes { get; set; } = new List<TaxSubtotal>();
@@ -141,6 +145,11 @@ namespace Fel.Core.Models
 
         // Factura de mandato (operación 11): mandante de la línea (cac:InformationContentProviderParty). Tipo de documento DIAN
         // (31 = NIT, 13 = cédula...) y número sin dígito de verificación; null en cualquier otra factura.
+        // Factura de exportación: marca, modelo y subpartida arancelaria (10 dígitos); opcionales.
+        public string? BrandName { get; set; }
+        public string? ModelName { get; set; }
+        public string? TariffCode { get; set; }
+
         public string? MandanteIdentificationCode { get; set; }
         public string? MandanteIdentification { get; set; }
         public decimal Quantity { get; set; }

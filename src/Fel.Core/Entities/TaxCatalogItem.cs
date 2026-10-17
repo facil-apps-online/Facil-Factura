@@ -30,7 +30,10 @@ namespace Fel.Core.Entities
         Currency = 14,
         // Países (tabla 13.4.1 del anexo técnico de la DIAN, ISO 3166-1): Category es el código alfa-2 ("CO", "VE") y Name el nombre
         // común en español. Es lo que se elige en la dirección de un tercero y lo que sale como Country en el XML.
-        Country = 15
+        Country = 15,
+        // Condiciones de entrega de una factura de exportación (tabla 13.3.7 del anexo técnico de la DIAN, Incoterms): Category es el código
+        // de tres letras ("CFR", "FOB") y Name su significado en español ("Costo y flete").
+        Incoterm = 16
     }
 
     // Catálogo global de valores válidos (impuestos, retenciones, tarifas de IVA, plazos de pago,

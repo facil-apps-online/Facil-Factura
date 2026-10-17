@@ -94,6 +94,11 @@ namespace Fel.Core.Entities
         public decimal? ExchangeRate { get; set; }
         public DateTime? ExchangeRateDate { get; set; }
 
+        // Factura de exportación: condición de entrega (Incoterm). Se guarda el código y una copia congelada de su significado, para que el
+        // XML y el PDF digan siempre lo mismo aunque el catálogo cambie. Vacíos en cualquier otra factura.
+        public string? DeliveryTermsCode { get; set; }
+        public string? DeliveryTermsName { get; set; }
+
         public decimal Subtotal { get; set; }
         public decimal TaxAmount { get; set; }
         public decimal TotalAmount { get; set; }

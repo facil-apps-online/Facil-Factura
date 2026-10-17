@@ -32,6 +32,47 @@ namespace Fel.Api.Client.Controllers
         // un DRAFT nunca se envió, y un REJECTED fue rechazado por Dataico, así que tampoco llegó.
         private static bool IsEditable(string status) => status == "DRAFT" || status == "REJECTED";
 
+        // Campos propios de la factura de exportación (todos opcionales): condición de entrega (Incoterm, del catálogo, con una copia congelada de
+        // su significado) y, por ítem, marca, modelo y subpartida arancelaria (solo dígitos, de 4 a 10). En cualquier otra factura se vacían, para
+        // que no viajen ni se impriman. Devuelve el mensaje de error, o null si quedó bien.
+        private async Task<string?> ApplyExportFieldsAsync(Document target, Document requested, bool isExport)
+        {
+            if (!isExport)
+            {
+                target.DeliveryTermsCode = null;
+                target.DeliveryTermsName = null;
+                foreach (var item in requested.Items) { item.BrandName = null; item.ModelName = null; item.TariffCode = null; }
+                return null;
+            }
+
+            var code = (requested.DeliveryTermsCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (code.Length == 0)
+            {
+                target.DeliveryTermsCode = null;
+                target.DeliveryTermsName = null;
+            }
+            else
+            {
+                var name = await _dbContext.TaxCatalogItems.AsNoTracking()
+                    .Where(i => i.Kind == TaxCatalogKind.Incoterm && i.Category == code && i.IsActive)
+                    .Select(i => i.Name).FirstOrDefaultAsync();
+                if (name == null) return $"La condición de entrega {code} no está en el catálogo.";
+                target.DeliveryTermsCode = code;
+                target.DeliveryTermsName = name;
+            }
+
+            foreach (var item in requested.Items)
+            {
+                item.BrandName = string.IsNullOrWhiteSpace(item.BrandName) ? null : item.BrandName.Trim();
+                item.ModelName = string.IsNullOrWhiteSpace(item.ModelName) ? null : item.ModelName.Trim();
+                item.TariffCode = string.IsNullOrWhiteSpace(item.TariffCode) ? null : item.TariffCode.Trim();
+                if (item.BrandName?.Length > 100 || item.ModelName?.Length > 100) return "La marca y el modelo admiten hasta 100 caracteres.";
+                if (item.TariffCode != null && (item.TariffCode.Length is < 4 or > 10 || !item.TariffCode.All(char.IsDigit)))
+                    return $"La subpartida arancelaria '{item.TariffCode}' debe tener solo dígitos, de 4 a 10.";
+            }
+            return null;
+        }
+
         // Moneda del documento. Solo la factura general de un cliente habilitado por el tenant puede ir en una moneda distinta de COP;
         // la moneda debe estar en el catálogo y la TRM (mayor que cero) y su fecha son obligatorias. Una nota crédito/débito hereda
         // siempre la moneda y la TRM de la factura que ajusta. Devuelve el mensaje de error, o null si quedó bien.
@@ -64,8 +105,8 @@ namespace Fel.Api.Client.Controllers
             var documentTypeCode = requested.DocumentTypeId.HasValue
                 ? await _dbContext.DocumentTypes.AsNoTracking().Where(t => t.Id == requested.DocumentTypeId.Value).Select(t => t.Code).FirstOrDefaultAsync()
                 : null;
-            if (documentTypeCode != "FE-STD")
-                return "Solo la factura de venta estándar puede emitirse en moneda extranjera.";
+            if (documentTypeCode is not ("FE-STD" or "FE-EXP"))
+                return "Solo la factura de venta estándar y la de exportación pueden emitirse en moneda extranjera.";
 
             if (!await _dbContext.TaxCatalogItems.AsNoTracking().AnyAsync(i => i.Kind == TaxCatalogKind.Currency && i.Category == currency && i.IsActive))
                 return $"La moneda {currency} no está disponible para facturar.";
@@ -129,7 +170,7 @@ namespace Fel.Api.Client.Controllers
         // con un set estándar (Factura/NC/ND) sembrado al crear el Client. Restringido además a
         // Factura/NC/ND porque el resto del catálogo (nómina, documento soporte...) tiene su propia
         // pantalla o todavía no tiene UI aquí.
-        private static readonly string[] SupportedDianCodes = { "01", "91", "92" };
+        private static readonly string[] SupportedDianCodes = { "01", "02", "91", "92" };
 
         [HttpGet("document-types")]
         public async Task<IActionResult> GetDocumentTypes()
@@ -325,6 +366,7 @@ namespace Fel.Api.Client.Controllers
 
                 // Fetch the actual document type (for DianCode etc)
                 var isMandate = false;
+                var isExport = false;
                 if (invoice.DocumentTypeId.HasValue)
                 {
                     var docType = await _dbContext.DocumentTypes.FindAsync(invoice.DocumentTypeId.Value);
@@ -332,6 +374,7 @@ namespace Fel.Api.Client.Controllers
                     {
                         invoice.TypeCode = docType.Code;
                         isMandate = docType.OperationType == Fel.Core.Entities.DocumentType.MandateOperationType;
+                        isExport = docType.Code == "FE-EXP";
                     }
                 }
 
@@ -356,6 +399,8 @@ namespace Fel.Api.Client.Controllers
 
                 var currencyError = await ApplyCurrencyAsync(invoice, invoice, clientId);
                 if (currencyError != null) return BadRequest(currencyError);
+                var exportError = await ApplyExportFieldsAsync(invoice, invoice, isExport);
+                if (exportError != null) return BadRequest(exportError);
 
                 // Mandato: lista de observaciones (consecutivo 1, 2, 3...) en su tabla; cualquier otra factura o nota: solo la observación general (Notes).
                 var observations = invoice.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)).Select(o => o.Text.Trim()).ToList();
@@ -405,6 +450,10 @@ namespace Fel.Api.Client.Controllers
                 invoice.ReferenceDocumentId = invoiceData.ReferenceDocumentId;
                 var currencyError = await ApplyCurrencyAsync(invoice, invoiceData, clientId);
                 if (currencyError != null) return BadRequest(currencyError);
+                var isExport = invoiceData.DocumentTypeId.HasValue
+                    && await _dbContext.DocumentTypes.AsNoTracking().AnyAsync(t => t.Id == invoiceData.DocumentTypeId.Value && t.Code == "FE-EXP");
+                var exportError = await ApplyExportFieldsAsync(invoice, invoiceData, isExport);
+                if (exportError != null) return BadRequest(exportError);
                 // Mandato: lista de observaciones (reemplazo completo, consecutivo 1, 2, 3... en el orden recibido);
                 // cualquier otra factura o nota: solo la observación general (Notes).
                 var isMandate = invoiceData.DocumentTypeId.HasValue

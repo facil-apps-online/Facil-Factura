@@ -277,6 +277,16 @@ export default function ClientFormFields({ client, setClient, associates, showBi
           </div>
 
           <div>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={!!client.foreignCurrencyEnabled} onChange={e => setClient({ ...client, foreignCurrencyEnabled: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
+              <span>
+                <span className="font-semibold text-slate-700 text-sm">Factura también en moneda extranjera</span>
+                <span className="block text-xs text-slate-400 mt-0.5">Su formulario de factura permite elegir la moneda (USD, EUR...) e indicar la TRM. Apagado, todo sale en pesos.</span>
+              </span>
+            </label>
+          </div>
+
+          <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">Formato de números</label>
             <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.decimalSeparator || '.'} onChange={e => setClient({ ...client, decimalSeparator: e.target.value })}>
               <option value=".">Punto decimal, coma de miles (1,234,567.89)</option>

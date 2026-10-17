@@ -24,7 +24,10 @@ namespace Fel.Core.Entities
         // comentario más abajo): se reutiliza para guardar el "reason" equivalente de Dataico
         // (DEVOLUCION/ANULACION/OTROS), que tiene un catálogo más reducido y no coincide 1 a 1.
         CreditNoteReason = 12,
-        DebitNoteReason = 13
+        DebitNoteReason = 13,
+        // Monedas en las que se puede facturar además de COP (ISO 4217). Category es el código de tres letras que se envía
+        // (Document.Currency, "USD", "EUR"); Name, el nombre legible.
+        Currency = 14
     }
 
     // Catálogo global de valores válidos (impuestos, retenciones, tarifas de IVA, plazos de pago,

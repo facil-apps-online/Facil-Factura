@@ -351,6 +351,7 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.IncomeTaxRegime).HasMaxLength(2);
                 entity.Property(e => e.ReceptionEventPrefix).HasMaxLength(10).IsRequired().HasDefaultValue("EV");
                 entity.Property(e => e.ReceptionEventStartNumber).HasDefaultValue(1);
+                entity.Property(e => e.ForeignCurrencyEnabled).HasDefaultValue(false);
                 entity.Property(e => e.DecimalSeparator).HasMaxLength(1).IsRequired().HasDefaultValue(".");
                 entity.Property(e => e.LegalRepresentativeFirstName).HasMaxLength(100);
                 entity.Property(e => e.LegalRepresentativeOtherNames).HasMaxLength(100);
@@ -476,6 +477,8 @@ namespace Fel.Infrastructure.Data
                 entity.ToTable("Documents");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Prefix).HasMaxLength(20);
+                entity.Property(e => e.Currency).HasMaxLength(3).IsRequired().HasDefaultValue("COP");
+                entity.Property(e => e.ExchangeRate).HasColumnType("decimal(18,4)");
                 entity.HasOne(e => e.Branch)
                       .WithMany()
                       .HasForeignKey(e => e.BranchId)
@@ -1235,6 +1238,9 @@ namespace Fel.Infrastructure.Data
                     new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000002"), Category = "2", Name = "Gastos por cobrar", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
                     new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000003"), Category = "3", Name = "Cambio del valor", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
                     new TaxCatalogItem { Id = Guid.Parse("90000000-0000-0000-0000-000000000004"), Category = "4", Name = "Otros", Kind = TaxCatalogKind.DebitNoteReason, DianCode = "OTROS", IsActive = true, CreatedAt = seedDate },
+                    // Monedas extranjeras en las que se puede facturar (ISO 4217); el superadmin agrega las demás.
+                    new TaxCatalogItem { Id = Guid.Parse("a0000000-0000-0000-0000-000000000001"), Category = "USD", Name = "Dólar estadounidense", Kind = TaxCatalogKind.Currency, IsActive = true, CreatedAt = seedDate },
+                    new TaxCatalogItem { Id = Guid.Parse("a0000000-0000-0000-0000-000000000002"), Category = "EUR", Name = "Euro", Kind = TaxCatalogKind.Currency, IsActive = true, CreatedAt = seedDate },
                     // Tipo de trabajador (Nómina Electrónica) — catálogo completo confirmado contra la
                     // hoja POSIBLE_LISTA_DE_VALORES de la plantilla real de nómina.
                     new TaxCatalogItem { Id = Guid.Parse("20000000-0000-0000-0000-000000000001"), Category = "DEPENDIENTE", Name = "Dependiente", Kind = TaxCatalogKind.WorkerType, IsActive = true, CreatedAt = seedDate },

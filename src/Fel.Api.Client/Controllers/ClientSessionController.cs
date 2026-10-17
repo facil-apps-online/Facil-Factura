@@ -31,7 +31,7 @@ namespace Fel.Api.Client.Controllers
                 .ToListAsync();
 
             var client = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == Branch.ClientId)
-                .Select(c => new { c.ControlsPayments, c.Latitude, c.Longitude })
+                .Select(c => new { c.ControlsPayments, c.ForeignCurrencyEnabled, c.Latitude, c.Longitude })
                 .FirstOrDefaultAsync();
 
             return Ok(new
@@ -41,7 +41,7 @@ namespace Fel.Api.Client.Controllers
                 allBranches = Branch.CanViewAllBranches,
                 branches,
                 // Módulos que el Tenant activó para este cliente: el portal oculta el menú y la ruta de lo que esté apagado.
-                features = new { payments = client?.ControlsPayments ?? false },
+                features = new { payments = client?.ControlsPayments ?? false, foreignCurrency = client?.ForeignCurrencyEnabled ?? false },
                 // Ubicación de la empresa: el buscador de direcciones la usa para mostrar primero lo que queda cerca.
                 location = client?.Latitude != null && client.Longitude != null ? new { latitude = client.Latitude, longitude = client.Longitude } : null,
                 roles = ClientUserRoles.All.Select(r => new { value = r.Value, label = r.Label }),

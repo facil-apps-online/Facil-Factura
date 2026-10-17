@@ -1099,6 +1099,11 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("ForeignCurrencyEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("IncomeTaxRegime")
                         .HasMaxLength(2)
                         .HasColumnType("nvarchar(2)");
@@ -1837,6 +1842,13 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("Cufe")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)")
+                        .HasDefaultValue("COP");
+
                     b.Property<Guid?>("CustomerId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1857,6 +1869,12 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<Guid?>("DocumentTypeId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("ExchangeRate")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime?>("ExchangeRateDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<decimal?>("GeneralChargeAmount")
                         .HasColumnType("decimal(18,2)");
@@ -3729,6 +3747,24 @@ namespace Fel.Infrastructure.Migrations
                             IsActive = true,
                             Kind = 13,
                             Name = "Otros"
+                        },
+                        new
+                        {
+                            Id = new Guid("a0000000-0000-0000-0000-000000000001"),
+                            Category = "USD",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 14,
+                            Name = "Dólar estadounidense"
+                        },
+                        new
+                        {
+                            Id = new Guid("a0000000-0000-0000-0000-000000000002"),
+                            Category = "EUR",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Kind = 14,
+                            Name = "Euro"
                         },
                         new
                         {

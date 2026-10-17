@@ -6,7 +6,7 @@ import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 
 type TaxCatalogKind =
   | 'Retention' | 'OtherTax' | 'IvaRate' | 'PaymentTerm' | 'PaymentMeans'
-  | 'WorkerType' | 'ContractType' | 'PayrollPaymentMeans' | 'TaxLevelCode' | 'Regimen' | 'AccountType' | 'FormaPago';
+  | 'WorkerType' | 'ContractType' | 'PayrollPaymentMeans' | 'TaxLevelCode' | 'Regimen' | 'AccountType' | 'FormaPago' | 'Currency';
 
 interface TaxCatalogItem {
   id: string;
@@ -29,7 +29,8 @@ const KIND_LABELS: Record<string, string> = {
   TaxLevelCode: 'Nivel tributario (tercero)',
   Regimen: 'Régimen (tercero)',
   AccountType: 'Cuenta bancaria',
-  FormaPago: 'Forma de Pago (Facturas)'
+  FormaPago: 'Forma de Pago (Facturas)',
+  Currency: 'Moneda extranjera (Facturas)'
 };
 
 // Ayuda a que el campo "Código" de la modal tenga sentido según el tipo elegido.
@@ -45,7 +46,8 @@ const CATEGORY_FIELD_LABEL: Record<string, string> = {
   TaxLevelCode: 'Código (Dataico)',
   Regimen: 'Código (Dataico)',
   AccountType: 'Código (Dataico)',
-  FormaPago: 'Código interno'
+  FormaPago: 'Código interno',
+  Currency: 'Código ISO 4217 (USD, EUR...)'
 };
 
 const NUMERIC_KINDS: TaxCatalogKind[] = ['IvaRate', 'PaymentTerm'];
@@ -62,7 +64,8 @@ const KIND_BADGE_CLASSES: Record<string, string> = {
   TaxLevelCode: 'bg-violet-500/20 text-violet-400 border border-violet-500/30',
   Regimen: 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30',
   AccountType: 'bg-lime-500/20 text-lime-400 border border-lime-500/30',
-  FormaPago: 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+  FormaPago: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
+  Currency: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
 };
 
 // Para filtrar la tabla dado el volumen creciente de catálogos (ej. 53 medios de pago de nómina).
@@ -265,6 +268,7 @@ export const TaxCatalog = () => {
                   <option value="Regimen">Régimen (tercero)</option>
                   <option value="AccountType">Cuenta bancaria</option>
                   <option value="FormaPago">Forma de Pago (Facturas)</option>
+                  <option value="Currency">Moneda extranjera (Facturas)</option>
                 </select>
               </div>
               <div>

@@ -88,6 +88,12 @@ namespace Fel.Core.Entities
         public Guid? IntegratorId { get; set; }
         public Integrator? Integrator { get; set; }
 
+        // Moneda del documento (ISO 4217; COP por defecto). Si es otra, todos los valores del documento están en esa moneda y
+        // ExchangeRate es la TRM (pesos por unidad de moneda) vigente en ExchangeRateDate. Solo con COP no se informa tasa.
+        public string Currency { get; set; } = "COP";
+        public decimal? ExchangeRate { get; set; }
+        public DateTime? ExchangeRateDate { get; set; }
+
         public decimal Subtotal { get; set; }
         public decimal TaxAmount { get; set; }
         public decimal TotalAmount { get; set; }

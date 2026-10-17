@@ -28,7 +28,8 @@ interface SessionData {
   location?: { latitude: number; longitude: number } | null;
   branches: SessionBranch[];
   // Módulos que el Tenant activó para este cliente (apagados por defecto).
-  features: { payments: boolean };
+  // foreignCurrency: el Tenant lo habilitó a facturar también en moneda extranjera.
+  features: { payments: boolean; foreignCurrency: boolean };
   roles: CatalogItem[];
   noteKinds: CatalogItem[];
 }

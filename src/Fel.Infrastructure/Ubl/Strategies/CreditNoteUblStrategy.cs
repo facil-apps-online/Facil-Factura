@@ -69,6 +69,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 BuildAccountingCustomerParty(data),
                 BuildPaymentMeans(data),
                 BuildAllowanceCharges(data),
+                BuildPaymentExchangeRate(data),
                 BuildTaxTotals(data),
                 BuildLegalMonetaryTotal(data, includeAllowances: true)
             );

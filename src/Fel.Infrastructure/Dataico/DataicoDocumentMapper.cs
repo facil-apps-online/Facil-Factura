@@ -116,6 +116,10 @@ namespace Fel.Infrastructure.Dataico
                 order_reference = document.PurchaseOrderReference,
                 operation = isMandate ? MandateOperation : null,
                 notes = BuildNotes(document),
+                // Moneda extranjera: solo cuando el documento no está en COP y trae TRM y fecha.
+                currency = IsForeignCurrency(document) ? document.Currency : null,
+                currency_exchange_rate = IsForeignCurrency(document) ? document.ExchangeRate : null,
+                currency_exchange_rate_date = IsForeignCurrency(document) ? document.ExchangeRateDate!.Value.ToString("dd/MM/yyyy") : null,
                 payment_means = ResolvePaymentMeans(paymentMeans, paymentMeansType),
                 payment_means_type = paymentMeansType,
                 numbering = new DataicoNumbering
@@ -165,6 +169,9 @@ namespace Fel.Infrastructure.Dataico
 
             return request;
         }
+
+        private static bool IsForeignCurrency(Document document) =>
+            !string.IsNullOrWhiteSpace(document.Currency) && document.Currency != "COP" && document.ExchangeRate > 0 && document.ExchangeRateDate.HasValue;
 
         // Valor de "operation" que Dataico espera para el tipo de operación 11 (Mandatos).
         private const string MandateOperation = "MANDATO";

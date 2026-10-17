@@ -10,6 +10,7 @@ import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset 
 import { exportToCsv } from '../lib/exportCsv';
 import { useNumberFormat } from '../lib/numberFormat';
 import DecimalInput from '../components/DecimalInput';
+import { useSession } from '../context/SessionContext';
 import { todayColombia } from '../lib/colombiaTime';
 import Modal from '../components/Modal';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
@@ -168,7 +169,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const cfg = MODES[mode];
   const isSupport = mode === 'support';
   const fmt = useNumberFormat();
+  // Prefijo de los valores de un documento: "$" en pesos, o el código de la moneda ("USD ") si el documento está en otra.
+  const symOf = (doc: { currency?: string } | null | undefined) => (doc?.currency && doc.currency !== 'COP' ? `${doc.currency} ` : '$');
   const confirm = useConfirm();
+  const { features } = useSession();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>('this-month');
   const [customFrom, setCustomFrom] = useState(() => getDateRangeForPreset('this-month')!.from);
@@ -209,6 +213,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedRetentions, setExpandedRetentions] = useState<Record<number, boolean>>({});
   const [mandantes, setMandantes] = useState<any[]>([]);
+  // Monedas extranjeras disponibles (catálogo del superadmin); solo se cargan si el tenant habilitó al cliente.
+  const [currencyCatalog, setCurrencyCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   // Línea para la que se está creando un mandante nuevo (mismo formulario de terceros, con el tipo Mandante).
   const [mandanteModalForItemIndex, setMandanteModalForItemIndex] = useState<number | null>(null);
   // Carga de varias observaciones de mandato de una vez (una por línea).
@@ -231,6 +237,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     customerId: '',
     resolutionId: '',
     issueDate: todayIso(),
+    // Moneda del documento: COP por defecto; otra moneda solo si el tenant habilitó al cliente (features.foreignCurrency).
+    currency: 'COP',
+    exchangeRate: '' as number | '',
+    exchangeRateDate: todayIso(),
     notes: '',
     // Observaciones de facturas y notas: una por fila, en orden (el documento soporte sigue usando "notes").
     observations: [] as string[],
@@ -311,14 +321,16 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const range = datePreset === 'custom'
         ? { from: appliedCustomFrom, to: appliedCustomTo }
         : getDateRangeForPreset(datePreset)!;
-      const [invRes, custRes, prodRes, docTypesRes, mandantesRes] = await Promise.all([
+      const [invRes, custRes, prodRes, docTypesRes, mandantesRes, currencyRes] = await Promise.all([
         api.get(`${cfg.api}?from=${range.from}&to=${range.to}`),
         api.get(`/client/customers?partyType=${cfg.partyType}`),
         api.get(`/client/products?scope=${isSupport ? 'Support' : 'Invoice'}`),
         cfg.documentTypes ? api.get('/client/invoices/document-types') : Promise.resolve({ data: [] }),
         // Terceros marcados como mandante: los elige cada línea de una factura de mandato.
-        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/customers?partyType=Mandante')
+        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/customers?partyType=Mandante'),
+        !isSupport && features.foreignCurrency ? api.get('/client/tax-catalog?kind=Currency') : Promise.resolve({ data: [] })
       ]);
+      setCurrencyCatalog(currencyRes.data);
       setInvoices(invRes.data);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
@@ -408,6 +420,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         customerId: full.customerId || '',
         resolutionId: full.resolutionId || '',
         issueDate: full.issueDate ? String(full.issueDate).slice(0, 10) : todayIso(),
+        currency: full.currency || 'COP',
+        exchangeRate: full.exchangeRate ?? '',
+        exchangeRateDate: full.exchangeRateDate ? String(full.exchangeRateDate).slice(0, 10) : todayIso(),
         notes: full.notes || '',
         observations: (full.observations || []).map((o: any) => o.text),
         items: full.items.map((i: any) => ({
@@ -491,6 +506,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         ...initialForm,
         documentTypeId: documentTypes.find(d => d.code === '91')?.id || '',
         customerId: fullInvoice.customerId,
+        // La nota hereda la moneda y la TRM de la factura que ajusta (el servidor también lo impone).
+        currency: fullInvoice.currency || 'COP',
+        exchangeRate: fullInvoice.exchangeRate ?? '',
+        exchangeRateDate: fullInvoice.exchangeRateDate ? String(fullInvoice.exchangeRateDate).slice(0, 10) : todayIso(),
         referenceDocumentId: fullInvoice.id,
         referenceConcept: 'Devolución parcial de los bienes y/o no aceptación parcial del servicio', // Valor por defecto — código 1
         discrepancyResponseCode: '1',
@@ -552,6 +571,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         ...initialForm,
         documentTypeId: documentTypes.find(d => d.code === '92')?.id || '',
         customerId: fullInvoice.customerId,
+        // La nota hereda la moneda y la TRM de la factura que ajusta (el servidor también lo impone).
+        currency: fullInvoice.currency || 'COP',
+        exchangeRate: fullInvoice.exchangeRate ?? '',
+        exchangeRateDate: fullInvoice.exchangeRateDate ? String(fullInvoice.exchangeRateDate).slice(0, 10) : todayIso(),
         referenceDocumentId: fullInvoice.id,
         referenceConcept: 'Intereses', // Valor por defecto — código 1
         discrepancyResponseCode: '1',
@@ -1024,6 +1047,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       if (a.baseAmount <= 0) { toast.error('Indica el valor base del contrato AIU.'); return; }
       if (a.contractObject.trim().length < 10) { toast.error('Describe el objeto del contrato (es obligatorio en la factura AIU).'); return; }
     }
+    if (!isSupport && formData.currency !== 'COP' && !formData.referenceDocumentId) {
+      if (formData.exchangeRate === '' || Number(formData.exchangeRate) <= 0) { toast.error('Indica la TRM (tasa de cambio en pesos).'); return; }
+      if (!formData.exchangeRateDate) { toast.error('Indica la fecha de la TRM.'); return; }
+    }
     if (isMandate && formData.items.some(i => !i.mandanteCustomerId)) {
       toast.error('En una factura de mandato cada línea debe tener su mandante.');
       return;
@@ -1040,6 +1067,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const payload = {
         ...formRest,
         // Facturas y notas mandan la lista de observaciones; el documento soporte sigue con el texto "notes".
+        // Moneda: en COP no se envía TRM; "" no es un decimal válido para el servidor.
+        currency: isSupport ? 'COP' : (formData.currency || 'COP'),
+        exchangeRate: !isSupport && formData.currency !== 'COP' && formData.exchangeRate !== '' ? formData.exchangeRate : null,
+        exchangeRateDate: !isSupport && formData.currency !== 'COP' ? formData.exchangeRateDate : null,
         // Mandato: lista de observaciones. Cualquier otro documento: solo la observación general ("notes").
         ...(isMandate
           ? { notes: '', observations: observations.filter(o => o.trim()).map(text => ({ text: text.trim() })) }
@@ -1429,6 +1460,54 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               );
             })()}
 
+            {!isSupport && ((features.foreignCurrency && selectedDocType?.typeCode === 'FE-STD') || formData.currency !== 'COP') && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Moneda</label>
+                  {isNote ? (
+                    <div className="w-full px-4 py-2 text-sm bg-slate-100 border border-slate-200 rounded-xl text-slate-600" title="La nota usa la moneda de la factura que ajusta">{formData.currency}</div>
+                  ) : (
+                    <SearchableSelect
+                      value={formData.currency}
+                      onChange={v => setFormData({ ...formData, currency: v || 'COP', exchangeRate: v && v !== 'COP' ? formData.exchangeRate : '' })}
+                      placeholder="Moneda..."
+                      options={[{ value: 'COP', label: 'COP - Peso colombiano', shortLabel: 'COP' }, ...currencyCatalog.map(c => ({ value: c.category, label: `${c.category} - ${c.name}`, shortLabel: c.category }))]}
+                    />
+                  )}
+                  {formData.currency !== 'COP' && !isNote && <p className="text-xs text-slate-400 mt-1">Los precios y totales de este documento van en {formData.currency}.</p>}
+                </div>
+                {formData.currency !== 'COP' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-2">TRM (pesos por 1 {formData.currency})</label>
+                      {isNote ? (
+                        <div className="w-full px-4 py-2 text-sm bg-slate-100 border border-slate-200 rounded-xl text-slate-600 font-mono">{formData.exchangeRate === '' ? '' : fmt.money(Number(formData.exchangeRate))}</div>
+                      ) : (
+                        <DecimalInput
+                          blankWhenZero
+                          maxDecimals={4}
+                          placeholder="Ej. 3.912,45"
+                          value={formData.exchangeRate === '' ? 0 : formData.exchangeRate}
+                          onValueChange={v => setFormData({ ...formData, exchangeRate: v > 0 ? v : '' })}
+                          className="w-full px-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono text-right"
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-2">Fecha de la TRM</label>
+                      <input
+                        type="date"
+                        value={formData.exchangeRateDate}
+                        disabled={isNote}
+                        onChange={e => setFormData({ ...formData, exchangeRateDate: e.target.value })}
+                        className="w-full px-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none disabled:bg-slate-100"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {isAiu && formData.aiu && (
               <div className="mb-8">
                 <h3 className="text-lg font-bold text-slate-800 mb-1">Contrato AIU</h3>
@@ -1469,9 +1548,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   tableFrom="md"
                   columns={[
                     { key: 'name', header: 'Concepto', primary: true, render: (row: any) => row.item.name },
-                    { key: 'value', header: 'Valor', align: 'right', cellClassName: 'font-mono', render: (row: any) => `$${fmt.money(row.item.unitPrice)}` },
+                    { key: 'value', header: 'Valor', align: 'right', cellClassName: 'font-mono', render: (row: any) => `${symOf(formData)}${fmt.money(row.item.unitPrice)}` },
                     { key: 'iva', header: 'IVA', cellClassName: 'text-slate-600', render: (row: any) => (row.item.ivaTreatment === 'Gravado' ? `Gravado ${row.item.taxRate}%` : 'No gravado') },
-                    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-bold', render: (row: any) => `$${fmt.money(row.item.totalAmount)}` },
+                    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-bold', render: (row: any) => `${symOf(formData)}${fmt.money(row.item.totalAmount)}` },
                   ]}
                 />
               </div>
@@ -1513,7 +1592,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                           <td className="p-2">{f.iva}</td>
                           <td className="p-2">{f.retention}</td>
                           <td className="p-2 pr-3 text-right font-mono font-bold text-slate-700">
-                            ${fmt.money(item.totalAmount)}
+                            {symOf(formData)}{fmt.money(item.totalAmount)}
                           </td>
                           <td className="p-1 text-right whitespace-nowrap">{f.remove}</td>
                         </tr>
@@ -1572,7 +1651,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                       </div>
                       <div className="flex items-center justify-between border-t border-slate-100 pt-3">
                         <span className="text-sm font-bold text-slate-500">Total</span>
-                        <span className="font-mono font-bold text-slate-700">${fmt.money(item.totalAmount)}</span>
+                        <span className="font-mono font-bold text-slate-700">{symOf(formData)}{fmt.money(item.totalAmount)}</span>
                       </div>
                     </div>
                   );
@@ -1742,49 +1821,49 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               <div className="flex-1 bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200 h-fit">
                 <div className="flex justify-between text-slate-500 mb-2">
                   <span>Subtotal:</span>
-                  <span className="font-mono">${fmt.money(formData.subtotal)}</span>
+                  <span className="font-mono">{symOf(formData)}{fmt.money(formData.subtotal)}</span>
                 </div>
                 {ivaBreakdown().map(g => (
                   g.isGravado ? (
                     <React.Fragment key={g.label}>
                       <div className="flex justify-between text-slate-500 mb-2">
                         <span>Base {g.label}:</span>
-                        <span className="font-mono">${fmt.money(g.base)}</span>
+                        <span className="font-mono">{symOf(formData)}{fmt.money(g.base)}</span>
                       </div>
                       <div className="flex justify-between text-slate-500 mb-2">
                         <span>{g.label}:</span>
-                        <span className="font-mono">${fmt.money(g.tax)}</span>
+                        <span className="font-mono">{symOf(formData)}{fmt.money(g.tax)}</span>
                       </div>
                     </React.Fragment>
                   ) : (
                     <div key={g.label} className="flex justify-between text-slate-500 mb-2">
                       <span>{g.label}:</span>
-                      <span className="font-mono">${fmt.money(g.base)}</span>
+                      <span className="font-mono">{symOf(formData)}{fmt.money(g.base)}</span>
                     </div>
                   )
                 ))}
                 {discriminatedRetentions().map(r => (
                   <div key={r.label} className="flex justify-between text-rose-600 mb-2">
                     <span>{r.label}:</span>
-                    <span className="font-mono">-${fmt.money(r.amount)}</span>
+                    <span className="font-mono">-{symOf(formData)}{fmt.money(r.amount)}</span>
                   </div>
                 ))}
                 {formData.generalDiscountAmount > 0 && (
                   <div className="flex justify-between text-rose-600 mb-2">
                     <span>{formData.generalDiscountReason || 'Descuento general'}:</span>
-                    <span className="font-mono">-${fmt.money(formData.generalDiscountAmount)}</span>
+                    <span className="font-mono">-{symOf(formData)}{fmt.money(formData.generalDiscountAmount)}</span>
                   </div>
                 )}
                 {formData.generalChargeAmount > 0 && (
                   <div className="flex justify-between text-emerald-600 mb-2">
                     <span>{formData.generalChargeReason || 'Cargo general'}:</span>
-                    <span className="font-mono">+${fmt.money(formData.generalChargeAmount)}</span>
+                    <span className="font-mono">+{symOf(formData)}{fmt.money(formData.generalChargeAmount)}</span>
                   </div>
                 )}
                 <div className="mb-4 pb-4 border-b border-slate-200" />
                 <div className="flex justify-between font-extrabold text-xl text-slate-800">
                   <span>Total:</span>
-                  <span className="font-mono">${fmt.money((formData.totalAmount - totalRetentions - formData.generalDiscountAmount + formData.generalChargeAmount))}</span>
+                  <span className="font-mono">{symOf(formData)}{fmt.money((formData.totalAmount - totalRetentions - formData.generalDiscountAmount + formData.generalChargeAmount))}</span>
                 </div>
               </div>
             </div>
@@ -1974,10 +2053,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm [&_p]:break-words">
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Subtotal</p><p className="text-slate-700 font-medium font-mono">${fmt.money((inv.subtotal || 0))}</p></div>
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Impuestos</p><p className="text-slate-700 font-medium font-mono">${fmt.money((inv.taxAmount || 0))}</p></div>
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Retenciones</p><p className="text-rose-600 font-medium font-mono">-${fmt.money(retentionsTotal)}</p></div>
-              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Total</p><p className="text-slate-800 font-bold font-mono">${fmt.money(invoiceNetTotal(inv))}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Subtotal</p><p className="text-slate-700 font-medium font-mono">{symOf(viewingInvoice)}{fmt.money((inv.subtotal || 0))}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Impuestos</p><p className="text-slate-700 font-medium font-mono">{symOf(viewingInvoice)}{fmt.money((inv.taxAmount || 0))}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Retenciones</p><p className="text-rose-600 font-medium font-mono">-{symOf(viewingInvoice)}{fmt.money(retentionsTotal)}</p></div>
+              <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Total</p><p className="text-slate-800 font-bold font-mono">{symOf(viewingInvoice)}{fmt.money(invoiceNetTotal(inv))}</p></div>
             </div>
 
             {(inv.notes || (inv.observations || []).length > 0) && (
@@ -2047,7 +2126,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   <div className="flex justify-between text-rose-600"><span>Retenciones</span><span className="font-mono">-${fmt.moneyInt(retentionsTotal)}</span></div>
                 )}
                 <div className="flex justify-between text-lg font-bold text-slate-800 pt-2 border-t border-slate-200">
-                  <span>Total</span><span className="font-mono">${fmt.money(invoiceNetTotal(inv))}</span>
+                  <span>Total</span><span className="font-mono">{symOf(viewingInvoice)}{fmt.money(invoiceNetTotal(inv))}</span>
                 </div>
               </div>
             </div>
@@ -2197,10 +2276,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       )
     },
     { key: 'party', header: cfg.party, cardFullWidth: true, cellClassName: 'text-slate-900 min-w-[180px]', render: inv => inv.customer?.name || 'Consumidor Final', sortValue: inv => inv.customer?.name || 'Consumidor Final' },
-    { key: 'subtotal', header: 'Subtotal', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `$${fmt.money((inv.subtotal || 0))}`, sortValue: inv => inv.subtotal || 0 },
-    { key: 'tax', header: 'Impuestos', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `$${fmt.money((inv.taxAmount || 0))}`, sortValue: inv => inv.taxAmount || 0 },
-    { key: 'retentions', header: 'Retenciones', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-rose-600', render: inv => `-$${fmt.money(invoiceRetentionsTotal(inv))}`, sortValue: inv => invoiceRetentionsTotal(inv) },
-    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-medium', render: inv => `$${fmt.money(invoiceNetTotal(inv))}`, sortValue: inv => invoiceNetTotal(inv) },
+    { key: 'subtotal', header: 'Subtotal', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `${symOf(inv)}${fmt.money((inv.subtotal || 0))}`, sortValue: inv => inv.subtotal || 0 },
+    { key: 'tax', header: 'Impuestos', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `${symOf(inv)}${fmt.money((inv.taxAmount || 0))}`, sortValue: inv => inv.taxAmount || 0 },
+    { key: 'retentions', header: 'Retenciones', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-rose-600', render: inv => `-${symOf(inv)}${fmt.money(invoiceRetentionsTotal(inv))}`, sortValue: inv => invoiceRetentionsTotal(inv) },
+    { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-medium', render: inv => `${symOf(inv)}${fmt.money(invoiceNetTotal(inv))}`, sortValue: inv => invoiceNetTotal(inv) },
     { key: 'status', header: 'Estado', render: inv => statusBadge(inv.status), sortValue: inv => STATUS_LABELS[inv.status] || inv.status }
   ];
 

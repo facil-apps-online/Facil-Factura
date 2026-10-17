@@ -77,6 +77,10 @@ namespace Fel.Infrastructure.Services
                     ["OrdenCompra"] = "OC-2026-001",
                     ["Notas"] = "Documento de ejemplo — vista previa de diseño.\nSegunda observación de ejemplo.\nTercera observación de ejemplo.",
                     ["TipoOperacion"] = esMandato ? "Mandatos" : "Estándar",
+                    ["Moneda"] = "COP",
+                    ["Trm"] = null,
+                    ["TrmFecha"] = null,
+                    ["MonedaTexto"] = null,
                     ["NotaReferencia"] = esNota ? "Ajusta el documento N° SETP 1 · CUFE a1b2c3d4e5f6...ejemplo · Motivo: Devolución parcial" : null,
 
                     ["Subtotal"] = "198.000",

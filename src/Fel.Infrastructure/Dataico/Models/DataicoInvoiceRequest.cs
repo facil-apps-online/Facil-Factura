@@ -88,6 +88,20 @@ namespace Fel.Infrastructure.Dataico.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<string>? notes { get; set; }
 
+        // Factura en moneda extranjera: moneda ISO 4217, TRM (pesos por unidad) y su fecha dd/MM/yyyy. Los valores de los ítems van en
+        // esa moneda. Sin valor (nulos) cuando la factura es en COP. Confirmado con el ejemplo de factura en USD de Dataico.
+        [JsonPropertyName("currency")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? currency { get; set; }
+
+        [JsonPropertyName("currency_exchange_rate")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public decimal? currency_exchange_rate { get; set; }
+
+        [JsonPropertyName("currency_exchange_rate_date")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? currency_exchange_rate_date { get; set; }
+
         public DataicoNumbering numbering { get; set; } = new();
         public DataicoParty customer { get; set; } = new();
         public List<DataicoInvoiceItem> items { get; set; } = new();

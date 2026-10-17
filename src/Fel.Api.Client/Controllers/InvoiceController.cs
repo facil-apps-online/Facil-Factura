@@ -32,6 +32,54 @@ namespace Fel.Api.Client.Controllers
         // un DRAFT nunca se envió, y un REJECTED fue rechazado por Dataico, así que tampoco llegó.
         private static bool IsEditable(string status) => status == "DRAFT" || status == "REJECTED";
 
+        // Moneda del documento. Solo la factura general de un cliente habilitado por el tenant puede ir en una moneda distinta de COP;
+        // la moneda debe estar en el catálogo y la TRM (mayor que cero) y su fecha son obligatorias. Una nota crédito/débito hereda
+        // siempre la moneda y la TRM de la factura que ajusta. Devuelve el mensaje de error, o null si quedó bien.
+        private async Task<string?> ApplyCurrencyAsync(Document target, Document requested, Guid clientId)
+        {
+            if (target.ReferenceDocumentId.HasValue)
+            {
+                var original = await _dbContext.Documents.AsNoTracking()
+                    .Where(d => d.Id == target.ReferenceDocumentId.Value && d.ClientId == clientId)
+                    .Select(d => new { d.Currency, d.ExchangeRate, d.ExchangeRateDate })
+                    .FirstOrDefaultAsync();
+                target.Currency = original?.Currency ?? "COP";
+                target.ExchangeRate = original?.ExchangeRate;
+                target.ExchangeRateDate = original?.ExchangeRateDate;
+                return null;
+            }
+
+            var currency = (requested.Currency ?? string.Empty).Trim().ToUpperInvariant();
+            if (currency.Length == 0 || currency == "COP")
+            {
+                target.Currency = "COP";
+                target.ExchangeRate = null;
+                target.ExchangeRateDate = null;
+                return null;
+            }
+
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.ForeignCurrencyEnabled))
+                return "Este cliente no está habilitado para facturar en moneda extranjera.";
+
+            var documentTypeCode = requested.DocumentTypeId.HasValue
+                ? await _dbContext.DocumentTypes.AsNoTracking().Where(t => t.Id == requested.DocumentTypeId.Value).Select(t => t.Code).FirstOrDefaultAsync()
+                : null;
+            if (documentTypeCode != "FE-STD")
+                return "Solo la factura de venta estándar puede emitirse en moneda extranjera.";
+
+            if (!await _dbContext.TaxCatalogItems.AsNoTracking().AnyAsync(i => i.Kind == TaxCatalogKind.Currency && i.Category == currency && i.IsActive))
+                return $"La moneda {currency} no está disponible para facturar.";
+            if (requested.ExchangeRate is not > 0)
+                return "Indica la TRM (tasa de cambio en pesos), mayor que cero.";
+            if (!requested.ExchangeRateDate.HasValue)
+                return "Indica la fecha de la TRM.";
+
+            target.Currency = currency;
+            target.ExchangeRate = requested.ExchangeRate;
+            target.ExchangeRateDate = requested.ExchangeRateDate.Value.Date;
+            return null;
+        }
+
         private readonly FelDbContext _dbContext;
         private readonly IEnumerable<IDocumentSubmissionProvider> _submissionProviders;
         private readonly IFacilReportsClient _facilReportsClient;
@@ -306,6 +354,9 @@ namespace Fel.Api.Client.Controllers
                     generalRetention.DocumentId = invoice.Id;
                 }
 
+                var currencyError = await ApplyCurrencyAsync(invoice, invoice, clientId);
+                if (currencyError != null) return BadRequest(currencyError);
+
                 // Mandato: lista de observaciones (consecutivo 1, 2, 3...) en su tabla; cualquier otra factura o nota: solo la observación general (Notes).
                 var observations = invoice.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Text)).Select(o => o.Text.Trim()).ToList();
                 invoice.Observations = new List<DocumentObservation>();
@@ -351,6 +402,9 @@ namespace Fel.Api.Client.Controllers
 
                 invoice.CustomerId = invoiceData.CustomerId;
                 invoice.DocumentTypeId = invoiceData.DocumentTypeId;
+                invoice.ReferenceDocumentId = invoiceData.ReferenceDocumentId;
+                var currencyError = await ApplyCurrencyAsync(invoice, invoiceData, clientId);
+                if (currencyError != null) return BadRequest(currencyError);
                 // Mandato: lista de observaciones (reemplazo completo, consecutivo 1, 2, 3... en el orden recibido);
                 // cualquier otra factura o nota: solo la observación general (Notes).
                 var isMandate = invoiceData.DocumentTypeId.HasValue

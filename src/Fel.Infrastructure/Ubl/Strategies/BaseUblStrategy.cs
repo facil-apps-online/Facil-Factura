@@ -338,6 +338,23 @@ namespace Fel.Infrastructure.Ubl.Strategies
             return total;
         }
 
+        // Tasa de cambio del documento en moneda extranjera (reglas M01, M03 y M05 de la DIAN): la moneda origen es la del documento, la
+        // destino es COP y la TRM es obligatoria; solo se emite cuando el documento no está en COP. Va después de los descuentos/cargos
+        // y antes de los totales de impuestos (secuencia UBL; igual que el ejemplo oficial Exportacion.xml).
+        protected static IEnumerable<XElement> BuildPaymentExchangeRate(UblInvoiceData data)
+        {
+            if (data.Currency == "COP" || data.ExchangeRate == null || data.ExchangeRate.CalculationRate <= 0) yield break;
+
+            var rate = data.ExchangeRate;
+            yield return new XElement(cac + "PaymentExchangeRate",
+                new XElement(cbc + "SourceCurrencyCode", data.Currency),
+                new XElement(cbc + "SourceCurrencyBaseRate", "1.00"),
+                new XElement(cbc + "TargetCurrencyCode", "COP"),
+                new XElement(cbc + "TargetCurrencyBaseRate", "1.00"),
+                new XElement(cbc + "CalculationRate", rate.CalculationRate.ToString("0.00####", System.Globalization.CultureInfo.InvariantCulture)),
+                new XElement(cbc + "Date", rate.Date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
         // Observaciones del documento: un cbc:Note por cada una, en su orden. Va justo después del tipo de documento y antes
         // de DocumentCurrencyCode (secuencia UBL; igual que en el ejemplo oficial Mandatos.xml de la Caja de Herramientas).
         protected static IEnumerable<XElement> BuildNotes(UblInvoiceData data) =>

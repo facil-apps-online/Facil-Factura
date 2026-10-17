@@ -14,7 +14,7 @@ const initialNewClient = {
   legalRepresentativeDocumentType: '', legalRepresentativeDocumentNumber: '', legalRepresentativeDocumentCountryCode: 'CO', legalRepresentativeEmail: '',
   legalRepresentativeRepresentationCode: '', legalRepresentativeStartDate: null as string | null,
   taxRegime: '', economicActivity: '', associateId: '' as string | null,
-  isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false, incomeTaxRegime: '', decimalSeparator: '.',
+  isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false, incomeTaxRegime: '', foreignCurrencyEnabled: false, decimalSeparator: '.',
   latitude: null as number | null, longitude: null as number | null
 };
 

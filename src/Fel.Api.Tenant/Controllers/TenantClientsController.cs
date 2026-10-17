@@ -195,6 +195,7 @@ namespace Fel.Api.Tenant.Controllers
                 client.IsAgenteRetenedorIva,
                 client.IsAutorretenedorRenta,
                 client.IncomeTaxRegime,
+                client.ForeignCurrencyEnabled,
                  client.DecimalSeparator,
                  client.ElectronicInvoiceLegend,
                  client.SupportDocumentLegend,
@@ -256,6 +257,7 @@ namespace Fel.Api.Tenant.Controllers
                 IsAgenteRetenedorIva = request.IsAgenteRetenedorIva,
                 IsAutorretenedorRenta = request.IsAutorretenedorRenta,
                 IncomeTaxRegime = string.IsNullOrEmpty(request.IncomeTaxRegime) ? null : request.IncomeTaxRegime,
+                ForeignCurrencyEnabled = request.ForeignCurrencyEnabled ?? false,
                 DecimalSeparator = DecimalSeparators.IsValid(request.DecimalSeparator) ? request.DecimalSeparator! : DecimalSeparators.Point,
                 AssociateId = request.AssociateId,
                 Latitude = request.Latitude,
@@ -347,6 +349,8 @@ namespace Fel.Api.Tenant.Controllers
             client.IsAgenteRetenedorIva = request.IsAgenteRetenedorIva;
             client.IsAutorretenedorRenta = request.IsAutorretenedorRenta;
             client.IncomeTaxRegime = string.IsNullOrEmpty(request.IncomeTaxRegime) ? null : request.IncomeTaxRegime;
+            // Solo se cambia si viene: un portal con una versión anterior del formulario no lo envía y no debe apagarlo.
+            if (request.ForeignCurrencyEnabled.HasValue) client.ForeignCurrencyEnabled = request.ForeignCurrencyEnabled.Value;
             // Solo se cambia si viene un valor válido: un portal con una versión anterior del formulario no lo envía.
              if (DecimalSeparators.IsValid(request.DecimalSeparator)) client.DecimalSeparator = request.DecimalSeparator!;
              client.ElectronicInvoiceLegend = request.ElectronicInvoiceLegend?.Trim() ?? string.Empty;
@@ -745,6 +749,8 @@ namespace Fel.Api.Tenant.Controllers
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
         public string? IncomeTaxRegime { get; set; }
+        // Habilita al cliente a facturar también en moneda extranjera. Nulo = no se envió: no se cambia.
+        public bool? ForeignCurrencyEnabled { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
          public string? DecimalSeparator { get; set; }
          public string? ElectronicInvoiceLegend { get; set; }
@@ -810,6 +816,8 @@ namespace Fel.Api.Tenant.Controllers
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
         public string? IncomeTaxRegime { get; set; }
+        // Habilita al cliente a facturar también en moneda extranjera. Nulo = no se envió: no se cambia.
+        public bool? ForeignCurrencyEnabled { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
         public string? DecimalSeparator { get; set; }
         public double? Latitude { get; set; }

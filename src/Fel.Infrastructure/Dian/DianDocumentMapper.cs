@@ -70,7 +70,17 @@ namespace Fel.Infrastructure.Dian
                 ResolutionValidTo = resolution.ValidTo,
                 ResolutionNumberStart = resolution.NumberStart,
                 ResolutionNumberEnd = resolution.NumberEnd,
-                Currency = "COP",
+                // Moneda del documento; si no es COP, la DIAN exige informar la TRM (cac:PaymentExchangeRate, moneda -> COP).
+                Currency = string.IsNullOrWhiteSpace(document.Currency) ? "COP" : document.Currency,
+                ExchangeRate = document.Currency != "COP" && document.ExchangeRate > 0 && document.ExchangeRateDate.HasValue
+                    ? new ExchangeRateData
+                    {
+                        CalculationRate = document.ExchangeRate.Value,
+                        SourceCurrencyCode = document.Currency,
+                        TargetCurrencyCode = "COP",
+                        Date = document.ExchangeRateDate.Value
+                    }
+                    : null,
                 Issuer = new IssuerData
                 {
                     TaxId = client.TaxId,

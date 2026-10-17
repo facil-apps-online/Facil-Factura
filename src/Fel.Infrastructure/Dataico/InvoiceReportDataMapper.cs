@@ -111,6 +111,7 @@ namespace Fel.Infrastructure.Dataico
             var observaciones = DocumentNotes.Texts(invoice).Select((text, idx) => (Position: idx + 1, Text: text)).ToList();
             // Una factura de mandato declara un mandante en cada línea; así se reconoce sin depender del tipo de documento.
             var esMandato = items.Any(i => !string.IsNullOrWhiteSpace(i.MandanteIdentification));
+            var esMonedaExtranjera = !string.IsNullOrWhiteSpace(invoice.Currency) && invoice.Currency != "COP" && invoice.ExchangeRate > 0 && invoice.ExchangeRateDate.HasValue;
 
             string? notaReferencia = null;
             if (originalDocument != null)
@@ -266,6 +267,14 @@ namespace Fel.Infrastructure.Dataico
                     // solo campo. Las plantillas que quieran una fila por observación usan la lista "Observaciones".
                     ["Notas"] = string.Join("\n", observaciones.Select(o => o.Text)),
                     ["TipoOperacion"] = esMandato ? "Mandatos" : "Estándar",
+                    // Moneda del documento: todos los valores del PDF están en esa moneda. En COP, Trm y TrmFecha van vacíos y
+                    // MonedaTexto queda en blanco para que la plantilla oculte la línea.
+                    ["Moneda"] = string.IsNullOrWhiteSpace(invoice.Currency) ? "COP" : invoice.Currency,
+                    ["Trm"] = esMonedaExtranjera ? invoice.ExchangeRate!.Value.ToString("N2", nf) : null,
+                    ["TrmFecha"] = esMonedaExtranjera ? invoice.ExchangeRateDate!.Value.ToString("dd/MM/yyyy") : null,
+                    ["MonedaTexto"] = esMonedaExtranjera
+                        ? $"Moneda: {invoice.Currency} · TRM: {invoice.ExchangeRate!.Value.ToString("N2", nf)} ({invoice.ExchangeRateDate!.Value:dd/MM/yyyy})"
+                        : null,
                     ["Leyenda"] = leyenda,
 
                     // Totales — ya formateados como texto (separadores según Client.DecimalSeparator, 2 decimales).

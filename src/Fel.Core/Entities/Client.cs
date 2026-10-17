@@ -58,6 +58,10 @@ namespace Fel.Core.Entities
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
 
+        // El tenant habilita a este Client a facturar también en moneda extranjera (moneda y TRM en la factura). Apagado, su
+        // formulario de factura no ofrece moneda: todo sale en COP.
+        public bool ForeignCurrencyEnabled { get; set; }
+
         // Responsabilidad de renta del RUT (casilla 53), excluyentes entre sí: 05 = Impuesto de renta
         // y complementarios régimen ordinario, 04 = régimen especial, 47 = Régimen Simple de
         // Tributación. Vacío = aún no capturado: la representación gráfica no declara nada.

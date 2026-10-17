@@ -6,12 +6,15 @@ param(
     [string]$Server = "137.184.208.78",
     [string]$Key = "$env:USERPROFILE\.ssh\deploy_facil_factura",
     [switch]$SkipBuild,
+    [switch]$Pull,
     [string]$Service = ""
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $RemoteDir = "/opt/FacilFactura"
+# -Pull: baja de nuevo las imágenes base (parches del runtime) en vez de usar las que ya están en el servidor
+$PullFlag = if ($Pull) { "--pull " } else { "" }
 $TempTar = Join-Path $env:TEMP "facilfactura.tar.gz"
 
 # Espera a que el droplet tenga suficiente RAM libre antes de arrancar un build de Docker —
@@ -121,7 +124,7 @@ if ($SkipBuild) {
     Wait-ForFreeMemory -Server $Server -Key $Key
     # 2>&1 en el shell remoto: docker compose escribe el progreso por stderr y
     # PowerShell 5.1 lo convierte en error terminante con ErrorActionPreference=Stop.
-    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $Service 2>&1 && docker compose up -d $Service 2>&1"
+    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $PullFlag$Service 2>&1 && docker compose up -d $Service 2>&1"
     if ($LASTEXITCODE -ne 0) { throw "docker build/up failed" }
     if ($Service -ne "fel-migrator" -and $ServiceToContainer.ContainsKey($Service)) {
         Assert-ContainerRunning -Server $Server -Key $Key -ContainerName $ServiceToContainer[$Service]
@@ -141,7 +144,7 @@ if ($SkipBuild) {
     foreach ($svc in $BuildableServices) {
         Write-Host "  -> $svc"
         Wait-ForFreeMemory -Server $Server -Key $Key
-        & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $svc 2>&1 && docker compose up -d $svc 2>&1"
+        & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $PullFlag$svc 2>&1 && docker compose up -d $svc 2>&1"
         if ($LASTEXITCODE -ne 0) { throw "docker build/up failed for service '$svc'" }
         if ($svc -ne "fel-migrator") {
             Assert-ContainerRunning -Server $Server -Key $Key -ContainerName $ServiceToContainer[$svc]

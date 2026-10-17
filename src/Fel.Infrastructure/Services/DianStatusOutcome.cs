@@ -1,3 +1,4 @@
+using Fel.Infrastructure.Security;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -46,7 +47,7 @@ namespace Fel.Infrastructure.Services
             XDocument doc;
             try
             {
-                doc = XDocument.Parse(soapResponse);
+                doc = SafeXml.Parse(soapResponse);
             }
             catch (System.Xml.XmlException)
             {

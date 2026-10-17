@@ -1,3 +1,4 @@
+using Fel.Infrastructure.Security;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -323,7 +324,7 @@ namespace Fel.Api.Tenant.Controllers
             XDocument doc;
             try
             {
-                doc = XDocument.Parse(soapResponse);
+                doc = SafeXml.Parse(soapResponse);
             }
             catch (System.Xml.XmlException)
             {

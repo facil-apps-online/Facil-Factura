@@ -1,3 +1,4 @@
+using Fel.Infrastructure.Security;
 using System;
 using System.Linq;
 using System.Xml.Linq;
@@ -92,7 +93,7 @@ namespace Fel.Infrastructure.Dian
         // Datos del emisor (AccountingSupplierParty) para el bloque "receiver" del evento de Dataico.
         public static ParsedIssuer ParseIssuer(string xml)
         {
-            var root = XDocument.Parse(xml).Root ?? throw new InvalidOperationException("El XML no tiene un elemento raíz.");
+            var root = SafeXml.Parse(xml).Root ?? throw new InvalidOperationException("El XML no tiene un elemento raíz.");
             var issuer = new ParsedIssuer();
 
             XElement? Find(XElement? parent, params string[] path)
@@ -144,7 +145,7 @@ namespace Fel.Infrastructure.Dian
 
         public static ParsedReceivedDocument Parse(string xml)
         {
-            var doc = XDocument.Parse(xml);
+            var doc = SafeXml.Parse(xml);
             var root = doc.Root ?? throw new InvalidOperationException("El XML no tiene un elemento raíz.");
 
             var documentTypeCode = root.Name.LocalName switch

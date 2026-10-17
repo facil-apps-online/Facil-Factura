@@ -290,7 +290,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   useEffect(() => {
     api.get('/client/resolutions')
-      .then(res => setResolutions(res.data.filter((r: any) => isSupport ? (r.documentType === 'DS' || r.documentType === 'POS') : r.documentType !== 'POS' && r.documentType !== 'FE-TEST')))
+      .then(res => setResolutions(res.data.filter((r: any) => isSupport ? (r.documentType === 'DS' || r.documentType === 'POS') : r.documentType === cfg.resolutionType)))
       .catch(() => {});
     api.get('/client/tax-catalog?kind=Retention')
       .then(res => setRetentionCatalog(res.data.filter((c: any) => !isSupport || c.category !== 'RET_IVA')))

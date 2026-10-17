@@ -596,7 +596,9 @@ namespace Fel.Api.Client.Controllers
                 // resolución de facturas del emisor solo presta su Prefijo (CorporateRegistrationScheme),
                 // no un rango autorizado.
                 var resolution = invoice.ResolutionId.HasValue
-                    ? await _dbContext.Resolutions.ForBranch(_dbContext, invoice.BranchId).FirstOrDefaultAsync(r => r.Id == invoice.ResolutionId.Value && r.ClientId == clientId && r.IsActive)
+                    // La resolución elegida debe ser de factura de venta (FE): sirve para la factura estándar, la de mandato y la de exportación,
+                    // sin exigir una específica para cada una. Las de documento soporte o nómina no se pueden usar acá.
+                    ? await _dbContext.Resolutions.ForBranch(_dbContext, invoice.BranchId).FirstOrDefaultAsync(r => r.Id == invoice.ResolutionId.Value && r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
                     : await _dbContext.Resolutions.ForBranch(_dbContext, invoice.BranchId)
                         .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
                         .OrderByDescending(r => r.IsDefault)

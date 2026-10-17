@@ -209,6 +209,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedRetentions, setExpandedRetentions] = useState<Record<number, boolean>>({});
   const [mandantes, setMandantes] = useState<any[]>([]);
+  // Línea para la que se está creando un mandante nuevo (mismo formulario de terceros, con el tipo Mandante).
+  const [mandanteModalForItemIndex, setMandanteModalForItemIndex] = useState<number | null>(null);
   const [paymentTermCustom, setPaymentTermCustom] = useState(false);
   // Una retención (por ítem o general) queda "bloqueada" (solo texto) apenas se elige su valor,
   // para que el scroll del mouse u otra interacción accidental sobre el select no la cambie sin
@@ -895,6 +897,25 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     return Array.from(map.values()).sort((a, b) => a.order - b.order);
   };
 
+  // Mandante creado desde la línea: se agrega a la lista y queda elegido en esa misma línea.
+  const handleMandanteSaved = (mandante: any) => {
+    const index = mandanteModalForItemIndex;
+    setMandantes(prev => [...prev.filter(m => m.id !== mandante.id), mandante]);
+    setFormData(f => {
+      if (index === null || !f.items[index]) return f;
+      const items = [...f.items];
+      items[index] = {
+        ...items[index],
+        mandanteCustomerId: mandante.id,
+        mandanteIdentificationType: mandante.identificationType ?? null,
+        mandanteIdentification: mandante.identificationNumber ?? null,
+        mandanteName: mandante.name ?? null
+      };
+      return { ...f, items };
+    });
+    setMandanteModalForItemIndex(null);
+  };
+
   const handleCustomerSaved = (customer: any) => {
     setCustomers(prev => [...prev, customer]);
     setFormData(f => ({ ...f, customerId: customer.id }));
@@ -1137,14 +1158,19 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         </div>
       ),
       mandante: (
-        <SearchableSelect
-          className={table ? 'w-56' : 'w-full'}
-          inputClassName={`w-full p-2 border rounded-lg text-sm outline-none ${item.mandanteCustomerId ? 'border-slate-200' : 'border-amber-300'}`}
-          value={item.mandanteCustomerId || ''}
-          onChange={v => setItemMandante(index, v)}
-          placeholder={mandantes.length === 0 ? 'Crea un mandante en Terceros' : 'Buscar mandante...'}
-          options={mandantes.map(m => ({ value: m.id, label: `${m.name} - ${m.identificationNumber}`, shortLabel: m.name }))}
-        />
+        <div className="flex gap-1">
+          <SearchableSelect
+            className={table ? 'w-56' : 'flex-1'}
+            inputClassName={`w-full p-2 border rounded-lg text-sm outline-none ${item.mandanteCustomerId ? 'border-slate-200' : 'border-amber-300'}`}
+            value={item.mandanteCustomerId || ''}
+            onChange={v => setItemMandante(index, v)}
+            placeholder="Buscar mandante..."
+            options={mandantes.map(m => ({ value: m.id, label: `${m.name} - ${m.identificationNumber}`, shortLabel: m.name }))}
+          />
+          <button type="button" onClick={() => setMandanteModalForItemIndex(index)} title="Crear mandante" aria-label="Crear mandante" className="flex h-11 w-11 shrink-0 items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors lg:h-9 lg:w-9">
+            <UserPlus size={16} />
+          </button>
+        </div>
       ),
       retention: expandedRetentions[index] ? (
         <div className="flex items-center gap-1">
@@ -1718,6 +1744,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           defaultPartyType={cfg.partyType}
           onClose={() => setShowCustomerModal(false)}
           onSaved={handleCustomerSaved}
+        />
+
+        <CustomerFormModal
+          open={mandanteModalForItemIndex !== null}
+          editingCustomer={null}
+          defaultPartyType="Mandante"
+          onClose={() => setMandanteModalForItemIndex(null)}
+          onSaved={handleMandanteSaved}
         />
 
         {productModalForItemIndex !== null && (

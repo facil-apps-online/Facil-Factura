@@ -175,6 +175,13 @@ namespace Fel.Infrastructure.Dian
             return await SendSignedAsync("GetNumberingRange", body, certificate, "1", "Error consultando rangos de numeración en la DIAN");
         }
 
+        // Consulta de adquirentes: parámetros identificationType / identificationNumber, tal como los publica el WSDL de la DIAN.
+        public async Task<string> GetAcquirerAsync(string identificationType, string identificationNumber, X509Certificate2 certificate, string environment)
+        {
+            var body = $"<wcf:GetAcquirer><wcf:identificationType>{System.Security.SecurityElement.Escape(identificationType)}</wcf:identificationType><wcf:identificationNumber>{System.Security.SecurityElement.Escape(identificationNumber)}</wcf:identificationNumber></wcf:GetAcquirer>";
+            return await SendSignedAsync("GetAcquirer", body, certificate, environment, "Error consultando el adquirente en la DIAN");
+        }
+
         // Firma SOLO el header <wsa:To> (no el Body ni el Timestamp) — confirmado contra la
         // librería de referencia real: es el patrón que usa wsHttpBinding con seguridad de mensaje
         // X.509 + WS-Addressing, distinto del patrón "firmar el Body" de basicHttpBinding que

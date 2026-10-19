@@ -69,6 +69,7 @@ romper las existentes — ej. mañana `api/mx/sat/invoices`.
 | **Sector Transporte** | `/api/co/dian/transport-invoices` | POST | Disponible |
 | **Eventos (Acuses/Radian)**| `/api/co/dian/reception-events` | POST | Pendiente (501) |
 | **RIPS independiente de factura** | `/api/co/minsalud/rips/emit` | POST | Disponible |
+| **Consulta de adquirente (nombre y correo por documento)** | `/api/co/dian/acquirers/{tipoDocumento}/{numero}` | GET | Disponible |
 
 Los endpoints marcados "Pendiente" responden `501 Not Implemented` y no aparecen en el Swagger
 público — se activan a medida que se construye su generación UBL propia.
@@ -192,6 +193,26 @@ Facturación con los requisitos especiales del Ministerio de Transporte y DIAN.
   },
   "lines": [ ... ],
   "totalAmount": 1500000.00
+}
+```
+
+### 4.6 Consulta de adquirente (`GET /api/co/dian/acquirers/{tipoDocumento}/{numero}`)
+Con el tipo y el número de documento del comprador devuelve el nombre o razón social y los correos de recepción de factura que registró ante la DIAN (servicio de la Resolución 202 de 2025). La consulta la firma la plataforma con el certificado del emisor autenticado: tu software no necesita el certificado.
+
+- `tipoDocumento`: código DIAN — 11, 12, 13, 21, 22, 31 (NIT), 41, 42, 47, 48, 50 o 91.
+- `numero`: entre 3 y 20 letras o dígitos, sin puntos, guiones ni dígito de verificación.
+- Solo para emisores con emisión directa a la DIAN (NATIVE) y certificado activo; usa el ambiente (habilitación o producción) del emisor.
+- La DIAN permite esta consulta únicamente al momento de la venta y prohíbe su uso masivo y distribuir los datos: el API limita a 30 consultas por minuto por emisor (`429`) y registra quién consulta. No guardes los resultados fuera del tercero de tu cliente.
+- Si el adquirente no aparece (`found: false`) hay que pedirle sus datos. La fuente de la DIAN es lo que cada adquirente registró; no todos están.
+
+```json
+{
+  "identificationType": "31",
+  "identificationNumber": "900123456",
+  "found": true,
+  "name": "COMERCIALIZADORA EJEMPLO S.A.S.",
+  "emails": ["facturacion@ejemplo.com"],
+  "message": "OK"
 }
 ```
 

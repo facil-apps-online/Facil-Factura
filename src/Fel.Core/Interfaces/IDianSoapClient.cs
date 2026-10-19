@@ -74,5 +74,14 @@ namespace Fel.Core.Interfaces
         /// <param name="accountCodeT">NIT del dueño del software, sin puntos ni DV (igual a accountCode en modo Software Propio)</param>
         /// <param name="softwareCode">Identificador del software (SoftwareId)</param>
         Task<string> GetNumberingRangeAsync(string accountCode, string accountCodeT, string softwareCode, X509Certificate2 certificate);
+
+        /// <summary>
+        /// Consulta de adquirentes (Resolución 202 de 2025, "Guía Herramienta para el Consumo de Web Services"): con el tipo y
+        /// número de identificación devuelve el nombre o razón social y el correo de recepción de factura que el adquirente
+        /// registró ante la DIAN. Solo se puede usar al momento de la venta; la DIAN prohíbe su uso masivo.
+        /// </summary>
+        /// <param name="identificationType">Código DIAN del tipo de documento (11, 12, 13, 21, 22, 31, 41, 42, 47, 48, 50, 91)</param>
+        /// <param name="identificationNumber">Número de identificación, sin puntos ni dígito de verificación</param>
+        Task<string> GetAcquirerAsync(string identificationType, string identificationNumber, X509Certificate2 certificate, string environment);
     }
 }

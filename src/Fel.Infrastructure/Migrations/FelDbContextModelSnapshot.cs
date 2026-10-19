@@ -2989,6 +2989,9 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<bool>("PriceIncludesIva")
+                        .HasColumnType("bit");
+
                     b.Property<string>("RetentionGroupKey")
                         .HasColumnType("nvarchar(max)");
 

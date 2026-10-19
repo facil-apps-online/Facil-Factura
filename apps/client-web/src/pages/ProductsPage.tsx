@@ -45,7 +45,7 @@ export default function ProductsPage() {
   const DEFAULT_UNIT_OF_MEASURE_ID = '30000000-0000-0000-0000-000000000001';
 
   const initialForm = {
-    scope: 'Invoice' as ProductScope, code: '', name: '', unitPrice: 0, ivaTreatment: 'Gravado', ivaRate: 19.00,
+    scope: 'Invoice' as ProductScope, code: '', name: '', unitPrice: 0, ivaTreatment: 'Gravado', ivaRate: 19.00, priceIncludesIva: false,
     taxes: [] as ProductTax[], unitOfMeasureId: DEFAULT_UNIT_OF_MEASURE_ID, standardCode: ''
   };
   const [formData, setFormData] = useState(initialForm);
@@ -136,10 +136,10 @@ export default function ProductsPage() {
     },
     {
       key: 'price',
-      header: 'Precio Base',
+      header: 'Precio',
       align: 'right',
       cellClassName: 'font-medium',
-      render: p => `$${fmt.number(p.unitPrice, 3)}`,
+      render: p => <>${fmt.number(p.unitPrice, 3)}{p.priceIncludesIva && p.ivaTreatment === 'Gravado' && <span className="ml-1 text-xs text-slate-400">IVA incl.</span>}</>,
       sortValue: p => p.unitPrice
     },
     {
@@ -260,7 +260,7 @@ export default function ProductsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Precio base</label>
+              <label className="block text-sm font-bold text-slate-700 mb-1">{formData.priceIncludesIva && formData.ivaTreatment === 'Gravado' ? 'Precio (con IVA incluido)' : 'Precio base'}</label>
               <DecimalInput value={formData.unitPrice} onValueChange={v => setFormData({...formData, unitPrice: v})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
             </div>
 
@@ -272,7 +272,7 @@ export default function ProductsPage() {
                   <button
                     key={t.value}
                     type="button"
-                    onClick={() => setFormData({ ...formData, ivaTreatment: t.value, ivaRate: t.value === 'Gravado' ? (formData.ivaRate || parseFloat(ivaRateCatalog[0]?.category) || 19) : 0 })}
+                    onClick={() => setFormData({ ...formData, ivaTreatment: t.value, ivaRate: t.value === 'Gravado' ? (formData.ivaRate || parseFloat(ivaRateCatalog[0]?.category) || 19) : 0, priceIncludesIva: t.value === 'Gravado' && formData.priceIncludesIva })}
                     className={`px-3 py-2.5 rounded-xl font-bold text-sm transition-colors ${
                       formData.ivaTreatment === t.value ? 'bg-primary text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                     }`}
@@ -294,6 +294,10 @@ export default function ProductsPage() {
                       ? [{ value: String(formData.ivaRate), label: `${formData.ivaRate}%` }]
                       : ivaRateCatalog.map(c => ({ value: c.category, label: c.name }))}
                   />
+                  <label className="mt-3 flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <input type="checkbox" checked={formData.priceIncludesIva} onChange={e => setFormData({ ...formData, priceIncludesIva: e.target.checked })} className="w-4 h-4 accent-primary" />
+                    El precio incluye IVA
+                  </label>
                 </div>
               )}
             </div>

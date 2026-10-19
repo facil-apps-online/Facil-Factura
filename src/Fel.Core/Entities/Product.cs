@@ -24,6 +24,10 @@ namespace Fel.Core.Entities
         public IvaTreatment IvaTreatment { get; set; } = IvaTreatment.Gravado;
         public decimal IvaRate { get; set; } = 19; // Solo aplica cuando IvaTreatment = Gravado
 
+        // El UnitPrice se digitó con el IVA incluido: al cargar el producto en una línea de documento se
+        // extrae la base (precio / (1 + tarifa)). Solo tiene sentido con IvaTreatment = Gravado.
+        public bool PriceIncludesIva { get; set; }
+
         // Impuestos adicionales al IVA (ej. INC, ICA) — el IVA se maneja aparte vía IvaTreatment/IvaRate
         public ICollection<ProductTax> Taxes { get; set; } = new List<ProductTax>();
 

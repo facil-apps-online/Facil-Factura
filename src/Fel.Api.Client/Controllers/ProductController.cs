@@ -92,6 +92,7 @@ namespace Fel.Api.Client.Controllers
                     product.Taxes.Clear();
                 }
                 else if (product.IvaTreatment != IvaTreatment.Gravado) product.IvaRate = 0;
+                if (product.IvaTreatment != IvaTreatment.Gravado) product.PriceIncludesIva = false;
                 if (string.IsNullOrWhiteSpace(product.RetentionGroupKey)) product.RetentionGroupKey = null;
 
                 foreach (var tax in product.Taxes)
@@ -133,6 +134,7 @@ namespace Fel.Api.Client.Controllers
                 product.UnitOfMeasureId = updateData.UnitOfMeasureId;
                 product.IvaTreatment = product.Scope == ProductScope.Support ? IvaTreatment.Exento : updateData.IvaTreatment;
                 product.IvaRate = product.Scope == ProductScope.Support ? 0 : updateData.IvaTreatment == IvaTreatment.Gravado ? updateData.IvaRate : 0;
+                product.PriceIncludesIva = product.IvaTreatment == IvaTreatment.Gravado && updateData.PriceIncludesIva;
                 product.RetentionGroupKey = string.IsNullOrWhiteSpace(updateData.RetentionGroupKey) ? null : updateData.RetentionGroupKey;
                 product.UpdatedAt = DateTime.UtcNow;
 

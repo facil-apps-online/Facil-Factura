@@ -161,8 +161,15 @@ const MODES = {
   },
 } as const;
 
+// Precio base de la línea al cargar un producto: si el producto se digitó con IVA incluido se extrae la base
+// (precio / (1 + tarifa)) con hasta 6 decimales, que es lo que admite la DIAN; el resto del cálculo no cambia.
+const baseUnitPrice = (p: any, isSupport: boolean) =>
+  !isSupport && p.priceIncludesIva && p.ivaTreatment === 'Gravado' && (p.ivaRate ?? 0) > 0
+    ? Math.round((p.unitPrice / (1 + p.ivaRate / 100)) * 1e6) / 1e6
+    : p.unitPrice;
+
 const initialQuickProduct = {
-  code: '', name: '', unitPrice: 0, unitOfMeasureId: '30000000-0000-0000-0000-000000000001', standardCode: '', ivaTreatment: 'Gravado', ivaRate: 19, taxes: [] as any[]
+  code: '', name: '', unitPrice: 0, unitOfMeasureId: '30000000-0000-0000-0000-000000000001', standardCode: '', ivaTreatment: 'Gravado', ivaRate: 19, priceIncludesIva: false, taxes: [] as any[]
 };
 
 export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
@@ -821,7 +828,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       if (p) {
         item.code = p.code;
         item.name = p.name;
-        item.unitPrice = p.unitPrice;
+        item.unitPrice = baseUnitPrice(p, isSupport);
         item.unitOfMeasureCode = p.unitOfMeasure?.dianCode || '94';
         item.unitOfMeasureAbbreviation = p.unitOfMeasure?.abbreviation || 'EA';
         item.unitOfMeasureDisplayFormat = p.unitOfMeasure?.displayFormat || 'Combined';
@@ -1022,7 +1029,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
       const rate = isSupport ? 0 : (p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0);
       const newItems = [...formData.items];
-      const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: p.unitPrice, ivaTreatment: isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado'), taxRate: rate };
+      const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: baseUnitPrice(p, isSupport), ivaTreatment: isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado'), taxRate: rate };
       recalcItem(item);
       newItems[productModalForItemIndex] = item;
       recalculateTotals(newItems);
@@ -1996,7 +2003,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   <label className="block text-sm font-bold text-slate-700 mb-1">Tratamiento del IVA</label>
                   <SearchableSelect
                     value={quickProduct.ivaTreatment}
-                    onChange={v => setQuickProduct({ ...quickProduct, ivaTreatment: v, ivaRate: v === 'Gravado' ? 19 : 0 })}
+                    onChange={v => setQuickProduct({ ...quickProduct, ivaTreatment: v, ivaRate: v === 'Gravado' ? 19 : 0, priceIncludesIva: v === 'Gravado' && quickProduct.priceIncludesIva })}
                     placeholder="Buscar tratamiento IVA..."
                     options={IVA_TREATMENTS}
                   />
@@ -2015,6 +2022,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   </div>
                 )}
               </div>}
+              {!isSupport && quickProduct.ivaTreatment === 'Gravado' && (
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                  <input type="checkbox" checked={quickProduct.priceIncludesIva} onChange={e => setQuickProduct({ ...quickProduct, priceIncludesIva: e.target.checked })} className="w-4 h-4 accent-primary" />
+                  El precio incluye IVA
+                </label>
+              )}
             </form>
           </Modal>
         )}

@@ -11,6 +11,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Integration.Controllers
 {
+    public class AcquirerLookupRequest
+    {
+        public string? IdentificationType { get; set; }
+        public string? IdentificationNumber { get; set; }
+    }
+
     /// <summary>
     /// Consulta de adquirentes ante la DIAN (Resolución 202 de 2025): con el tipo y número de identificación devuelve el nombre o
     /// razón social y los correos de recepción de factura que el adquirente registró. La llamada a la DIAN la firma la plataforma con el
@@ -41,23 +47,26 @@ namespace Fel.Api.Integration.Controllers
         /// <summary>
         /// Busca el nombre o razón social y el correo de un adquirente por su documento.
         /// </summary>
-        /// <param name="identificationType">Código DIAN del tipo de documento: 11, 12, 13, 21, 22, 31, 41, 42, 47, 48, 50 o 91.</param>
-        /// <param name="identificationNumber">Número de identificación, sin puntos ni dígito de verificación.</param>
+        /// <param name="request">Tipo de documento (código DIAN: 11, 12, 13, 21, 22, 31, 41, 42, 47, 48, 50 o 91) y número de identificación,
+        /// sin puntos ni dígito de verificación. Van en el cuerpo y no en la URL para que el documento no quede en las bitácoras del servidor.</param>
         /// <response code="200">Resultado de la consulta. <c>found</c> es falso cuando la DIAN no tiene al adquirente (en ese caso hay que pedirle sus datos).</response>
         /// <response code="400">Tipo de documento no válido, o número con caracteres no permitidos.</response>
         /// <response code="401">No se pudo resolver el emisor autenticado.</response>
         /// <response code="422">El emisor no usa emisión directa a la DIAN (NATIVE) o no tiene certificado activo.</response>
         /// <response code="429">Se superó el límite de consultas por minuto.</response>
         /// <response code="502">La DIAN no respondió o rechazó la consulta.</response>
-        [HttpGet("{identificationType}/{identificationNumber}")]
+        [HttpPost]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
         [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
         [ProducesResponseType(StatusCodes.Status502BadGateway)]
-        public async Task<IActionResult> Lookup(string identificationType, string identificationNumber)
+        public async Task<IActionResult> Lookup([FromBody] AcquirerLookupRequest request)
         {
+            var identificationType = request.IdentificationType?.Trim() ?? string.Empty;
+            var identificationNumber = request.IdentificationNumber?.Trim() ?? string.Empty;
+
             if (!DianAcquirerResult.IdentificationTypes.Contains(identificationType))
                 return BadRequest(new { message = $"Tipo de documento no válido. Use uno de: {string.Join(", ", DianAcquirerResult.IdentificationTypes.OrderBy(t => t))}." });
             if (!IdentificationNumberPattern.IsMatch(identificationNumber))

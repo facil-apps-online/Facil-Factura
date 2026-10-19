@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
-import { MapPin, FileUp, Loader2 } from 'lucide-react';
+import { MapPin, FileUp, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { useSession } from '../context/SessionContext';
@@ -48,6 +48,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
   // Países (tabla 13.4.1 de la DIAN): fuera de Colombia no hay código DANE; ciudad y estado se escriben.
   const [countryCatalog, setCountryCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [uploadingRut, setUploadingRut] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -97,7 +98,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
   };
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const { location, branches, selectedBranchId } = useSession();
+  const { location, branches, selectedBranchId, features } = useSession();
   // Departamento (2 primeros dígitos del DANE) de la sucursal activa: desempata nombres de ciudad repetidos.
   const branchDepartment = branches.find(b => b.id === selectedBranchId)?.cityCode?.slice(0, 2) ?? branches[0]?.cityCode?.slice(0, 2) ?? '';
   const { isLoaded: isMapsLoaded } = useJsApiLoader({
@@ -226,6 +227,66 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
     }
   };
 
+  // La DIAN devuelve un solo nombre completo. Para persona natural se reparte en los cuatro campos con la convención colombiana
+  // (nombres primero, luego apellidos); las partículas ("DE", "DE LA", "DEL", "SAN"...) se pegan a la palabra que sigue para no partir
+  // un apellido compuesto. Con 3 unidades se toma un nombre y dos apellidos. El usuario lo revisa antes de guardar.
+  const splitNaturalName = (full: string) => {
+    const words = full.trim().split(/s+/).filter(Boolean);
+    const parts: string[] = [];
+    let pending = '';
+    for (const w of words) {
+      pending = pending ? `${pending} ${w}` : w;
+      if (!/^(DE|DEL|LA|LAS|LOS|Y|SAN|SANTA)$/i.test(w)) { parts.push(pending); pending = ''; }
+    }
+    if (pending) parts.push(pending);
+    if (parts.length <= 1) return { firstName: parts[0] ?? '', secondName: '', firstLastName: '', secondLastName: '' };
+    if (parts.length === 2) return { firstName: parts[0], secondName: '', firstLastName: parts[1], secondLastName: '' };
+    if (parts.length === 3) return { firstName: parts[0], secondName: '', firstLastName: parts[1], secondLastName: parts[2] };
+    return { firstName: parts[0], secondName: parts[1], firstLastName: parts[2], secondLastName: parts.slice(3).join(' ') };
+  };
+
+  // Tipos de documento que la DIAN resuelve (pasaporte, tipo 42 y otros no están en su registro de adquirentes).
+  const DIAN_LOOKUP_TYPES = ['12', '13', '21', '22', '31', '41', '47', '48', '50', '91'];
+  const lookupNumber = formData.identificationNumber.replace(/D/g, '');
+  const canLookup = DIAN_LOOKUP_TYPES.includes(formData.identificationType) && lookupNumber.length >= 3;
+
+  const handleDianLookup = async () => {
+    const queried = formData.identificationNumber;
+    setLookingUp(true);
+    try {
+      const res = await api.post('/client/customers/dian-lookup', {
+        identificationType: formData.identificationType,
+        identificationNumber: lookupNumber
+      });
+      const { found, name, emails } = res.data as { found: boolean; name: string | null; emails: string[] };
+      if (!found || !name) {
+        toast.info('La DIAN no tiene a este tercero registrado. Ingresa sus datos manualmente.');
+        return;
+      }
+      let applied = false;
+      setFormData(prev => {
+        // Si el usuario cambió el número mientras se consultaba, la respuesta ya no corresponde.
+        if (prev.identificationNumber !== queried) return prev;
+        applied = true;
+        const next = { ...prev, email: prev.email.trim() ? prev.email : (emails[0] || '') };
+        if (prev.personType === 'Juridica') return { ...next, name };
+        const parts = splitNaturalName(name);
+        return { ...next, ...parts, name: [parts.firstName, parts.secondName, parts.firstLastName, parts.secondLastName].filter(Boolean).join(' ') };
+      });
+      if (!applied) return;
+      toast.success(formData.personType === 'Juridica'
+        ? 'Razón social cargada desde la DIAN — revísala antes de guardar.'
+        : 'Datos de la DIAN cargados — verifica cuál es el primer apellido.');
+      if (emails.length === 0) toast.info('La DIAN no tiene correo para este tercero: escríbelo tú.');
+    } catch (err: any) {
+      toast.error(err?.response?.status === 429
+        ? 'Demasiadas consultas seguidas a la DIAN. Espera un momento e inténtalo de nuevo.'
+        : getErrorMessage(err, 'No se pudo consultar la DIAN'));
+    } finally {
+      setLookingUp(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -351,6 +412,18 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
                 </div>
               )}
             </div>
+            {features.dianLookup && !editingCustomer && (
+              <div className="sm:col-span-2 -mt-2">
+                <button
+                  type="button" onClick={handleDianLookup} disabled={lookingUp || !canLookup} aria-busy={lookingUp}
+                  className="inline-flex items-center gap-1.5 text-sm font-bold text-primary hover:underline disabled:text-slate-400 disabled:no-underline"
+                >
+                  {lookingUp ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                  {lookingUp ? 'Buscando en la DIAN...' : 'Buscar datos en la DIAN'}
+                </button>
+                <span className="ml-2 text-xs text-slate-500">{canLookup ? 'Llena nombre y correo si el tercero los registró.' : 'Escribe el número del documento para buscar.'}</span>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Email</label>

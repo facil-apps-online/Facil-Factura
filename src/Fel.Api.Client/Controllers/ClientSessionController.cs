@@ -2,6 +2,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Dian;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,10 +15,12 @@ namespace Fel.Api.Client.Controllers
     public class ClientSessionController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
+        private readonly AcquirerLookupService _acquirerLookup;
 
-        public ClientSessionController(FelDbContext dbContext)
+        public ClientSessionController(FelDbContext dbContext, AcquirerLookupService acquirerLookup)
         {
             _dbContext = dbContext;
+            _acquirerLookup = acquirerLookup;
         }
 
         [HttpGet]
@@ -41,7 +44,7 @@ namespace Fel.Api.Client.Controllers
                 allBranches = Branch.CanViewAllBranches,
                 branches,
                 // Módulos que el Tenant activó para este cliente: el portal oculta el menú y la ruta de lo que esté apagado.
-                features = new { payments = client?.ControlsPayments ?? false, foreignCurrency = client?.ForeignCurrencyEnabled ?? false },
+                features = new { payments = client?.ControlsPayments ?? false, foreignCurrency = client?.ForeignCurrencyEnabled ?? false, dianLookup = await _acquirerLookup.IsAvailableAsync(Branch.ClientId) },
                 // Ubicación de la empresa: el buscador de direcciones la usa para mostrar primero lo que queda cerca.
                 location = client?.Latitude != null && client.Longitude != null ? new { latitude = client.Latitude, longitude = client.Longitude } : null,
                 roles = ClientUserRoles.All.Select(r => new { value = r.Value, label = r.Label }),

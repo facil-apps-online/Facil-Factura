@@ -150,6 +150,7 @@ builder.Services.AddScoped<Fel.Infrastructure.Services.DataicoResolutionSyncServ
 builder.Services.AddScoped<Fel.Infrastructure.Services.BranchCredentialResolver>();
 // WCF SOAP Client
 builder.Services.AddScoped<Fel.Core.Interfaces.IDianSoapClient, Fel.Infrastructure.Dian.DianSoapClient>();
+builder.Services.AddScoped<Fel.Infrastructure.Dian.AcquirerLookupService>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IReceptionEventService, Fel.Infrastructure.Dian.ReceptionEventService>();
 
 builder.Services.AddDbContext<FelDbContext>(options =>

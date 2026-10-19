@@ -1,13 +1,7 @@
-using System;
-using System.Collections.Concurrent;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Fel.Core.Interfaces;
-using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Dian;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Integration.Controllers
 {
@@ -26,22 +20,11 @@ namespace Fel.Api.Integration.Controllers
     [Route("api/co/dian/acquirers")]
     public class AcquirersController : ControllerBase
     {
-        // La DIAN permite este servicio solo al momento de la venta y prohíbe el uso masivo: se limita por emisor.
-        private const int MaxQueriesPerMinute = 30;
-        private static readonly Regex IdentificationNumberPattern = new("^[A-Za-z0-9]{3,20}$", RegexOptions.Compiled);
-        private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<DateTime>> RecentQueries = new();
+        private readonly AcquirerLookupService _lookup;
 
-        private readonly FelDbContext _dbContext;
-        private readonly ICryptoVault _cryptoVault;
-        private readonly IDianSoapClient _dianSoapClient;
-        private readonly ILogger<AcquirersController> _logger;
-
-        public AcquirersController(FelDbContext dbContext, ICryptoVault cryptoVault, IDianSoapClient dianSoapClient, ILogger<AcquirersController> logger)
+        public AcquirersController(AcquirerLookupService lookup)
         {
-            _dbContext = dbContext;
-            _cryptoVault = cryptoVault;
-            _dianSoapClient = dianSoapClient;
-            _logger = logger;
+            _lookup = lookup;
         }
 
         /// <summary>
@@ -64,76 +47,31 @@ namespace Fel.Api.Integration.Controllers
         [ProducesResponseType(StatusCodes.Status502BadGateway)]
         public async Task<IActionResult> Lookup([FromBody] AcquirerLookupRequest request)
         {
-            var identificationType = request.IdentificationType?.Trim() ?? string.Empty;
-            var identificationNumber = request.IdentificationNumber?.Trim() ?? string.Empty;
-
-            if (!DianAcquirerResult.IdentificationTypes.Contains(identificationType))
-                return BadRequest(new { message = $"Tipo de documento no válido. Use uno de: {string.Join(", ", DianAcquirerResult.IdentificationTypes.OrderBy(t => t))}." });
-            if (!IdentificationNumberPattern.IsMatch(identificationNumber))
-                return BadRequest(new { message = "El número de identificación debe tener entre 3 y 20 letras o dígitos, sin puntos, guiones ni dígito de verificación." });
-
-            if (HttpContext.Items["ClientId"] is not string clientIdStr || !Guid.TryParse(clientIdStr, out var clientId))
+            if (HttpContext.Items["ClientId"] is not string clientIdStr || !System.Guid.TryParse(clientIdStr, out var clientId))
                 return Unauthorized(new { message = "No se pudo resolver el emisor autenticado." });
 
-            var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
-            if (client == null) return Unauthorized(new { message = "Emisor no encontrado." });
-
-            if (client.Integrator.Code != "NATIVE")
-                return UnprocessableEntity(new { message = $"Este emisor tiene configurado el proveedor '{client.Integrator.Code}', no emisión directa a la DIAN (NATIVE); la consulta de adquirentes usa el certificado del emisor ante la DIAN." });
-
-            if (TooManyQueries(clientId))
-                return StatusCode(StatusCodes.Status429TooManyRequests, new { message = $"Se superó el límite de {MaxQueriesPerMinute} consultas por minuto. La DIAN permite esta consulta solo al momento de la venta." });
-
             // Las llaves de sandbox nunca llegan a la DIAN: respuesta simulada con el mismo formato.
-            if (HttpContext.Items["IsSandbox"] is true)
-                return Ok(Result(identificationType, identificationNumber, new DianAcquirerResult(true, "ADQUIRENTE DE PRUEBA", new[] { "adquirente.prueba@example.com" }, null, "Respuesta simulada (sandbox)")));
+            var outcome = await _lookup.LookupAsync(clientId, request.IdentificationType, request.IdentificationNumber, HttpContext.Items["IsSandbox"] is true);
 
-            var certificate = await _dbContext.Certificates.FirstOrDefaultAsync(c => c.ClientId == clientId && c.IsActive);
-            if (certificate == null)
-                return UnprocessableEntity(new { message = "Este emisor no tiene un certificado digital activo cargado." });
-
-            DianAcquirerResult result;
-            try
+            return outcome.Status switch
             {
-                var cert = _cryptoVault.GetCertificate(certificate.FileName, certificate.EncryptedPassword);
-                var environment = client.DianHabilitationStatus == "Production" ? "1" : "2";
-                var soapResponse = await _dianSoapClient.GetAcquirerAsync(identificationType, identificationNumber, cert, environment);
-                result = DianAcquirerResult.FromSoapResponse(soapResponse);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Consulta de adquirente fallida para el emisor {ClientId}, tipo {Type}.", clientId, identificationType);
-                return StatusCode(StatusCodes.Status502BadGateway, new { message = "La DIAN no respondió la consulta del adquirente. Intente de nuevo." });
-            }
-
-            // Registro de quién consulta, sin guardar el documento completo.
-            _logger.LogInformation("Consulta de adquirente: emisor {ClientId}, tipo {Type}, número terminado en {Last}, encontrado {Found}.",
-                clientId, identificationType, identificationNumber[^Math.Min(3, identificationNumber.Length)..], result.Found);
-
-            return Ok(Result(identificationType, identificationNumber, result));
+                AcquirerLookupStatus.Ok => Ok(Result(outcome)),
+                AcquirerLookupStatus.InvalidType or AcquirerLookupStatus.InvalidNumber => BadRequest(new { message = outcome.Message }),
+                AcquirerLookupStatus.ClientNotFound => Unauthorized(new { message = outcome.Message }),
+                AcquirerLookupStatus.NotNative or AcquirerLookupStatus.NoCertificate => UnprocessableEntity(new { message = outcome.Message }),
+                AcquirerLookupStatus.TooManyQueries => StatusCode(StatusCodes.Status429TooManyRequests, new { message = outcome.Message }),
+                _ => StatusCode(StatusCodes.Status502BadGateway, new { message = outcome.Message })
+            };
         }
 
-        private static object Result(string identificationType, string identificationNumber, DianAcquirerResult result) => new
+        private static object Result(AcquirerLookupOutcome outcome) => new
         {
-            identificationType,
-            identificationNumber,
-            found = result.Found,
-            name = result.Name,
-            emails = result.Emails,
-            message = result.Message
+            identificationType = outcome.IdentificationType,
+            identificationNumber = outcome.IdentificationNumber,
+            found = outcome.Result!.Found,
+            name = outcome.Result.Name,
+            emails = outcome.Result.Emails,
+            message = outcome.Result.Message
         };
-
-        private static bool TooManyQueries(Guid clientId)
-        {
-            var now = DateTime.UtcNow;
-            var queue = RecentQueries.GetOrAdd(clientId, _ => new ConcurrentQueue<DateTime>());
-            lock (queue)
-            {
-                while (queue.TryPeek(out var oldest) && now - oldest > TimeSpan.FromMinutes(1)) queue.TryDequeue(out _);
-                if (queue.Count >= MaxQueriesPerMinute) return true;
-                queue.Enqueue(now);
-                return false;
-            }
-        }
     }
 }

@@ -29,7 +29,8 @@ interface SessionData {
   branches: SessionBranch[];
   // Módulos que el Tenant activó para este cliente (apagados por defecto).
   // foreignCurrency: el Tenant lo habilitó a facturar también en moneda extranjera.
-  features: { payments: boolean; foreignCurrency: boolean };
+  // dianLookup: emisión directa a la DIAN con certificado activo, así que se puede buscar un tercero por su documento en la DIAN.
+  features: { payments: boolean; foreignCurrency: boolean; dianLookup: boolean };
   roles: CatalogItem[];
   noteKinds: CatalogItem[];
 }

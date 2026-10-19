@@ -119,6 +119,7 @@ builder.Services.AddScoped<Fel.Core.Interfaces.IXmlSigner, Fel.Infrastructure.Se
 builder.Services.AddSingleton<Fel.Core.Interfaces.IMessageQueue, Fel.Infrastructure.Messaging.RedisMessageQueue>();
 // WCF SOAP Client
 builder.Services.AddScoped<Fel.Core.Interfaces.IDianSoapClient, Fel.Infrastructure.Dian.DianSoapClient>();
+builder.Services.AddScoped<Fel.Infrastructure.Dian.AcquirerLookupService>();
 builder.Services.ConfigureReportingServices(configurator => {
     configurator.ConfigureReportDesigner(designerConfigurator => {
         designerConfigurator.RegisterDataSourceWizardConfigFileConnectionStringsProvider();

@@ -2060,6 +2060,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 }`}>
                   {STATUS_LABELS[inv.status] || inv.status}
                 </span>
+                {inv.isAnnulled && (
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-600 text-white" title="Las notas crédito aceptadas cubren el total de esta factura">Anulada</span>
+                )}
               </div>
               <p className="text-slate-500 break-words">{new Date(inv.issueDate).toLocaleDateString('es-CO')} · {inv.customer?.name || 'Consumidor Final'}</p>
             </div>
@@ -2285,6 +2288,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   // Botones de icono de las acciones de fila: 44 px en móvil/tableta, compactos desde lg (donde se ve la tabla).
   const iconBtn = 'flex h-11 w-11 items-center justify-center rounded-lg transition-colors lg:h-9 lg:w-9';
 
+  // Las notas crédito aceptadas suman el total de la factura: se marca como anulada junto a su estado.
+  const annulledBadge = (inv: any) => inv.isAnnulled ? (
+    <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-600 text-white" title="Las notas crédito aceptadas cubren el total de esta factura">Anulada</span>
+  ) : null;
+
   const statusBadge = (status: string) => (
     <span className={`px-3 py-1 rounded-full text-xs font-bold ${
       status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
@@ -2347,7 +2355,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     { key: 'tax', header: 'Impuestos', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-slate-500', render: inv => `${symOf(inv)}${fmt.money((inv.taxAmount || 0))}`, sortValue: inv => inv.taxAmount || 0 },
     { key: 'retentions', header: 'Retenciones', hideBelow: 'ultra', align: 'right', cellClassName: 'font-mono text-rose-600', render: inv => `-${symOf(inv)}${fmt.money(invoiceRetentionsTotal(inv))}`, sortValue: inv => invoiceRetentionsTotal(inv) },
     { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono font-medium', render: inv => `${symOf(inv)}${fmt.money(invoiceNetTotal(inv))}`, sortValue: inv => invoiceNetTotal(inv) },
-    { key: 'status', header: 'Estado', render: inv => statusBadge(inv.status), sortValue: inv => STATUS_LABELS[inv.status] || inv.status }
+    { key: 'status', header: 'Estado', render: inv => <div className="flex flex-wrap items-center gap-1">{statusBadge(inv.status)}{annulledBadge(inv)}</div>, sortValue: inv => STATUS_LABELS[inv.status] || inv.status }
   ];
 
 

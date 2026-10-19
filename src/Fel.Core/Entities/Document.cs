@@ -154,5 +154,9 @@ namespace Fel.Core.Entities
         // relación EF real, así que no participa en el mapeo ni requiere migración.
         [NotMapped]
         public List<RelatedDocumentSummary>? RelatedNotes { get; set; }
+
+        // Solo para el listado: las notas crédito aceptadas suman el total de la factura (ver InvoiceAnnulment). Tampoco se guarda.
+        [NotMapped]
+        public bool IsAnnulled { get; set; }
     }
 }

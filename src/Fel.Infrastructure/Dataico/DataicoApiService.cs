@@ -38,9 +38,8 @@ namespace Fel.Infrastructure.Dataico
         Task<DataicoResult> SendReceptionEventAsync(DataicoReceptionEventEnvelope eventRequest, DataicoCredentials credentials);
         Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials);
 
-        // Pide a Dataico que consulte a la DIAN las resoluciones del NIT y devuelve las numeraciones de la cuenta. module es
-        // "invoice" (facturas) o "support-doc" (documento soporte); Dataico no sincroniza otros. Con cuerpo vacío no envía
-        // resoluciones: solo sincroniza y lista.
+        // Lista las numeraciones de la cuenta de Dataico (GET /numberings/{module}). module es "invoice" (facturas) o "support-doc"
+        // (documento soporte); credit-note y debit-note existen en Dataico pero no llevan una resolución propia.
         Task<DataicoNumberingSyncResult> SyncNumberingsAsync(string module, DataicoCredentials credentials);
     }
 

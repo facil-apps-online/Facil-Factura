@@ -15,6 +15,9 @@ namespace Fel.Infrastructure.Dian
             "11", "12", "13", "21", "22", "31", "41", "42", "47", "48", "50", "91"
         };
 
+        // Forma mínima de un correo: descarta fragmentos sueltos si la DIAN usa un separador que no conocemos.
+        private static readonly System.Text.RegularExpressions.Regex EmailShape = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
         public static DianAcquirerResult FromSoapResponse(string soapResponse)
         {
             var document = SafeXml.Parse(soapResponse);
@@ -24,6 +27,7 @@ namespace Fel.Infrastructure.Dian
             var name = Value("ReceiverName");
             var emails = (Value("ReceiverEmail") ?? string.Empty)
                 .Split(new[] { ';', ',', ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(e => EmailShape.IsMatch(e))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             return new DianAcquirerResult(name != null, name, emails, Value("StatusCode"), Value("Message"));

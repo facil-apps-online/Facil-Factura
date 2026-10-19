@@ -49,6 +49,11 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
   const [countryCatalog, setCountryCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [uploadingRut, setUploadingRut] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
+  // Correos que la DIAN tiene registrados para el tercero buscado; si son varios, el usuario elige cuál usar.
+  const [dianEmails, setDianEmails] = useState<string[]>([]);
+  // Número de documento que hay escrito ahora, para descartar una respuesta de la DIAN que llega después de que el usuario lo cambió.
+  const latestNumber = useRef('');
+  latestNumber.current = formData.identificationNumber;
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -68,6 +73,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
 
   useEffect(() => {
     if (!open) return;
+    setDianEmails([]);
     if (editingCustomer) {
       // No hay un campo persistido de tipo de persona; se infiere de si trae nombre partido
       // (persona natural) o solo razón social, con el tipo de identificación como respaldo.
@@ -272,11 +278,9 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
         toast.info('La DIAN no tiene a este tercero registrado. Ingresa sus datos manualmente.');
         return;
       }
-      let applied = false;
+      // Si el usuario cambió el número mientras se consultaba, la respuesta ya no corresponde.
+      if (latestNumber.current !== queried) return;
       setFormData(prev => {
-        // Si el usuario cambió el número mientras se consultaba, la respuesta ya no corresponde.
-        if (prev.identificationNumber !== queried) return prev;
-        applied = true;
         const next = { ...prev, email: prev.email.trim() ? prev.email : (emails[0] || '') };
         if (prev.personType === 'Juridica') return { ...next, name };
         // Persona natural con NIT (comerciante): la DIAN da un solo nombre y no se sabe dónde parten los apellidos, así que va entero en Nombre 1.
@@ -285,7 +289,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
           : splitNaturalName(name);
         return { ...next, ...parts, name: [parts.firstName, parts.secondName, parts.firstLastName, parts.secondLastName].filter(Boolean).join(' ') };
       });
-      if (!applied) return;
+      setDianEmails(emails);
       toast.success(formData.personType === 'Juridica'
         ? 'Razón social cargada desde la DIAN — revísala antes de guardar.'
         : formData.identificationType === '31'
@@ -444,6 +448,21 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Email</label>
               <input type="email" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
+              {dianEmails.length > 1 && (
+                <div className="mt-2">
+                  <p className="text-xs text-slate-500 mb-1">La DIAN tiene {dianEmails.length} correos registrados. Elige cuál usar:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {dianEmails.map(e => (
+                      <button
+                        key={e} type="button" onClick={() => setFormData(prev => ({ ...prev, email: e }))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold break-all text-left transition-colors ${formData.email === e ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Teléfono</label>

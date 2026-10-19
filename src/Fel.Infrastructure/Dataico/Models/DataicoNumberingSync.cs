@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace Fel.Infrastructure.Dataico.Models
 {
-    // Una resolución de la DIAN tal como la devuelve POST /v2/numberings/sync_dian/{módulo}.
+    // Una resolución de la DIAN tal como la devuelve GET /v2/numberings/{módulo}.
     public class DataicoSyncedResolution
     {
         public string Prefix { get; set; } = string.Empty;
@@ -76,9 +76,9 @@ namespace Fel.Infrastructure.Dataico.Models
                                 Number = Text(item, "number"),
                                 Start = Long(item, "start"),
                                 End = Long(item, "end"),
-                                StartDate = Date(item, "start_date"),
-                                EndDate = Date(item, "end_date"),
-                                Message = Text(item, "code_msg")
+                                StartDate = Date(item, "start_date") ?? Date(item, "start-date"),
+                                EndDate = Date(item, "end_date") ?? Date(item, "end-date"),
+                                Message = Text(item, "code_msg") is { Length: > 0 } m ? m : Text(item, "code-msg")
                             });
                         }
                     }

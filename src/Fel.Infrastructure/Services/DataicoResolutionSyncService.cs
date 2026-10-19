@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Fel.Infrastructure.Services
 {
     // Trae a FacilFactura las resoluciones vigentes que Dataico tiene vinculadas al NIT del Client. Dataico las consulta a la
-    // DIAN con su propio certificado (POST /v2/numberings/sync_dian/{módulo} con cuerpo vacío), de modo que un Client Dataico no
+    // DIAN con su propio certificado (GET /v2/numberings/{módulo}, con el token de la cuenta del Client), de modo que un Client Dataico no
     // necesita certificado propio ni subir el PDF de autorización. Lo comparten el tenant y el portal del cliente.
     public sealed class DataicoResolutionSyncService
     {

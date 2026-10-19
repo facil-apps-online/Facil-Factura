@@ -245,6 +245,15 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
     return { firstName: parts[0], secondName: parts[1], firstLastName: parts[2], secondLastName: parts.slice(3).join(' ') };
   };
 
+  // El reparto es una suposición: hay duda cuando el nombre trae partículas (DE, DEL, LA...) o no se arma de 2 o 4 componentes
+  // (con 1 o 3 no se sabe dónde termina el nombre y empiezan los apellidos; con más de 4 sobra algo).
+  const nameHasDoubts = (full: string) => {
+    const words = full.trim().split(/\s+/).filter(Boolean);
+    const hasParticles = words.some(w => /^(DE|DEL|LA|LAS|LOS|Y|SAN|SANTA)$/i.test(w));
+    const units = words.filter(w => !/^(DE|DEL|LA|LAS|LOS|Y|SAN|SANTA)$/i.test(w)).length;
+    return hasParticles || (units !== 2 && units !== 4);
+  };
+
   // Tipos de documento que la DIAN resuelve (pasaporte, tipo 42 y otros no están en su registro de adquirentes).
   const DIAN_LOOKUP_TYPES = ['12', '13', '21', '22', '31', '41', '47', '48', '50', '91'];
   const lookupNumber = formData.identificationNumber.replace(/\D/g, '');
@@ -279,7 +288,11 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
       if (!applied) return;
       toast.success(formData.personType === 'Juridica'
         ? 'Razón social cargada desde la DIAN — revísala antes de guardar.'
-        : 'Datos de la DIAN cargados — verifica cuál es el primer apellido.');
+        : formData.identificationType === '31'
+          ? 'Datos de la DIAN cargados. El nombre completo quedó en Nombre 1: sepáralo en nombres y apellidos.'
+          : nameHasDoubts(name)
+            ? 'Datos de la DIAN cargados. El nombre tiene partículas o no se pudo repartir con certeza: revisa cómo quedaron los nombres y apellidos.'
+            : 'Datos de la DIAN cargados — revísalos antes de guardar.');
       if (emails.length === 0) toast.info('La DIAN no tiene correo para este tercero: escríbelo tú.');
     } catch (err: any) {
       toast.error(err?.response?.status === 429

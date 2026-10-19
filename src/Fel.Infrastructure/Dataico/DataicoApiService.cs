@@ -145,10 +145,11 @@ namespace Fel.Infrastructure.Dataico
         public Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials)
             => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/reception_events?number={Uri.EscapeDataString(number)}", credentials, null);
 
+        // Lista las numeraciones de la cuenta (GET /numberings/{module}, con module = invoice | support-doc | credit-note | debit-note).
+        // Solo lee: el POST numberings/sync_dian/{module} es el de ASOCIAR una resolución nueva a la cuenta, no el de listarlas.
         public async Task<DataicoNumberingSyncResult> SyncNumberingsAsync(string module, DataicoCredentials credentials)
         {
-            var call = await ExecuteAsync(HttpMethod.Post, $"{InvoicingBaseUrl}/numberings/sync_dian/{module}", credentials,
-                new { numberings = Array.Empty<object>() }, TimeSpan.FromSeconds(120));
+            var call = await ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/numberings/{module}", credentials, null, TimeSpan.FromSeconds(120));
             return DataicoNumberingSyncResult.Parse(call);
         }
 

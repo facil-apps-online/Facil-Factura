@@ -231,7 +231,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
   // (nombres primero, luego apellidos); las partículas ("DE", "DE LA", "DEL", "SAN"...) se pegan a la palabra que sigue para no partir
   // un apellido compuesto. Con 3 unidades se toma un nombre y dos apellidos. El usuario lo revisa antes de guardar.
   const splitNaturalName = (full: string) => {
-    const words = full.trim().split(/s+/).filter(Boolean);
+    const words = full.trim().split(/\s+/).filter(Boolean);
     const parts: string[] = [];
     let pending = '';
     for (const w of words) {
@@ -247,7 +247,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
 
   // Tipos de documento que la DIAN resuelve (pasaporte, tipo 42 y otros no están en su registro de adquirentes).
   const DIAN_LOOKUP_TYPES = ['12', '13', '21', '22', '31', '41', '47', '48', '50', '91'];
-  const lookupNumber = formData.identificationNumber.replace(/D/g, '');
+  const lookupNumber = formData.identificationNumber.replace(/\D/g, '');
   const canLookup = DIAN_LOOKUP_TYPES.includes(formData.identificationType) && lookupNumber.length >= 3;
 
   const handleDianLookup = async () => {
@@ -270,7 +270,10 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
         applied = true;
         const next = { ...prev, email: prev.email.trim() ? prev.email : (emails[0] || '') };
         if (prev.personType === 'Juridica') return { ...next, name };
-        const parts = splitNaturalName(name);
+        // Persona natural con NIT (comerciante): la DIAN da un solo nombre y no se sabe dónde parten los apellidos, así que va entero en Nombre 1.
+        const parts = prev.identificationType === '31'
+          ? { firstName: name, secondName: '', firstLastName: '', secondLastName: '' }
+          : splitNaturalName(name);
         return { ...next, ...parts, name: [parts.firstName, parts.secondName, parts.firstLastName, parts.secondLastName].filter(Boolean).join(' ') };
       });
       if (!applied) return;

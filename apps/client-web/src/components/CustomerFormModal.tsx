@@ -92,6 +92,24 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
       });
     } else {
       setFormData({ ...initialForm, partyType: defaultPartyType });
+      // Tercero nuevo de tipo Cliente: dirección, ciudad, código postal y teléfono arrancan con los valores por defecto del cliente.
+      // Solo llenan lo que siga vacío cuando llega la respuesta, para no pisar lo que el usuario ya escribió.
+      if (defaultPartyType === 'Cliente') {
+        let cancelled = false;
+        api.get('/client/invoice-defaults').then(res => {
+          if (cancelled) return;
+          const d = res.data;
+          setFormData(prev => ({
+            ...prev,
+            address: prev.address || d.customerAddress || '',
+            phone: prev.phone || d.customerPhone || '',
+            postalCode: prev.postalCode || d.customerPostalCode || '',
+            cityCode: prev.cityCode || d.customerCityCode || '',
+            cityName: prev.cityName || d.customerCityName || '',
+          }));
+        }).catch(() => {});
+        return () => { cancelled = true; };
+      }
     }
   }, [open, editingCustomer, defaultPartyType]);
 

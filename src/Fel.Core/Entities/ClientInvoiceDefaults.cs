@@ -28,6 +28,14 @@ namespace Fel.Core.Entities
         // Observación general que se precarga en cada factura nueva.
         public string? Notes { get; set; }
 
+        // Datos con los que arranca el formulario de un tercero nuevo de tipo Cliente (el usuario puede cambiarlos). Ciudad en Colombia:
+        // el código DANE es la fuente y el nombre se copia del catálogo de municipios al guardar.
+        public string? CustomerAddress { get; set; }
+        public string? CustomerCityCode { get; set; }
+        public string? CustomerCityName { get; set; }
+        public string? CustomerPostalCode { get; set; }
+        public string? CustomerPhone { get; set; }
+
         public DateTime UpdatedAt { get; set; }
     }
 }

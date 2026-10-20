@@ -910,6 +910,11 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.PaymentMeansType).HasMaxLength(50);
                 entity.Property(e => e.Currency).HasMaxLength(3);
                 entity.Property(e => e.Notes).HasMaxLength(500);
+                entity.Property(e => e.CustomerAddress).HasMaxLength(200);
+                entity.Property(e => e.CustomerCityCode).HasMaxLength(10);
+                entity.Property(e => e.CustomerCityName).HasMaxLength(100);
+                entity.Property(e => e.CustomerPostalCode).HasMaxLength(20);
+                entity.Property(e => e.CustomerPhone).HasMaxLength(50);
 
                 entity.HasOne(e => e.Client)
                       .WithMany()

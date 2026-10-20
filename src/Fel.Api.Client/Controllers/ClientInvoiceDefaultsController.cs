@@ -45,6 +45,11 @@ namespace Fel.Api.Client.Controllers
             var paymentMeansType = Clean(request.PaymentMeansType);
             var currency = Clean(request.Currency)?.ToUpperInvariant();
             var notes = Clean(request.Notes);
+            var customerAddress = Clean(request.CustomerAddress);
+            var customerPostalCode = Clean(request.CustomerPostalCode);
+            var customerPhone = Clean(request.CustomerPhone);
+            var customerCityCode = Clean(request.CustomerCityCode);
+            string? customerCityName = null;
 
             if (documentTypeId != null)
             {
@@ -75,6 +80,16 @@ namespace Fel.Api.Client.Controllers
 
             if (notes != null && notes.Length > 500) return BadRequest("La observación no puede pasar de 500 caracteres.");
 
+            if (customerAddress is { Length: > 200 } || customerPostalCode is { Length: > 20 } || customerPhone is { Length: > 50 })
+                return BadRequest("La dirección, el código postal o el teléfono del tercero son demasiado largos.");
+
+            if (customerCityCode != null)
+            {
+                var municipality = await _dbContext.DianMunicipalities.AsNoTracking().FirstOrDefaultAsync(m => m.Code == customerCityCode);
+                if (municipality == null) return BadRequest("El código DANE de la ciudad no existe en el catálogo de municipios.");
+                customerCityName = municipality.Name;
+            }
+
             var row = await _dbContext.ClientInvoiceDefaults.FirstOrDefaultAsync(d => d.ClientId == clientId);
             if (row == null)
             {
@@ -88,6 +103,11 @@ namespace Fel.Api.Client.Controllers
             row.PaymentTermDays = termDays;
             row.Currency = currency;
             row.Notes = notes;
+            row.CustomerAddress = customerAddress;
+            row.CustomerCityCode = customerCityCode;
+            row.CustomerCityName = customerCityName;
+            row.CustomerPostalCode = customerPostalCode;
+            row.CustomerPhone = customerPhone;
             row.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();
@@ -106,7 +126,12 @@ namespace Fel.Api.Client.Controllers
             paymentMeansType = row?.PaymentMeansType,
             paymentTermDays = row?.PaymentTermDays,
             currency = row?.Currency,
-            notes = row?.Notes
+            notes = row?.Notes,
+            customerAddress = row?.CustomerAddress,
+            customerCityCode = row?.CustomerCityCode,
+            customerCityName = row?.CustomerCityName,
+            customerPostalCode = row?.CustomerPostalCode,
+            customerPhone = row?.CustomerPhone
         };
 
         public class InvoiceDefaultsRequest
@@ -117,6 +142,10 @@ namespace Fel.Api.Client.Controllers
             public int? PaymentTermDays { get; set; }
             public string? Currency { get; set; }
             public string? Notes { get; set; }
+            public string? CustomerAddress { get; set; }
+            public string? CustomerCityCode { get; set; }
+            public string? CustomerPostalCode { get; set; }
+            public string? CustomerPhone { get; set; }
         }
     }
 }

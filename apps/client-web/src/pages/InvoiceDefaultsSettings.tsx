@@ -16,9 +16,15 @@ interface DefaultsForm {
   paymentTermDays: number | '';
   currency: string;
   notes: string;
+  customerAddress: string;
+  customerCityCode: string;
+  customerCityName: string;
+  customerPostalCode: string;
+  customerPhone: string;
 }
 
-const EMPTY: DefaultsForm = { documentTypeId: '', paymentMeans: '', paymentMeansType: '', paymentTermDays: '', currency: '', notes: '' };
+const EMPTY: DefaultsForm = { documentTypeId: '', paymentMeans: '', paymentMeansType: '', paymentTermDays: '', currency: '', notes: '',
+  customerAddress: '', customerCityCode: '', customerCityName: '', customerPostalCode: '', customerPhone: '' };
 const NOTES_MAX = 500;
 
 const labelClass = 'block text-sm font-bold text-slate-700 mb-2';
@@ -60,6 +66,11 @@ export default function InvoiceDefaultsSettings() {
           paymentTermDays: d.paymentTermDays ?? '',
           currency: d.currency ?? '',
           notes: d.notes ?? '',
+          customerAddress: d.customerAddress ?? '',
+          customerCityCode: d.customerCityCode ?? '',
+          customerCityName: d.customerCityName ?? '',
+          customerPostalCode: d.customerPostalCode ?? '',
+          customerPhone: d.customerPhone ?? '',
         });
         setTermCustom(d.paymentTermDays != null && !termsRes.data.some((c: CatalogItem) => c.category === String(d.paymentTermDays)));
       } catch (err) {
@@ -69,6 +80,18 @@ export default function InvoiceDefaultsSettings() {
       }
     })();
   }, [features.foreignCurrency]);
+
+  // Al salir del nombre de la ciudad se busca su código DANE en el catálogo (igual que en el formulario de tercero).
+  const matchCity = async () => {
+    const name = form.customerCityName.trim();
+    if (!name || form.customerCityCode) return;
+    try {
+      const res = await api.get('/client/customers/municipality-match', { params: { name } });
+      setForm(prev => ({ ...prev, customerCityCode: res.data.code, customerCityName: res.data.name }));
+    } catch {
+      toast.info('No se encontró un municipio con ese nombre. Escriba el código DANE.');
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -80,6 +103,10 @@ export default function InvoiceDefaultsSettings() {
         paymentTermDays: form.paymentMeansType === 'CREDITO' && form.paymentTermDays !== '' ? form.paymentTermDays : null,
         currency: form.currency || null,
         notes: form.notes.trim() || null,
+        customerAddress: form.customerAddress.trim() || null,
+        customerCityCode: form.customerCityCode.trim() || null,
+        customerPostalCode: form.customerPostalCode.trim() || null,
+        customerPhone: form.customerPhone.trim() || null,
       });
       toast.success('Valores por defecto guardados');
     } catch (err) {
@@ -100,8 +127,8 @@ export default function InvoiceDefaultsSettings() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Valores por defecto de factura</h1>
-        <p className="text-slate-500 mt-2">Configure los campos con los que arranca una nueva factura. Cada usuario puede cambiarlos en la factura que esté creando.</p>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Valores por defecto</h1>
+        <p className="text-slate-500 mt-2">Configure los campos con los que arrancan una nueva factura y un tercero nuevo. Cada usuario puede cambiarlos en lo que esté creando.</p>
       </div>
 
       <div className="max-w-2xl space-y-5 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
@@ -196,6 +223,38 @@ export default function InvoiceDefaultsSettings() {
             placeholder="Texto que se precarga en cada factura nueva"
             className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500"
           />
+        </div>
+
+        <div className="border-t border-slate-100 pt-5">
+          <h2 className="text-lg font-extrabold text-slate-800">Tercero nuevo (tipo Cliente)</h2>
+          <p className="mt-1 mb-4 text-sm text-slate-500">Con estos datos arranca el formulario al crear un Cliente. Se pueden cambiar en cada tercero.</p>
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>Dirección</label>
+              <input type="text" value={form.customerAddress} maxLength={200} onChange={e => setForm({ ...form, customerAddress: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelClass}>Ciudad</label>
+                <input type="text" value={form.customerCityName} maxLength={100}
+                  onChange={e => setForm({ ...form, customerCityName: e.target.value, customerCityCode: '' })}
+                  onBlur={matchCity}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label className={labelClass}>Código DANE</label>
+                <input type="text" placeholder="Ej. 11001" value={form.customerCityCode} maxLength={10} onChange={e => setForm({ ...form, customerCityCode: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-mono outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label className={labelClass}>Código postal</label>
+                <input type="text" value={form.customerPostalCode} maxLength={20} onChange={e => setForm({ ...form, customerPostalCode: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-mono outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label className={labelClass}>Teléfono</label>
+                <input type="text" value={form.customerPhone} maxLength={50} onChange={e => setForm({ ...form, customerPhone: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-end">

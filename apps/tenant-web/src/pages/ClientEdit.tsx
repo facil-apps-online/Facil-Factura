@@ -1037,7 +1037,7 @@ export default function ClientEdit() {
         </div>
         {client.isActive && (
           <button
-            onClick={() => enterClientPortal(client.id)}
+            onClick={() => enterClientPortal(id!)}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-900 text-white hover:bg-slate-700 transition-colors"
           >
             <LogIn size={16} /> Entrar al portal del cliente

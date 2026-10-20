@@ -67,6 +67,11 @@ export const TenantEdit = () => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '' });
   const [saving, setSaving] = useState(false);
+  // Suspensión de la plataforma (p. ej. por mora): el tenant queda en solo lectura y sus clientes sin acceso. Solo el superadmin la maneja.
+  const [block, setBlock] = useState<{ at: string | null; reason: string | null; parentAt: string | null; parentReason: string | null }>({ at: null, reason: null, parentAt: null, parentReason: null });
+  const [blockReason, setBlockReason] = useState('');
+  const [confirmingBlock, setConfirmingBlock] = useState(false);
+  const [togglingBlock, setTogglingBlock] = useState(false);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   const { isLoaded } = useJsApiLoader({
@@ -74,6 +79,27 @@ export const TenantEdit = () => {
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     libraries
   });
+
+  useEffect(() => {
+    api.get(`/tenants/${id}`)
+      .then(res => setBlock({ at: res.data.platformBlockedAt ?? null, reason: res.data.platformBlockReason ?? null, parentAt: res.data.parentBlockedAt ?? null, parentReason: res.data.parentBlockReason ?? null }))
+      .catch(() => {});
+  }, [id]);
+
+  const setPlatformBlock = async (blocked: boolean) => {
+    setTogglingBlock(true);
+    try {
+      const res = await api.put(`/tenants/${id}/platform-block`, { blocked, reason: blocked ? blockReason.trim() || null : null });
+      setBlock(prev => ({ ...prev, at: res.data.platformBlockedAt ?? null, reason: res.data.platformBlockReason ?? null }));
+      setConfirmingBlock(false);
+      setBlockReason('');
+      toast.success(blocked ? 'Tenant suspendido: solo lectura y sus clientes sin acceso.' : 'Suspensión levantada.');
+    } catch (err: any) {
+      toast.error(typeof err?.response?.data === 'string' ? err.response.data : 'No se pudo cambiar la suspensión.');
+    } finally {
+      setTogglingBlock(false);
+    }
+  };
 
   useEffect(() => {
     api.get(`/tenants/${id}`)
@@ -363,6 +389,34 @@ export const TenantEdit = () => {
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Datos fiscales y facturación</h1>
           <p className="text-slate-400 font-medium">{formData.commercialName}</p>
         </div>
+      </div>
+
+      <div className={`mb-8 p-6 rounded-3xl border ${block.at ? 'border-red-500/50 bg-red-500/10' : 'border-slate-700/50 glass-panel'}`}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-white">Suspensión por falta de pago</h2>
+            {block.at ? (
+              <p className="text-sm text-red-300 mt-1">
+                Suspendido desde {new Date(block.at).toLocaleDateString('es-CO')}{block.reason ? `. Motivo: ${block.reason}` : ''}. El tenant entra en solo lectura; sus clientes (y los de sus aliados) no entran ni emiten por API.
+              </p>
+            ) : (
+              <p className="text-sm text-slate-400 mt-1">Al suspenderlo, el tenant entra a su portal en solo lectura y sus clientes (y los de sus aliados) no pueden entrar ni emitir por API.</p>
+            )}
+            {block.parentAt && <p className="text-sm text-amber-300 mt-1">Además, su tenant padre lo tiene bloqueado{block.parentReason ? `: ${block.parentReason}` : ''}. Ese bloqueo lo levanta el padre.</p>}
+          </div>
+          {block.at ? (
+            <button type="button" disabled={togglingBlock} onClick={() => setPlatformBlock(false)} className="shrink-0 px-5 py-2.5 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">Levantar suspensión</button>
+          ) : !confirmingBlock ? (
+            <button type="button" onClick={() => setConfirmingBlock(true)} className="shrink-0 px-5 py-2.5 rounded-xl font-bold text-sm bg-red-600 hover:bg-red-500 text-white">Suspender tenant</button>
+          ) : null}
+        </div>
+        {!block.at && confirmingBlock && (
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <input type="text" value={blockReason} maxLength={500} onChange={e => setBlockReason(e.target.value)} placeholder="Motivo (opcional, lo ve el tenant)" className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-white text-sm outline-none focus:border-red-400" />
+            <button type="button" disabled={togglingBlock} onClick={() => setPlatformBlock(true)} className="px-5 py-2.5 rounded-xl font-bold text-sm bg-red-600 hover:bg-red-500 text-white disabled:opacity-50">Confirmar suspensión</button>
+            <button type="button" onClick={() => { setConfirmingBlock(false); setBlockReason(''); }} className="px-5 py-2.5 rounded-xl font-bold text-sm bg-slate-700 hover:bg-slate-600 text-white">Cancelar</button>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSave} className="space-y-8">

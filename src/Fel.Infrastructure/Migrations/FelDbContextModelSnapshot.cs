@@ -4790,6 +4790,17 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<string>("ParentBlockReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("ParentBlockedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ParentBlockedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<Guid?>("ParentTenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -4816,6 +4827,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("PhysicalState")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PlatformBlockReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("PlatformBlockedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PlatformBlockedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("PrimaryColorDark")
                         .IsRequired()

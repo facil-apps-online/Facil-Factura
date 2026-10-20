@@ -60,6 +60,12 @@ namespace Fel.Api.Client.Controllers
                 return Unauthorized("Credenciales incorrectas.");
             }
 
+            // Bloqueo administrativo del tenant (o de un ancestro): el cliente no entra. Mensaje neutro, sin motivo.
+            if ((await Fel.Infrastructure.Security.TenantBlocks.GetAsync(_dbContext, tenant.Id)).Level != Fel.Infrastructure.Security.TenantBlockLevel.None)
+            {
+                return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
+            }
+
             // Sucursales a las que puede entrar el usuario (la principal primero). Sin ninguna activa no hay sesión útil.
             var branchesQuery = _dbContext.Branches.AsNoTracking().Where(b => b.ClientId == user.ClientId && b.IsActive);
             if (!user.AllBranches)

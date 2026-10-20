@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Infrastructure.Security
 {
-    public sealed record ApiCredentials(Client Client, Branch Branch, string Secret, bool IsSandbox);
+    public sealed record ApiCredentials(Client Client, Branch Branch, string Secret, bool IsSandbox, TenantBlockLevel Block);
 
     // Resuelve la llave de API de la autenticación HMAC a su sucursal y su Client. Las llaves son de la sucursal; el
     // Client y la sucursal deben estar activos. Una sola consulta compartida por los middlewares HMAC de todas las APIs.
@@ -22,7 +22,9 @@ namespace Fel.Infrastructure.Security
                 : await branches.FirstOrDefaultAsync(b => b.LiveApiKey == apiKey);
             if (branch == null) return null;
 
-            return new ApiCredentials(branch.Client, branch, isSandbox ? branch.TestApiSecret : branch.LiveApiSecret, isSandbox);
+            // Un tenant bloqueado (o con un ancestro bloqueado) deja a sus clientes sin API: el middleware responde 403.
+            var block = await TenantBlocks.GetAsync(dbContext, branch.Client.TenantId);
+            return new ApiCredentials(branch.Client, branch, isSandbox ? branch.TestApiSecret : branch.LiveApiSecret, isSandbox, block.Level);
         }
     }
 }

@@ -114,6 +114,13 @@ namespace Fel.Api.Security
                 return;
             }
 
+            if (credentials.Block != TenantBlockLevel.None)
+            {
+                context.Response.StatusCode = 403;
+                await context.Response.WriteAsync(TenantBlocks.ClientMessage);
+                return;
+            }
+
             var client = credentials.Client;
             bool isSandbox = credentials.IsSandbox;
             string clientSecret = credentials.Secret;

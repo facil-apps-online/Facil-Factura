@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { Home, Users, FileKey, FileSignature, Settings, Palette, FileText, Briefcase, Code2, ChevronLeft, ChevronRight, Layers, Building2, Check, Loader2 } from 'lucide-react';
+import { Home, Users, FileKey, FileSignature, Settings, Palette, FileText, Briefcase, Code2, ChevronLeft, ChevronRight, Layers, Building2, Check, Loader2, Network } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from './lib/api';
 import { Toaster } from 'sonner';
@@ -18,6 +18,7 @@ import DocumentTemplates from './pages/DocumentTemplates';
 import TemplateEditor from './pages/TemplateEditor';
 import Developers from './pages/Developers';
 import GroupBilling from './pages/GroupBilling';
+import Allies from './pages/Allies';
 import SessionGuard from '@shared/components/session/SessionGuard';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 import ProfilePage from '@shared/components/session/ProfilePage';
@@ -116,6 +117,7 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
     { to: "/clients", icon: <Users size={20} />, label: "Clientes" },
     { to: "/associates", icon: <Briefcase size={20} />, label: "Asociados" },
     { to: "/group-billing", icon: <Layers size={20} />, label: "Facturación del grupo" },
+    { to: "/allies", icon: <Network size={20} />, label: "Aliados" },
     { to: "/branding", icon: <Palette size={20} />, label: "Apariencia (Branding)" },
     { to: "/templates", icon: <FileText size={20} />, label: "Modelos de Documentos" },
     { to: "/developers", icon: <Code2 size={20} />, label: "Desarrolladores" },
@@ -228,6 +230,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [tenantBranding, setTenantBranding] = useState<TenantBranding | null>(null);
   const { me } = useAccountMe(api, ACCOUNT_PATH);
   const navigate = useNavigate();
+  // Suspensión de la plataforma (p. ej. por mora): el portal funciona en solo lectura y se avisa con una barra fija.
+  const [readOnly, setReadOnly] = useState<{ reason: string | null } | null>(null);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('fel_tenant_sidebar_collapsed') === '1');
 
   const toggleCollapsed = () => {
@@ -250,6 +254,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       });
     }).catch(err => console.error("No se pudo cargar el branding", err));
 
+    api.get('/tenant/auth/block-status').then(res => setReadOnly(res.data.readOnly ? { reason: res.data.reason ?? null } : null)).catch(() => {});
+
     const name = localStorage.getItem('fel_tenant_name') || 'Tenant';
     setTenantName(name);
   }, []);
@@ -258,6 +264,11 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
       <Sidebar tenantBranding={tenantBranding} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
       <main className="flex-1 flex flex-col min-w-0 relative z-10">
+        {readOnly && (
+          <div className="bg-red-600 text-white text-sm font-semibold px-8 py-2.5">
+            Cuenta suspendida: el portal está en modo de solo lectura.{readOnly.reason ? ` Motivo: ${readOnly.reason}.` : ''} Comuníquese con su proveedor.
+          </div>
+        )}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shadow-sm">
           <h1 className="text-lg font-semibold text-slate-700">
             Bienvenido, {tenantName}
@@ -305,6 +316,7 @@ function App() {
                   <Route path="/clients/edit/:id" element={<ClientEdit />} />
                   <Route path="/associates" element={<Associates />} />
                   <Route path="/group-billing" element={<GroupBilling />} />
+                  <Route path="/allies" element={<Allies />} />
                   <Route path="/certificates" element={<Certificates />} />
                   <Route path="/resolutions" element={<Resolutions />} />
                   <Route path="/branding" element={<Branding />} />

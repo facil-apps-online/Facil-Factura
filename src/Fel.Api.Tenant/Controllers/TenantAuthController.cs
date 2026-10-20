@@ -28,6 +28,19 @@ namespace Fel.Api.Tenant.Controllers
             _portalUrl = config["PortalUrl"] ?? "https://tenants.facil-factura.pro";
         }
 
+        // Estado de la cuenta para el portal: si la plataforma la suspendió (p. ej. por mora) entra en solo lectura y se muestra una barra con el motivo.
+        [Authorize]
+        [HttpGet("block-status")]
+        public async Task<IActionResult> BlockStatus()
+        {
+            if (!Guid.TryParse(User.FindFirst("TenantId")?.Value, out var tenantId)) return Unauthorized();
+            var block = await Fel.Infrastructure.Security.TenantBlocks.GetAsync(_dbContext, tenantId);
+            return Ok(new { readOnly = block.Level == Fel.Infrastructure.Security.TenantBlockLevel.ReadOnly, reason = block.Reason });
+        }
+
+        private static string BlockedMessage(string? reason) =>
+            string.IsNullOrWhiteSpace(reason) ? "Su cuenta está suspendida. Comuníquese con su proveedor." : $"Su cuenta está suspendida. Motivo: {reason}";
+
         [AllowAnonymous]
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] TenantLoginRequest request)
@@ -54,6 +67,18 @@ namespace Fel.Api.Tenant.Controllers
                 .Where(a => a.TenantUserId == user.Id && a.IsActive && a.Tenant.IsActive)
                 .Select(a => new { a.TenantId, a.Tenant.CommercialName, a.Tenant.Slug })
                 .ToListAsync();
+
+            // Un aliado bloqueado por su padre (o con un ancestro bloqueado) no entra. La suspensión de la plataforma sí deja entrar, en solo lectura.
+            string? blockedMessage = null;
+            var sinBloqueo = new System.Collections.Generic.List<(Guid TenantId, string CommercialName, string Slug)>();
+            foreach (var t in tenantsAccesibles)
+            {
+                var block = await Fel.Infrastructure.Security.TenantBlocks.GetAsync(_dbContext, t.TenantId);
+                if (block.Level == Fel.Infrastructure.Security.TenantBlockLevel.Blocked) blockedMessage ??= BlockedMessage(block.Reason);
+                else sinBloqueo.Add((t.TenantId, t.CommercialName, t.Slug));
+            }
+            if (sinBloqueo.Count == 0 && blockedMessage != null) return StatusCode(403, blockedMessage);
+            tenantsAccesibles = sinBloqueo.Select(t => new { t.TenantId, t.CommercialName, t.Slug }).ToList();
 
             if (tenantsAccesibles.Count == 0)
             {
@@ -116,6 +141,9 @@ namespace Fel.Api.Tenant.Controllers
             {
                 return Unauthorized("No tienes acceso vigente a ese tenant.");
             }
+
+            var switchBlock = await Fel.Infrastructure.Security.TenantBlocks.GetAsync(_dbContext, asignacion.TenantId);
+            if (switchBlock.Level == Fel.Infrastructure.Security.TenantBlockLevel.Blocked) return StatusCode(403, BlockedMessage(switchBlock.Reason));
 
             var token = _accountSessions.Issue(Fel.Core.Security.PortalKind.Tenant, user, new[]
             {

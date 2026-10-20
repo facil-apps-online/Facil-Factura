@@ -99,6 +99,34 @@ namespace Fel.Api.Superadmin.Controllers
             return "No responsable de IVA";
         }
 
+        // Suspensión de la plataforma (p. ej. por mora): el tenant entra a su portal en solo lectura y sus clientes (y los de sus aliados) no
+        // entran ni emiten por API. Solo el superadmin la pone y la quita. El bloqueo de un padre sobre un aliado es otro, independiente.
+        [HttpPut("{id:guid}/platform-block")]
+        public async Task<IActionResult> SetPlatformBlock(Guid id, [FromBody] TenantBlockRequest request)
+        {
+            var tenant = await _dbContext.Tenants.FindAsync(id);
+            if (tenant == null) return NotFound();
+
+            if (request.Blocked)
+            {
+                var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
+                if (reason is { Length: > 500 }) return BadRequest("El motivo no puede pasar de 500 caracteres.");
+                tenant.PlatformBlockedAt = DateTime.UtcNow;
+                tenant.PlatformBlockReason = reason;
+                tenant.PlatformBlockedBy = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "superadmin";
+            }
+            else
+            {
+                tenant.PlatformBlockedAt = null;
+                tenant.PlatformBlockReason = null;
+                tenant.PlatformBlockedBy = null;
+            }
+
+            await _dbContext.SaveChangesAsync();
+            Fel.Infrastructure.Security.TenantBlocks.Invalidate();
+            return Ok(new { tenant.Id, tenant.PlatformBlockedAt, tenant.PlatformBlockReason });
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetTenants()
         {
@@ -111,7 +139,11 @@ namespace Fel.Api.Superadmin.Controllers
                     t.Slug,
                     t.IsActive,
                     t.CreatedAt,
-                    t.ParentTenantId
+                    t.ParentTenantId,
+                    t.PlatformBlockedAt,
+                    t.PlatformBlockReason,
+                    t.ParentBlockedAt,
+                    t.ParentBlockReason
                 })
                 .ToListAsync();
 
@@ -414,7 +446,11 @@ namespace Fel.Api.Superadmin.Controllers
             t.Longitude,
             t.IsActive,
             t.CreatedAt,
-            t.ParentTenantId
+            t.ParentTenantId,
+            t.PlatformBlockedAt,
+            t.PlatformBlockReason,
+            t.ParentBlockedAt,
+            t.ParentBlockReason
         };
 
         [HttpPut("{id:guid}")]
@@ -825,6 +861,17 @@ namespace Fel.Api.Superadmin.Controllers
         public string? AdminName { get; set; }
         public string? AdminEmail { get; set; }
     }
+
+    public class TenantBlockRequest
+
+    {
+
+        public bool Blocked { get; set; }
+
+        public string? Reason { get; set; }
+
+    }
+
 
     public class UpdateTenantRequest
     {

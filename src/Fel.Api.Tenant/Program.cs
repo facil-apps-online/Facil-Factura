@@ -241,6 +241,8 @@ app.UseMiddleware<HmacAuthenticationMiddleware>();
 // TenantId del token — antes ese header se aceptaba sin ninguna verificación.
 app.UseAuthentication();
 app.UseMiddleware<SessionHeaderGuardMiddleware>();
+// Tenant suspendido por la plataforma: solo lectura (después de autenticar, para conocer su tenant).
+app.UseMiddleware<TenantReadOnlyMiddleware>();
 app.UseAuthorization();
 
 app.MapGet("/", () => "FEL API is running.");

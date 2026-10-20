@@ -97,5 +97,17 @@ namespace Fel.Core.Entities
         public Guid? ParentTenantId { get; set; }
         public Tenant? ParentTenant { get; set; }
         public ICollection<Tenant> ChildTenants { get; set; } = new List<Tenant>();
+
+        // --- Bloqueo administrativo ---
+        // Dos bloqueos independientes; el efecto baja por la jerarquía (ver TenantBlocks). Nulo = sin bloqueo.
+        // De la plataforma (solo el superadmin lo pone y lo quita, p. ej. por mora): el tenant entra a su portal en solo lectura y sus
+        // clientes (y los de sus aliados) no entran ni emiten por API.
+        public DateTime? PlatformBlockedAt { get; set; }
+        public string? PlatformBlockReason { get; set; }
+        public string? PlatformBlockedBy { get; set; }
+        // Del tenant padre sobre este aliado (solo el padre o el superadmin lo cambian): nadie de este tenant ni de sus clientes entra ni emite.
+        public DateTime? ParentBlockedAt { get; set; }
+        public string? ParentBlockReason { get; set; }
+        public string? ParentBlockedBy { get; set; }
     }
 }

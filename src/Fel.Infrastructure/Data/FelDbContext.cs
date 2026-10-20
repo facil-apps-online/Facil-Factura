@@ -85,6 +85,10 @@ namespace Fel.Infrastructure.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
                 entity.Property(e => e.Email).HasMaxLength(150);
+                entity.Property(e => e.PlatformBlockReason).HasMaxLength(500);
+                entity.Property(e => e.PlatformBlockedBy).HasMaxLength(200);
+                entity.Property(e => e.ParentBlockReason).HasMaxLength(500);
+                entity.Property(e => e.ParentBlockedBy).HasMaxLength(200);
                 
                 entity.Property(e => e.Slug).HasMaxLength(100);
                 entity.HasIndex(e => e.Slug).IsUnique();

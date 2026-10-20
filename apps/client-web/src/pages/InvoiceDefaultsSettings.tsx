@@ -256,11 +256,10 @@ export default function InvoiceDefaultsSettings() {
               <div>
                 <label className={labelClass}>País</label>
                 <SearchableSelect
-                  value={form.customerCountryCode}
-                  onChange={v => setForm({ ...form, customerCountryCode: v === 'CO' ? '' : v, customerCityCode: '', customerCityName: '' })}
-                  placeholder="Colombia"
-                  emptyLabel="Colombia"
-                  options={countries.filter(c => c.category !== 'CO').map(c => ({ value: c.category, label: `${c.name} (${c.category})`, shortLabel: c.category }))}
+                  value={form.customerCountryCode || 'CO'}
+                  onChange={v => setForm({ ...form, customerCountryCode: !v || v === 'CO' ? '' : v, customerCityCode: '', customerCityName: '' })}
+                  placeholder="Buscar país..."
+                  options={(countries.length === 0 ? [{ id: 'CO', category: 'CO', name: 'Colombia' }] : countries).map(c => ({ value: c.category, label: `${c.name} (${c.category})`, shortLabel: c.category }))}
                 />
               </div>
               <div>

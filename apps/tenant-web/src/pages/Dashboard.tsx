@@ -1,33 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, Clock, Loader2, TrendingDown, TrendingUp, Users } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import MonthRangeBar, { currentMonthRange, downloadBlob, type MonthRangeValue } from '@shared/components/MonthRangeBar';
 
-interface TenantBillingMetrics {
+interface RangeMonth {
   year: number;
   month: number;
-  totalDocuments: number;
-  amountDueToSuperadmin: number;
-  superadminTariffApplied: number;
-  platformBillingHidden?: boolean;
+  documentsEmitted: number;
+  documentsRejected: number;
+  amountDueToPlatform: number;
   amountDueFromClients: number;
-  clientBreakdown: any[];
 }
 
 interface ClientConsumption {
-  clientName: string;
+  name: string;
   documentsEmitted: number;
-  rejectedDocuments: number;
-  priceApplied: number;
+  documentsRejected: number;
   amountDueToTenant: number;
   rowId?: string;
 }
 
+interface BillingRange {
+  from: string;
+  to: string;
+  platformBillingHidden: boolean;
+  months: RangeMonth[];
+  totalDocumentsEmitted: number;
+  totalDocumentsRejected: number;
+  totalAmountDueToPlatform: number;
+  totalAmountDueFromClients: number;
+  clients: ClientConsumption[];
+}
+
+const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const monthLabel = (year: number, month: number) => `${MONTH_NAMES[month - 1]} ${year}`;
+
 const money = (value: number) => `$${value.toLocaleString('es-CO')}`;
 
 const consumptionColumns: DataTableColumn<ClientConsumption>[] = [
-  { key: 'client', header: 'Cliente', primary: true, cellClassName: 'font-bold text-slate-700', render: c => c.clientName, sortValue: c => c.clientName, searchValue: c => c.clientName },
+  { key: 'client', header: 'Cliente', primary: true, cellClassName: 'font-bold text-slate-700', render: c => c.name, sortValue: c => c.name, searchValue: c => c.name },
   {
     key: 'documents',
     header: 'Emitidas',
@@ -39,35 +52,58 @@ const consumptionColumns: DataTableColumn<ClientConsumption>[] = [
     key: 'rejected',
     header: 'Rechazadas',
     align: 'right',
-    render: c => <span className={c.rejectedDocuments > 0 ? 'bg-rose-50 text-rose-700 px-3 py-1 rounded-full font-medium' : 'text-slate-400 px-3 py-1'}>{c.rejectedDocuments}</span>,
-    sortValue: c => c.rejectedDocuments,
+    render: c => <span className={c.documentsRejected > 0 ? 'bg-rose-50 text-rose-700 px-3 py-1 rounded-full font-medium' : 'text-slate-400 px-3 py-1'}>{c.documentsRejected}</span>,
+    sortValue: c => c.documentsRejected,
   },
-  { key: 'price', header: 'Tarifa', align: 'right', cellClassName: 'text-slate-500 font-mono', render: c => money(c.priceApplied), sortValue: c => c.priceApplied },
-  { key: 'subtotal', header: 'Subtotal', align: 'right', cellClassName: 'font-bold text-emerald-600', render: c => money(c.amountDueToTenant), sortValue: c => c.amountDueToTenant },
+  { key: 'subtotal', header: 'Valor a cobrar', align: 'right', cellClassName: 'font-bold text-emerald-600', render: c => money(c.amountDueToTenant), sortValue: c => c.amountDueToTenant },
 ];
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState({ totalIssued: 0, totalApproved: 0, totalRejected: 0, totalProcessing: 0 });
   const [recentDocs, setRecentDocs] = useState<any[]>([]);
-  const [billingMetrics, setBillingMetrics] = useState<TenantBillingMetrics | null>(null);
+  const [billingMetrics, setBillingMetrics] = useState<BillingRange | null>(null);
+  const [range, setRange] = useState<MonthRangeValue>(currentMonthRange());
+  const [loadingRange, setLoadingRange] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const today = new Date();
     Promise.all([
       api.get('/tenant/dashboard/metrics'),
       api.get('/tenant/dashboard/recent-documents'),
-      api.get(`/tenant/dashboard/billing-metrics?year=${today.getFullYear()}&month=${today.getMonth() + 1}`)
-    ]).then(([resMetrics, resDocs, resBilling]) => {
+    ]).then(([resMetrics, resDocs]) => {
       setMetrics(resMetrics.data);
       setRecentDocs(resDocs.data);
-      setBillingMetrics(resBilling.data);
     }).catch(err => {
       toast.error("Error al conectar con la bóveda de datos");
     }).finally(() => {
       setLoading(false);
     });
   }, []);
+
+  // El consumo y el cobro se calculan mes a mes: un rango es la suma de sus meses.
+  useEffect(() => {
+    setLoadingRange(true);
+    api.get<BillingRange>(`/tenant/dashboard/billing-range?from=${range.from}&to=${range.to}`)
+      .then(res => setBillingMetrics(res.data))
+      .catch(err => {
+        toast.error(getErrorMessage(err, 'No se pudo cargar el consumo del período'));
+        // Si falla la primera carga, la pantalla se dibuja igual, con ceros.
+        setBillingMetrics(prev => prev ?? { from: range.from, to: range.to, platformBillingHidden: false, months: [], totalDocumentsEmitted: 0, totalDocumentsRejected: 0, totalAmountDueToPlatform: 0, totalAmountDueFromClients: 0, clients: [] });
+      })
+      .finally(() => setLoadingRange(false));
+  }, [range.from, range.to]);
+
+  const exportRange = async () => {
+    setExporting(true);
+    try {
+      await downloadBlob(api, `/tenant/dashboard/billing-range/export?from=${range.from}&to=${range.to}`, `consumo_${range.from}_a_${range.to}.xlsx`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudo exportar'));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const stats = [
     { title: 'Facturas Emitidas', value: metrics.totalIssued, icon: <CheckCircle size={24} className="text-emerald-500" />, trend: 'Aprobadas por la DIAN · acumulado histórico' },
@@ -105,7 +141,10 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <h2 className="text-2xl font-bold text-slate-800 mb-4 mt-12 border-b pb-2">Resumen financiero del mes</h2>
+      <h2 className="text-2xl font-bold text-slate-800 mb-4 mt-12 border-b pb-2">Consumo y cobro por período</h2>
+      <div className="mb-6">
+        <MonthRangeBar value={range} onChange={setRange} onExport={exportRange} exporting={exporting} />
+      </div>
       
       <div className={`grid grid-cols-1 ${billingMetrics.platformBillingHidden ? "" : "md:grid-cols-2 "}gap-8 mb-8`}>
         <div className="bg-emerald-50 rounded-3xl p-8 border border-emerald-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
@@ -114,8 +153,8 @@ export default function Dashboard() {
           </div>
           <div className="relative z-10">
             <h3 className="text-emerald-800 font-bold uppercase tracking-wider text-sm mb-2">Ingresos esperados</h3>
-            <p className="text-4xl font-black text-emerald-600 mb-2">${billingMetrics.amountDueFromClients.toLocaleString('es-CO')}</p>
-            <p className="text-emerald-700 text-sm font-medium">Total según el consumo de tus clientes.</p>
+            <p className="text-4xl font-black text-emerald-600 mb-2">${billingMetrics.totalAmountDueFromClients.toLocaleString('es-CO')}</p>
+            <p className="text-emerald-700 text-sm font-medium">Total según el consumo de tus clientes en el período.</p>
           </div>
         </div>
 
@@ -126,26 +165,63 @@ export default function Dashboard() {
           </div>
           <div className="relative z-10">
             <h3 className="text-rose-800 font-bold uppercase tracking-wider text-sm mb-2">Pago a la plataforma</h3>
-            <p className="text-4xl font-black text-rose-600 mb-2">${billingMetrics.amountDueToSuperadmin.toLocaleString('es-CO')}</p>
-            <p className="text-rose-700 text-sm font-medium">Volumen del mes: <span className="font-bold">{billingMetrics.totalDocuments}</span> docs x Tarifa Nivel Aplicada: <span className="font-bold">${billingMetrics.superadminTariffApplied.toLocaleString('es-CO')}</span></p>
+            <p className="text-4xl font-black text-rose-600 mb-2">${billingMetrics.totalAmountDueToPlatform.toLocaleString('es-CO')}</p>
+            <p className="text-rose-700 text-sm font-medium">Documentos emitidos en el período: <span className="font-bold">{billingMetrics.totalDocumentsEmitted}</span></p>
           </div>
         </div>}
       </div>
 
-      {/* La lista de consumo por cliente siempre se ve; sus valores en dinero (tarifa y subtotal) siguen la configuración del cobro. */}
-      <div className="mb-12">
+      {billingMetrics.months.length > 1 && (
+        <div className="mb-8 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 text-sm font-bold text-slate-700">Mes a mes</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs text-slate-500 uppercase tracking-wider">
+                  <th className="p-3 font-bold">Mes</th>
+                  <th className="p-3 font-bold text-right">Emitidas</th>
+                  <th className="p-3 font-bold text-right">Rechazadas</th>
+                  {!billingMetrics.platformBillingHidden && <th className="p-3 font-bold text-right">A pagar a la plataforma</th>}
+                  <th className="p-3 font-bold text-right">A cobrar a clientes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {billingMetrics.months.map(x => (
+                  <tr key={`${x.year}-${x.month}`} className="border-b border-slate-100">
+                    <td className="p-3 font-medium text-slate-700 capitalize">{monthLabel(x.year, x.month)}</td>
+                    <td className="p-3 text-right">{x.documentsEmitted}</td>
+                    <td className="p-3 text-right">{x.documentsRejected}</td>
+                    {!billingMetrics.platformBillingHidden && <td className="p-3 text-right font-mono">{money(x.amountDueToPlatform)}</td>}
+                    <td className="p-3 text-right font-mono">{money(x.amountDueFromClients)}</td>
+                  </tr>
+                ))}
+                <tr className="font-bold bg-slate-50">
+                  <td className="p-3">Total</td>
+                  <td className="p-3 text-right">{billingMetrics.totalDocumentsEmitted}</td>
+                  <td className="p-3 text-right">{billingMetrics.totalDocumentsRejected}</td>
+                  {!billingMetrics.platformBillingHidden && <td className="p-3 text-right font-mono">{money(billingMetrics.totalAmountDueToPlatform)}</td>}
+                  <td className="p-3 text-right font-mono">{money(billingMetrics.totalAmountDueFromClients)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* La lista de consumo por cliente siempre se ve; sus valores en dinero siguen la configuración del cobro. */}
+      <div className={`mb-12 ${loadingRange ? 'opacity-60' : ''}`}>
         <div className="flex items-center mb-4">
           <Users className="w-5 h-5 text-slate-500 mr-2" />
           <h2 className="text-lg font-bold text-slate-800">Consumo por cliente</h2>
         </div>
         <DataTable
-          rows={(billingMetrics.clientBreakdown as ClientConsumption[]).map((c, i) => ({ ...c, rowId: String(i) }))}
-          rowKey={c => c.rowId ?? c.clientName}
+          rows={billingMetrics.clients.map((c, i) => ({ ...c, rowId: String(i) }))}
+          rowKey={c => c.rowId ?? c.name}
           tableFrom="md"
           search="Buscar cliente..."
           defaultSort={{ key: 'client', dir: 'asc' }}
-          emptyMessage="No hay clientes emitiendo documentos este mes."
-          columns={billingMetrics.platformBillingHidden ? consumptionColumns.filter(c => c.key === 'client' || c.key === 'documents' || c.key === 'rejected') : consumptionColumns}
+          emptyMessage="No hay clientes con documentos en este período."
+          columns={billingMetrics.platformBillingHidden ? consumptionColumns.filter(c => c.key !== 'subtotal') : consumptionColumns}
         />
       </div>
 

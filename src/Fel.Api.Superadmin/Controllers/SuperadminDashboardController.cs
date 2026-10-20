@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Fel.Infrastructure.Data;
@@ -52,6 +53,149 @@ namespace Fel.Api.Superadmin.Controllers
             {
                 return BadRequest(ex.Message);
             }
+        }
+
+        // ----- Consumo por rango de meses -----
+        // El cobro se calcula mes a mes (tarifa por volumen de cada mes, prorrateo por días en el cobro por usuario), así que un rango es la suma de
+        // sus meses, cada uno calculado como siempre. Los documentos se cuentan directo (con el cobro por usuario el servicio de cobro no los trae).
+        public record RangeMonth(int Year, int Month, int DocumentsEmitted, int DocumentsRejected, decimal AmountDue);
+
+        public class RangeTenant
+        {
+            public Guid TenantId { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public List<RangeMonth> Months { get; set; } = new();
+            public int DocumentsEmitted { get; set; }
+            public int DocumentsRejected { get; set; }
+            public decimal AmountDue { get; set; }
+        }
+
+        public class RangeResult
+        {
+            public string From { get; set; } = string.Empty;
+            public string To { get; set; } = string.Empty;
+            public List<RangeMonth> Months { get; set; } = new();
+            public List<RangeTenant> Tenants { get; set; } = new();
+            public int TotalDocumentsEmitted { get; set; }
+            public int TotalDocumentsRejected { get; set; }
+            public decimal TotalAmountDue { get; set; }
+        }
+
+        private async Task<RangeResult> BuildRangeAsync(List<(int Year, int Month)> months)
+        {
+            var rangeStart = new DateTime(months[0].Year, months[0].Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var rangeEnd = new DateTime(months[^1].Year, months[^1].Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
+
+            var counts = await _dbContext.Documents.AsNoTracking()
+                .Where(d => !d.Client.IsDeveloperSandbox && (d.Status == "APPROVED" || d.Status == "REJECTED") && d.CreatedAt >= rangeStart && d.CreatedAt < rangeEnd)
+                .GroupBy(d => new { d.Client.TenantId, d.CreatedAt.Year, d.CreatedAt.Month, d.Status })
+                .Select(g => new { g.Key.TenantId, g.Key.Year, g.Key.Month, g.Key.Status, Count = g.Count() })
+                .ToListAsync();
+
+            var amounts = new Dictionary<(Guid TenantId, int Year, int Month), decimal>();
+            var names = new Dictionary<Guid, string>();
+            foreach (var (y, m) in months)
+            {
+                var monthly = await _billingService.GetSuperadminMetricsAsync(y, m);
+                foreach (var t in monthly.TenantBreakdown)
+                {
+                    amounts[(t.TenantId, y, m)] = t.AmountDueToSuperadmin;
+                    names[t.TenantId] = t.TenantName;
+                }
+            }
+
+            var tenantIds = counts.Select(c => c.TenantId).Concat(names.Keys).Distinct().ToList();
+            var missingNames = tenantIds.Where(id => !names.ContainsKey(id)).ToList();
+            if (missingNames.Count > 0)
+                foreach (var t in await _dbContext.Tenants.AsNoTracking().Where(t => missingNames.Contains(t.Id)).Select(t => new { t.Id, t.Name }).ToListAsync())
+                    names[t.Id] = t.Name;
+
+            var result = new RangeResult { From = Fel.Infrastructure.Services.MonthRange.Key(months[0].Year, months[0].Month), To = Fel.Infrastructure.Services.MonthRange.Key(months[^1].Year, months[^1].Month) };
+            foreach (var id in tenantIds)
+            {
+                var row = new RangeTenant { TenantId = id, Name = names.GetValueOrDefault(id, string.Empty) };
+                foreach (var (y, m) in months)
+                {
+                    row.Months.Add(new RangeMonth(y, m,
+                        counts.Where(c => c.TenantId == id && c.Year == y && c.Month == m && c.Status == "APPROVED").Sum(c => c.Count),
+                        counts.Where(c => c.TenantId == id && c.Year == y && c.Month == m && c.Status == "REJECTED").Sum(c => c.Count),
+                        amounts.GetValueOrDefault((id, y, m))));
+                }
+                row.DocumentsEmitted = row.Months.Sum(x => x.DocumentsEmitted);
+                row.DocumentsRejected = row.Months.Sum(x => x.DocumentsRejected);
+                row.AmountDue = row.Months.Sum(x => x.AmountDue);
+                result.Tenants.Add(row);
+            }
+            result.Tenants = result.Tenants.OrderByDescending(t => t.AmountDue).ThenBy(t => t.Name).ToList();
+            for (var i = 0; i < months.Count; i++)
+                result.Months.Add(new RangeMonth(months[i].Year, months[i].Month,
+                    result.Tenants.Sum(t => t.Months[i].DocumentsEmitted), result.Tenants.Sum(t => t.Months[i].DocumentsRejected), result.Tenants.Sum(t => t.Months[i].AmountDue)));
+            result.TotalDocumentsEmitted = result.Tenants.Sum(t => t.DocumentsEmitted);
+            result.TotalDocumentsRejected = result.Tenants.Sum(t => t.DocumentsRejected);
+            result.TotalAmountDue = result.Tenants.Sum(t => t.AmountDue);
+            return result;
+        }
+
+        [HttpGet("billing-range")]
+        public async Task<IActionResult> GetBillingRange([FromQuery] string? from, [FromQuery] string? to)
+        {
+            var error = Fel.Infrastructure.Services.MonthRange.Parse(from, to, out var months);
+            if (error != null) return BadRequest(error);
+            return Ok(await BuildRangeAsync(months));
+        }
+
+        [HttpGet("billing-range/export")]
+        public async Task<IActionResult> ExportBillingRange([FromQuery] string? from, [FromQuery] string? to)
+        {
+            var error = Fel.Infrastructure.Services.MonthRange.Parse(from, to, out var months);
+            if (error != null) return BadRequest(error);
+            var r = await BuildRangeAsync(months);
+
+            using var wb = new ClosedXML.Excel.XLWorkbook();
+            var detail = wb.AddWorksheet("Por tenant y mes");
+            string[] headers = { "Tenant", "Mes", "Emitidas", "Rechazadas", "A cobrar" };
+            for (var i = 0; i < headers.Length; i++) detail.Cell(1, i + 1).Value = headers[i];
+            detail.Row(1).Style.Font.Bold = true;
+            var row = 2;
+            foreach (var t in r.Tenants)
+            {
+                foreach (var x in t.Months)
+                {
+                    detail.Cell(row, 1).Value = t.Name;
+                    detail.Cell(row, 2).Value = Fel.Infrastructure.Services.MonthRange.Label(x.Year, x.Month);
+                    detail.Cell(row, 3).Value = x.DocumentsEmitted;
+                    detail.Cell(row, 4).Value = x.DocumentsRejected;
+                    detail.Cell(row, 5).Value = x.AmountDue;
+                    row++;
+                }
+            }
+            detail.Range(2, 5, row, 5).Style.NumberFormat.Format = "#,##0.00";
+            detail.Columns().AdjustToContents();
+
+            var totals = wb.AddWorksheet("Totales por tenant");
+            string[] h2 = { "Tenant", "Emitidas", "Rechazadas", "A cobrar" };
+            for (var i = 0; i < h2.Length; i++) totals.Cell(1, i + 1).Value = h2[i];
+            totals.Row(1).Style.Font.Bold = true;
+            var tr = 2;
+            foreach (var t in r.Tenants)
+            {
+                totals.Cell(tr, 1).Value = t.Name;
+                totals.Cell(tr, 2).Value = t.DocumentsEmitted;
+                totals.Cell(tr, 3).Value = t.DocumentsRejected;
+                totals.Cell(tr, 4).Value = t.AmountDue;
+                tr++;
+            }
+            totals.Cell(tr, 1).Value = "Total";
+            totals.Cell(tr, 2).Value = r.TotalDocumentsEmitted;
+            totals.Cell(tr, 3).Value = r.TotalDocumentsRejected;
+            totals.Cell(tr, 4).Value = r.TotalAmountDue;
+            totals.Row(tr).Style.Font.Bold = true;
+            totals.Range(2, 4, tr, 4).Style.NumberFormat.Format = "#,##0.00";
+            totals.Columns().AdjustToContents();
+
+            using var stream = new System.IO.MemoryStream();
+            wb.SaveAs(stream);
+            return new FileContentResult(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") { FileDownloadName = $"consumo_{r.From}_a_{r.To}.xlsx" };
         }
     }
 }

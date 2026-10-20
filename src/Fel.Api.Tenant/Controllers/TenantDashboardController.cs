@@ -81,8 +81,13 @@ namespace Fel.Api.Tenant.Controllers
                     metrics.SuperadminTariffApplied = 0;
                     metrics.MonthFractionNeeded = 0;
                     metrics.PlatformBillingHidden = true;
-                    // La lista de consumo por cliente (precio aplicado y monto) sigue la misma configuración.
-                    metrics.ClientBreakdown = new List<Fel.Infrastructure.Services.ClientUsageBreakdown>();
+                    // En la lista de consumo por cliente se conservan el cliente y los documentos emitidos; los valores en dinero (tarifa y subtotal)
+                    // siguen la misma configuración.
+                    foreach (var row in metrics.ClientBreakdown)
+                    {
+                        row.PriceApplied = 0;
+                        row.AmountDueToTenant = 0;
+                    }
                 }
                 return Ok(metrics);
             }

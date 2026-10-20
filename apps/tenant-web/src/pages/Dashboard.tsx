@@ -125,8 +125,8 @@ export default function Dashboard() {
         </div>}
       </div>
 
-      {/* La lista de consumo por cliente sigue la configuración del cobro: un aliado sin permiso no la ve. */}
-      {!billingMetrics.platformBillingHidden && <div className="mb-12">
+      {/* La lista de consumo por cliente siempre se ve; sus valores en dinero (tarifa y subtotal) siguen la configuración del cobro. */}
+      <div className="mb-12">
         <div className="flex items-center mb-4">
           <Users className="w-5 h-5 text-slate-500 mr-2" />
           <h2 className="text-lg font-bold text-slate-800">Consumo por cliente</h2>
@@ -138,9 +138,9 @@ export default function Dashboard() {
           search="Buscar cliente..."
           defaultSort={{ key: 'client', dir: 'asc' }}
           emptyMessage="No hay clientes emitiendo documentos este mes."
-          columns={consumptionColumns}
+          columns={billingMetrics.platformBillingHidden ? consumptionColumns.filter(c => c.key === 'client' || c.key === 'documents') : consumptionColumns}
         />
-      </div>}
+      </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-100 bg-slate-50">

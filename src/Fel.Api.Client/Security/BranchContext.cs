@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
@@ -43,10 +44,30 @@ namespace Fel.Api.Security
             if (!Guid.TryParse(userIdValue, out var userId))
                 throw new BranchAccessException(StatusCodes.Status401Unauthorized, "Sesión inválida o expirada. Vuelve a iniciar sesión.");
 
-            var user = await dbContext.ClientUsers.AsNoTracking()
-                .Where(u => u.Id == userId)
-                .Select(u => new { u.ClientId, u.IsActive, u.Role, u.AllBranches, Assigned = u.Branches.Select(b => b.BranchId).ToList() })
-                .FirstOrDefaultAsync();
+            // Sesión de soporte: un usuario del tenant dentro del portal de un cliente de su tenant. No hay fila de ClientUsers: entra como
+            // administrador con todas las sucursales, y se comprueba en cada petición que el cliente siga activo y que su acceso al tenant siga vigente.
+            Actor? user;
+            if (http.User?.HasClaim(c => c.Type == SessionStampValidator.SupportClaim) == true)
+            {
+                var supportUserId = http.User.FindFirst(SessionStampValidator.SupportClaim)?.Value;
+                var tokenClientId = http.User.FindFirst("ClientId")?.Value;
+                if (!Guid.TryParse(supportUserId, out var supportId) || !string.Equals(tokenClientId, clientId.ToString(), StringComparison.OrdinalIgnoreCase))
+                    throw new BranchAccessException(StatusCodes.Status401Unauthorized, "Sesión inválida o expirada. Vuelve a iniciar sesión.");
+
+                var allowedSupport = await dbContext.Clients.AsNoTracking()
+                    .Where(c => c.Id == clientId && c.IsActive)
+                    .AnyAsync(c => dbContext.TenantUsers.Any(u => u.Id == supportId && u.IsActive)
+                                   && dbContext.TenantUserAssignments.Any(a => a.TenantUserId == supportId && a.TenantId == c.TenantId && a.IsActive && a.Tenant.IsActive));
+                user = allowedSupport ? new Actor(clientId, true, ClientUserRoles.Administrator, true, new List<Guid>()) : null;
+                userId = supportId;
+            }
+            else
+            {
+                user = await dbContext.ClientUsers.AsNoTracking()
+                    .Where(u => u.Id == userId)
+                    .Select(u => new Actor(u.ClientId, u.IsActive, u.Role, u.AllBranches, u.Branches.Select(b => b.BranchId).ToList()))
+                    .FirstOrDefaultAsync();
+            }
             if (user == null || !user.IsActive || user.ClientId != clientId)
                 throw new BranchAccessException(StatusCodes.Status401Unauthorized, "Sesión inválida o expirada. Vuelve a iniciar sesión.");
 
@@ -92,6 +113,9 @@ namespace Fel.Api.Security
             };
         }
     }
+
+    // Quien hace la petición, ya sea un usuario del cliente o un usuario del tenant en modo soporte.
+    internal sealed record Actor(Guid ClientId, bool IsActive, string Role, bool AllBranches, List<Guid> Assigned);
 
     public sealed class BranchAccessException : Exception
     {

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, RefreshCw, Send, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, RefreshCw, Send, X, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
+import { enterClientPortal } from '../lib/support';
 import { toast } from 'sonner';
 import ClientFormFields from '../components/ClientFormFields';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
@@ -259,6 +260,16 @@ export default function Clients() {
         columns={columns}
         actions={client => (
           <>
+            {client.isActive && (
+              <button
+                onClick={() => enterClientPortal(client.id)}
+                className="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
+                title="Entrar al portal del cliente"
+                aria-label={`Entrar al portal de ${client.companyName}`}
+              >
+                <LogIn size={16} />
+              </button>
+            )}
             <button
               onClick={() => navigate(`/clients/edit/${client.id}`)}
               className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200"

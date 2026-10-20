@@ -40,6 +40,8 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
     try {
       const res = await api.post('/client/auth/login', { tenantSlug, email, password });
 
+      // Un inicio de sesión normal deja atrás cualquier marca de modo soporte.
+      localStorage.removeItem('fel_client_support');
       localStorage.setItem('fel_client_auth', res.data.token);
       localStorage.setItem('fel_client_id', res.data.clientId);
       localStorage.setItem('fel_client_tenant', res.data.tenantSlug);

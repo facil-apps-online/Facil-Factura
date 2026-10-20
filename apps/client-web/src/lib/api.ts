@@ -31,6 +31,7 @@ function endSession() {
   localStorage.removeItem('fel_client_auth');
   localStorage.removeItem('fel_client_id');
   localStorage.removeItem(BRANCH_STORAGE_KEY);
+  localStorage.removeItem('fel_client_support');
   if (!window.location.pathname.startsWith('/login')) {
     window.location.href = tenantSlug ? `/login?tenant=${tenantSlug}` : '/login';
   }

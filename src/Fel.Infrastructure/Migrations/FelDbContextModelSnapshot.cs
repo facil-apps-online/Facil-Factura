@@ -3389,6 +3389,36 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("SuperadminUsers", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.SupportAccess", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TenantUserEmail")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("TenantUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "StartedAt");
+
+                    b.ToTable("SupportAccesses", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.TariffTier", b =>
                 {
                     b.Property<Guid>("Id")

@@ -25,6 +25,7 @@ import UsersPage from './pages/UsersPage';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import SupportEntry, { readSupport, SUPPORT_STORAGE_KEY } from './pages/SupportEntry';
 
 interface ClientBranding {
   companyName: string;
@@ -200,6 +201,8 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
   const { me } = useAccountMe(api, '/client/auth');
   const navigate = useNavigate();
   const location = useLocation();
+  // Modo soporte: un usuario del tenant administra esta empresa sin usuario propio (ver SupportEntry).
+  const support = readSupport();
   const isDesktop = useIsDesktop();
   const [mobileOpen, setMobileOpen] = useState(false);
   // Sin preferencia guardada, el menú arranca colapsado entre 1024 y 1279 px para que a ~1200 px
@@ -240,6 +243,17 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
         <div className="fixed inset-0 z-30 bg-slate-900/50" aria-hidden="true" onClick={() => setMobileOpen(false)} />
       )}
       <main className="flex-1 flex flex-col min-w-0 relative z-10">
+        {support && (
+          <div className="shrink-0 bg-amber-500 text-slate-900 text-sm font-semibold px-4 sm:px-6 lg:px-8 py-2 flex flex-wrap items-center justify-between gap-2">
+            <span>Modo soporte: está administrando {support.client || 'esta empresa'}{support.by ? ` como ${support.by}` : ''}. Lo que emita queda a nombre del cliente.</span>
+            <button
+              onClick={() => { onLogout(); window.close(); navigate('/login'); }}
+              className="px-3 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-700"
+            >
+              Salir del modo soporte
+            </button>
+          </div>
+        )}
         <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 shadow-sm">
           {!isDesktop && (
             <button
@@ -267,7 +281,7 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
           </div>
           <div className="flex items-center gap-4 shrink-0">
             <BranchSelector />
-            <UserMenu me={me} fallbackName={name} onProfile={() => navigate('/profile')} onLogout={onLogout} />
+            {!support && <UserMenu me={me} fallbackName={name} onProfile={() => navigate('/profile')} onLogout={onLogout} />}
             <SessionGuard api={api} tokenKey="fel_client_auth" basePath="/client/auth" onExpired={onLogout} />
           </div>
         </header>
@@ -492,6 +506,7 @@ function App() {
     localStorage.removeItem('fel_client_auth');
     localStorage.removeItem('fel_client_id');
     localStorage.removeItem(BRANCH_STORAGE_KEY);
+    localStorage.removeItem(SUPPORT_STORAGE_KEY);
     setIsAuthenticated(false);
   };
 
@@ -504,6 +519,7 @@ function App() {
             path="/login"
             element={isAuthenticated ? <Navigate to="/" /> : <Login onAuthSuccess={() => setIsAuthenticated(true)} />}
           />
+          <Route path="/support-entry" element={<SupportEntry onAuthSuccess={() => setIsAuthenticated(true)} />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route

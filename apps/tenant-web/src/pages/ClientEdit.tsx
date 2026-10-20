@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, UserRound, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, UserRound, RefreshCw, LogIn } from 'lucide-react';
 import { api, getErrorMessage } from '../lib/api';
+import { enterClientPortal } from '../lib/support';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import ClientFormFields from '../components/ClientFormFields';
@@ -1034,6 +1035,14 @@ export default function ClientEdit() {
             </div>
           </div>
         </div>
+        {client.isActive && (
+          <button
+            onClick={() => enterClientPortal(client.id)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-900 text-white hover:bg-slate-700 transition-colors"
+          >
+            <LogIn size={16} /> Entrar al portal del cliente
+          </button>
+        )}
       </header>
 
       {/* Contenido / Tabs */}

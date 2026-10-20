@@ -32,6 +32,9 @@ namespace Fel.Infrastructure.Security
             _cache = cache;
         }
 
+        // Claim que marca la sesión de soporte; su valor es el id del usuario del tenant.
+        public const string SupportClaim = "SupportTenantUserId";
+
         private static string Key(PortalKind kind, Guid id) => $"session-stamp:{kind}:{id}";
 
         // De quién es el token: cada portal lleva un claim distinto.
@@ -39,6 +42,8 @@ namespace Fel.Infrastructure.Security
         {
             Guid? Id(string type) => Guid.TryParse(principal.FindFirst(type)?.Value, out var id) ? id : null;
 
+            // Sesión de soporte (un usuario del tenant dentro del portal de un cliente): vive del sello del usuario del tenant.
+            if (principal.HasClaim(c => c.Type == SupportClaim)) return Id(SupportClaim) is Guid sup ? (PortalKind.Tenant, sup) : null;
             if (principal.HasClaim(c => c.Type == "DeveloperId")) return Id("DeveloperId") is Guid d ? (PortalKind.Developer, d) : null;
             if (principal.HasClaim(c => c.Type == "ClientId")) return Id(ClaimTypes.NameIdentifier) is Guid c ? (PortalKind.Client, c) : null;
             if (principal.HasClaim(c => c.Type == "TenantId")) return Id(ClaimTypes.NameIdentifier) is Guid t ? (PortalKind.Tenant, t) : null;
@@ -65,12 +70,14 @@ namespace Fel.Infrastructure.Security
 
             // Bloqueo administrativo (ver TenantBlocks): al cliente le cierra la sesión cualquier bloqueo; al usuario del tenant, solo el de su padre
             // (la suspensión de la plataforma lo deja entrar en solo lectura). Se consulta aparte del sello para que cambie en menos de 30 segundos.
+            var isSupport = principal.HasClaim(c => c.Type == SupportClaim);
             var tenantId = kind == PortalKind.Client ? current.TenantId
                 : kind == PortalKind.Tenant && Guid.TryParse(principal.FindFirst("TenantId")?.Value, out var claimTenant) ? claimTenant : (Guid?)null;
             if (tenantId is Guid tid)
             {
                 var block = await TenantBlocks.GetAsync(_dbContext, tid);
-                if (kind == PortalKind.Client ? block.Level != TenantBlockLevel.None : block.Level == TenantBlockLevel.Blocked) return false;
+                // La sesión de soporte entra al portal de un cliente: le aplica lo mismo que a un cliente (cualquier bloqueo la corta).
+                if (kind == PortalKind.Client || isSupport ? block.Level != TenantBlockLevel.None : block.Level == TenantBlockLevel.Blocked) return false;
             }
             return true;
         }

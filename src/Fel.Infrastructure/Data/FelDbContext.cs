@@ -66,6 +66,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<ClientPrepaidBag> ClientPrepaidBags => Set<ClientPrepaidBag>();
         public DbSet<ClientEnabledDocumentType> ClientEnabledDocumentTypes => Set<ClientEnabledDocumentType>();
         public DbSet<ClientInvoiceDefaults> ClientInvoiceDefaults => Set<ClientInvoiceDefaults>();
+        public DbSet<SupportAccess> SupportAccesses => Set<SupportAccess>();
         public DbSet<ClientEnabledRetentionConcept> ClientEnabledRetentionConcepts => Set<ClientEnabledRetentionConcept>();
         public DbSet<DeveloperUser> DeveloperUsers => Set<DeveloperUser>();
 
@@ -903,6 +904,14 @@ namespace Fel.Infrastructure.Data
                       .WithMany()
                       .HasForeignKey(e => e.ClonedFromId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<SupportAccess>(entity =>
+            {
+                entity.ToTable("SupportAccesses");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.TenantUserEmail).IsRequired().HasMaxLength(200);
+                entity.HasIndex(e => new { e.ClientId, e.StartedAt });
             });
 
             modelBuilder.Entity<ClientInvoiceDefaults>(entity =>

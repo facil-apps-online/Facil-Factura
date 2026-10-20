@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, UserRound, RefreshCw, LogIn } from 'lucide-react';
 import { api, getErrorMessage } from '../lib/api';
 import { enterClientPortal } from '../lib/support';
+import ClientBlockSwitch from '../components/ClientBlockSwitch';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import ClientFormFields from '../components/ClientFormFields';
@@ -150,6 +151,8 @@ export default function ClientEdit() {
     latitude: null as number | null,
     longitude: null as number | null,
     isActive: true,
+    blocked: false,
+    blockReason: null as string | null,
     billingFrequency: 'Monthly',
     controlsPayments: false,
      electronicInvoiceLegend: '',
@@ -1030,18 +1033,30 @@ export default function ClientEdit() {
               <span>NIT: {client.taxId}</span>
               <span className="w-1 h-1 rounded-full bg-slate-300"></span>
               <span className={client.isActive ? 'text-emerald-600 font-medium' : 'text-rose-600 font-medium'}>
-                {client.isActive ? 'Emisor Activo' : 'Emisor Inactivo'}
+                {client.isActive ? (client.blocked ? 'Emisor Bloqueado' : 'Emisor Activo') : 'Emisor Archivado'}
               </span>
             </div>
           </div>
         </div>
         {client.isActive && (
-          <button
-            onClick={() => enterClientPortal(id!)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-900 text-white hover:bg-slate-700 transition-colors"
-          >
-            <LogIn size={16} /> Entrar al portal del cliente
-          </button>
+          <div className="flex items-center gap-5">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <ClientBlockSwitch
+                clientId={id!}
+                clientName={client.companyName}
+                blocked={client.blocked}
+                reason={client.blockReason}
+                onChanged={(blocked, reason) => setClient(prev => ({ ...prev, blocked, blockReason: reason }))}
+              />
+              Bloquear acceso
+            </label>
+            <button
+              onClick={() => enterClientPortal(id!)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-900 text-white hover:bg-slate-700 transition-colors"
+            >
+              <LogIn size={16} /> Entrar al portal del cliente
+            </button>
+          </div>
         )}
       </header>
 

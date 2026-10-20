@@ -130,6 +130,8 @@ namespace Fel.Api.Tenant.Controllers
                         c.TaxId,
                         c.Email,
                         c.IsActive,
+                        Blocked = c.BlockedAt != null,
+                        c.BlockReason,
                         c.CreatedAt,
                         c.AssociateId,
                         AssociateName = c.Associate != null ? c.Associate.Name : null,
@@ -204,6 +206,8 @@ namespace Fel.Api.Tenant.Controllers
                 client.Latitude,
                 client.Longitude,
                 client.IsActive,
+                Blocked = client.BlockedAt != null,
+                client.BlockReason,
                 BillingFrequency = client.BillingFrequency.ToString(),
                 client.ControlsPayments
             });
@@ -371,6 +375,53 @@ namespace Fel.Api.Tenant.Controllers
             return Ok(new { client.Id, client.CompanyName, client.TaxId, client.Email, client.IsActive });
         }
         
+        // Bloqueo administrativo del cliente (p. ej. por un pago atrasado): sus usuarios y su API dejan de funcionar hasta que se desbloquee.
+        [HttpPut("{id}/block")]
+        public async Task<IActionResult> SetBlock(Guid id, [FromBody] ClientBlockRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+            if (client == null) return NotFound();
+
+            if (request.Blocked)
+            {
+                var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
+                if (reason is { Length: > 500 }) return BadRequest("El motivo no puede pasar de 500 caracteres.");
+                client.BlockedAt = DateTime.UtcNow;
+                client.BlockReason = reason;
+                client.BlockedBy = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+            }
+            else
+            {
+                client.BlockedAt = null;
+                client.BlockReason = null;
+                client.BlockedBy = null;
+            }
+
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { client.Id, Blocked = client.BlockedAt != null, client.BlockReason });
+        }
+
+        public class ClientBlockRequest
+        {
+            public bool Blocked { get; set; }
+            public string? Reason { get; set; }
+        }
+
+        // Restaura un cliente archivado.
+        [HttpPost("{id}/reactivate")]
+        public async Task<IActionResult> ReactivateClient(Guid id)
+        {
+            var tenantId = GetCurrentTenantId();
+            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+            if (client == null) return NotFound();
+
+            client.IsActive = true;
+            await _dbContext.SaveChangesAsync();
+            return NoContent();
+        }
+
+        // Archivar: el cliente deja de entrar y emitir, pero conserva todo su historial y se puede restaurar. No se borra nada.
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteClient(Guid id)
         {

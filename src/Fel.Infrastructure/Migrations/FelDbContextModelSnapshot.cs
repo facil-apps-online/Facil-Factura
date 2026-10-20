@@ -1020,6 +1020,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<int>("BillingFrequency")
                         .HasColumnType("int");
 
+                    b.Property<string>("BlockReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("BlockedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("BlockedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<string>("City")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");

@@ -125,6 +125,8 @@ namespace Fel.Infrastructure.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.CompanyName).IsRequired().HasMaxLength(150);
                 entity.Property(e => e.TaxId).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.BlockReason).HasMaxLength(500);
+                entity.Property(e => e.BlockedBy).HasMaxLength(200);
                 entity.HasOne(e => e.Tenant)
                       .WithMany(t => t.Clients)
                       .HasForeignKey(e => e.TenantId)

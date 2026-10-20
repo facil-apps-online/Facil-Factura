@@ -21,7 +21,7 @@ namespace Fel.Infrastructure.Security
         private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
 
         // TenantId: tenant del que depende la cuenta (el del cliente, para el portal de clientes); sirve para aplicar el bloqueo administrativo.
-        private sealed record Entry(Guid Stamp, bool Active, Guid? TenantId);
+        private sealed record Entry(Guid Stamp, bool Active, Guid? TenantId, bool ClientBlocked);
 
         private readonly FelDbContext _dbContext;
         private readonly IMemoryCache _cache;
@@ -67,6 +67,8 @@ namespace Fel.Infrastructure.Security
                 if (current != null) _cache.Set(key, current, CacheTtl);
             }
             if (current == null || !current.Active || current.Stamp != tokenStamp) return false;
+            // Cliente bloqueado por su tenant: sus usuarios pierden la sesión (la de soporte es del usuario del tenant y no pasa por aquí).
+            if (kind == PortalKind.Client && current.ClientBlocked) return false;
 
             // Bloqueo administrativo (ver TenantBlocks): al cliente le cierra la sesión cualquier bloqueo; al usuario del tenant, solo el de su padre
             // (la suspensión de la plataforma lo deja entrar en solo lectura). Se consulta aparte del sello para que cambie en menos de 30 segundos.
@@ -85,14 +87,14 @@ namespace Fel.Infrastructure.Security
         // Tras cambiar el sello: que esta API vea el nuevo de inmediato. Se escribe el valor nuevo en vez de borrar la entrada, así una
         // petición que llegue entre el cambio y el guardado no vuelve a cachear el sello viejo leyéndolo de la base.
         public void Refresh(PortalKind kind, Guid id, Guid stamp) =>
-            _cache.Set(Key(kind, id), new Entry(stamp, true, _cache.TryGetValue(Key(kind, id), out Entry? previous) ? previous?.TenantId : null), CacheTtl);
+            _cache.Set(Key(kind, id), new Entry(stamp, true, _cache.TryGetValue(Key(kind, id), out Entry? previous) ? previous?.TenantId : null, previous?.ClientBlocked ?? false), CacheTtl);
 
         private async Task<Entry?> LoadAsync(PortalKind kind, Guid id) => kind switch
         {
-            PortalKind.Tenant => await _dbContext.TenantUsers.AsNoTracking().Where(u => u.Id == id).Select(u => new Entry(u.SecurityStamp, u.IsActive, null)).FirstOrDefaultAsync(),
-            PortalKind.Client => await _dbContext.ClientUsers.AsNoTracking().Where(u => u.Id == id).Select(u => new Entry(u.SecurityStamp, u.IsActive, u.Client.TenantId)).FirstOrDefaultAsync(),
-            PortalKind.Developer => await _dbContext.DeveloperUsers.AsNoTracking().Where(u => u.Id == id).Select(u => new Entry(u.SecurityStamp, u.IsActive, null)).FirstOrDefaultAsync(),
-            PortalKind.Superadmin => await _dbContext.SuperadminUsers.AsNoTracking().Where(u => u.Id == id).Select(u => new Entry(u.SecurityStamp, true, null)).FirstOrDefaultAsync(),
+            PortalKind.Tenant => await _dbContext.TenantUsers.AsNoTracking().Where(u => u.Id == id).Select(u => new Entry(u.SecurityStamp, u.IsActive, null, false)).FirstOrDefaultAsync(),
+            PortalKind.Client => await _dbContext.ClientUsers.AsNoTracking().Where(u => u.Id == id).Select(u => new Entry(u.SecurityStamp, u.IsActive, u.Client.TenantId, u.Client.BlockedAt != null)).FirstOrDefaultAsync(),
+            PortalKind.Developer => await _dbContext.DeveloperUsers.AsNoTracking().Where(u => u.Id == id).Select(u => new Entry(u.SecurityStamp, u.IsActive, null, false)).FirstOrDefaultAsync(),
+            PortalKind.Superadmin => await _dbContext.SuperadminUsers.AsNoTracking().Where(u => u.Id == id).Select(u => new Entry(u.SecurityStamp, true, null, false)).FirstOrDefaultAsync(),
             _ => null
         };
     }

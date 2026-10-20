@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, RefreshCw, Send, X, LogIn } from 'lucide-react';
+import { Plus, Edit2, RefreshCw, Send, X, LogIn, Archive, ArchiveRestore } from 'lucide-react';
+import ClientBlockSwitch from '../components/ClientBlockSwitch';
 import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
 import { enterClientPortal } from '../lib/support';
@@ -25,6 +26,8 @@ interface Client {
   taxId: string;
   email: string;
   isActive: boolean;
+  blocked: boolean;
+  blockReason: string | null;
   createdAt: string;
   nearestResolutionExpiry: string | null;
   associateId: string | null;
@@ -110,15 +113,26 @@ export default function Clients() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('¿Estás seguro de eliminar este emisor?')) {
+  // Archivar no borra nada: el cliente conserva todo su historial, deja de entrar y emitir, y se puede restaurar cuando se necesite.
+  const handleArchive = async (id: string) => {
+    if (window.confirm('¿Archivar este cliente? Conserva todo su historial, pero sus usuarios dejarán de entrar y emitir. Podrás restaurarlo cuando quieras.')) {
       try {
         await api.delete(`/tenant/clients/${id}`);
-        toast.success("Emisor eliminado correctamente");
+        toast.success("Cliente archivado");
         loadClients();
       } catch (err) {
-        toast.error("Error al eliminar emisor");
+        toast.error(getErrorMessage(err, "No se pudo archivar el cliente"));
       }
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    try {
+      await api.post(`/tenant/clients/${id}/reactivate`);
+      toast.success("Cliente restaurado");
+      loadClients();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "No se pudo restaurar el cliente"));
     }
   };
 
@@ -159,9 +173,26 @@ export default function Clients() {
       render: c => c.isActive ? (
         <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">Activo</span>
       ) : (
-        <span className="px-3 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100 border border-rose-200">Inactivo</span>
+        <span className="px-3 py-1 rounded-full text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200">Archivado</span>
       ),
       sortValue: c => (c.isActive ? 0 : 1),
+    },
+    {
+      key: 'block',
+      header: 'Bloqueo',
+      render: c => c.isActive ? (
+        <div className="flex items-center gap-2">
+          <ClientBlockSwitch
+            clientId={c.id}
+            clientName={c.companyName}
+            blocked={c.blocked}
+            reason={c.blockReason}
+            onChanged={(blocked, reason) => setClients(prev => prev.map(x => x.id === c.id ? { ...x, blocked, blockReason: reason } : x))}
+          />
+          {c.blocked && <span className="text-xs font-semibold text-rose-600">Bloqueado</span>}
+        </div>
+      ) : <span className="text-xs text-slate-400">—</span>,
+      sortValue: c => (c.blocked ? 1 : 0),
     },
     { key: 'portal', header: 'Portal', render: c => <PortalStatusBadge status={c.portalUserStatus} />, sortValue: c => portalOrder[c.portalUserStatus] },
   ];
@@ -278,14 +309,25 @@ export default function Clients() {
             >
               <Edit2 size={16} />
             </button>
-            <button
-              onClick={() => handleDelete(client.id)}
-              className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
-              title="Eliminar"
-              aria-label={`Eliminar ${client.companyName}`}
-            >
-              <Trash2 size={16} />
-            </button>
+            {client.isActive ? (
+              <button
+                onClick={() => handleArchive(client.id)}
+                className="p-1.5 text-slate-400 hover:text-amber-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
+                title="Archivar"
+                aria-label={`Archivar ${client.companyName}`}
+              >
+                <Archive size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={() => handleRestore(client.id)}
+                className="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
+                title="Restaurar"
+                aria-label={`Restaurar ${client.companyName}`}
+              >
+                <ArchiveRestore size={16} />
+              </button>
+            )}
           </>
         )}
       />

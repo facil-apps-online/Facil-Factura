@@ -24,7 +24,9 @@ namespace Fel.Infrastructure.Security
 
             // Un tenant bloqueado (o con un ancestro bloqueado) deja a sus clientes sin API: el middleware responde 403.
             var block = await TenantBlocks.GetAsync(dbContext, branch.Client.TenantId);
-            return new ApiCredentials(branch.Client, branch, isSandbox ? branch.TestApiSecret : branch.LiveApiSecret, isSandbox, block.Level);
+            // Un cliente bloqueado por su tenant tampoco emite por API.
+            var level = branch.Client.BlockedAt != null ? TenantBlockLevel.Blocked : block.Level;
+            return new ApiCredentials(branch.Client, branch, isSandbox ? branch.TestApiSecret : branch.LiveApiSecret, isSandbox, level);
         }
     }
 }

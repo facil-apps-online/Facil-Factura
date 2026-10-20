@@ -177,7 +177,14 @@ namespace Fel.Core.Entities
         public string? SmtpFromName { get; set; }
 
         public DateTime CreatedAt { get; set; }
+        // IsActive = false es archivar el cliente (no entra ni emite; se puede restaurar).
         public bool IsActive { get; set; }
+
+        // Bloqueo administrativo del cliente (p. ej. el tenant presiona un pago atrasado): sus usuarios no entran ni su API emite, pero el cliente
+        // sigue activo y cuenta en el cobro. Reversible. Nulo = sin bloqueo. El tenant entra en modo soporte aunque esté bloqueado.
+        public DateTime? BlockedAt { get; set; }
+        public string? BlockReason { get; set; }
+        public string? BlockedBy { get; set; }
 
         // Client de prueba auto-provisionado para el portal de developers — nunca es un cliente
         // real del Tenant, así que se excluye de los listados normales de Clients (ver

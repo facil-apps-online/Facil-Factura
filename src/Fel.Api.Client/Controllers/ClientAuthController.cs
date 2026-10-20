@@ -65,6 +65,8 @@ namespace Fel.Api.Client.Controllers
             {
                 return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
             }
+            // Bloqueo del propio cliente por su tenant.
+            if (user.Client.BlockedAt != null) return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
 
             // Sucursales a las que puede entrar el usuario (la principal primero). Sin ninguna activa no hay sesión útil.
             var branchesQuery = _dbContext.Branches.AsNoTracking().Where(b => b.ClientId == user.ClientId && b.IsActive);

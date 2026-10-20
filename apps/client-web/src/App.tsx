@@ -287,7 +287,7 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
         </header>
 
         <div className="flex-1 overflow-auto bg-slate-50/50">
-          <div className="max-w-screen-2xl mx-auto">
+          <div className="w-full">
             {/* La clave por sucursal vuelve a montar la pantalla al cambiar de sucursal, así recarga sus datos. */}
             <React.Fragment key={selectedBranchId}>{children}</React.Fragment>
           </div>
@@ -346,7 +346,7 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="p-3 sm:p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-6 flex flex-col gap-4 sm:mb-10 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4 min-w-0">
           {branding?.invoiceLogoUrl ? (

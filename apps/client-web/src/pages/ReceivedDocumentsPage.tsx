@@ -206,7 +206,7 @@ export default function ReceivedDocumentsPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 lg:space-y-8">
+    <div className="p-3 sm:p-4 space-y-6 lg:space-y-8">
       <div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Documentos recibidos</h1>
         <p className="text-slate-500 mt-2">Consulta documentos de tus proveedores y gestiona sus eventos.</p>

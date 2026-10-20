@@ -148,13 +148,13 @@ export default function InvoiceDefaultsSettings() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="p-3 sm:p-4">
       <div className="mb-6 sm:mb-8">
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Valores por defecto</h1>
         <p className="text-slate-500 mt-2">Configure los campos con los que arrancan una nueva factura y un tercero nuevo. Cada usuario puede cambiarlos en lo que esté creando.</p>
       </div>
 
-      <div className="max-w-2xl space-y-5 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+      <div className="grid grid-cols-1 gap-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3">
         <div>
           <label className={labelClass}>Tipo de documento</label>
           <SearchableSelect
@@ -237,7 +237,7 @@ export default function InvoiceDefaultsSettings() {
           </div>
         )}
 
-        <div>
+        <div className="md:col-span-2 xl:col-span-3">
           <label className={labelClass}>Observación general</label>
           <input type="text"
             value={form.notes}
@@ -248,7 +248,7 @@ export default function InvoiceDefaultsSettings() {
           />
         </div>
 
-        <div className="border-t border-slate-100 pt-5">
+        <div className="border-t border-slate-100 pt-5 md:col-span-2 xl:col-span-3">
           <h2 className="text-lg font-extrabold text-slate-800">Tercero nuevo (tipo Cliente)</h2>
           <p className="mt-1 mb-4 text-sm text-slate-500">Con estos datos arranca el formulario al crear un Cliente. Se pueden cambiar en cada tercero.</p>
           <div className="space-y-4">
@@ -287,7 +287,7 @@ export default function InvoiceDefaultsSettings() {
               <label className={labelClass}>Dirección</label>
               <input type="text" value={form.customerAddress} maxLength={200} onChange={e => setForm({ ...form, customerAddress: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <div>
                 <label className={labelClass}>Ciudad</label>
                 <input type="text" value={form.customerCityName} maxLength={100}
@@ -311,7 +311,7 @@ export default function InvoiceDefaultsSettings() {
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end md:col-span-2 xl:col-span-3">
           <Button onClick={save} disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Guardar

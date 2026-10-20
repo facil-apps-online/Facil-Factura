@@ -2373,7 +2373,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="p-3 sm:p-4">
       <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800">{cfg.title}</h1>

@@ -237,7 +237,7 @@ export default function TemplateSettings() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="p-3 sm:p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-6 sm:mb-10">
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
           <LayoutTemplate className="w-8 h-8 text-primary" />

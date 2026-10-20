@@ -21,10 +21,14 @@ interface DefaultsForm {
   customerCityName: string;
   customerPostalCode: string;
   customerPhone: string;
+  customerRegimen: string;
+  customerTaxLevelCode: string;
+  customerCountryCode: string;
 }
 
 const EMPTY: DefaultsForm = { documentTypeId: '', paymentMeans: '', paymentMeansType: '', paymentTermDays: '', currency: '', notes: '',
-  customerAddress: '', customerCityCode: '', customerCityName: '', customerPostalCode: '', customerPhone: '' };
+  customerAddress: '', customerCityCode: '', customerCityName: '', customerPostalCode: '', customerPhone: '',
+  customerRegimen: '', customerTaxLevelCode: '', customerCountryCode: '' };
 const NOTES_MAX = 500;
 
 const labelClass = 'block text-sm font-bold text-slate-700 mb-2';
@@ -38,6 +42,9 @@ export default function InvoiceDefaultsSettings() {
   const [formaPago, setFormaPago] = useState<CatalogItem[]>([]);
   const [paymentTerms, setPaymentTerms] = useState<CatalogItem[]>([]);
   const [currencies, setCurrencies] = useState<CatalogItem[]>([]);
+  const [regimens, setRegimens] = useState<CatalogItem[]>([]);
+  const [taxLevels, setTaxLevels] = useState<CatalogItem[]>([]);
+  const [countries, setCountries] = useState<CatalogItem[]>([]);
   const [termCustom, setTermCustom] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,13 +52,16 @@ export default function InvoiceDefaultsSettings() {
   useEffect(() => {
     (async () => {
       try {
-        const [defaultsRes, typesRes, meansRes, formaRes, termsRes, currencyRes] = await Promise.all([
+        const [defaultsRes, typesRes, meansRes, formaRes, termsRes, currencyRes, regimenRes, taxLevelRes, countryRes] = await Promise.all([
           api.get('/client/invoice-defaults'),
           api.get('/client/invoices/document-types'),
           api.get('/client/tax-catalog?kind=PaymentMeans'),
           api.get('/client/tax-catalog?kind=FormaPago'),
           api.get('/client/tax-catalog?kind=PaymentTerm'),
           features.foreignCurrency ? api.get('/client/tax-catalog?kind=Currency') : Promise.resolve({ data: [] }),
+          api.get('/client/tax-catalog?kind=Regimen'),
+          api.get('/client/tax-catalog?kind=TaxLevelCode'),
+          api.get('/client/tax-catalog?kind=Country'),
         ]);
         const d = defaultsRes.data;
         setDocumentTypes(typesRes.data);
@@ -59,6 +69,9 @@ export default function InvoiceDefaultsSettings() {
         setFormaPago(formaRes.data);
         setPaymentTerms(termsRes.data);
         setCurrencies(currencyRes.data);
+        setRegimens(regimenRes.data);
+        setTaxLevels(taxLevelRes.data);
+        setCountries(countryRes.data);
         setForm({
           documentTypeId: d.documentTypeId ?? '',
           paymentMeans: d.paymentMeans ?? '',
@@ -71,6 +84,9 @@ export default function InvoiceDefaultsSettings() {
           customerCityName: d.customerCityName ?? '',
           customerPostalCode: d.customerPostalCode ?? '',
           customerPhone: d.customerPhone ?? '',
+          customerRegimen: d.customerRegimen ?? '',
+          customerTaxLevelCode: d.customerTaxLevelCode ?? '',
+          customerCountryCode: d.customerCountryCode ?? '',
         });
         setTermCustom(d.paymentTermDays != null && !termsRes.data.some((c: CatalogItem) => c.category === String(d.paymentTermDays)));
       } catch (err) {
@@ -81,10 +97,13 @@ export default function InvoiceDefaultsSettings() {
     })();
   }, [features.foreignCurrency]);
 
+  // Fuera de Colombia no hay código DANE: la ciudad es texto libre.
+  const foreignCountry = form.customerCountryCode !== '' && form.customerCountryCode !== 'CO';
+
   // Al salir del nombre de la ciudad se busca su código DANE en el catálogo (igual que en el formulario de tercero).
   const matchCity = async () => {
     const name = form.customerCityName.trim();
-    if (!name || form.customerCityCode) return;
+    if (foreignCountry || !name || form.customerCityCode) return;
     try {
       const res = await api.get('/client/customers/municipality-match', { params: { name } });
       setForm(prev => ({ ...prev, customerCityCode: res.data.code, customerCityName: res.data.name }));
@@ -104,7 +123,11 @@ export default function InvoiceDefaultsSettings() {
         currency: form.currency || null,
         notes: form.notes.trim() || null,
         customerAddress: form.customerAddress.trim() || null,
-        customerCityCode: form.customerCityCode.trim() || null,
+        customerCityCode: foreignCountry ? null : form.customerCityCode.trim() || null,
+        customerCityName: foreignCountry ? form.customerCityName.trim() || null : null,
+        customerRegimen: form.customerRegimen || null,
+        customerTaxLevelCode: form.customerTaxLevelCode || null,
+        customerCountryCode: form.customerCountryCode || null,
         customerPostalCode: form.customerPostalCode.trim() || null,
         customerPhone: form.customerPhone.trim() || null,
       });
@@ -229,6 +252,38 @@ export default function InvoiceDefaultsSettings() {
           <h2 className="text-lg font-extrabold text-slate-800">Tercero nuevo (tipo Cliente)</h2>
           <p className="mt-1 mb-4 text-sm text-slate-500">Con estos datos arranca el formulario al crear un Cliente. Se pueden cambiar en cada tercero.</p>
           <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <label className={labelClass}>País</label>
+                <SearchableSelect
+                  value={form.customerCountryCode}
+                  onChange={v => setForm({ ...form, customerCountryCode: v === 'CO' ? '' : v, customerCityCode: '', customerCityName: '' })}
+                  placeholder="Colombia"
+                  emptyLabel="Colombia"
+                  options={countries.filter(c => c.category !== 'CO').map(c => ({ value: c.category, label: `${c.name} (${c.category})`, shortLabel: c.category }))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Régimen fiscal</label>
+                <SearchableSelect
+                  value={form.customerRegimen}
+                  onChange={v => setForm({ ...form, customerRegimen: v })}
+                  placeholder="Buscar régimen..."
+                  emptyLabel="Sin valor por defecto"
+                  options={regimens.map(c => ({ value: c.category, label: c.name }))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Nivel tributario</label>
+                <SearchableSelect
+                  value={form.customerTaxLevelCode}
+                  onChange={v => setForm({ ...form, customerTaxLevelCode: v })}
+                  placeholder="Buscar nivel tributario..."
+                  emptyLabel="Sin valor por defecto"
+                  options={taxLevels.map(c => ({ value: c.category, label: c.name }))}
+                />
+              </div>
+            </div>
             <div>
               <label className={labelClass}>Dirección</label>
               <input type="text" value={form.customerAddress} maxLength={200} onChange={e => setForm({ ...form, customerAddress: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
@@ -241,10 +296,10 @@ export default function InvoiceDefaultsSettings() {
                   onBlur={matchCity}
                   className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
               </div>
-              <div>
+              {!foreignCountry && <div>
                 <label className={labelClass}>Código DANE</label>
                 <input type="text" placeholder="Ej. 11001" value={form.customerCityCode} maxLength={10} onChange={e => setForm({ ...form, customerCityCode: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-mono outline-none focus:border-blue-500" />
-              </div>
+              </div>}
               <div>
                 <label className={labelClass}>Código postal</label>
                 <input type="text" value={form.customerPostalCode} maxLength={20} onChange={e => setForm({ ...form, customerPostalCode: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-mono outline-none focus:border-blue-500" />

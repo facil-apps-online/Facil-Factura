@@ -35,6 +35,11 @@ namespace Fel.Core.Entities
         public string? CustomerCityName { get; set; }
         public string? CustomerPostalCode { get; set; }
         public string? CustomerPhone { get; set; }
+        // Régimen y nivel tributario (Category de TaxCatalogKind.Regimen / TaxLevelCode) y país (alfa-2; vacío = Colombia). Con un país distinto de
+        // Colombia no hay código DANE: la ciudad queda como texto.
+        public string? CustomerRegimen { get; set; }
+        public string? CustomerTaxLevelCode { get; set; }
+        public string? CustomerCountryCode { get; set; }
 
         public DateTime UpdatedAt { get; set; }
     }

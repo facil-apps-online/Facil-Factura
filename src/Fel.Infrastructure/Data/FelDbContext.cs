@@ -915,6 +915,9 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.CustomerCityName).HasMaxLength(100);
                 entity.Property(e => e.CustomerPostalCode).HasMaxLength(20);
                 entity.Property(e => e.CustomerPhone).HasMaxLength(50);
+                entity.Property(e => e.CustomerRegimen).HasMaxLength(50);
+                entity.Property(e => e.CustomerTaxLevelCode).HasMaxLength(50);
+                entity.Property(e => e.CustomerCountryCode).HasMaxLength(2);
 
                 entity.HasOne(e => e.Client)
                       .WithMany()

@@ -50,6 +50,10 @@ namespace Fel.Api.Client.Controllers
             var customerPhone = Clean(request.CustomerPhone);
             var customerCityCode = Clean(request.CustomerCityCode);
             string? customerCityName = null;
+            var customerRegimen = Clean(request.CustomerRegimen);
+            var customerTaxLevelCode = Clean(request.CustomerTaxLevelCode);
+            var customerCountryCode = Clean(request.CustomerCountryCode)?.ToUpperInvariant();
+            if (customerCountryCode == "CO") customerCountryCode = null;
 
             if (documentTypeId != null)
             {
@@ -83,7 +87,21 @@ namespace Fel.Api.Client.Controllers
             if (customerAddress is { Length: > 200 } || customerPostalCode is { Length: > 20 } || customerPhone is { Length: > 50 })
                 return BadRequest("La dirección, el código postal o el teléfono del tercero son demasiado largos.");
 
-            if (customerCityCode != null)
+            if (customerRegimen != null && !await InCatalog(TaxCatalogKind.Regimen, customerRegimen))
+                return BadRequest("El régimen del tercero no existe en el catálogo.");
+            if (customerTaxLevelCode != null && !await InCatalog(TaxCatalogKind.TaxLevelCode, customerTaxLevelCode))
+                return BadRequest("El nivel tributario del tercero no existe en el catálogo.");
+            if (customerCountryCode != null && !await InCatalog(TaxCatalogKind.Country, customerCountryCode))
+                return BadRequest("El país del tercero no existe en el catálogo.");
+
+            if (customerCountryCode != null)
+            {
+                // Fuera de Colombia no hay código DANE: la ciudad es texto libre.
+                customerCityCode = null;
+                customerCityName = Clean(request.CustomerCityName);
+                if (customerCityName is { Length: > 100 }) return BadRequest("La ciudad del tercero es demasiado larga.");
+            }
+            else if (customerCityCode != null)
             {
                 var municipality = await _dbContext.DianMunicipalities.AsNoTracking().FirstOrDefaultAsync(m => m.Code == customerCityCode);
                 if (municipality == null) return BadRequest("El código DANE de la ciudad no existe en el catálogo de municipios.");
@@ -108,6 +126,9 @@ namespace Fel.Api.Client.Controllers
             row.CustomerCityName = customerCityName;
             row.CustomerPostalCode = customerPostalCode;
             row.CustomerPhone = customerPhone;
+            row.CustomerRegimen = customerRegimen;
+            row.CustomerTaxLevelCode = customerTaxLevelCode;
+            row.CustomerCountryCode = customerCountryCode;
             row.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();
@@ -131,7 +152,10 @@ namespace Fel.Api.Client.Controllers
             customerCityCode = row?.CustomerCityCode,
             customerCityName = row?.CustomerCityName,
             customerPostalCode = row?.CustomerPostalCode,
-            customerPhone = row?.CustomerPhone
+            customerPhone = row?.CustomerPhone,
+            customerRegimen = row?.CustomerRegimen,
+            customerTaxLevelCode = row?.CustomerTaxLevelCode,
+            customerCountryCode = row?.CustomerCountryCode
         };
 
         public class InvoiceDefaultsRequest
@@ -146,6 +170,10 @@ namespace Fel.Api.Client.Controllers
             public string? CustomerCityCode { get; set; }
             public string? CustomerPostalCode { get; set; }
             public string? CustomerPhone { get; set; }
+            public string? CustomerCityName { get; set; }
+            public string? CustomerRegimen { get; set; }
+            public string? CustomerTaxLevelCode { get; set; }
+            public string? CustomerCountryCode { get; set; }
         }
     }
 }

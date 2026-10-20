@@ -99,12 +99,17 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
         api.get('/client/invoice-defaults').then(res => {
           if (cancelled) return;
           const d = res.data;
+          // Con un país distinto de Colombia no hay código DANE: la ciudad queda como texto.
+          const foreign = !!d.customerCountryCode && d.customerCountryCode !== 'CO';
           setFormData(prev => ({
             ...prev,
+            countryCode: prev.countryCode === 'CO' && d.customerCountryCode ? d.customerCountryCode : prev.countryCode,
+            dataicoRegimen: prev.dataicoRegimen || d.customerRegimen || '',
+            dataicoTaxLevelCode: prev.dataicoTaxLevelCode || d.customerTaxLevelCode || '',
             address: prev.address || d.customerAddress || '',
             phone: prev.phone || d.customerPhone || '',
             postalCode: prev.postalCode || d.customerPostalCode || '',
-            cityCode: prev.cityCode || d.customerCityCode || '',
+            cityCode: foreign ? prev.cityCode : prev.cityCode || d.customerCityCode || '',
             cityName: prev.cityName || d.customerCityName || '',
           }));
         }).catch(() => {});

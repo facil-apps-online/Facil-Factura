@@ -1489,6 +1489,10 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("CustomerCountryCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
                     b.Property<string>("CustomerPhone")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -1496,6 +1500,14 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("CustomerPostalCode")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("CustomerRegimen")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("CustomerTaxLevelCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<Guid?>("DocumentTypeId")
                         .HasColumnType("uniqueidentifier");

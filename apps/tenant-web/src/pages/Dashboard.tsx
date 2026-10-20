@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, CheckCircle, XCircle, Clock, Loader2, TrendingDown, TrendingUp, Users } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Loader2, TrendingDown, TrendingUp, Users } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
@@ -18,6 +18,7 @@ interface TenantBillingMetrics {
 interface ClientConsumption {
   clientName: string;
   documentsEmitted: number;
+  rejectedDocuments: number;
   priceApplied: number;
   amountDueToTenant: number;
   rowId?: string;
@@ -29,10 +30,17 @@ const consumptionColumns: DataTableColumn<ClientConsumption>[] = [
   { key: 'client', header: 'Cliente', primary: true, cellClassName: 'font-bold text-slate-700', render: c => c.clientName, sortValue: c => c.clientName, searchValue: c => c.clientName },
   {
     key: 'documents',
-    header: 'Documentos emitidos',
+    header: 'Emitidas',
     align: 'right',
     render: c => <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-medium">{c.documentsEmitted}</span>,
     sortValue: c => c.documentsEmitted,
+  },
+  {
+    key: 'rejected',
+    header: 'Rechazadas',
+    align: 'right',
+    render: c => <span className={c.rejectedDocuments > 0 ? 'bg-rose-50 text-rose-700 px-3 py-1 rounded-full font-medium' : 'text-slate-400 px-3 py-1'}>{c.rejectedDocuments}</span>,
+    sortValue: c => c.rejectedDocuments,
   },
   { key: 'price', header: 'Tarifa', align: 'right', cellClassName: 'text-slate-500 font-mono', render: c => money(c.priceApplied), sortValue: c => c.priceApplied },
   { key: 'subtotal', header: 'Subtotal', align: 'right', cellClassName: 'font-bold text-emerald-600', render: c => money(c.amountDueToTenant), sortValue: c => c.amountDueToTenant },
@@ -62,8 +70,7 @@ export default function Dashboard() {
   }, []);
 
   const stats = [
-    { title: 'Facturas Emitidas', value: metrics.totalIssued, icon: <FileText size={24} className="text-blue-500" />, trend: 'Acumulado histórico' },
-    { title: 'Aprobadas DIAN', value: metrics.totalApproved, icon: <CheckCircle size={24} className="text-emerald-500" />, trend: 'Certificadas' },
+    { title: 'Facturas Emitidas', value: metrics.totalIssued, icon: <CheckCircle size={24} className="text-emerald-500" />, trend: 'Aprobadas por la DIAN · acumulado histórico' },
     { title: 'Rechazadas DIAN', value: metrics.totalRejected, icon: <XCircle size={24} className="text-rose-500" />, trend: 'Revisión requerida' },
     { title: 'En Proceso', value: metrics.totalProcessing, icon: <Clock size={24} className="text-amber-500" />, trend: 'Encoladas / Radian' },
   ];
@@ -83,7 +90,7 @@ export default function Dashboard() {
         <p className="text-slate-500 mt-2">Consulta tus documentos y el estado de tu facturación.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
         {stats.map((stat, i) => (
           <div key={i} className="bg-white/80 backdrop-blur-md rounded-[1.5rem] p-6 shadow-sm border border-slate-200/50 flex flex-col hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300">
             <div className="flex items-center justify-between mb-4">
@@ -138,7 +145,7 @@ export default function Dashboard() {
           search="Buscar cliente..."
           defaultSort={{ key: 'client', dir: 'asc' }}
           emptyMessage="No hay clientes emitiendo documentos este mes."
-          columns={billingMetrics.platformBillingHidden ? consumptionColumns.filter(c => c.key === 'client' || c.key === 'documents') : consumptionColumns}
+          columns={billingMetrics.platformBillingHidden ? consumptionColumns.filter(c => c.key === 'client' || c.key === 'documents' || c.key === 'rejected') : consumptionColumns}
         />
       </div>
 

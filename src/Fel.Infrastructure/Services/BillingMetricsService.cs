@@ -544,6 +544,8 @@ namespace Fel.Infrastructure.Services
         public Guid? BranchId { get; set; }
         public string? BranchName { get; set; }
         public int DocumentsEmitted { get; set; }
+        // Documentos rechazados por la DIAN en el período. No se cobran: se agregan al tablero del tenant aparte, junto a los emitidos.
+        public int RejectedDocuments { get; set; }
         public decimal PriceApplied { get; set; }
         public decimal AmountDueToTenant { get; set; }
     }

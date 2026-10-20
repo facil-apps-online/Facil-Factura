@@ -41,8 +41,9 @@ namespace Fel.Api.Tenant.Controllers
                     .Include(d => d.Client)
                     .Where(d => d.Client.TenantId == tenantId);
 
-                var totalIssued = await query.CountAsync();
                 var totalApproved = await query.CountAsync(d => d.Status == "APPROVED");
+                // "Emitidas" son las aprobadas por la DIAN; los rechazados y los que están en proceso se cuentan aparte.
+                var totalIssued = totalApproved;
                 var totalRejected = await query.CountAsync(d => d.Status == "REJECTED");
                 var totalProcessing = await query.CountAsync(d => d.Status == "PENDING" || d.Status == "PROCESSING");
 
@@ -74,6 +75,39 @@ namespace Fel.Api.Tenant.Controllers
                 var m = month ?? DateTime.UtcNow.Month;
 
                 var metrics = await _billingService.GetTenantMetricsAsync(tenantId, y, m);
+
+                // La lista de consumo trae los documentos aprobados (lo que se cobra); aquí se le suman los rechazados del mes por cliente y sucursal.
+                var periodStart = new DateTime(y, m, 1, 0, 0, 0, DateTimeKind.Utc);
+                var periodEnd = periodStart.AddMonths(1);
+                var rejected = await _dbContext.Documents.AsNoTracking()
+                    .Where(d => d.Client.TenantId == tenantId && !d.Client.IsDeveloperSandbox && d.Status == "REJECTED"
+                        && d.CreatedAt >= periodStart && d.CreatedAt < periodEnd)
+                    .GroupBy(d => new { d.ClientId, d.BranchId })
+                    .Select(g => new { g.Key.ClientId, g.Key.BranchId, Count = g.Count() })
+                    .ToListAsync();
+                foreach (var r in rejected)
+                {
+                    var row = metrics.ClientBreakdown.FirstOrDefault(x => x.ClientId == r.ClientId && x.BranchId == r.BranchId);
+                    if (row == null)
+                    {
+                        // Cliente (o sucursal) con rechazados pero sin aprobados ni cuota: no tenía fila en el cobro.
+                        var name = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == r.ClientId)
+                            .Select(c => !string.IsNullOrEmpty(c.CommercialName) ? c.CommercialName : c.CompanyName).FirstAsync();
+                        var branchCount = await _dbContext.Branches.AsNoTracking().CountAsync(b => b.ClientId == r.ClientId);
+                        var branchName = await _dbContext.Branches.AsNoTracking().Where(b => b.Id == r.BranchId).Select(b => b.Name).FirstOrDefaultAsync();
+                        row = new Fel.Infrastructure.Services.ClientUsageBreakdown
+                        {
+                            ClientId = r.ClientId,
+                            ClientName = branchCount > 1 && branchName != null ? $"{name} – {branchName}" : name,
+                            BranchId = r.BranchId,
+                            BranchName = branchName
+                        };
+                        metrics.ClientBreakdown.Add(row);
+                    }
+                    row.RejectedDocuments = r.Count;
+                }
+                metrics.ClientBreakdown = metrics.ClientBreakdown.OrderByDescending(x => x.DocumentsEmitted).ThenByDescending(x => x.RejectedDocuments).ToList();
+
                 if (await IsPlatformBillingHiddenAsync(tenantId))
                 {
                     // Lo oculta el servidor, no solo la pantalla: un aliado sin permiso no recibe lo que debe a la plataforma.

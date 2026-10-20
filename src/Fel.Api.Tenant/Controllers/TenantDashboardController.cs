@@ -79,13 +79,15 @@ namespace Fel.Api.Tenant.Controllers
                 // La lista de consumo trae los documentos aprobados (lo que se cobra); aquí se le suman los rechazados del mes por cliente y sucursal.
                 var periodStart = new DateTime(y, m, 1, 0, 0, 0, DateTimeKind.Utc);
                 var periodEnd = periodStart.AddMonths(1);
-                var rejected = await _dbContext.Documents.AsNoTracking()
-                    .Where(d => d.Client.TenantId == tenantId && !d.Client.IsDeveloperSandbox && d.Status == "REJECTED"
+                // Los emitidos (aprobados) también se cuentan aquí directamente: con el cobro por usuario el servicio de cobro no los trae (los deja en 0),
+                // y con el cobro por documento da lo mismo.
+                var counts = await _dbContext.Documents.AsNoTracking()
+                    .Where(d => d.Client.TenantId == tenantId && !d.Client.IsDeveloperSandbox && (d.Status == "REJECTED" || d.Status == "APPROVED")
                         && d.CreatedAt >= periodStart && d.CreatedAt < periodEnd)
-                    .GroupBy(d => new { d.ClientId, d.BranchId })
-                    .Select(g => new { g.Key.ClientId, g.Key.BranchId, Count = g.Count() })
+                    .GroupBy(d => new { d.ClientId, d.BranchId, d.Status })
+                    .Select(g => new { g.Key.ClientId, g.Key.BranchId, g.Key.Status, Count = g.Count() })
                     .ToListAsync();
-                foreach (var r in rejected)
+                foreach (var r in counts)
                 {
                     var row = metrics.ClientBreakdown.FirstOrDefault(x => x.ClientId == r.ClientId && x.BranchId == r.BranchId);
                     if (row == null)
@@ -104,7 +106,8 @@ namespace Fel.Api.Tenant.Controllers
                         };
                         metrics.ClientBreakdown.Add(row);
                     }
-                    row.RejectedDocuments = r.Count;
+                    if (r.Status == "APPROVED") row.DocumentsEmitted = r.Count;
+                    else row.RejectedDocuments = r.Count;
                 }
                 metrics.ClientBreakdown = metrics.ClientBreakdown.OrderByDescending(x => x.DocumentsEmitted).ThenByDescending(x => x.RejectedDocuments).ToList();
 

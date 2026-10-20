@@ -529,6 +529,8 @@ namespace Fel.Infrastructure.Services
 
         public decimal AmountDueToSuperadmin { get; set; }
         public decimal SuperadminTariffApplied { get; set; }
+        // El tenant es un aliado al que su padre no le muestra lo que debe a la plataforma: los dos valores de arriba van en cero.
+        public bool PlatformBillingHidden { get; set; }
 
         public decimal AmountDueFromClients { get; set; }
         

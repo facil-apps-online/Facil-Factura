@@ -13,6 +13,7 @@ interface Ally {
   blockedAt: string | null;
   blockReason: string | null;
   platformBlocked: boolean;
+  canViewPlatformBilling: boolean;
 }
 
 // Aliados del tenant (los que lo tienen como padre). Bloquear a un aliado deja sin acceso al portal y a la API a todo su árbol: el propio
@@ -40,6 +41,20 @@ export default function Allies() {
       await load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'No se pudo cambiar el bloqueo'));
+    } finally {
+      setWorkingId(null);
+    }
+  };
+
+  // El aliado ve o no, en su Dashboard, lo que debe a la plataforma (por defecto no).
+  const setBillingVisibility = async (ally: Ally, visible: boolean) => {
+    setWorkingId(ally.id);
+    try {
+      await api.put(`/tenant/allies/${ally.id}/platform-billing`, { visible });
+      toast.success(visible ? `${ally.name} ahora ve lo que debe a la plataforma.` : `${ally.name} ya no ve lo que debe a la plataforma.`);
+      await load();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudo cambiar la visibilidad'));
     } finally {
       setWorkingId(null);
     }
@@ -93,6 +108,11 @@ export default function Allies() {
                   </button>
                 ) : null}
               </div>
+
+              <label className="mt-4 flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                <input type="checkbox" checked={a.canViewPlatformBilling} disabled={workingId === a.id} onChange={e => setBillingVisibility(a, e.target.checked)} className="w-4 h-4 accent-blue-600" />
+                Puede ver en su portal lo que debe a la plataforma
+              </label>
 
               {!a.blocked && confirmingId === a.id && (
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">

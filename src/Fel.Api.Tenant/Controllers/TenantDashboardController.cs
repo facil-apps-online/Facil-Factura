@@ -60,6 +60,10 @@ namespace Fel.Api.Tenant.Controllers
             }
         }
 
+        // Un aliado (tenant con padre) solo ve lo que debe a la plataforma si su padre se lo activó; el tenant principal siempre lo ve.
+        private Task<bool> IsPlatformBillingHiddenAsync(Guid tenantId) =>
+            _dbContext.Tenants.AsNoTracking().AnyAsync(t => t.Id == tenantId && t.ParentTenantId != null && !t.CanViewPlatformBilling);
+
         [HttpGet("billing-metrics")]
         public async Task<IActionResult> GetBillingMetrics([FromQuery] int? year, [FromQuery] int? month)
         {
@@ -70,6 +74,14 @@ namespace Fel.Api.Tenant.Controllers
                 var m = month ?? DateTime.UtcNow.Month;
 
                 var metrics = await _billingService.GetTenantMetricsAsync(tenantId, y, m);
+                if (await IsPlatformBillingHiddenAsync(tenantId))
+                {
+                    // Lo oculta el servidor, no solo la pantalla: un aliado sin permiso no recibe lo que debe a la plataforma.
+                    metrics.AmountDueToSuperadmin = 0;
+                    metrics.SuperadminTariffApplied = 0;
+                    metrics.MonthFractionNeeded = 0;
+                    metrics.PlatformBillingHidden = true;
+                }
                 return Ok(metrics);
             }
             catch (Exception ex)
@@ -95,6 +107,9 @@ namespace Fel.Api.Tenant.Controllers
                     .Select(t => new { t.Id, t.Name, t.CommercialName })
                     .ToListAsync();
 
+                // Sin permiso para ver su cobro, el propio tenant sale del consolidado (sus aliados, si los tiene, siguen).
+                if (await IsPlatformBillingHiddenAsync(tenantId)) groupTenants = groupTenants.Where(t => t.Id != tenantId).ToList();
+
                 var groupIds = groupTenants.Select(t => t.Id).ToList();
 
                 var billingsQuery = _dbContext.TenantBillings.Where(b => groupIds.Contains(b.TenantId));
@@ -117,7 +132,7 @@ namespace Fel.Api.Tenant.Controllers
 
                 return Ok(new
                 {
-                    isGroup = groupTenants.Count > 1,
+                    isGroup = groupTenants.Count > 1 || groupTenants.Any(t => t.Id != tenantId),
                     totalAmount = billings.Sum(b => b.TotalAmount),
                     currency = "COP",
                     byTenant

@@ -98,6 +98,10 @@ namespace Fel.Core.Entities
         public Tenant? ParentTenant { get; set; }
         public ICollection<Tenant> ChildTenants { get; set; } = new List<Tenant>();
 
+        // Solo aplica a un tenant con padre (aliado): si puede ver en su portal lo que debe a la plataforma. Por defecto no; lo decide el tenant
+        // padre. El tenant principal (sin padre) siempre ve su cobro.
+        public bool CanViewPlatformBilling { get; set; }
+
         // --- Bloqueo administrativo ---
         // Dos bloqueos independientes; el efecto baja por la jerarquía (ver TenantBlocks). Nulo = sin bloqueo.
         // De la plataforma (solo el superadmin lo pone y lo quita, p. ej. por mora): el tenant entra a su portal en solo lectura y sus

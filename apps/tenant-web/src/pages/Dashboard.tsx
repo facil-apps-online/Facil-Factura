@@ -10,6 +10,7 @@ interface TenantBillingMetrics {
   totalDocuments: number;
   amountDueToSuperadmin: number;
   superadminTariffApplied: number;
+  platformBillingHidden?: boolean;
   amountDueFromClients: number;
   clientBreakdown: any[];
 }
@@ -99,7 +100,7 @@ export default function Dashboard() {
 
       <h2 className="text-2xl font-bold text-slate-800 mb-4 mt-12 border-b pb-2">Resumen financiero del mes</h2>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+      <div className={`grid grid-cols-1 ${billingMetrics.platformBillingHidden ? "" : "md:grid-cols-2 "}gap-8 mb-8`}>
         <div className="bg-emerald-50 rounded-3xl p-8 border border-emerald-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
           <div className="absolute -right-6 -top-6 text-emerald-500/10 group-hover:scale-110 transition-transform">
             <TrendingUp size={120} />
@@ -111,7 +112,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-rose-50 rounded-3xl p-8 border border-rose-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
+        {/* Un aliado solo ve lo que debe a la plataforma si su tenant padre se lo activó. */}
+        {!billingMetrics.platformBillingHidden && <div className="bg-rose-50 rounded-3xl p-8 border border-rose-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
           <div className="absolute -right-6 -top-6 text-rose-500/10 group-hover:scale-110 transition-transform">
             <TrendingDown size={120} />
           </div>
@@ -120,7 +122,7 @@ export default function Dashboard() {
             <p className="text-4xl font-black text-rose-600 mb-2">${billingMetrics.amountDueToSuperadmin.toLocaleString('es-CO')}</p>
             <p className="text-rose-700 text-sm font-medium">Volumen del mes: <span className="font-bold">{billingMetrics.totalDocuments}</span> docs x Tarifa Nivel Aplicada: <span className="font-bold">${billingMetrics.superadminTariffApplied.toLocaleString('es-CO')}</span></p>
           </div>
-        </div>
+        </div>}
       </div>
 
       <div className="mb-12">

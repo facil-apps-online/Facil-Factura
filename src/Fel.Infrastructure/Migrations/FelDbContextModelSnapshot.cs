@@ -4730,6 +4730,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<int>("BillingMode")
                         .HasColumnType("int");
 
+                    b.Property<bool>("CanViewPlatformBilling")
+                        .HasColumnType("bit");
+
                     b.Property<string>("City")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");

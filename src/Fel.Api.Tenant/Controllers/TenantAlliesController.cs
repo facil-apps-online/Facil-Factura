@@ -47,7 +47,8 @@ namespace Fel.Api.Tenant.Controllers
                     Blocked = t.ParentBlockedAt != null,
                     BlockedAt = t.ParentBlockedAt,
                     BlockReason = t.ParentBlockReason,
-                    PlatformBlocked = t.PlatformBlockedAt != null
+                    PlatformBlocked = t.PlatformBlockedAt != null,
+                    t.CanViewPlatformBilling
                 })
                 .ToListAsync();
             return Ok(allies);
@@ -78,6 +79,24 @@ namespace Fel.Api.Tenant.Controllers
             await _dbContext.SaveChangesAsync();
             TenantBlocks.Invalidate();
             return Ok(new { ally.Id, Blocked = ally.ParentBlockedAt != null, ally.ParentBlockReason });
+        }
+
+        // Si el aliado puede ver en su portal lo que debe a la plataforma (por defecto no).
+        [HttpPut("{id:guid}/platform-billing")]
+        public async Task<IActionResult> SetPlatformBillingVisibility(Guid id, [FromBody] AllyBillingVisibilityRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            var ally = await _dbContext.Tenants.FirstOrDefaultAsync(t => t.Id == id && t.ParentTenantId == tenantId);
+            if (ally == null) return NotFound("Aliado no encontrado.");
+
+            ally.CanViewPlatformBilling = request.Visible;
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { ally.Id, ally.CanViewPlatformBilling });
+        }
+
+        public class AllyBillingVisibilityRequest
+        {
+            public bool Visible { get; set; }
         }
 
         public class AllyBlockRequest

@@ -69,6 +69,8 @@ namespace Fel.Infrastructure.Data
         public DbSet<SupportAccess> SupportAccesses => Set<SupportAccess>();
         public DbSet<TenantPlan> TenantPlans => Set<TenantPlan>();
         public DbSet<ClientPlanAssignment> ClientPlanAssignments => Set<ClientPlanAssignment>();
+        public DbSet<TenantPlanSettings> TenantPlanSettings => Set<TenantPlanSettings>();
+        public DbSet<PlanAlert> PlanAlerts => Set<PlanAlert>();
         public DbSet<ClientEnabledRetentionConcept> ClientEnabledRetentionConcepts => Set<ClientEnabledRetentionConcept>();
         public DbSet<DeveloperUser> DeveloperUsers => Set<DeveloperUser>();
 
@@ -920,6 +922,23 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.PricePerDocument).HasPrecision(18, 2);
                 entity.HasIndex(e => new { e.TenantId, e.Name }).IsUnique();
                 entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<TenantPlanSettings>(entity =>
+            {
+                entity.ToTable("TenantPlanSettings");
+                entity.HasKey(e => e.TenantId);
+                entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<PlanAlert>(entity =>
+            {
+                entity.ToTable("PlanAlerts");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Message).IsRequired().HasMaxLength(500);
+                entity.HasIndex(e => new { e.TenantId, e.CreatedAt });
+                entity.HasIndex(e => new { e.AssignmentId, e.PeriodStart, e.Kind, e.BranchId });
+                entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<ClientPlanAssignment>(entity =>

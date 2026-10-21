@@ -50,11 +50,13 @@ namespace Fel.Api.Tenant.Controllers
             public bool CountNotes { get; set; } = true;
             public bool CountSupportDocuments { get; set; } = true;
             public bool CountPayroll { get; set; } = true;
+            // Nulo = la acción general del tenant.
+            public PlanExceedAction? ExceedAction { get; set; }
         }
 
         private static object ToDto(TenantPlan p, int clients) => new
         {
-            p.Id, p.Name, p.Description, p.Cycle, p.FixedFee, p.FeeTiming, p.IncludedDocuments, p.PricePerDocument, p.Scope, p.IsActive,
+            p.Id, p.Name, p.Description, p.Cycle, p.FixedFee, p.FeeTiming, p.IncludedDocuments, p.PricePerDocument, p.Scope, p.IsActive, p.ExceedAction,
             countApproved = p.CountedStatuses.HasFlag(PlanCountedStatuses.Approved),
             countRejected = p.CountedStatuses.HasFlag(PlanCountedStatuses.Rejected),
             countInProcess = p.CountedStatuses.HasFlag(PlanCountedStatuses.InProcess),
@@ -87,6 +89,7 @@ namespace Fel.Api.Tenant.Controllers
             p.IncludedDocuments = r.IncludedDocuments;
             p.PricePerDocument = r.PricePerDocument;
             p.Scope = r.Scope;
+            p.ExceedAction = r.ExceedAction;
             p.CountedStatuses = (r.CountApproved ? PlanCountedStatuses.Approved : 0) | (r.CountRejected ? PlanCountedStatuses.Rejected : 0) | (r.CountInProcess ? PlanCountedStatuses.InProcess : 0);
             p.CountedTypes = (r.CountInvoices ? PlanCountedTypes.Invoices : 0) | (r.CountNotes ? PlanCountedTypes.Notes : 0)
                              | (r.CountSupportDocuments ? PlanCountedTypes.SupportDocuments : 0) | (r.CountPayroll ? PlanCountedTypes.Payroll : 0);

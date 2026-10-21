@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Clock, Loader2, TrendingDown, TrendingUp, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle, Clock, Loader2, TrendingDown, TrendingUp, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
@@ -37,6 +38,15 @@ interface BillingRange {
 const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const monthLabel = (year: number, month: number) => `${MONTH_NAMES[month - 1]} ${year}`;
 
+interface PlanAlertRow {
+  id: string;
+  clientId: string;
+  clientName: string;
+  kind: string;
+  message: string;
+  createdAt: string;
+}
+
 const money = (value: number) => `$${value.toLocaleString('es-CO')}`;
 
 const consumptionColumns: DataTableColumn<ClientConsumption>[] = [
@@ -59,6 +69,9 @@ const consumptionColumns: DataTableColumn<ClientConsumption>[] = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+  // Avisos de consumo de los clientes frente a su plan (pendientes de ver).
+  const [planAlerts, setPlanAlerts] = useState<{ unseen: number; items: PlanAlertRow[] }>({ unseen: 0, items: [] });
   const [metrics, setMetrics] = useState({ totalIssued: 0, totalApproved: 0, totalRejected: 0, totalProcessing: 0 });
   const [recentDocs, setRecentDocs] = useState<any[]>([]);
   const [billingMetrics, setBillingMetrics] = useState<BillingRange | null>(null);
@@ -80,6 +93,19 @@ export default function Dashboard() {
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    api.get('/tenant/plan-alerts?unseenOnly=true&limit=10').then(res => setPlanAlerts(res.data)).catch(() => {});
+  }, []);
+
+  const markAlertsSeen = async () => {
+    try {
+      await api.post('/tenant/plan-alerts/seen', {});
+      setPlanAlerts({ unseen: 0, items: [] });
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudieron marcar como vistos'));
+    }
+  };
 
   // El consumo y el cobro se calculan mes a mes: un rango es la suma de sus meses.
   useEffect(() => {
@@ -140,6 +166,25 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {planAlerts.items.length > 0 && (
+        <div className="mb-8 overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/60">
+          <div className="flex items-center justify-between gap-3 border-b border-amber-100 px-5 py-3">
+            <div className="flex items-center gap-2 font-bold text-amber-900">
+              <AlertTriangle size={18} /> Alertas de consumo ({planAlerts.unseen})
+            </div>
+            <button onClick={markAlertsSeen} className="text-sm font-semibold text-amber-800 underline hover:text-amber-950">Marcar como vistas</button>
+          </div>
+          <ul>
+            {planAlerts.items.map(a => (
+              <li key={a.id} className="flex items-start justify-between gap-4 border-t border-amber-100 px-5 py-2.5 text-sm first:border-t-0">
+                <span className={a.kind === 'LimitReached' || a.kind === 'Blocked' ? 'font-semibold text-rose-700' : 'text-amber-900'}>{a.message}</span>
+                <button onClick={() => navigate(`/clients/edit/${a.clientId}?tab=plan`)} className="shrink-0 font-semibold text-blue-700 hover:underline">Ver cliente</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <h2 className="text-2xl font-bold text-slate-800 mb-4 mt-12 border-b pb-2">Consumo y cobro por período</h2>
       <div className="mb-6">

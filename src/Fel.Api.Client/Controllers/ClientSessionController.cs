@@ -16,11 +16,32 @@ namespace Fel.Api.Client.Controllers
     {
         private readonly FelDbContext _dbContext;
         private readonly AcquirerLookupService _acquirerLookup;
+        private readonly Fel.Infrastructure.Services.ClientPlanUsageService _planUsage;
 
-        public ClientSessionController(FelDbContext dbContext, AcquirerLookupService acquirerLookup)
+        public ClientSessionController(FelDbContext dbContext, AcquirerLookupService acquirerLookup, Fel.Infrastructure.Services.ClientPlanUsageService planUsage)
         {
             _dbContext = dbContext;
             _acquirerLookup = acquirerLookup;
+            _planUsage = planUsage;
+        }
+
+        // Consumo de documentos del cliente frente a su plan, solo si el tenant decidió mostrárselo (Tenant.ShowUsageToClients). Sin valores en dinero:
+        // lo que se cobra lo maneja el tenant. Cuelga de "session" porque es un prefijo permitido del portal.
+        [HttpGet("plan-usage")]
+        public async Task<IActionResult> PlanUsage()
+        {
+            var visible = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == Branch.ClientId).Select(c => c.Tenant!.ShowUsageToClients).FirstOrDefaultAsync();
+            if (!visible) return Ok(new { visible = false });
+
+            var usage = await _planUsage.GetUsageAsync(Branch.ClientId, System.DateTime.UtcNow);
+            if (usage == null) return Ok(new { visible = true, hasPlan = false });
+
+            var allowed = Branch.AllowedBranchIds;
+            var units = usage.Units
+                .Where(u => u.BranchId == null || allowed.Contains(u.BranchId.Value))
+                .Select(u => new { u.Name, u.Documents, u.Included, u.Extra })
+                .ToList();
+            return Ok(new { visible = true, hasPlan = true, planName = usage.PlanName, cycle = usage.Cycle, periodStart = usage.PeriodStart, periodEnd = usage.PeriodEnd, units });
         }
 
         [HttpGet]

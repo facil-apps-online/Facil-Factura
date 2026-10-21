@@ -22,6 +22,7 @@ export interface Plan {
   countNotes: boolean;
   countSupportDocuments: boolean;
   countPayroll: boolean;
+  exceedAction: 'Notify' | 'Block' | null;
   clients: number;
 }
 
@@ -30,7 +31,7 @@ export const SCOPE_LABELS: Record<string, string> = { PerClient: 'Toda la empres
 
 const EMPTY: Omit<Plan, 'id' | 'isActive' | 'clients'> = {
   name: '', description: '', cycle: 'Monthly', fixedFee: 0, feeTiming: 'Advance', includedDocuments: 0, pricePerDocument: 0, scope: 'PerClient',
-  countApproved: true, countRejected: true, countInProcess: false, countInvoices: true, countNotes: true, countSupportDocuments: true, countPayroll: true,
+  countApproved: true, countRejected: true, countInProcess: false, countInvoices: true, countNotes: true, countSupportDocuments: true, countPayroll: true, exceedAction: null,
 };
 
 // Plantillas para empezar: cada una solo cambia las reglas de documentos; todo se puede ajustar después.
@@ -183,6 +184,15 @@ export default function PlanFormModal({ open, plan, onClose, onSaved }: PlanForm
               )}
             </div>
           </div>
+
+          {!unlimited && (included ?? 0) > 0 && (
+            <div>
+              <label className={labelClass}>Al llegar al límite de documentos incluidos</label>
+              <SearchableSelect value={form.exceedAction ?? ''} onChange={v => set({ exceedAction: (v || null) as Plan['exceedAction'] })} placeholder="Usar la opción general"
+                options={[{ value: '', label: 'Usar la opción general' }, { value: 'Notify', label: 'Solo avisar' }, { value: 'Block', label: 'Bloquear al cliente' }]} />
+              <p className="mt-1 text-xs text-slate-400">Los adicionales se cobran siempre al precio del plan. Bloquear impide que el cliente entre y emita hasta el siguiente ciclo.</p>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div>

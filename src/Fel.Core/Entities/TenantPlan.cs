@@ -71,6 +71,9 @@ namespace Fel.Core.Entities
         public PlanCountedStatuses CountedStatuses { get; set; } = PlanCountedStatuses.Approved | PlanCountedStatuses.Rejected;
         public PlanCountedTypes CountedTypes { get; set; } = PlanCountedTypes.All;
 
+        // Qué hacer al llegar al límite de documentos incluidos. Nulo = la opción general del tenant (TenantPlanSettings).
+        public PlanExceedAction? ExceedAction { get; set; }
+
         // Archivar no borra: los clientes con historial siguen apuntando a su plan.
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -94,6 +97,8 @@ namespace Fel.Core.Entities
 
         public decimal? FixedFeeOverride { get; set; }
         public decimal? PricePerDocumentOverride { get; set; }
+        // Pisa la acción al llegar al límite solo para este cliente. Nulo = la del plan o la general.
+        public PlanExceedAction? ExceedActionOverride { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }

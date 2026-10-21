@@ -1566,6 +1566,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<DateTime?>("EndDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("ExceedActionOverride")
+                        .HasColumnType("int");
+
                     b.Property<decimal?>("FixedFeeOverride")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -3007,6 +3010,58 @@ namespace Fel.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("PasswordResetTokens");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.PlanAlert", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("BranchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Documents")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Included")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("PeriodStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("SeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("TenantId", "CreatedAt");
+
+                    b.HasIndex("AssignmentId", "PeriodStart", "Kind", "BranchId");
+
+                    b.ToTable("PlanAlerts", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
@@ -5113,6 +5168,9 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<int?>("ExceedAction")
+                        .HasColumnType("int");
+
                     b.Property<int>("FeeTiming")
                         .HasColumnType("int");
 
@@ -5150,6 +5208,34 @@ namespace Fel.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("TenantPlans", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantPlanSettings", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AlertsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("DefaultExceedAction")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("EmailClient")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EmailTenant")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("WarnPercent")
+                        .HasColumnType("int");
+
+                    b.HasKey("TenantId");
+
+                    b.ToTable("TenantPlanSettings", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.TenantPrepaidBag", b =>
@@ -6170,6 +6256,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Client");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.PlanAlert", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
@@ -6341,6 +6438,17 @@ namespace Fel.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.TenantPlan", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantPlanSettings", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
                         .WithMany()

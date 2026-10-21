@@ -55,6 +55,9 @@ builder.ConfigureServices((hostContext, services) =>
     services.AddHostedService<HabilitationWorker>(); // Set de pruebas DIAN de punta a punta
     services.AddHostedService<DianStatusPollingWorker>(); // Veredicto real (GetStatusZip) de documentos NATIVE en PROCESSING
     services.AddHostedService<CertificatePollingWorker>(); // Sincroniza solicitudes de certificado con Viafirma, ensambla el .p12 y notifica al cliente
+    services.AddScoped<Fel.Infrastructure.Services.ClientPlanUsageService>();
+    services.AddScoped<Fel.Infrastructure.Services.PlanAlertService>();
+    services.AddHostedService<PlanAlertWorker>(); // Avisos y bloqueo por límite de documentos de los planes
 });
 
 var host = builder.Build();

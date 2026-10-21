@@ -324,6 +324,51 @@ const SETUP_MESSAGES: Record<string, { text: string; actionLabel?: string; actio
   'no-certificate': { text: 'Tu certificado digital no está vigente. Contacta a tu proveedor para renovarlo.' },
 };
 
+interface PlanUsageCard {
+  visible: boolean;
+  hasPlan?: boolean;
+  planName?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  units?: { name: string; documents: number; included: number | null; extra: number }[];
+}
+
+// Consumo de documentos frente al plan del cliente. Solo se muestra si el tenant lo permite; sin valores en dinero.
+const PlanUsageSummary = ({ usage }: { usage: PlanUsageCard }) => {
+  if (!usage.visible || !usage.hasPlan || !usage.units?.length) return null;
+  const fmtDay = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) : '');
+  return (
+    <div className="mb-8 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Mi plan · {usage.planName}</h3>
+        <span className="text-xs text-slate-400">Ciclo del {fmtDay(usage.periodStart)} al {fmtDay(usage.periodEnd)}</span>
+      </div>
+      <div className="space-y-4">
+        {usage.units.map(u => {
+          const pct = u.included && u.included > 0 ? Math.min(100, Math.round((u.documents / u.included) * 100)) : null;
+          const barColor = pct !== null && pct >= 100 ? 'bg-rose-500' : pct !== null && pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+          return (
+            <div key={u.name}>
+              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                <span className="font-semibold text-slate-700">{usage.units!.length > 1 ? u.name : 'Documentos del ciclo'}</span>
+                <span className="text-slate-600">
+                  {u.documents}{u.included === null ? ' · ilimitados' : u.included === 0 ? '' : ' de ' + u.included}
+                  {u.extra > 0 && <span className="font-semibold text-rose-600"> · {u.extra} adicionales</span>}
+                </span>
+              </div>
+              {pct !== null && (
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className={'h-full rounded-full ' + barColor} style={{ width: pct + '%' }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const fmt = useNumberFormat();
   const money = (value: number) => `$${fmt.number(Math.round(value), 3)}`;
@@ -331,11 +376,15 @@ const Dashboard = () => {
   const branding = useContext(BrandingContext);
   const { isAdministrator } = useSession();
   const [summary, setSummary] = React.useState<DashboardSummary | null>(null);
+  const [planUsage, setPlanUsage] = React.useState<PlanUsageCard | null>(null);
 
   React.useEffect(() => {
     import('./lib/api').then(m => m.api.get('/v1/dashboard/summary'))
       .then(res => setSummary(res.data))
       .catch(e => console.error(e));
+    import('./lib/api').then(m => m.api.get('/client/session/plan-usage'))
+      .then(res => setPlanUsage(res.data))
+      .catch(() => {});
   }, []);
 
   const quickActions = [
@@ -367,6 +416,7 @@ const Dashboard = () => {
         </div>
       ) : (
         <>
+          {planUsage && <PlanUsageSummary usage={planUsage} />}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-100">
               <h3 className="text-slate-400 font-bold uppercase tracking-wider text-xs mb-2">Emitidos</h3>

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import PlanFormModal, { type Plan, CYCLE_LABELS, SCOPE_LABELS } from '../components/PlanFormModal';
+import PlanSettingsCard, { EXCEED_LABELS } from '../components/PlanSettingsCard';
 
 const money = (value: number) => `$${value.toLocaleString('es-CO')}`;
 
@@ -50,6 +51,7 @@ export default function Plans() {
     { key: 'included', header: 'Documentos incluidos', render: includedText, sortValue: p => p.includedDocuments ?? Number.MAX_SAFE_INTEGER },
     { key: 'price', header: 'Precio por documento', align: 'right', cellClassName: 'font-mono', render: p => (p.includedDocuments === null ? '—' : money(p.pricePerDocument)), sortValue: p => p.pricePerDocument },
     { key: 'scope', header: 'Aplica a', render: p => SCOPE_LABELS[p.scope], sortValue: p => p.scope },
+    { key: 'exceed', header: 'Al llegar al límite', render: p => (p.includedDocuments ? (p.exceedAction ? EXCEED_LABELS[p.exceedAction] : 'Opción general') : '—'), sortValue: p => p.exceedAction ?? '' },
     { key: 'clients', header: 'Clientes', align: 'right', render: p => p.clients, sortValue: p => p.clients },
   ];
 
@@ -69,6 +71,8 @@ export default function Plans() {
           </button>
         </div>
       </div>
+
+      <PlanSettingsCard />
 
       <DataTable
         rows={plans ?? []}

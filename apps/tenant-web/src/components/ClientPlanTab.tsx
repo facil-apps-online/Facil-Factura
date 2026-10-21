@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { CYCLE_LABELS, SCOPE_LABELS, type Plan } from './PlanFormModal';
+import { EXCEED_LABELS } from './PlanSettingsCard';
 
 interface UsageUnit {
   branchId: string | null;
@@ -37,13 +38,29 @@ interface Assignment {
   startDate: string;
   fixedFeeOverride: number | null;
   pricePerDocumentOverride: number | null;
+  exceedActionOverride: 'Notify' | 'Block' | null;
+}
+
+interface PlanAlertRow {
+  id: string;
+  kind: string;
+  message: string;
+  createdAt: string;
 }
 
 interface PlanState {
   assignment: Assignment | null;
   usage: PlanUsage | null;
   history: PlanUsage[];
+  alerts: PlanAlertRow[];
 }
+
+const ALERT_LABELS: Record<string, { text: string; style: string }> = {
+  Warning: { text: 'Aviso', style: 'bg-amber-50 text-amber-700' },
+  LimitReached: { text: 'Límite', style: 'bg-rose-50 text-rose-700' },
+  Blocked: { text: 'Bloqueado', style: 'bg-rose-100 text-rose-800' },
+  Unblocked: { text: 'Desbloqueado', style: 'bg-emerald-50 text-emerald-700' },
+};
 
 const money = (value: number) => `$${value.toLocaleString('es-CO')}`;
 const day = (iso: string) => new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -58,6 +75,7 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [feeOverride, setFeeOverride] = useState('');
   const [priceOverride, setPriceOverride] = useState('');
+  const [exceedOverride, setExceedOverride] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -69,9 +87,10 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
       setPlanId(a?.planId ?? '');
       setFeeOverride(a?.fixedFeeOverride != null ? String(a.fixedFeeOverride) : '');
       setPriceOverride(a?.pricePerDocumentOverride != null ? String(a.pricePerDocumentOverride) : '');
+      setExceedOverride(a?.exceedActionOverride ?? '');
     } catch (err) {
       toast.error(getErrorMessage(err, 'No se pudo cargar el plan del cliente'));
-      setState({ assignment: null, usage: null, history: [] });
+      setState({ assignment: null, usage: null, history: [], alerts: [] });
     }
   };
 
@@ -85,6 +104,7 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
         planId, startDate,
         fixedFeeOverride: feeOverride === '' ? null : Number(feeOverride),
         pricePerDocumentOverride: priceOverride === '' ? null : Number(priceOverride),
+        exceedActionOverride: exceedOverride === '' ? null : exceedOverride,
       });
       toast.success('Plan asignado');
       await load();
@@ -111,7 +131,7 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
 
   if (!state) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-slate-400" /></div>;
 
-  const { assignment, usage, history } = state;
+  const { assignment, usage, history, alerts } = state;
 
   return (
     <div className="space-y-6">
@@ -149,7 +169,12 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
             </div>
           </div>
         </div>
-        <p className="mt-3 text-xs text-slate-400">La cuota y el precio especiales pisan los del plan solo para este cliente. Déjalos vacíos para usar los del plan.</p>
+        <div className="mt-4 max-w-md">
+          <label className={labelClass}>Al llegar al límite de documentos</label>
+          <SearchableSelect value={exceedOverride} onChange={setExceedOverride} placeholder="La del plan"
+            options={[{ value: '', label: 'La del plan (o la opción general)' }, ...Object.entries(EXCEED_LABELS).map(([value, label]) => ({ value, label }))]} />
+        </div>
+        <p className="mt-3 text-xs text-slate-400">La cuota, el precio y la acción especiales pisan los del plan solo para este cliente. Déjalos vacíos para usar los del plan.</p>
         <div className="mt-4 flex gap-3">
           <button onClick={assign} disabled={saving || !planId} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
             {assignment ? 'Guardar cambio' : 'Asignar plan'}
@@ -193,6 +218,21 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
             <span className="text-sm text-slate-500">Cuota {usage.feeTiming === 'Advance' ? 'por adelantado' : 'vencida'} · excedente al cierre del ciclo</span>
             <span className="text-lg font-extrabold text-slate-900">Total del ciclo: {money(usage.total)}</span>
           </div>
+        </div>
+      )}
+
+      {alerts.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 bg-slate-50 px-5 py-3 text-sm font-bold text-slate-700">Avisos recientes</div>
+          <ul>
+            {alerts.map(a => (
+              <li key={a.id} className="flex items-start gap-3 border-t border-slate-50 px-5 py-2.5 text-sm first:border-t-0">
+                <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${ALERT_LABELS[a.kind]?.style ?? 'bg-slate-100 text-slate-600'}`}>{ALERT_LABELS[a.kind]?.text ?? a.kind}</span>
+                <span className="text-slate-700">{a.message}</span>
+                <span className="ml-auto shrink-0 text-xs text-slate-400">{day(a.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

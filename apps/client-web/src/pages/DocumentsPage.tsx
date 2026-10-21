@@ -19,6 +19,7 @@ import { Button } from '../components/ui/button';
 import { STATUS_FILTER_OPTIONS, STATUS_LABELS } from '../lib/documentStatus';
 import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
 import DianResponseDialog from '../components/DianResponseDialog';
+import DataicoLookupModal from '../components/DataicoLookupModal';
 import { usePdfPreview } from '../lib/pdfPreview';
 import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
 
@@ -194,6 +195,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [relatedOpenId, setRelatedOpenId] = useState<string | null>(null);
   const [responseModalInv, setResponseModalInv] = useState<any>(null);
   const [resendModalInv, setResendModalInv] = useState<any>(null);
+  const [showDataicoLookup, setShowDataicoLookup] = useState(false);
   const [resendEmailDraft, setResendEmailDraft] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resolutionFilter, setResolutionFilter] = useState('');
@@ -2380,6 +2382,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           <p className="text-slate-500 mt-1">Gestión de documentos electrónicos</p>
         </div>
         <div className="flex flex-wrap gap-3">
+          {mode === 'invoice' && features.dataico && (
+            <button onClick={() => setShowDataicoLookup(true)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all">
+              <Search size={18} /> Consultar factura
+            </button>
+          )}
           {cfg.importExcel && <ImportExcelButton endpoint="/client/invoices/import" templateEndpoint="/client/invoices/template" label="Importar Excel" onDone={loadData} />}
           <button
             onClick={handleCreateNew}
@@ -2536,6 +2543,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         <DianResponseDialog doc={responseModalInv} label={`${cfg.singular} ${responseModalInv.number || 'Borrador'}`} onClose={() => setResponseModalInv(null)} />
       )}
 
+      {showDataicoLookup && <DataicoLookupModal onClose={() => setShowDataicoLookup(false)} />}
       {resendModalInv && (
         <Modal
           open

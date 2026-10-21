@@ -31,7 +31,8 @@ interface SessionData {
   // foreignCurrency: el Tenant lo habilitó a facturar también en moneda extranjera.
   // dianLookup: emisión directa a la DIAN con certificado activo, así que se puede buscar un tercero por su documento en la DIAN.
   // tenantOwner: esta empresa es la propietaria de su tenant (la que factura a los demás): puede sincronizar los clientes del tenant como terceros.
-  features: { payments: boolean; foreignCurrency: boolean; dianLookup: boolean; tenantOwner: boolean };
+  // dataico: la empresa emite con Dataico, así que puede consultar una factura en Dataico por su número.
+  features: { payments: boolean; foreignCurrency: boolean; dianLookup: boolean; tenantOwner: boolean; dataico: boolean };
   roles: CatalogItem[];
   noteKinds: CatalogItem[];
 }

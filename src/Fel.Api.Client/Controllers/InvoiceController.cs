@@ -250,6 +250,99 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // Consulta de una factura en Dataico por su número (prefijo + consecutivo), para clientes con Dataico. Solo lee: no guarda nada.
+        // La respuesta puede traer la factura sola, dentro de "invoice" o en una lista ("invoices"/arreglo): se toma la primera.
+        private async Task<(Fel.Core.Entities.Client? client, Fel.Infrastructure.Dataico.Models.DataicoResult? result, System.Text.Json.JsonElement? invoice, IActionResult? error)> LookupDataicoInvoiceAsync(string? number)
+        {
+            number = (number ?? string.Empty).Trim();
+            if (number.Length == 0) return (null, null, null, BadRequest(new { message = "Escribe el número de la factura con su prefijo, por ejemplo PE1." }));
+
+            var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == GetCurrentClientId());
+            if (client == null) return (null, null, null, NotFound(new { message = "Cliente no encontrado." }));
+            if (client.Integrator?.Code != "DATAICO") return (client, null, null, BadRequest(new { message = "La consulta en Dataico solo está disponible para clientes que emiten con Dataico." }));
+
+            var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
+            var result = await _dataicoApiService.GetInvoiceByNumberAsync(number, credentials);
+            if (!result.Success)
+            {
+                var notFound = result.StatusCode == 404;
+                return (client, result, null, StatusCode(notFound ? 404 : 502, new { message = notFound ? $"Dataico no encontró la factura {number}." : "Dataico no pudo atender la consulta.", detail = result.ErrorMessage ?? result.RawResponse }));
+            }
+
+            System.Text.Json.JsonElement? invoice = null;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(result.RawResponse);
+                var root = doc.RootElement;
+                if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    if (root.TryGetProperty("invoice", out var inner) && inner.ValueKind == System.Text.Json.JsonValueKind.Object) root = inner;
+                    else if (root.TryGetProperty("invoices", out var list) && list.ValueKind == System.Text.Json.JsonValueKind.Array) root = list.GetArrayLength() > 0 ? list[0] : default;
+                }
+                else if (root.ValueKind == System.Text.Json.JsonValueKind.Array) root = root.GetArrayLength() > 0 ? root[0] : default;
+                if (root.ValueKind == System.Text.Json.JsonValueKind.Object) invoice = root.Clone();
+            }
+            catch (System.Text.Json.JsonException) { }
+
+            if (invoice == null) return (client, result, null, NotFound(new { message = $"Dataico no encontró la factura {number}." }));
+            return (client, result, invoice, null);
+        }
+
+        private static string? JsonText(System.Text.Json.JsonElement e, params string[] keys)
+        {
+            foreach (var key in keys)
+                if (e.TryGetProperty(key, out var v) && v.ValueKind != System.Text.Json.JsonValueKind.Null && v.ValueKind != System.Text.Json.JsonValueKind.Object && v.ValueKind != System.Text.Json.JsonValueKind.Array)
+                    return v.ToString();
+            return null;
+        }
+
+        [HttpGet("dataico-lookup")]
+        public async Task<IActionResult> DataicoLookup([FromQuery] string? number)
+        {
+            var (_, result, invoice, error) = await LookupDataicoInvoiceAsync(number);
+            if (error != null) return error;
+            var inv = invoice!.Value;
+            string? customer = null;
+            if (inv.TryGetProperty("customer", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.Object)
+                customer = JsonText(c, "party_identification") is { } nit ? $"{JsonText(c, "company_name") ?? JsonText(c, "first_name")} ({nit})" : JsonText(c, "company_name", "first_name");
+            var uuid = JsonText(inv, "uuid");
+            return Ok(new
+            {
+                number = JsonText(inv, "number") ?? number?.Trim(),
+                uuid,
+                cufe = JsonText(inv, "cufe", "cude", "cune"),
+                status = JsonText(inv, "dian_status", "status"),
+                issueDate = JsonText(inv, "issue_date"),
+                customer,
+                total = JsonText(inv, "payable_amount", "total", "total_amount"),
+                hasXml = !string.IsNullOrEmpty(JsonText(inv, "xml_url")) || !string.IsNullOrEmpty(uuid),
+                hasPdf = !string.IsNullOrEmpty(JsonText(inv, "pdf_url"))
+            });
+        }
+
+        [HttpGet("dataico-lookup/file")]
+        public async Task<IActionResult> DataicoLookupFile([FromQuery] string? number, [FromQuery] string? type)
+        {
+            var isXml = string.Equals(type, "xml", StringComparison.OrdinalIgnoreCase);
+            if (!isXml && !string.Equals(type, "pdf", StringComparison.OrdinalIgnoreCase)) return BadRequest(new { message = "El tipo debe ser xml o pdf." });
+
+            var (client, _, invoice, error) = await LookupDataicoInvoiceAsync(number);
+            if (error != null) return error;
+            var inv = invoice!.Value;
+
+            var url = JsonText(inv, isXml ? "xml_url" : "pdf_url");
+            var uuid = JsonText(inv, "uuid");
+            if (string.IsNullOrEmpty(url) && isXml && !string.IsNullOrEmpty(uuid))
+                url = $"https://api.dataico.com/direct/serve-file?invoices-type=invoice&document-id={Uri.EscapeDataString(uuid)}&xml-type=invoice";
+            if (string.IsNullOrEmpty(url)) return NotFound(new { message = $"Dataico no entregó el {(isXml ? "XML" : "PDF")} de esta factura." });
+
+            var file = await _dataicoApiService.DownloadFileAsync(url, DataicoDocumentMapper.ToCredentials(client!, _cryptoService));
+            if (file == null) return StatusCode(502, new { message = $"No se pudo descargar el {(isXml ? "XML" : "PDF")} desde Dataico." });
+
+            var safeNumber = new string((number ?? "factura").Trim().Where(char.IsLetterOrDigit).ToArray());
+            return File(file.Value.Bytes, isXml ? "application/xml" : "application/pdf", $"{safeNumber}.{(isXml ? "xml" : "pdf")}");
+        }
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(Guid id)
         {

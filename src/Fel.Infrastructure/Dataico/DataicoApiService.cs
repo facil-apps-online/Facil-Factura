@@ -38,6 +38,12 @@ namespace Fel.Infrastructure.Dataico
         Task<DataicoResult> SendReceptionEventAsync(DataicoReceptionEventEnvelope eventRequest, DataicoCredentials credentials);
         Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials);
 
+        // Consulta una factura ya emitida en la cuenta por su número (prefijo + consecutivo, "PE1"). Solo lee.
+        Task<DataicoResult> GetInvoiceByNumberAsync(string number, DataicoCredentials credentials);
+
+        // Descarga el XML o el PDF de un documento (la URL sale de la respuesta de Dataico). Devuelve null si Dataico no lo entrega.
+        Task<(byte[] Bytes, string ContentType)?> DownloadFileAsync(string url, DataicoCredentials credentials);
+
         // Lista las numeraciones de la cuenta de Dataico (GET /numberings/{module}). module es "invoice" (facturas) o "support-doc"
         // (documento soporte); credit-note y debit-note existen en Dataico pero no llevan una resolución propia.
         Task<DataicoNumberingSyncResult> SyncNumberingsAsync(string module, DataicoCredentials credentials);
@@ -143,6 +149,32 @@ namespace Fel.Infrastructure.Dataico
 
         public Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials)
             => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/reception_events?number={Uri.EscapeDataString(number)}", credentials, null);
+
+        public Task<DataicoResult> GetInvoiceByNumberAsync(string number, DataicoCredentials credentials)
+            => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/invoices?number={Uri.EscapeDataString(number)}", credentials, null);
+
+        public async Task<(byte[] Bytes, string ContentType)?> DownloadFileAsync(string url, DataicoCredentials credentials)
+        {
+            // Solo se sigue una URL https del propio Dataico: la dirección viene de una respuesta externa.
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
+                !(uri.Host == "dataico.com" || uri.Host.EndsWith(".dataico.com", StringComparison.OrdinalIgnoreCase)))
+                return null;
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                request.Headers.Add("Auth-token", credentials.AuthToken);
+                if (!string.IsNullOrEmpty(credentials.AccountId)) request.Headers.Add("dataico-account-id", credentials.AccountId);
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(100));
+                using var response = await DataicoClient.Client.SendAsync(request, cts.Token);
+                if (!response.IsSuccessStatusCode) return null;
+                var bytes = await response.Content.ReadAsByteArrayAsync(cts.Token);
+                return (bytes, response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
 
         // Lista las numeraciones de la cuenta (GET /numberings/{module}, con module = invoice | support-doc | credit-note | debit-note).
         // Solo lee: el POST numberings/sync_dian/{module} es el de ASOCIAR una resolución nueva a la cuenta, no el de listarlas.

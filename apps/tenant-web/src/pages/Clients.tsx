@@ -34,7 +34,8 @@ interface Client {
   nearestResolutionExpiry: string | null;
   associateId: string | null;
   associateName: string | null;
-  portalUserStatus: 'NotInvited' | 'Active' | 'Revoked';
+  // Pending: el usuario ya existe pero todavía no se le ha enviado la invitación.
+  portalUserStatus: 'NotInvited' | 'Pending' | 'Active' | 'Revoked';
 }
 
 function PortalStatusBadge({ status }: { status: Client['portalUserStatus'] }) {
@@ -43,6 +44,9 @@ function PortalStatusBadge({ status }: { status: Client['portalUserStatus'] }) {
   }
   if (status === 'Revoked') {
     return <span className="px-2.5 py-1 rounded-full text-xs font-semibold text-rose-700 bg-rose-100 border border-rose-200">Revocado</span>;
+  }
+  if (status === 'Pending') {
+    return <span className="px-2.5 py-1 rounded-full text-xs font-semibold text-amber-700 bg-amber-100 border border-amber-200">Pendiente de invitar</span>;
   }
   return <span className="px-2.5 py-1 rounded-full text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200">Sin invitar</span>;
 }
@@ -144,7 +148,8 @@ export default function Clients() {
     }
   };
 
-  const notInvitedIds = clients.filter(c => c.portalUserStatus === 'NotInvited').map(c => c.id);
+  // Sin invitar = sin usuario o con usuario pendiente: a los dos los cubre el envío masivo.
+  const notInvitedIds = clients.filter(c => c.portalUserStatus === 'NotInvited' || c.portalUserStatus === 'Pending').map(c => c.id);
 
   const toggleSelected = (id: string) => {
     setSelectedIds(prev => {
@@ -157,7 +162,7 @@ export default function Clients() {
   const selectAllNotInvited = () => setSelectedIds(new Set(notInvitedIds));
   const clearSelection = () => setSelectedIds(new Set());
 
-  const portalOrder: Record<Client['portalUserStatus'], number> = { Active: 0, Revoked: 1, NotInvited: 2 };
+  const portalOrder: Record<Client['portalUserStatus'], number> = { Active: 0, Revoked: 1, Pending: 2, NotInvited: 3 };
 
   const columns: DataTableColumn<Client>[] = [
     { key: 'companyName', header: 'Razón social', primary: true, cellClassName: 'font-medium text-slate-800', render: c => c.companyName, sortValue: c => c.companyName, searchValue: c => c.companyName },

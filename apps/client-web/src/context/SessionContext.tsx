@@ -27,6 +27,8 @@ interface SessionData {
   // Ubicación de la empresa, si está registrada.
   location?: { latitude: number; longitude: number } | null;
   branches: SessionBranch[];
+  // Empresas (clientes) a las que puede pasar quien tiene el mismo correo en varios clientes del tenant; vacía si solo tiene una.
+  companies: Array<{ clientId: string; name: string }>;
   // Módulos que el Tenant activó para este cliente (apagados por defecto).
   // foreignCurrency: el Tenant lo habilitó a facturar también en moneda extranjera.
   // dianLookup: emisión directa a la DIAN con certificado activo, así que se puede buscar un tercero por su documento en la DIAN.

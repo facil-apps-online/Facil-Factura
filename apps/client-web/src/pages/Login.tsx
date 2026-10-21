@@ -18,6 +18,8 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Quien tiene el mismo correo en varios clientes del tenant (un contador) elige en cuál trabajar: el servidor lo pide tras validar la contraseña.
+  const [companies, setCompanies] = useState<Array<{ clientId: string; name: string; taxId?: string }> | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
       .catch(() => setBranding(null));
   }, [tenantSlug]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, clientId?: string) => {
     e.preventDefault();
     if (!tenantSlug) {
       setError('No se identificó la empresa. Ingresa por el enlace que te compartió tu proveedor de facturación.');
@@ -38,7 +40,12 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
     setError('');
 
     try {
-      const res = await api.post('/client/auth/login', { tenantSlug, email, password });
+      const res = await api.post('/client/auth/login', { tenantSlug, email, password, clientId });
+
+      if (res.data.requiresCompany) {
+        setCompanies(res.data.companies);
+        return;
+      }
 
       // Un inicio de sesión normal deja atrás cualquier marca de modo soporte.
       localStorage.removeItem('fel_client_support');
@@ -86,6 +93,31 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
           </div>
         )}
 
+        {companies ? (
+          <div className="space-y-3" data-testid="company-picker">
+            <p className="text-sm font-semibold text-slate-700 text-center">¿En qué empresa vas a trabajar?</p>
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {companies.map(c => (
+                <button
+                  key={c.clientId}
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={e => handleSubmit(e, c.clientId)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-white disabled:opacity-50"
+                >
+                  <span className="block font-semibold text-slate-800 break-words">{c.name}</span>
+                  {c.taxId && <span className="block text-xs text-slate-500">NIT {c.taxId}</span>}
+                </button>
+              ))}
+            </div>
+            {error && (
+              <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-600 text-sm text-center py-3 px-3 rounded-xl font-medium break-words">{error}</div>
+            )}
+            <button type="button" onClick={() => { setCompanies(null); setPassword(''); setError(''); }} className="w-full py-2 text-sm font-medium text-slate-500 hover:text-slate-700">
+              Usar otro correo
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -138,6 +170,7 @@ export default function Login({ onAuthSuccess }: { onAuthSuccess: () => void }) 
             {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Ingresar al Portal'}
           </button>
         </form>
+        )}
       </div>
     </div>
   );

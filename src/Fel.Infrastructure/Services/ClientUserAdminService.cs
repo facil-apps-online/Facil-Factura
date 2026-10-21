@@ -67,9 +67,15 @@ namespace Fel.Infrastructure.Services
             if (branchError != null) return UserAdminResult<(ClientUser, InvitationOutcome)>.Invalid(branchError);
 
             var email = input.Email.Trim();
-            // El correo identifica al usuario en el inicio de sesión de toda la empresa.
-            if (await _dbContext.ClientUsers.AnyAsync(u => u.Email == email))
-                return UserAdminResult<(ClientUser, InvitationOutcome)>.Invalid("Ese correo ya está en uso por otro acceso.");
+            // En una empresa el correo no se repite; en distintas empresas del mismo tenant sí: es la misma persona (un contador con varios clientes).
+            if (await _dbContext.ClientUsers.AnyAsync(u => u.ClientId == clientId && u.Email == email))
+                return UserAdminResult<(ClientUser, InvitationOutcome)>.Invalid("Ese correo ya tiene acceso en esta empresa.");
+
+            // ¿La persona ya tiene acceso en otra empresa de este tenant? Entonces comparte su contraseña y su estado de invitación.
+            var tenantId = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == clientId).Select(c => c.TenantId).FirstAsync();
+            var existing = await _dbContext.ClientUsers.AsNoTracking()
+                .Where(u => u.Email == email && u.Client.TenantId == tenantId)
+                .OrderBy(u => u.CreatedAt).FirstOrDefaultAsync();
 
             // Sin contraseña manual: se crea con un hash aleatorio que nadie conoce y se invita a la persona a que establezca la suya.
             var user = new ClientUser
@@ -78,7 +84,8 @@ namespace Fel.Infrastructure.Services
                 ClientId = clientId,
                 Name = input.Name.Trim(),
                 Email = email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
+                PasswordHash = existing?.PasswordHash ?? BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
+                InvitedAt = existing?.InvitedAt,
                 Role = input.Role,
                 AllBranches = input.AllBranches,
                 IsActive = true,
@@ -88,6 +95,11 @@ namespace Fel.Infrastructure.Services
                 user.Branches.Add(new ClientUserBranch { ClientUserId = user.Id, BranchId = branchId });
             _dbContext.ClientUsers.Add(user);
             await _dbContext.SaveChangesAsync();
+
+            // Quien ya tenía acceso en otra empresa del tenant no necesita otra invitación: entra con su misma contraseña y verá también esta empresa.
+            if (existing != null)
+                return UserAdminResult<(ClientUser, InvitationOutcome)>.Ok((user, new InvitationOutcome(false,
+                    "Este correo ya tiene acceso a otra empresa del tenant: entra con su misma contraseña y verá también esta empresa. No se envió otra invitación.")));
 
             return UserAdminResult<(ClientUser, InvitationOutcome)>.Ok((user, await SendInvitationAsync(user, portalUrl)));
         }
@@ -187,7 +199,16 @@ namespace Fel.Infrastructure.Services
                 PortalUserType.Client, user.Id, user.Email, user.Name, portalUrl, "invitation", client.Tenant?.CoreTenantId,
                 client.Tenant?.LogoLightUrl, client.Tenant?.CommercialName);
 
-            if (result.IsSuccess) return new InvitationOutcome(true, null);
+            if (result.IsSuccess)
+            {
+                // La invitación es de la persona: queda cumplida en todos sus accesos del tenant (los de su mismo correo).
+                var now = DateTime.UtcNow;
+                var group = await _dbContext.ClientUsers.Where(u => u.Email == user.Email && u.Client.TenantId == client.TenantId && u.InvitedAt == null).ToListAsync();
+                foreach (var member in group) member.InvitedAt = now;
+                user.InvitedAt ??= now;
+                await _dbContext.SaveChangesAsync();
+                return new InvitationOutcome(true, null);
+            }
             return new InvitationOutcome(false, result.IsNotConfigured ? "El servicio de correo no está configurado." : (result.Error ?? "No se pudo enviar la invitación."));
         }
     }

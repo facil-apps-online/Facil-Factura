@@ -144,10 +144,11 @@ namespace Fel.Api.Tenant.Controllers
                             .FirstOrDefault(),
                         // Estado del acceso al portal — para la columna de invitación y para que
                         // el envío masivo sepa a quién ya no hace falta invitarle.
+                        // Pending = el usuario ya existe pero nadie lo ha invitado todavía (lo emite el tenant).
                         PortalUserStatus = _dbContext.ClientUsers
                             .Where(u => u.ClientId == c.Id && u.Role == ClientUserRoles.Administrator)
                             .OrderBy(u => u.CreatedAt)
-                            .Select(u => u.IsActive ? "Active" : "Revoked")
+                            .Select(u => !u.IsActive ? "Revoked" : u.InvitedAt == null ? "Pending" : "Active")
                             .FirstOrDefault() ?? "NotInvited"
                     })
                     .ToListAsync();
@@ -449,6 +450,7 @@ namespace Fel.Api.Tenant.Controllers
         // Email/CompanyName ya registrados en cada Client como destinatario — no pide un
         // formulario por cliente, que es justo lo que el envío masivo busca evitar. Los que ya
         // tienen portal user, o no tienen email cargado, se reportan aparte sin frenar al resto.
+        // Un usuario que ya existe pero nunca fue invitado (InvitedAt nulo) no se salta: se le envía la invitación, sin crear otro.
         [HttpPost("bulk-invite")]
         public async Task<IActionResult> BulkInviteClients([FromBody] BulkInviteClientsRequest request)
         {
@@ -463,18 +465,35 @@ namespace Fel.Api.Tenant.Controllers
             }
             var candidates = await clientsQuery.ToListAsync();
 
-            var existingUserClientIds = new HashSet<Guid>(
-                await _dbContext.ClientUsers.Where(u => candidates.Select(c => c.Id).Contains(u.ClientId)).Select(u => u.ClientId).ToListAsync());
+            var candidateIds = candidates.Select(c => c.Id).ToList();
+            // Todos los usuarios del tenant, por correo: una misma persona (un contador, por ejemplo) puede tener acceso a varios clientes con una sola
+            // contraseña, así que se le manda UNA invitación y su enlace deja la contraseña en todos sus accesos.
+            var tenantUsers = await _dbContext.ClientUsers.Where(u => u.Client.TenantId == tenantId).ToListAsync();
+            string Key(string email) => (email ?? string.Empty).Trim().ToLowerInvariant();
+            var usersByClient = tenantUsers.Where(u => candidateIds.Contains(u.ClientId)).GroupBy(u => u.ClientId).ToDictionary(g => g.Key, g => g.ToList());
+            // Contraseña y estado de invitación que comparte cada correo: los del usuario más antiguo que ya tenga.
+            var shared = tenantUsers.GroupBy(u => Key(u.Email)).ToDictionary(g => g.Key, g => g.OrderBy(u => u.CreatedAt).First());
 
-            var newUsers = new List<(ClientUser User, string CompanyName)>();
+            var toInvite = new List<(ClientUser User, string CompanyName)>();   // usuarios con invitación por enviar (existentes pendientes o nuevos)
+            var covered = new List<(ClientUser User, string CompanyName)>();    // clientes que quedan cubiertos (con o sin correo propio)
             var skippedAlreadyInvited = new List<object>();
             var skippedNoEmail = new List<object>();
 
             foreach (var client in candidates)
             {
-                if (existingUserClientIds.Contains(client.Id))
+                if (usersByClient.TryGetValue(client.Id, out var clientUsers))
                 {
-                    skippedAlreadyInvited.Add(new { client.Id, client.CompanyName });
+                    // Pendiente de invitar: el cliente tiene usuarios y todos están activos sin invitación enviada.
+                    if (clientUsers.All(u => u.IsActive && u.InvitedAt == null))
+                    {
+                        var pending = clientUsers.OrderBy(u => u.CreatedAt).First();
+                        toInvite.Add((pending, client.CompanyName));
+                        covered.Add((pending, client.CompanyName));
+                    }
+                    else
+                    {
+                        skippedAlreadyInvited.Add(new { client.Id, client.CompanyName });
+                    }
                     continue;
                 }
                 if (string.IsNullOrWhiteSpace(client.Email))
@@ -483,33 +502,49 @@ namespace Fel.Api.Tenant.Controllers
                     continue;
                 }
 
+                var key = Key(client.Email);
+                shared.TryGetValue(key, out var sameEmail);
                 var user = new ClientUser
                 {
                     Id = Guid.NewGuid(),
                     ClientId = client.Id,
                     Name = string.IsNullOrWhiteSpace(client.CommercialName) ? client.CompanyName : client.CommercialName,
-                    Email = client.Email,
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
+                    Email = client.Email.Trim(),
+                    // Si la persona ya tiene acceso en otro cliente del tenant, comparte su contraseña y su estado de invitación.
+                    PasswordHash = sameEmail?.PasswordHash ?? BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
+                    InvitedAt = sameEmail?.InvitedAt,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow
                 };
                 _dbContext.ClientUsers.Add(user);
-                newUsers.Add((user, client.CompanyName));
+                tenantUsers.Add(user);
+                shared.TryAdd(key, user);
+                covered.Add((user, client.CompanyName));
+                if (user.InvitedAt == null) toInvite.Add((user, client.CompanyName));
             }
 
             await _dbContext.SaveChangesAsync();
 
-            foreach (var (user, _) in newUsers)
+            // Un solo correo por persona: el enlace del primero basta, porque al establecer la contraseña se fija en todos sus accesos.
+            var emailsSent = 0;
+            foreach (var group in toInvite.GroupBy(t => Key(t.User.Email)))
             {
-                await _passwordResetService.RequestAsync(
-                    PortalUserType.Client, user.Id, user.Email, user.Name, _clientPortalUrl, "invitation", tenant.CoreTenantId,
+                var representative = group.First().User;
+                var result = await _passwordResetService.RequestAsync(
+                    PortalUserType.Client, representative.Id, representative.Email, representative.Name, _clientPortalUrl, "invitation", tenant.CoreTenantId,
                     tenant.LogoLightUrl, tenant.CommercialName);
+                // Solo queda como invitada si el correo salió de verdad; si no, sigue pendiente y el envío masivo la vuelve a cubrir.
+                if (!result.IsSuccess) continue;
+                emailsSent++;
+                foreach (var member in tenantUsers.Where(u => Key(u.Email) == group.Key)) member.InvitedAt ??= DateTime.UtcNow;
             }
+            await _dbContext.SaveChangesAsync();
 
             return Ok(new
             {
-                invitedCount = newUsers.Count,
-                invited = newUsers.Select(u => new { ClientId = u.User.ClientId, u.CompanyName, u.User.Email }),
+                invitedCount = covered.Count,
+                emailsSent,
+                invited = covered.Select(u => new { ClientId = u.User.ClientId, u.CompanyName, u.User.Email }),
                 skippedAlreadyInvited,
                 skippedNoEmail
             });

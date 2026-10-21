@@ -20,12 +20,14 @@ namespace Fel.Api.Client.Controllers
         private readonly PasswordResetService _passwordResetService;
         private readonly Fel.Infrastructure.Security.AccountSessionService _accountSessions;
         private readonly string _portalUrl;
+        private readonly Fel.Api.Client.Security.ClientSessionIssuer _sessionIssuer;
 
-        public ClientAuthController(FelDbContext dbContext, PasswordResetService passwordResetService, Fel.Infrastructure.Security.AccountSessionService accountSessions, IConfiguration config)
+        public ClientAuthController(FelDbContext dbContext, PasswordResetService passwordResetService, Fel.Infrastructure.Security.AccountSessionService accountSessions, Fel.Api.Client.Security.ClientSessionIssuer sessionIssuer, IConfiguration config)
         {
             _dbContext = dbContext;
             _passwordResetService = passwordResetService;
             _accountSessions = accountSessions;
+            _sessionIssuer = sessionIssuer;
             _portalUrl = config["PortalUrl"] ?? "https://clients.facil-factura.pro";
         }
 
@@ -45,17 +47,21 @@ namespace Fel.Api.Client.Controllers
                 return Unauthorized("Empresa no encontrada o inactiva.");
             }
 
-            var user = await _dbContext.ClientUsers
+            // Un mismo correo puede tener acceso a varias empresas (clientes) del tenant: un contador que lleva varios. Una sola contraseña
+            // para todas (se fija en cada usuario del grupo al establecerla), y si son varias la persona elige a cuál entra.
+            var email = (request.Email ?? string.Empty).Trim();
+            var members = await _dbContext.ClientUsers
                 .Include(u => u.Client)
-                .FirstOrDefaultAsync(u => u.Email == request.Email && u.Client.TenantId == tenant.Id);
+                .Where(u => u.Email == email && u.Client.TenantId == tenant.Id && u.IsActive && u.Client.IsActive)
+                .ToListAsync();
 
-            if (user == null || !user.IsActive || !user.Client.IsActive)
+            if (members.Count == 0)
             {
                 return Unauthorized("Credenciales incorrectas o usuario inactivo.");
             }
 
-            bool isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
-            if (!isPasswordValid)
+            // Basta con que la contraseña coincida con la de cualquier usuario del grupo (antes de la primera vez que la establece, cada uno tiene la suya aleatoria).
+            if (!members.Any(u => BCrypt.Net.BCrypt.Verify(request.Password, u.PasswordHash)))
             {
                 return Unauthorized("Credenciales incorrectas.");
             }
@@ -65,44 +71,36 @@ namespace Fel.Api.Client.Controllers
             {
                 return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
             }
-            // Bloqueo del propio cliente por su tenant.
-            if (user.Client.BlockedAt != null) return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
 
-            // Sucursales a las que puede entrar el usuario (la principal primero). Sin ninguna activa no hay sesión útil.
-            var branchesQuery = _dbContext.Branches.AsNoTracking().Where(b => b.ClientId == user.ClientId && b.IsActive);
-            if (!user.AllBranches)
+            // Empresas a las que puede entrar (sin las bloqueadas por su tenant).
+            var open = members.Where(u => u.Client.BlockedAt == null).ToList();
+            if (open.Count == 0) return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
+
+            ClientUser? user;
+            if (request.ClientId.HasValue)
             {
-                var assigned = await _dbContext.ClientUserBranches.Where(ub => ub.ClientUserId == user.Id).Select(ub => ub.BranchId).ToListAsync();
-                branchesQuery = branchesQuery.Where(b => assigned.Contains(b.Id));
+                user = open.FirstOrDefault(u => u.ClientId == request.ClientId.Value);
+                if (user == null) return Unauthorized("No tienes acceso a esa empresa.");
             }
-            var branches = await branchesQuery
-                .OrderByDescending(b => b.IsMain).ThenBy(b => b.Name)
-                .Select(b => new { b.Id, b.Name, b.Code, b.IsMain })
-                .ToListAsync();
-            if (branches.Count == 0)
+            else if (open.Count == 1)
             {
-                return Unauthorized("No tienes sucursales activas asignadas. Contacta a tu administrador.");
+                user = open[0];
+            }
+            else
+            {
+                // Varias empresas: no hay sesión todavía; el portal pide elegir una y repite el inicio de sesión con su clientId.
+                return Ok(new
+                {
+                    requiresCompany = true,
+                    companies = open
+                        .OrderBy(u => Fel.Api.Client.Security.ClientSessionIssuer.CompanyName(u.Client))
+                        .Select(u => new { clientId = u.ClientId, name = Fel.Api.Client.Security.ClientSessionIssuer.CompanyName(u.Client), taxId = u.Client.TaxId })
+                });
             }
 
-            var token = _accountSessions.Issue(Fel.Core.Security.PortalKind.Client, user, new[]
-            {
-                ("ClientId", user.ClientId.ToString()),
-                (System.Security.Claims.ClaimTypes.NameIdentifier, user.Id.ToString()),
-                (System.Security.Claims.ClaimTypes.Email, user.Email)
-            }).Token;
-
-            return Ok(new
-            {
-                token,
-                clientId = user.ClientId,
-                name = user.Name,
-                email = user.Email,
-                companyName = user.Client.CommercialName,
-                tenantSlug = tenant.Slug,
-                role = user.Role,
-                allBranches = user.AllBranches,
-                branches
-            });
+            var issued = await _sessionIssuer.IssueAsync(user, tenant);
+            if (!issued.Ok) return StatusCode(issued.Status, issued.Error);
+            return Ok(issued.Payload);
         }
         [HttpPost("forgot-password")]
         public async Task<IActionResult> ForgotPassword([FromBody] ClientForgotPasswordRequest request)
@@ -140,8 +138,17 @@ namespace Fel.Api.Client.Controllers
             var user = await _dbContext.ClientUsers.FindAsync(consumed.Value.UserId);
             if (user == null) return BadRequest("El enlace no es válido o ya expiró. Solicita uno nuevo.");
 
-            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
-            _accountSessions.RotateStamp(Fel.Core.Security.PortalKind.Client, user); // quien recupera su cuenta corta cualquier sesión abierta
+            // La contraseña es de la persona (su correo), no de una empresa: se fija igual en todos sus accesos del tenant, y la invitación
+            // queda cumplida en todos. Así quien lleva varios clientes recibe una sola invitación y tiene una sola clave.
+            var tenantId = await _dbContext.Clients.Where(c => c.Id == user.ClientId).Select(c => c.TenantId).FirstAsync();
+            var group = await _dbContext.ClientUsers.Where(u => u.Email == user.Email && u.Client.TenantId == tenantId).ToListAsync();
+            var newHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+            foreach (var member in group)
+            {
+                member.PasswordHash = newHash;
+                member.InvitedAt ??= DateTime.UtcNow;
+                _accountSessions.RotateStamp(Fel.Core.Security.PortalKind.Client, member); // quien recupera su cuenta corta cualquier sesión abierta
+            }
             await _dbContext.SaveChangesAsync();
 
             return Ok(new { message = "Contraseña actualizada correctamente." });
@@ -153,6 +160,8 @@ namespace Fel.Api.Client.Controllers
         public string TenantSlug { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        // Empresa a la que entra, cuando el correo tiene acceso a varias; nulo en el primer intento.
+        public Guid? ClientId { get; set; }
     }
 
     public class ClientForgotPasswordRequest

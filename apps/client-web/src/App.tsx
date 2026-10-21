@@ -6,6 +6,7 @@ import { ConfirmDialogProvider } from '@/components/ConfirmDialog';
 import { api, BRANCH_STORAGE_KEY } from './lib/api';
 import { SessionProvider, useSession } from './context/SessionContext';
 import BranchSelector from './components/BranchSelector';
+import CompanySelector from './components/CompanySelector';
 import SessionGuard from '@shared/components/session/SessionGuard';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 import ProfilePage from '@shared/components/session/ProfilePage';
@@ -280,6 +281,7 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
             </div>
           </div>
           <div className="flex items-center gap-4 shrink-0">
+            <CompanySelector />
             <BranchSelector />
             {!support && <UserMenu me={me} fallbackName={name} onProfile={() => navigate('/profile')} onLogout={onLogout} />}
             <SessionGuard api={api} tokenKey="fel_client_auth" basePath="/client/auth" onExpired={onLogout} />

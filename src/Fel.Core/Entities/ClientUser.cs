@@ -40,6 +40,10 @@ namespace Fel.Core.Entities
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
 
+        // Cuándo se le envió la invitación para establecer su contraseña. Nulo = el usuario existe pero nadie lo ha invitado todavía
+        // ("pendiente de invitar"): se crea así cuando el tenant debe ser quien invite, y el envío masivo lo cubre.
+        public DateTime? InvitedAt { get; set; }
+
         // Sesión del portal: sello de seguridad (ver ISessionAccount) y minutos de inactividad que elige el usuario.
         public Guid SecurityStamp { get; set; } = Guid.NewGuid();
         public int SessionMinutes { get; set; } = Fel.Core.Security.SessionPolicy.DefaultMinutes;

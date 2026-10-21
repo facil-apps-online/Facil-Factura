@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import ClientFormFields from '../components/ClientFormFields';
 import BranchesTab from '../components/BranchesTab';
+import ClientPlanTab from '../components/ClientPlanTab';
 import ClientUsersTab from '../components/ClientUsersTab';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import { MinSaludCard, IhceCard, ReceptionMailboxCard, ReceptionEventsCard } from '../components/BranchCredentials';
@@ -1111,6 +1112,14 @@ export default function ClientEdit() {
             <ShieldAlert size={18} /> Proveedor y MinSalud
           </button>
           <button
+            onClick={() => setActiveTab('plan')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+              activeTab === 'plan' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Package size={18} /> Plan y consumo
+          </button>
+          <button
             onClick={() => setActiveTab('branches')}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
               activeTab === 'branches' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
@@ -1563,6 +1572,7 @@ export default function ClientEdit() {
               </div>
             )}
 
+            {activeTab === 'plan' && <ClientPlanTab clientId={id!} />}
             {activeTab === 'branches' && <BranchesTab clientId={id!} />}
 
             {activeTab === 'users' && <ClientUsersTab clientId={id!} />}

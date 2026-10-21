@@ -67,6 +67,8 @@ namespace Fel.Infrastructure.Data
         public DbSet<ClientEnabledDocumentType> ClientEnabledDocumentTypes => Set<ClientEnabledDocumentType>();
         public DbSet<ClientInvoiceDefaults> ClientInvoiceDefaults => Set<ClientInvoiceDefaults>();
         public DbSet<SupportAccess> SupportAccesses => Set<SupportAccess>();
+        public DbSet<TenantPlan> TenantPlans => Set<TenantPlan>();
+        public DbSet<ClientPlanAssignment> ClientPlanAssignments => Set<ClientPlanAssignment>();
         public DbSet<ClientEnabledRetentionConcept> ClientEnabledRetentionConcepts => Set<ClientEnabledRetentionConcept>();
         public DbSet<DeveloperUser> DeveloperUsers => Set<DeveloperUser>();
 
@@ -906,6 +908,29 @@ namespace Fel.Infrastructure.Data
                       .WithMany()
                       .HasForeignKey(e => e.ClonedFromId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<TenantPlan>(entity =>
+            {
+                entity.ToTable("TenantPlans");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Description).HasMaxLength(500);
+                entity.Property(e => e.FixedFee).HasPrecision(18, 2);
+                entity.Property(e => e.PricePerDocument).HasPrecision(18, 2);
+                entity.HasIndex(e => new { e.TenantId, e.Name }).IsUnique();
+                entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ClientPlanAssignment>(entity =>
+            {
+                entity.ToTable("ClientPlanAssignments");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.FixedFeeOverride).HasPrecision(18, 2);
+                entity.Property(e => e.PricePerDocumentOverride).HasPrecision(18, 2);
+                entity.HasIndex(e => new { e.ClientId, e.StartDate });
+                entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(e => e.Plan).WithMany().HasForeignKey(e => e.PlanId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<SupportAccess>(entity =>

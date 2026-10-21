@@ -104,6 +104,61 @@ namespace Fel.Api.Superadmin.Controllers
             });
         }
 
+        /// <summary>
+        /// Estado de la empresa propietaria de un tenant: la que tiene registrada, o si ya existe un cliente suyo con su NIT que se enlazaría.
+        /// </summary>
+        [HttpGet("{id:guid}/owner")]
+        public async Task<IActionResult> GetOwner(Guid id)
+        {
+            var tenant = await _dbContext.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id);
+            if (tenant == null) return NotFound();
+
+            static string Digits(string? v) => new string((v ?? string.Empty).Where(char.IsDigit).ToArray());
+            var ownerId = await _dbContext.TenantInvoicingSettings.AsNoTracking().Where(s => s.TenantId == id).Select(s => s.OwnerClientId).FirstOrDefaultAsync();
+            string? name = null;
+            if (ownerId != null)
+            {
+                name = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == ownerId)
+                    .Select(c => !string.IsNullOrEmpty(c.CommercialName) ? c.CommercialName : c.CompanyName).FirstOrDefaultAsync();
+            }
+
+            // Sin propietaria registrada: ¿hay un cliente suyo con el mismo NIT que se enlazaría?
+            string? candidate = null;
+            var nit = Digits(tenant.TaxId);
+            if (ownerId == null && nit.Length > 0)
+            {
+                var clients = await _dbContext.Clients.AsNoTracking().Where(c => c.TenantId == id)
+                    .Select(c => new { c.TaxId, Name = !string.IsNullOrEmpty(c.CommercialName) ? c.CommercialName : c.CompanyName }).ToListAsync();
+                candidate = clients.FirstOrDefault(c => Digits(c.TaxId) == nit)?.Name;
+            }
+
+            return Ok(new
+            {
+                ownerClientId = ownerId, ownerClientName = name, hasTaxId = nit.Length > 0, candidateClientName = candidate,
+                // En cobro por usuario, la propietaria cuenta como un usuario más.
+                perUserBilling = tenant.BillingMode == TenantBillingMode.PerUser
+            });
+        }
+
+        /// <summary>
+        /// Crea la empresa propietaria de un tenant que ya existe (cliente con su mismo NIT y los datos básicos del tenant), o enlaza el cliente suyo que ya
+        /// tenga ese NIT, y la deja como su empresa emisora. Después se completa con "Subir RUT". Sin NIT no se puede.
+        /// </summary>
+        [HttpPost("{id:guid}/owner")]
+        public async Task<IActionResult> CreateOwner(Guid id)
+        {
+            var tenant = await _dbContext.Tenants.FindAsync(id);
+            if (tenant == null) return NotFound();
+            if (string.IsNullOrWhiteSpace(new string((tenant.TaxId ?? string.Empty).Where(char.IsDigit).ToArray())))
+                return BadRequest("Completa primero el NIT del tenant: la empresa propietaria debe tener el mismo NIT.");
+
+            var result = await Fel.Infrastructure.Services.TenantOwnerProvisioning.EnsureOwnerAsync(_dbContext, tenant);
+            await _dbContext.SaveChangesAsync();
+            var name = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == result.OwnerClientId)
+                .Select(c => !string.IsNullOrEmpty(c.CommercialName) ? c.CommercialName : c.CompanyName).FirstOrDefaultAsync();
+            return Ok(new { result.OwnerClientId, ownerClientName = name, result.Created });
+        }
+
         private static Fel.Infrastructure.Services.TenantRutData ToTenantRutData(Fel.Infrastructure.Services.DianRutParserService.ParsedRutData rut) => new()
         {
             TaxId = rut.TaxId, VerificationDigit = rut.VerificationDigit,

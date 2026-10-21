@@ -73,6 +73,9 @@ export const TenantEdit = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [applyingRut, setApplyingRut] = useState(false);
   const [rutResult, setRutResult] = useState<{ ok: boolean; lines: string[] } | null>(null);
+  // Empresa propietaria del tenant (la que factura a sus clientes): estado y botón para crearla en los tenants que ya existen.
+  const [owner, setOwner] = useState<{ ownerClientId: string | null; ownerClientName: string | null; hasTaxId: boolean; candidateClientName: string | null; perUserBilling: boolean } | null>(null);
+  const [creatingOwner, setCreatingOwner] = useState(false);
   const [blockReason, setBlockReason] = useState('');
   const [confirmingBlock, setConfirmingBlock] = useState(false);
   const [togglingBlock, setTogglingBlock] = useState(false);
@@ -102,6 +105,24 @@ export const TenantEdit = () => {
       toast.error(typeof err?.response?.data === 'string' ? err.response.data : 'No se pudo cambiar la suspensión.');
     } finally {
       setTogglingBlock(false);
+    }
+  };
+
+  useEffect(() => {
+    api.get(`/tenants/${id}/owner`).then(res => setOwner(res.data)).catch(() => setOwner(null));
+  }, [id, reloadKey]);
+
+  const createOwner = async () => {
+    if (owner?.perUserBilling && !window.confirm('Este tenant cobra por usuario: la empresa propietaria contará como un usuario más. ¿Crearla?')) return;
+    setCreatingOwner(true);
+    try {
+      const { data } = await api.post(`/tenants/${id}/owner`);
+      toast.success(data.created ? `Empresa propietaria creada: ${data.ownerClientName}.` : `Empresa propietaria enlazada: ${data.ownerClientName}.`);
+      setReloadKey(k => k + 1);
+    } catch (err: any) {
+      toast.error(typeof err?.response?.data === 'string' ? err.response.data : err?.response?.data?.message ?? 'No se pudo crear la empresa propietaria.');
+    } finally {
+      setCreatingOwner(false);
     }
   };
 
@@ -419,6 +440,33 @@ export const TenantEdit = () => {
           <p className="text-slate-400 font-medium">{formData.commercialName}</p>
         </div>
       </div>
+
+      {owner && (
+        <div className="mb-8 p-6 rounded-3xl border border-slate-700/50 glass-panel">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-white">Empresa propietaria</h2>
+              {owner.ownerClientId ? (
+                <p className="text-sm text-emerald-300 mt-1">Creada: {owner.ownerClientName}. Es la empresa que factura a los clientes de este tenant.</p>
+              ) : (
+                <p className="text-sm text-slate-400 mt-1">
+                  {!owner.hasTaxId
+                    ? 'Aún no existe. Completa primero el NIT del tenant (o sube su RUT): la empresa propietaria debe tener el mismo NIT.'
+                    : owner.candidateClientName
+                      ? `Aún no está definida. Ya existe un cliente con el NIT del tenant (${owner.candidateClientName}): se enlazará como su empresa propietaria.`
+                      : 'Aún no existe. Se creará un cliente con el mismo NIT y los datos básicos del tenant; luego puedes completarlo con el RUT.'}
+                </p>
+              )}
+            </div>
+            {!owner.ownerClientId && (
+              <button type="button" onClick={createOwner} disabled={creatingOwner || !owner.hasTaxId}
+                className="shrink-0 px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40">
+                {creatingOwner ? 'Creando...' : owner.candidateClientName ? 'Enlazar empresa propietaria' : 'Crear empresa propietaria'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mb-8 p-6 rounded-3xl border border-slate-700/50 glass-panel">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

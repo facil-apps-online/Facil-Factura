@@ -64,6 +64,8 @@ const STATUS_BADGE: Record<PreviewRow['status'], { label: string; className: str
 
 type Filter = 'all' | 'create' | 'warning' | 'decision' | 'duplicate' | 'error';
 const PAGE_SIZE = 50;
+// El cliente HTTP del portal manda JSON por defecto: al subir un archivo hay que pedir multipart (sin esto el servidor responde 415).
+const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 const ADDRESS_MODES = [
   { value: 'blank', label: 'Dejar en blanco' },
@@ -111,7 +113,7 @@ export default function BulkImportModal({ title, entityLabel, endpoint, query, a
   const runPreview = async (f: File, o: ImportOptions) => {
     setBusy('preview');
     try {
-      const res = await api.post<Preview>(url('/import/preview'), formFor(f, o));
+      const res = await api.post<Preview>(url('/import/preview'), formFor(f, o), MULTIPART);
       setPreview(res.data);
       setPage(0);
     } catch (err) {
@@ -146,7 +148,7 @@ export default function BulkImportModal({ title, entityLabel, endpoint, query, a
     if (!file || !preview) return;
     setBusy('confirm');
     try {
-      const res = await api.post<{ created: number; skipped: number }>(url('/import/confirm'), formFor(file, options));
+      const res = await api.post<{ created: number; skipped: number }>(url('/import/confirm'), formFor(file, options), MULTIPART);
       setResult(res.data);
       onDone();
     } catch (err) {

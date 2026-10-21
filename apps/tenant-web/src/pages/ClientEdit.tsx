@@ -36,6 +36,8 @@ export default function ClientEdit() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
+  // ¿Este cliente es la empresa emisora del tenant (la que factura a los demás)? Null mientras carga.
+  const [isOwner, setIsOwner] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'info');
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [branches, setBranches] = useState<{ id: string; name: string; isActive: boolean; isMain: boolean }[]>([]);
@@ -159,6 +161,21 @@ export default function ClientEdit() {
      electronicInvoiceLegend: '',
      supportDocumentLegend: ''
   });
+
+  useEffect(() => {
+    if (!id) return;
+    api.get('/tenant/invoicing/settings').then(res => setIsOwner(res.data.ownerClientId === id)).catch(() => setIsOwner(false));
+  }, [id]);
+
+  const makeOwner = async () => {
+    try {
+      await api.post(`/tenant/invoicing/owner/${id}`);
+      setIsOwner(true);
+      toast.success('Listo: esta es tu empresa emisora. Ahora elige los productos de la factura en Planes → Facturación automática de planes.');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudo definir la empresa emisora'));
+    }
+  };
 
   useEffect(() => {
     if (id) {
@@ -1040,7 +1057,15 @@ export default function ClientEdit() {
           </div>
         </div>
         {client.isActive && (
-          <div className="flex items-center gap-5">
+          <div className="flex flex-wrap items-center gap-5">
+            {isOwner === true && (
+              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700" title="Esta empresa factura a tus clientes (facturación automática de planes)">Tu empresa emisora</span>
+            )}
+            {isOwner === false && (
+              <button onClick={makeOwner} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" title="La empresa que factura a tus clientes: sus borradores de cobro se generan aquí">
+                Usar como mi empresa emisora
+              </button>
+            )}
             <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
               <ClientBlockSwitch
                 clientId={id!}

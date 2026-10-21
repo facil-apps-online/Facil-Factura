@@ -41,7 +41,12 @@ export default function InvoicingSettingsCard() {
 
   useEffect(() => {
     Promise.all([api.get<InvoicingSettings>('/tenant/invoicing/settings'), api.get<ClientOption[]>('/tenant/clients')])
-      .then(([s, c]) => { setSettings(s.data); setClients(c.data.filter(x => x.isActive)); })
+      .then(([s, c]) => {
+        setSettings(s.data);
+        setClients(c.data.filter(x => x.isActive));
+        // Sin empresa emisora todavía: el panel abre solo, para que se vea dónde se define.
+        if (!s.data.ownerClientId) setOpen(true);
+      })
       .catch(err => toast.error(getErrorMessage(err, 'No se pudo cargar la facturación de planes')));
     loadProducts();
   }, []);

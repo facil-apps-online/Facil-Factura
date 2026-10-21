@@ -98,6 +98,33 @@ namespace Fel.Api.Tenant.Controllers
             return Ok(await BuildSettingsAsync(tenantId, row));
         }
 
+        // Define a un cliente como la empresa emisora del tenant (desde su ficha), sin tocar el resto de la configuración. Al cambiar de empresa se
+        // limpian los productos elegidos (son del catálogo de la anterior) y se apaga la generación de borradores hasta elegir los nuevos.
+        [HttpPost("owner/{clientId:guid}")]
+        public async Task<IActionResult> SetOwner(Guid clientId)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId && c.IsActive))
+                return BadRequest("La empresa emisora debe ser un cliente activo de este tenant.");
+
+            var row = await _dbContext.TenantInvoicingSettings.FirstOrDefaultAsync(s => s.TenantId == tenantId);
+            if (row == null)
+            {
+                row = new TenantInvoicingSettings { TenantId = tenantId };
+                _dbContext.TenantInvoicingSettings.Add(row);
+            }
+            if (row.OwnerClientId != clientId)
+            {
+                row.OwnerClientId = clientId;
+                row.FeeProductId = null;
+                row.ExtraProductId = null;
+                row.GenerateDrafts = false;
+            }
+            row.UpdatedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync();
+            return Ok(await BuildSettingsAsync(tenantId, row));
+        }
+
         // Productos del catálogo de la empresa emisora, para elegir los de cada línea de cobro.
         [HttpGet("products")]
         public async Task<IActionResult> GetProducts()

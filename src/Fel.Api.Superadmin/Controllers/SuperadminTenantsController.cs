@@ -84,7 +84,23 @@ namespace Fel.Api.Superadmin.Controllers
                 economicActivity = rut.EconomicActivity,
                 taxRegime = RegimenDesdeResponsabilidades(rut.ResponsibilityCodes),
                 responsibilities = rut.Responsibilities,
-                alreadyRegistered = yaExiste
+                alreadyRegistered = yaExiste,
+                // Lo que el formulario no muestra pero conserva y envía al crear, para que el tenant y su empresa propietaria nazcan completos.
+                personType = string.IsNullOrWhiteSpace(rut.FirstName) && string.IsNullOrWhiteSpace(rut.FirstLastName) ? "PJ" : "PN",
+                cityCode = rut.CityCode,
+                taxRegimeCode = rut.ResponsibilityCodes.Contains("48") ? "48" : "49",
+                incomeTaxRegime = rut.IncomeTaxRegimeCode,
+                isGranContribuyente = rut.IsGranContribuyente,
+                isAgenteRetenedorIva = rut.IsAgenteRetenedorIva,
+                isAutorretenedorRenta = rut.IsAutorretenedorRenta,
+                legalRepresentativeFirstName = rut.RepresentativeFirstName,
+                legalRepresentativeOtherNames = rut.RepresentativeOtherNames,
+                legalRepresentativeFirstLastName = rut.RepresentativeFirstLastName,
+                legalRepresentativeSecondLastName = rut.RepresentativeSecondLastName,
+                legalRepresentativeDocumentType = rut.RepresentativeDocumentType,
+                legalRepresentativeDocumentNumber = rut.RepresentativeDocumentNumber,
+                legalRepresentativeRepresentationCode = rut.RepresentativeRepresentationCode,
+                legalRepresentativeStartDate = rut.RepresentativeStartDate
             });
         }
 
@@ -205,6 +221,12 @@ namespace Fel.Api.Superadmin.Controllers
                     .FirstOrDefaultAsync(u => u.Email == request.AdminEmail);
             }
 
+            // El RUT debe ser el de este tenant: si el NIT no coincide, no se usa (evita mezclar datos de otra empresa).
+            static string Digits(string? v) => new string((v ?? string.Empty).Where(char.IsDigit).ToArray());
+            var rut = request.Rut;
+            if (rut != null && Digits(rut.TaxId) != Digits(request.TaxId))
+                return BadRequest("El RUT corresponde a otro NIT: vuelve a cargarlo o corrige el NIT.");
+
             var tenant = new Tenant
             {
                 Id = Guid.NewGuid(),
@@ -239,7 +261,13 @@ namespace Fel.Api.Superadmin.Controllers
                 DefaultTimezone = string.IsNullOrWhiteSpace(request.DefaultTimezone) ? "America/Bogota" : request.DefaultTimezone,
                 DefaultCurrencyId = request.DefaultCurrencyId,
                 Latitude = request.Latitude,
-                Longitude = request.Longitude
+                Longitude = request.Longitude,
+                // Datos fiscales del tenant: del RUT cuando viene; si no, los de la dirección física del formulario.
+                TaxRegime = rut?.TaxRegime ?? string.Empty,
+                EconomicActivity = rut?.EconomicActivity ?? string.Empty,
+                Address = !string.IsNullOrWhiteSpace(rut?.Address) ? rut!.Address! : request.PhysicalAddressLine1 ?? string.Empty,
+                City = !string.IsNullOrWhiteSpace(rut?.City) ? rut!.City! : request.PhysicalCity ?? string.Empty,
+                Phone = !string.IsNullOrWhiteSpace(rut?.Phone) ? rut!.Phone! : request.ContactPhone ?? string.Empty
             };
 
             // Todo el alta va en una transacción y solo se confirma si Core responde bien.
@@ -269,7 +297,7 @@ namespace Fel.Api.Superadmin.Controllers
 
             // Todo tenant arranca con su empresa propietaria (cliente con su mismo NIT), que queda como su empresa emisora. Sin NIT no se crea; se
             // crea cuando se complete (ver UpdateTenant).
-            await Fel.Infrastructure.Services.TenantOwnerProvisioning.EnsureOwnerAsync(_dbContext, tenant);
+            await Fel.Infrastructure.Services.TenantOwnerProvisioning.EnsureOwnerAsync(_dbContext, tenant, rut);
             await _dbContext.SaveChangesAsync();
 
             // Crear (o reutilizar) el usuario administrador del tenant si se proporcionó.
@@ -869,6 +897,8 @@ namespace Fel.Api.Superadmin.Controllers
         public double? Longitude { get; set; }
         public string? AdminName { get; set; }
         public string? AdminEmail { get; set; }
+        // Datos fiscales leídos del RUT (el formulario los conserva aunque no los muestre).
+        public Fel.Infrastructure.Services.TenantRutData? Rut { get; set; }
     }
 
     public class TenantBlockRequest

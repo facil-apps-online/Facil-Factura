@@ -19,7 +19,7 @@ namespace Fel.Infrastructure.Services
         private static string Digits(string? value) => new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
 
         // Devuelve el id de la empresa propietaria (nueva o existente), o null si el tenant no tiene NIT. No guarda: quien llama hace SaveChanges.
-        public static async Task<Guid?> EnsureOwnerAsync(FelDbContext db, Tenant tenant, CancellationToken ct = default)
+        public static async Task<Guid?> EnsureOwnerAsync(FelDbContext db, Tenant tenant, TenantRutData? rut = null, CancellationToken ct = default)
         {
             var nit = Digits(tenant.TaxId);
             if (nit.Length == 0) return null;
@@ -57,6 +57,7 @@ namespace Fel.Infrastructure.Services
                     CreatedAt = now,
                     IntegratorId = NativeIntegratorId
                 };
+                ApplyRut(client, rut);
                 db.Clients.Add(client);
                 db.Branches.Add(BranchProvisioning.CreateMain(client));
                 db.NoteNumberings.AddRange(BranchProvisioning.CreateSharedNoteNumberings(client.Id));
@@ -79,6 +80,36 @@ namespace Fel.Infrastructure.Services
             settings.OwnerClientId = ownerId;
             settings.UpdatedAt = DateTime.UtcNow;
             return ownerId;
+        }
+
+        // Lo fiscal del RUT sobre el cliente propietario: pisa lo básico del tenant solo cuando el RUT lo trae.
+        private static void ApplyRut(Client client, TenantRutData? rut)
+        {
+            if (rut == null) return;
+            if (rut.PersonType is "PJ" or "PN") client.PersonType = rut.PersonType;
+            if (!string.IsNullOrWhiteSpace(rut.CommercialName)) client.CommercialName = rut.CommercialName!;
+            if (!string.IsNullOrWhiteSpace(rut.Email)) client.Email = rut.Email!;
+            if (!string.IsNullOrWhiteSpace(rut.Phone)) client.Phone = rut.Phone!;
+            if (!string.IsNullOrWhiteSpace(rut.Address)) client.Address = rut.Address!;
+            if (!string.IsNullOrWhiteSpace(rut.City)) client.City = rut.City!;
+            if (!string.IsNullOrWhiteSpace(rut.CityCode)) client.CityCode = rut.CityCode;
+            if (!string.IsNullOrWhiteSpace(rut.Department)) client.OrganizationDepartment = rut.Department;
+            if (!string.IsNullOrWhiteSpace(rut.EconomicActivity)) client.EconomicActivity = rut.EconomicActivity!;
+            if (!string.IsNullOrWhiteSpace(rut.TaxRegimeCode)) client.TaxRegime = rut.TaxRegimeCode!;
+            if (!string.IsNullOrWhiteSpace(rut.IncomeTaxRegime)) client.IncomeTaxRegime = rut.IncomeTaxRegime;
+            client.IsGranContribuyente = rut.IsGranContribuyente;
+            client.IsAgenteRetenedorIva = rut.IsAgenteRetenedorIva;
+            client.IsAutorretenedorRenta = rut.IsAutorretenedorRenta;
+
+            client.LegalRepresentativeFirstName = rut.LegalRepresentativeFirstName;
+            client.LegalRepresentativeOtherNames = rut.LegalRepresentativeOtherNames;
+            client.LegalRepresentativeFirstLastName = rut.LegalRepresentativeFirstLastName;
+            client.LegalRepresentativeSecondLastName = rut.LegalRepresentativeSecondLastName;
+            client.LegalRepresentativeDocumentType = rut.LegalRepresentativeDocumentType;
+            client.LegalRepresentativeDocumentNumber = rut.LegalRepresentativeDocumentNumber;
+            client.LegalRepresentativeDocumentCountryCode = string.IsNullOrWhiteSpace(rut.LegalRepresentativeDocumentNumber) ? null : "CO";
+            client.LegalRepresentativeRepresentationCode = rut.LegalRepresentativeRepresentationCode;
+            client.LegalRepresentativeStartDate = rut.LegalRepresentativeStartDate;
         }
 
         private static string Truncate(string value, int max) => value.Length > max ? value[..max] : value;

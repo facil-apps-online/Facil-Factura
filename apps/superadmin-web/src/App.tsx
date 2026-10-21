@@ -321,6 +321,9 @@ const TenantsList = () => {
   const [formData, setFormData] = useState({ ...emptyTenantForm });
   const [parsingRut, setParsingRut] = useState(false);
   const [rutMessage, setRutMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // Todo lo que trajo el RUT, aunque el formulario no lo muestre (régimen, actividad económica, representante legal...): se envía al crear para que
+  // el tenant y su empresa propietaria nazcan con lo fiscal lleno.
+  const [rutData, setRutData] = useState<any>(null);
 
   // Lee el RUT en el servidor y vuelca lo que trajo sobre el formulario. Solo pisa los campos que
   // el RUT informa: si el superadmin ya escribió algo que el PDF no trae, se respeta.
@@ -341,6 +344,7 @@ const TenantsList = () => {
         headers: { 'Content-Type': undefined },
       });
 
+      setRutData(data);
       setFormData(prev => ({
         ...prev,
         name: data.commercialName || data.name || prev.name,
@@ -428,9 +432,14 @@ const TenantsList = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post('/tenants', formData);
+      // El RUT solo se envía si es del mismo NIT del formulario (si se corrigió el NIT a mano, ese RUT ya no corresponde).
+      const digits = (v: unknown) => String(v ?? '').replace(/\D/g, '');
+      const rut = rutData && digits(rutData.taxId) === digits((formData as any).taxId) ? rutData : null;
+      await api.post('/tenants', { ...formData, rut });
       setShowModal(false);
       setFormData({ ...emptyTenantForm });
+      setRutData(null);
+      setRutMessage(null);
       toast.success("Cuenta registrada correctamente.");
       loadTenants();
     } catch (err) {

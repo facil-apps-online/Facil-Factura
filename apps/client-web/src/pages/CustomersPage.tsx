@@ -3,7 +3,7 @@ import { Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useNumberFormat } from '../lib/numberFormat';
-import ImportExcelButton from '../components/ImportExcelButton';
+import BulkImportModal from '../components/BulkImportModal';
 import CustomerFormModal from '../components/CustomerFormModal';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
@@ -24,6 +24,7 @@ export default function CustomersPage() {
   const { features, isAdministrator } = useSession();
   // Empresa propietaria del tenant: sincroniza los clientes del tenant como terceros y puede filtrarlos.
   const [syncOpen, setSyncOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [originFilter, setOriginFilter] = useState<'' | 'tenant' | 'incomplete'>('');
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -204,7 +205,9 @@ export default function CustomersPage() {
               Sincronizar clientes del tenant
             </button>
           )}
-          <ImportExcelButton endpoint="/client/customers/import" templateEndpoint="/client/customers/template" label="Importar Excel" onDone={loadCustomers} />
+          <button onClick={() => setImportOpen(true)} className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+            Carga masiva
+          </button>
           <button
             onClick={() => handleOpenModal()}
             className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all"
@@ -254,6 +257,7 @@ export default function CustomersPage() {
       />
 
       <TenantSyncModal open={syncOpen} onClose={() => setSyncOpen(false)} onDone={loadCustomers} />
+      {importOpen && (<BulkImportModal title="Carga masiva de terceros" entityLabel="terceros" endpoint="/client/customers" addressOptions onDone={loadCustomers} onClose={() => setImportOpen(false)} />)}
 
       <CustomerFormModal
         open={isModalOpen}

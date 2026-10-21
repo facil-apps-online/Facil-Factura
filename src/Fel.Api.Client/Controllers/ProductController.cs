@@ -82,6 +82,7 @@ namespace Fel.Api.Client.Controllers
 
                 product.Id = Guid.NewGuid();
                 product.ClientId = clientId;
+                product.TaxesPending = false;
                 if (!Enum.IsDefined(product.Scope)) return BadRequest("La familia del producto no es válida.");
                 product.CreatedAt = DateTime.UtcNow;
                 product.UpdatedAt = DateTime.UtcNow;
@@ -137,6 +138,7 @@ namespace Fel.Api.Client.Controllers
                 product.PriceIncludesIva = product.IvaTreatment == IvaTreatment.Gravado && updateData.PriceIncludesIva;
                 product.RetentionGroupKey = string.IsNullOrWhiteSpace(updateData.RetentionGroupKey) ? null : updateData.RetentionGroupKey;
                 product.UpdatedAt = DateTime.UtcNow;
+                product.TaxesPending = false;
 
                 // Se limpia la colección en vez de reasignarla (product.Taxes = nuevaLista), y los
                 // nuevos se agregan vía el DbSet en vez de la navegación: reasignar la colección
@@ -165,137 +167,93 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // ---- Carga masiva de productos: plantilla, vista previa y confirmación (ver ProductImporter).
         [HttpGet("template")]
-        public IActionResult DownloadTemplate()
+        public IActionResult DownloadTemplate() =>
+            File(Fel.Api.Client.Imports.BulkImportTemplates.Products(), ExcelTemplateHelper.XlsxContentType, "plantilla_productos.xlsx");
+
+        // Valida el archivo completo SIN guardar nada y devuelve, fila por fila, lo que se crearía y lo que se omite.
+        [HttpPost("import/preview")]
+        [RequestSizeLimit(Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes)]
+        public async Task<IActionResult> ImportPreview(IFormFile file)
         {
-            using var workbook = new XLWorkbook();
-            var sheet = workbook.Worksheets.Add("Productos");
-
-            ExcelTemplateHelper.WriteHeaderRow(sheet, 1,
-                "Codigo", "Nombre", "CodigoEstandar", "PrecioUnitario", "UnidadMedida",
-                "TratamientoIVA", "TarifaIVA", "CategoriaImpuestoAdicional", "TarifaImpuestoAdicional");
-
-            sheet.Cell(2, 1).Value = "SKU-001";
-            sheet.Cell(2, 2).Value = "Producto de ejemplo";
-            sheet.Cell(2, 3).Value = "";
-            sheet.Cell(2, 4).Value = 50000;
-            sheet.Cell(2, 5).Value = "94";
-            sheet.Cell(2, 6).Value = "Gravado";
-            sheet.Cell(2, 7).Value = 19;
-            sheet.Cell(2, 8).Value = "";
-            sheet.Cell(2, 9).Value = "";
-
-            ExcelTemplateHelper.AddDropdown(sheet, "F2:F1000", "Gravado", "Exento", "Excluido");
-
-            sheet.Columns().AdjustToContents();
-            var bytes = ExcelTemplateHelper.ToBytes(workbook);
-            return File(bytes, ExcelTemplateHelper.XlsxContentType, "plantilla_productos.xlsx");
+            var analysis = await AnalyzeImportAsync(file);
+            return analysis.Error != null ? BadRequest(analysis.Error) : Ok(analysis.Result!.Preview);
         }
 
-        // Plantilla (fila 1 = encabezados, datos desde la fila 2):
-        // Codigo | Nombre | CodigoEstandar | PrecioUnitario | UnidadMedida | TratamientoIVA (GRAVADO/EXENTO/EXCLUIDO) | TarifaIVA | CategoriaImpuestoAdicional | TarifaImpuestoAdicional
-        [HttpPost("import")]
-        public async Task<IActionResult> Import(IFormFile file)
+        // Vuelve a validar el mismo archivo y guarda los productos válidos en una sola operación: o se crean todos o ninguno.
+        [HttpPost("import/confirm")]
+        [RequestSizeLimit(Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes)]
+        public async Task<IActionResult> ImportConfirm(IFormFile file)
         {
-            try
+            var analysis = await AnalyzeImportAsync(file);
+            if (analysis.Error != null) return BadRequest(analysis.Error);
+            var result = analysis.Result!;
+            if (result.Preview.FileErrors.Count > 0) return BadRequest(string.Join(" ", result.Preview.FileErrors));
+            if (result.Products.Count == 0) return BadRequest("No hay productos por crear en este archivo.");
+
+            _dbContext.Products.AddRange(result.Products);
+            await _dbContext.SaveChangesAsync();
+            return Ok(new Fel.Api.Client.Imports.BulkImportResult
             {
-                var clientId = GetCurrentClientId();
+                Created = result.Products.Count,
+                Skipped = result.Preview.Rows.Count(r => r.Status != Fel.Api.Client.Imports.ImportStatus.Create)
+            });
+        }
 
-                if (file == null || file.Length == 0)
-                {
-                    return BadRequest("Debes adjuntar un archivo Excel (.xlsx).");
-                }
+        private async Task<(Fel.Api.Client.Imports.ProductImportResult? Result, string? Error)> AnalyzeImportAsync(IFormFile? file)
+        {
+            var clientId = GetCurrentClientId();
+            if (file == null || file.Length == 0) return (null, "Debes adjuntar un archivo Excel (.xlsx).");
+            if (file.Length > Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes) return (null, "El archivo supera los 10 MB.");
 
-                var summary = new ImportSummary();
-                using var stream = file.OpenReadStream();
-                using var workbook = new XLWorkbook(stream);
-                var sheet = workbook.Worksheets.First();
-                var rows = sheet.RowsUsed().Skip(1);
-
-                // Por código DIAN (columna "UnidadMedida" del Excel) — el archivo sigue trayendo
-                // texto plano ("94", "KGM"), no el Id del catálogo, así que se resuelve aquí.
-                var unitsByDianCode = await _dbContext.UnitsOfMeasure
-                    .Where(u => u.IsActive)
-                    .ToDictionaryAsync(u => u.DianCode, u => u.Id, StringComparer.OrdinalIgnoreCase);
-
-                foreach (var row in rows)
-                {
-                    summary.TotalRows++;
-                    var rowNumber = row.RowNumber();
-
-                    try
-                    {
-                        var code = row.Cell(1).GetString().Trim();
-                        var name = row.Cell(2).GetString().Trim();
-
-                        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
-                        {
-                            summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = "Código y nombre son obligatorios." });
-                            summary.Failed++;
-                            continue;
-                        }
-
-                        var scope = ParseScope(Request.Query["scope"]);
-
-                        if (await _dbContext.Products.AnyAsync(p => p.ClientId == clientId && p.Scope == scope && p.Code == code))
-                        {
-                            summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = $"Ya existe un producto con código {code}." });
-                            summary.Failed++;
-                            continue;
-                        }
-
-                        if (!Enum.TryParse<IvaTreatment>(row.Cell(6).GetString().Trim(), true, out var ivaTreatment))
-                        {
-                            ivaTreatment = IvaTreatment.Gravado;
-                        }
-
-                        var product = new Product
-                        {
-                            Id = Guid.NewGuid(),
-                            ClientId = clientId,
-                            Scope = scope,
-                            Code = code,
-                            Name = name,
-                            StandardCode = row.Cell(3).GetString().Trim(),
-                            UnitPrice = row.Cell(4).GetValue<decimal>(),
-                            UnitOfMeasureId = unitsByDianCode.TryGetValue(row.Cell(5).GetString().Trim(), out var uomId) ? uomId : Fel.Core.Entities.UnitOfMeasure.DefaultUnidadId,
-                            IvaTreatment = scope == ProductScope.Support ? IvaTreatment.Exento : ivaTreatment,
-                            IvaRate = scope == ProductScope.Support ? 0 : ivaTreatment == IvaTreatment.Gravado && !row.Cell(7).IsEmpty() ? row.Cell(7).GetValue<decimal>() : 0,
-                            CreatedAt = DateTime.UtcNow,
-                            UpdatedAt = DateTime.UtcNow
-                        };
-
-                        var taxCategory = scope == ProductScope.Support ? string.Empty : row.Cell(8).GetString().Trim();
-                        var taxRateCell = row.Cell(9);
-                        if (!string.IsNullOrWhiteSpace(taxCategory) && !taxRateCell.IsEmpty())
-                        {
-                            product.Taxes.Add(new ProductTax
-                            {
-                                Id = Guid.NewGuid(),
-                                ProductId = product.Id,
-                                TaxCategory = taxCategory.ToUpperInvariant(),
-                                Rate = taxRateCell.GetValue<decimal>()
-                            });
-                        }
-
-                        _dbContext.Products.Add(product);
-                        summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = true, Message = "Creado." });
-                        summary.Succeeded++;
-                    }
-                    catch (Exception ex)
-                    {
-                        summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = ex.Message });
-                        summary.Failed++;
-                    }
-                }
-
-                await _dbContext.SaveChangesAsync();
-                return Ok(summary);
-            }
-            catch (UnauthorizedAccessException ex)
+            var scope = ParseScope(Request.Query["scope"]);
+            var codes = await _dbContext.Products.AsNoTracking().Where(p => p.ClientId == clientId && p.Scope == scope).Select(p => p.Code).ToListAsync();
+            var rates = (await _dbContext.TaxCatalogItems.AsNoTracking().Where(t => t.Kind == TaxCatalogKind.IvaRate && t.IsActive).Select(t => t.Category).ToListAsync())
+                .Select(c => decimal.TryParse(c, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : -1).Where(d => d >= 0).ToList();
+            var context = new Fel.Api.Client.Imports.ProductImportContext
             {
-                return Unauthorized(ex.Message);
+                ClientId = clientId,
+                Scope = scope,
+                Units = await _dbContext.UnitsOfMeasure.AsNoTracking().Where(u => u.IsActive).ToListAsync(),
+                ExistingCodes = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase),
+                IvaRates = new HashSet<decimal>(rates)
+            };
+
+            using var stream = file.OpenReadStream();
+            var sheet = Fel.Api.Client.Imports.ExcelSheetReader.Read(stream, Fel.Api.Client.Imports.ProductImporter.Aliases, Fel.Api.Client.Imports.ProductImporter.Required);
+            return (Fel.Api.Client.Imports.ProductImporter.Analyze(sheet, context), null);
+        }
+
+        public sealed class BulkTaxesRequest
+        {
+            public List<Guid> Ids { get; set; } = new();
+            public IvaTreatment IvaTreatment { get; set; } = IvaTreatment.Gravado;
+            public decimal IvaRate { get; set; }
+        }
+
+        // Asigna el mismo tratamiento de IVA a varios productos a la vez (los que llegaron de una carga con "impuestos por completar") y los da por completos.
+        [HttpPost("bulk-taxes")]
+        public async Task<IActionResult> BulkTaxes([FromBody] BulkTaxesRequest request)
+        {
+            var clientId = GetCurrentClientId();
+            if (request.Ids == null || request.Ids.Count == 0) return BadRequest("Selecciona al menos un producto.");
+            if (request.Ids.Count > 5000) return BadRequest("Puedes actualizar hasta 5.000 productos a la vez.");
+            if (!Enum.IsDefined(request.IvaTreatment)) return BadRequest("El tratamiento de IVA no es válido.");
+            if (request.IvaTreatment == IvaTreatment.Gravado && request.IvaRate is <= 0 or > 100) return BadRequest("Indica la tarifa de IVA (mayor que 0 y hasta 100).");
+
+            var products = await _dbContext.Products.Where(p => p.ClientId == clientId && p.Scope == ProductScope.Invoice && request.Ids.Contains(p.Id)).ToListAsync();
+            foreach (var product in products)
+            {
+                product.IvaTreatment = request.IvaTreatment;
+                product.IvaRate = request.IvaTreatment == IvaTreatment.Gravado ? request.IvaRate : 0;
+                // Si el precio venía con impuestos incluidos solo se conserva cuando el producto queda gravado.
+                if (request.IvaTreatment != IvaTreatment.Gravado) product.PriceIncludesIva = false;
+                product.TaxesPending = false;
+                product.UpdatedAt = DateTime.UtcNow;
             }
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { updated = products.Count });
         }
 
         private static ProductScope ParseScope(string? value) =>

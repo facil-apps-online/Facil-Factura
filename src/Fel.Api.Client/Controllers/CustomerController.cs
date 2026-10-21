@@ -258,123 +258,70 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // ---- Carga masiva de terceros: plantilla, vista previa y confirmación (ver CustomerImporter).
         [HttpGet("template")]
-        public IActionResult DownloadTemplate()
+        public IActionResult DownloadTemplate() =>
+            File(Fel.Api.Client.Imports.BulkImportTemplates.Customers(), ExcelTemplateHelper.XlsxContentType, "plantilla_terceros.xlsx");
+
+        // Valida el archivo completo SIN guardar nada y devuelve, fila por fila, lo que se crearía, lo que se omite y lo que el usuario debe decidir.
+        [HttpPost("import/preview")]
+        [RequestSizeLimit(Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes)]
+        public async Task<IActionResult> ImportPreview(IFormFile file, [FromForm] string? options)
         {
-            using var workbook = new XLWorkbook();
-            var sheet = workbook.Worksheets.Add("Terceros");
-
-            ExcelTemplateHelper.WriteHeaderRow(sheet, 1,
-                "Nombre", "TipoIdentificacion", "NumeroIdentificacion", "DigitoVerificacion", "TipoTercero",
-                "Email", "Telefono", "Direccion", "CodigoCiudadDANE", "NivelTributarioDataico", "RegimenDataico");
-
-            sheet.Cell(2, 1).Value = "Juan Pérez";
-            sheet.Cell(2, 2).Value = "13";
-            sheet.Cell(2, 3).Value = "12345678";
-            sheet.Cell(2, 4).Value = "";
-            sheet.Cell(2, 5).Value = "Cliente";
-            sheet.Cell(2, 6).Value = "juan.perez@ejemplo.com";
-            sheet.Cell(2, 7).Value = "3001234567";
-            sheet.Cell(2, 8).Value = "Calle 10 # 20-30";
-            sheet.Cell(2, 9).Value = "11001";
-            sheet.Cell(2, 10).Value = "COMUN";
-            sheet.Cell(2, 11).Value = "ORDINARIO";
-
-            ExcelTemplateHelper.AddDropdown(sheet, "E2:E1000", "Cliente", "Proveedor", "Empleado");
-
-            sheet.Columns().AdjustToContents();
-            var bytes = ExcelTemplateHelper.ToBytes(workbook);
-            return File(bytes, ExcelTemplateHelper.XlsxContentType, "plantilla_terceros.xlsx");
+            var analysis = await AnalyzeImportAsync(file, options);
+            return analysis.Error != null ? BadRequest(analysis.Error) : Ok(analysis.Result!.Preview);
         }
 
-        // Plantilla (fila 1 = encabezados, datos desde la fila 2):
-        // Nombre | TipoIdentificacion | NumeroIdentificacion | DV | TipoTercero | Email | Telefono | Direccion | CodigoDANE | NivelTributarioDataico | RegimenDataico
-        [HttpPost("import")]
-        public async Task<IActionResult> Import(IFormFile file)
+        // Vuelve a validar el mismo archivo con las decisiones del usuario y guarda los terceros válidos en una sola operación: o se crean todos o ninguno.
+        [HttpPost("import/confirm")]
+        [RequestSizeLimit(Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes)]
+        public async Task<IActionResult> ImportConfirm(IFormFile file, [FromForm] string? options)
         {
+            var analysis = await AnalyzeImportAsync(file, options);
+            if (analysis.Error != null) return BadRequest(analysis.Error);
+            var result = analysis.Result!;
+            if (result.Preview.FileErrors.Count > 0) return BadRequest(string.Join(" ", result.Preview.FileErrors));
+            if (result.Customers.Count == 0) return BadRequest("No hay terceros por crear en este archivo.");
+
+            _dbContext.Customers.AddRange(result.Customers);
+            await _dbContext.SaveChangesAsync();
+            return Ok(new Fel.Api.Client.Imports.BulkImportResult { Created = result.Customers.Count, Skipped = result.Preview.Rows.Count(r => r.Status != Fel.Api.Client.Imports.ImportStatus.Create) });
+        }
+
+        private async Task<(Fel.Api.Client.Imports.CustomerImportResult? Result, string? Error)> AnalyzeImportAsync(IFormFile? file, string? optionsJson)
+        {
+            var clientId = GetCurrentClientId();
+            if (file == null || file.Length == 0) return (null, "Debes adjuntar un archivo Excel (.xlsx).");
+            if (file.Length > Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes) return (null, "El archivo supera los 10 MB.");
+
+            Fel.Api.Client.Imports.BulkImportOptions options;
             try
             {
-                var clientId = GetCurrentClientId();
-
-                if (file == null || file.Length == 0)
-                {
-                    return BadRequest("Debes adjuntar un archivo Excel (.xlsx).");
-                }
-
-                var summary = new ImportSummary();
-                using var stream = file.OpenReadStream();
-                using var workbook = new XLWorkbook(stream);
-                var sheet = workbook.Worksheets.First();
-                var rows = sheet.RowsUsed().Skip(1);
-
-                foreach (var row in rows)
-                {
-                    summary.TotalRows++;
-                    var rowNumber = row.RowNumber();
-
-                    try
-                    {
-                        var name = row.Cell(1).GetString().Trim();
-                        var identificationNumber = row.Cell(3).GetString().Trim();
-
-                        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(identificationNumber))
-                        {
-                            summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = "Nombre e identificación son obligatorios." });
-                            summary.Failed++;
-                            continue;
-                        }
-
-                        var partyTypeText = row.Cell(5).GetString().Trim();
-                        if (!Enum.TryParse<PartyType>(partyTypeText, true, out var partyType))
-                        {
-                            partyType = PartyType.Cliente;
-                        }
-
-                        if (await _dbContext.Customers.AnyAsync(c => c.ClientId == clientId &&
-                            c.IdentificationNumber == identificationNumber && c.PartyType == partyType))
-                        {
-                            summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = $"Ya existe un tercero con identificación {identificationNumber}." });
-                            summary.Failed++;
-                            continue;
-                        }
-
-                        var customer = new Customer
-                        {
-                            Id = Guid.NewGuid(),
-                            ClientId = clientId,
-                            Name = name,
-                            IdentificationType = row.Cell(2).GetString().Trim(),
-                            IdentificationNumber = identificationNumber,
-                            VerificationDigit = row.Cell(4).GetString().Trim(),
-                            PartyType = partyType,
-                            Email = row.Cell(6).GetString().Trim(),
-                            Phone = row.Cell(7).GetString().Trim(),
-                            Address = row.Cell(8).GetString().Trim(),
-                            CityCode = row.Cell(9).GetString().Trim(),
-                            DataicoTaxLevelCode = row.Cell(10).GetString().Trim(),
-                            DataicoRegimen = row.Cell(11).GetString().Trim(),
-                            CreatedAt = DateTime.UtcNow,
-                            UpdatedAt = DateTime.UtcNow
-                        };
-
-                        _dbContext.Customers.Add(customer);
-                        summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = true, Message = "Creado." });
-                        summary.Succeeded++;
-                    }
-                    catch (Exception ex)
-                    {
-                        summary.Results.Add(new ImportRowResult { Row = rowNumber, Success = false, Message = ex.Message });
-                        summary.Failed++;
-                    }
-                }
-
-                await _dbContext.SaveChangesAsync();
-                return Ok(summary);
+                options = string.IsNullOrWhiteSpace(optionsJson)
+                    ? new Fel.Api.Client.Imports.BulkImportOptions()
+                    : System.Text.Json.JsonSerializer.Deserialize<Fel.Api.Client.Imports.BulkImportOptions>(optionsJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
             }
-            catch (UnauthorizedAccessException ex)
+            catch (System.Text.Json.JsonException) { return (null, "Las opciones de la carga no son válidas."); }
+
+            var client = await _dbContext.Clients.AsNoTracking().FirstAsync(c => c.Id == clientId);
+            // Dirección "por defecto para terceros nuevos" que el cliente configura en sus valores por defecto.
+            var defaults = await _dbContext.ClientInvoiceDefaults.AsNoTracking().FirstOrDefaultAsync(x => x.ClientId == clientId);
+            var existing = await _dbContext.Customers.AsNoTracking().Where(c => c.ClientId == clientId)
+                .Select(c => new { c.PartyType, c.IdentificationNumber }).ToListAsync();
+            var context = new Fel.Api.Client.Imports.CustomerImportContext
             {
-                return Unauthorized(ex.Message);
-            }
+                ClientId = clientId,
+                Municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToListAsync(),
+                IdentificationTypes = await _dbContext.IdentificationTypes.AsNoTracking().Where(t => t.IsActive).ToDictionaryAsync(t => t.Code, t => t.Name),
+                ExistingKeys = new HashSet<string>(existing.Select(c => $"{c.PartyType}|{c.IdentificationNumber}")),
+                ClientAddress = new Fel.Api.Client.Imports.AddressDefaults(client.Address, client.CityCode, client.City, null),
+                DefaultAddress = new Fel.Api.Client.Imports.AddressDefaults(defaults?.CustomerAddress, defaults?.CustomerCityCode, defaults?.CustomerCityName, defaults?.CustomerPostalCode),
+                Options = options
+            };
+
+            using var stream = file.OpenReadStream();
+            var sheet = Fel.Api.Client.Imports.ExcelSheetReader.Read(stream, Fel.Api.Client.Imports.CustomerImporter.Aliases, Fel.Api.Client.Imports.CustomerImporter.Required);
+            return (Fel.Api.Client.Imports.CustomerImporter.Analyze(sheet, context), null);
         }
 
         [HttpDelete("{id}")]

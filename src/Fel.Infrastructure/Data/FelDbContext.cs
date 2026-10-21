@@ -716,7 +716,9 @@ namespace Fel.Infrastructure.Data
                     new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000007"), Code = "41", Name = "Pasaporte", IsActive = true, DataicoCode = "PASAPORTE", DataicoPayrollCode = "PASAPORTE" },
                     new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000008"), Code = "11", Name = "Registro Civil", IsActive = true, DataicoCode = "RC", DataicoPayrollCode = "REGISTRO_CIVIL" },
                     new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-000000000009"), Code = "21", Name = "Tarjeta de Extranjería", IsActive = true, DataicoCode = "TE", DataicoPayrollCode = "TARJETA_DE_EXTRANJERIA" },
-                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-00000000000a"), Code = "12", Name = "Tarjeta de Identidad", IsActive = true, DataicoCode = "TI", DataicoPayrollCode = "TARJETA_DE_IDENTIDAD" }
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-00000000000a"), Code = "12", Name = "Tarjeta de Identidad", IsActive = true, DataicoCode = "TI", DataicoPayrollCode = "TARJETA_DE_IDENTIDAD" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-00000000000b"), Code = "47", Name = "Permiso Especial de Permanencia (PEP)", IsActive = true, DataicoCode = "PEP" },
+                    new IdentificationType { Id = Guid.Parse("30000000-0000-0000-0000-00000000000c"), Code = "48", Name = "Permiso por Protección Temporal (PPT)", IsActive = true, DataicoCode = "PPT" }
                 );
             });
 

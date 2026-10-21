@@ -2911,6 +2911,22 @@ namespace Fel.Infrastructure.Migrations
                             DataicoPayrollCode = "TARJETA_DE_IDENTIDAD",
                             IsActive = true,
                             Name = "Tarjeta de Identidad"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-00000000000b"),
+                            Code = "47",
+                            DataicoCode = "PEP",
+                            IsActive = true,
+                            Name = "Permiso Especial de Permanencia (PEP)"
+                        },
+                        new
+                        {
+                            Id = new Guid("30000000-0000-0000-0000-00000000000c"),
+                            Code = "48",
+                            DataicoCode = "PPT",
+                            IsActive = true,
+                            Name = "Permiso por Protección Temporal (PPT)"
                         });
                 });
 
@@ -3218,6 +3234,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("StandardCode")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("TaxesPending")
+                        .HasColumnType("bit");
 
                     b.Property<Guid>("UnitOfMeasureId")
                         .HasColumnType("uniqueidentifier");

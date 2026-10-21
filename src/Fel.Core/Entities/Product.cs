@@ -28,6 +28,10 @@ namespace Fel.Core.Entities
         // extrae la base (precio / (1 + tarifa)). Solo tiene sentido con IvaTreatment = Gravado.
         public bool PriceIncludesIva { get; set; }
 
+        // El producto llegó de una carga masiva sin impuestos definidos (IVA vacío o en 0): no se inventó ninguno. El portal lo marca "Impuestos
+        // por completar" y deja asignarlos en bloque; se limpia al guardar el producto o al asignarle impuestos.
+        public bool TaxesPending { get; set; }
+
         // Impuestos adicionales al IVA (ej. INC, ICA) — el IVA se maneja aparte vía IvaTreatment/IvaRate
         public ICollection<ProductTax> Taxes { get; set; } = new List<ProductTax>();
 

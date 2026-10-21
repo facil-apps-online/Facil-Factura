@@ -3,7 +3,7 @@ import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
-import ImportExcelButton from '../components/ImportExcelButton';
+import BulkImportModal from '../components/BulkImportModal';
 import Modal from '../components/Modal';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
@@ -42,6 +42,13 @@ export default function ProductsPage() {
   const [ivaRateCatalog, setIvaRateCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [unitOfMeasureCatalog, setUnitOfMeasureCatalog] = useState<{ id: string, dianCode: string, abbreviation: string, name: string }[]>([]);
   const [scope, setScope] = useState<ProductScope>('Invoice');
+  const [importOpen, setImportOpen] = useState(false);
+  // Productos que llegaron de una carga masiva sin impuestos definidos: se pueden filtrar y completar en bloque.
+  const [onlyPending, setOnlyPending] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTaxOpen, setBulkTaxOpen] = useState(false);
+  const [bulkTax, setBulkTax] = useState({ ivaTreatment: 'Gravado', ivaRate: 19 });
+  const [bulkSaving, setBulkSaving] = useState(false);
   const DEFAULT_UNIT_OF_MEASURE_ID = '30000000-0000-0000-0000-000000000001';
 
   const initialForm = {
@@ -103,6 +110,21 @@ export default function ProductsPage() {
     }
   };
 
+  const applyBulkTax = async () => {
+    setBulkSaving(true);
+    try {
+      const res = await api.post('/client/products/bulk-taxes', { ids: Array.from(selectedIds), ivaTreatment: bulkTax.ivaTreatment, ivaRate: bulkTax.ivaTreatment === 'Gravado' ? bulkTax.ivaRate : 0 });
+      toast.success(`Se actualizaron ${res.data.updated} productos`);
+      setBulkTaxOpen(false);
+      setSelectedIds(new Set());
+      loadProducts();
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'No se pudieron asignar los impuestos'));
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!(await confirm('¿Estás seguro de eliminar este producto?'))) return;
     try {
@@ -115,6 +137,9 @@ export default function ProductsPage() {
   };
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
+
+  const pendingCount = products.filter(p => p.taxesPending).length;
+  const visibleProducts = onlyPending ? products.filter(p => p.taxesPending) : products;
 
   const columns: DataTableColumn<any>[] = [
     {
@@ -147,8 +172,10 @@ export default function ProductsPage() {
       header: 'IVA',
       align: 'right',
       cellClassName: 'text-sm text-slate-500',
-      render: p => (p.ivaTreatment === 'Gravado' ? `${p.ivaRate}%` : IVA_TREATMENTS.find(t => t.value === p.ivaTreatment)?.label || p.ivaTreatment),
-      sortValue: p => (p.ivaTreatment === 'Gravado' ? p.ivaRate : -1)
+      render: p => p.taxesPending
+        ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700" title="Llegó de una carga masiva sin impuestos definidos: complétalos">Impuestos por completar</span>
+        : (p.ivaTreatment === 'Gravado' ? `${p.ivaRate}%` : IVA_TREATMENTS.find(t => t.value === p.ivaTreatment)?.label || p.ivaTreatment),
+      sortValue: p => (p.taxesPending ? -2 : p.ivaTreatment === 'Gravado' ? p.ivaRate : -1)
     },
     {
       key: 'otherTaxes',
@@ -167,7 +194,9 @@ export default function ProductsPage() {
           <p className="mt-1 text-slate-500">Catálogo de productos y servicios</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <ImportExcelButton endpoint={`/client/products/import?scope=${scope}`} templateEndpoint={`/client/products/template?scope=${scope}`} label="Importar Excel" onDone={loadProducts} />
+          <button onClick={() => setImportOpen(true)} className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+            Carga masiva
+          </button>
           <button
             onClick={() => handleOpenModal()}
             className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all"
@@ -190,11 +219,29 @@ export default function ProductsPage() {
         ))}
       </div>
 
+      {pendingCount > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="font-semibold">{pendingCount} producto{pendingCount === 1 ? '' : 's'} con impuestos por completar.</span>
+          <button onClick={() => setOnlyPending(!onlyPending)} className="font-bold underline">{onlyPending ? 'Ver todos' : 'Ver solo esos'}</button>
+          {selectedIds.size > 0 && (
+            <button onClick={() => setBulkTaxOpen(true)} className="ml-auto rounded-lg bg-primary px-4 py-1.5 font-bold text-white hover:bg-primary/90">
+              Asignar IVA a {selectedIds.size} seleccionado{selectedIds.size === 1 ? '' : 's'}
+            </button>
+          )}
+        </div>
+      )}
+
       <DataTable
-        rows={products}
+        rows={visibleProducts}
         columns={columns}
         rowKey={p => p.id}
         tableFrom="wide"
+        selection={scope === 'Invoice' ? {
+          isSelected: p => selectedIds.has(p.id),
+          onToggle: p => setSelectedIds(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; }),
+          onToggleMany: (items, select) => setSelectedIds(prev => { const next = new Set(prev); items.forEach(p => select ? next.add(p.id) : next.delete(p.id)); return next; }),
+          label: p => `Seleccionar ${p.name}`
+        } : undefined}
         search="Buscar por código o nombre..."
         defaultSort={{ key: 'name', dir: 'asc' }}
         emptyMessage="No tienes productos registrados."
@@ -205,6 +252,59 @@ export default function ProductsPage() {
           </>
         )}
       />
+
+      {importOpen && (
+        <BulkImportModal
+          title="Carga masiva de productos"
+          entityLabel="productos"
+          endpoint="/client/products"
+          query={`scope=${scope}`}
+          onDone={loadProducts}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
+
+      <Modal
+        open={bulkTaxOpen}
+        onOpenChange={setBulkTaxOpen}
+        title="Asignar IVA a los productos seleccionados"
+        size="sm"
+        withFloatingPickers
+        footer={
+          <div className="flex w-full justify-end gap-2">
+            <button onClick={() => setBulkTaxOpen(false)} className="rounded-xl border border-slate-200 px-5 py-2.5 font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
+            <button onClick={applyBulkTax} disabled={bulkSaving} className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-bold text-white hover:bg-primary/90 disabled:opacity-50">
+              {bulkSaving && <Loader2 size={16} className="animate-spin" />} Asignar a {selectedIds.size}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">El mismo tratamiento de IVA se aplica a los {selectedIds.size} productos seleccionados y dejan de figurar como "impuestos por completar".</p>
+          <div>
+            <label className="mb-1 block text-sm font-bold text-slate-700">Tratamiento</label>
+            <SearchableSelect
+              options={IVA_TREATMENTS}
+              value={bulkTax.ivaTreatment}
+              onChange={v => setBulkTax({ ...bulkTax, ivaTreatment: v })}
+              placeholder="Tratamiento de IVA"
+              inputClassName="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          {bulkTax.ivaTreatment === 'Gravado' && (
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-700">Tarifa de IVA</label>
+              <SearchableSelect
+                options={ivaRateCatalog.map(r => ({ value: r.category, label: r.name }))}
+                value={String(bulkTax.ivaRate)}
+                onChange={v => setBulkTax({ ...bulkTax, ivaRate: Number(v) })}
+                placeholder="Tarifa"
+                inputClassName="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         open={isModalOpen}

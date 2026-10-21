@@ -181,7 +181,7 @@ namespace Fel.Infrastructure.Services
             }
 
             var tenantClient = await _db.Clients.AsNoTracking().FirstAsync(c => c.Id == assignment.ClientId, ct);
-            var customer = await EnsureCustomerAsync(owner.Id, tenantClient, ownerDefaults, ct);
+            var customer = await new OwnerCustomerSyncService(_db).GetOrCreateAsync(owner.Id, tenantClient, ownerDefaults, ct);
 
             var document = new Document
             {
@@ -226,36 +226,6 @@ namespace Fel.Infrastructure.Services
             _db.PlanCharges.Add(charge);
             await _db.SaveChangesAsync(ct);
             return true;
-        }
-
-        // El cliente del tenant como tercero de la empresa emisora: se crea una sola vez y no se pisa después (el tenant puede corregir sus datos).
-        private async Task<Customer> EnsureCustomerAsync(Guid ownerClientId, Client tenantClient, ClientInvoiceDefaults? ownerDefaults, CancellationToken ct)
-        {
-            var existing = await _db.Customers.FirstOrDefaultAsync(c => c.ClientId == ownerClientId && c.IdentificationNumber == tenantClient.TaxId && c.PartyType == PartyType.Cliente, ct);
-            if (existing != null) return existing;
-
-            var isCompany = tenantClient.PersonType != "PN";
-            var name = !string.IsNullOrEmpty(tenantClient.CompanyName) ? tenantClient.CompanyName : tenantClient.CommercialName;
-            var customer = new Customer
-            {
-                Id = Guid.NewGuid(), ClientId = ownerClientId, PartyType = PartyType.Cliente, Name = name,
-                IdentificationType = isCompany ? "31" : "13", IdentificationNumber = tenantClient.TaxId, VerificationDigit = tenantClient.VerificationDigit ?? string.Empty,
-                Email = tenantClient.Email ?? string.Empty, Phone = tenantClient.Phone ?? string.Empty, Address = tenantClient.Address ?? string.Empty,
-                CountryCode = "CO", CityCode = tenantClient.CityCode ?? string.Empty, CityName = tenantClient.City ?? string.Empty,
-                TaxRegime = tenantClient.TaxRegime ?? string.Empty,
-                DataicoTaxLevelCode = tenantClient.TaxRegime == "48" ? "RESPONSABLE_DE_IVA" : tenantClient.TaxRegime == "49" ? "NO_RESPONSABLE_DE_IVA"
-                    : ownerDefaults?.CustomerTaxLevelCode ?? "NO_RESPONSABLE_DE_IVA",
-                DataicoRegimen = tenantClient.IncomeTaxRegime == "47" ? "SIMPLE" : ownerDefaults?.CustomerRegimen ?? "ORDINARIO",
-                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-            };
-            if (!isCompany)
-            {
-                var (first, second, firstLast, secondLast) = ColombianNameSplitter.Split(name);
-                customer.FirstName = first; customer.SecondName = second; customer.FirstLastName = firstLast; customer.SecondLastName = secondLast;
-            }
-            _db.Customers.Add(customer);
-            await _db.SaveChangesAsync(ct);
-            return customer;
         }
 
         // Para el proceso periódico: todos los tenants con el servicio activado.

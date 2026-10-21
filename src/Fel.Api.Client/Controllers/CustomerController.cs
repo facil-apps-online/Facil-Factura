@@ -168,6 +168,8 @@ namespace Fel.Api.Client.Controllers
 
                 customer.Id = Guid.NewGuid();
                 customer.ClientId = clientId;
+                // El vínculo con un cliente del tenant solo lo pone la sincronización; un tercero que se crea a mano nunca lo trae.
+                customer.LinkedClientId = null;
                 customer.CreatedAt = DateTime.UtcNow;
                 customer.UpdatedAt = DateTime.UtcNow;
 

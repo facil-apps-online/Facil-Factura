@@ -1830,6 +1830,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<double?>("Latitude")
                         .HasColumnType("float");
 
+                    b.Property<Guid?>("LinkedClientId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<double?>("Longitude")
                         .HasColumnType("float");
 
@@ -1879,6 +1882,10 @@ namespace Fel.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "LinkedClientId")
+                        .IsUnique()
+                        .HasFilter("[LinkedClientId] IS NOT NULL");
 
                     b.HasIndex("ClientId", "IdentificationNumber", "PartyType")
                         .IsUnique();
@@ -5208,6 +5215,9 @@ namespace Fel.Infrastructure.Migrations
                 {
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AutoSyncCustomers")
+                        .HasColumnType("bit");
 
                     b.Property<int>("DraftDay")
                         .HasColumnType("int");

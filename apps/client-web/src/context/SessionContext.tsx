@@ -30,7 +30,8 @@ interface SessionData {
   // Módulos que el Tenant activó para este cliente (apagados por defecto).
   // foreignCurrency: el Tenant lo habilitó a facturar también en moneda extranjera.
   // dianLookup: emisión directa a la DIAN con certificado activo, así que se puede buscar un tercero por su documento en la DIAN.
-  features: { payments: boolean; foreignCurrency: boolean; dianLookup: boolean };
+  // tenantOwner: esta empresa es la propietaria de su tenant (la que factura a los demás): puede sincronizar los clientes del tenant como terceros.
+  features: { payments: boolean; foreignCurrency: boolean; dianLookup: boolean; tenantOwner: boolean };
   roles: CatalogItem[];
   noteKinds: CatalogItem[];
 }

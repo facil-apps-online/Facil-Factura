@@ -20,6 +20,9 @@ namespace Fel.Core.Entities
         public string IdentificationNumber { get; set; } = string.Empty;
         public string VerificationDigit { get; set; } = string.Empty;
         public PartyType PartyType { get; set; } = PartyType.Cliente;
+        // Si este tercero es un cliente del tenant (en la empresa propietaria del tenant): el Client al que corresponde. Es el vínculo estable de la
+        // sincronización de clientes del tenant, más fiable que el NIT. Nulo en cualquier otro tercero.
+        public Guid? LinkedClientId { get; set; }
 
         // Contacto
         public string Email { get; set; } = string.Empty;

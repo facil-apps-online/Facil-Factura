@@ -31,6 +31,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<Fel.Core.Interfaces.ISessionTokenService, Fel.Infrastructure.Security.SessionTokenService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ClientPlanUsageService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.PlanInvoicingService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.OwnerCustomerSyncService>();
 builder.Services.AddScoped<Fel.Infrastructure.Security.SessionStampValidator>();
 builder.Services.AddScoped<Fel.Infrastructure.Security.AccountSessionService>();
 

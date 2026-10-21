@@ -40,6 +40,7 @@ namespace Fel.Api.Tenant.Controllers
             public int DraftDay { get; set; } = 1;
             public Guid? FeeProductId { get; set; }
             public Guid? ExtraProductId { get; set; }
+            public bool AutoSyncCustomers { get; set; } = true;
         }
 
         // Solo los dígitos del NIT, sin puntos, guion ni dígito de verificación aparte: así se compara el del tenant con el de un cliente.
@@ -72,7 +73,7 @@ namespace Fel.Api.Tenant.Controllers
                 : await _dbContext.Clients.AsNoTracking().Where(c => c.Id == s.OwnerClientId).Select(c => !string.IsNullOrEmpty(c.CommercialName) ? c.CommercialName : c.CompanyName).FirstOrDefaultAsync();
             return new
             {
-                s.OwnerClientId, ownerClientName = ownerName, s.GenerateDrafts, s.DraftDay, s.FeeProductId, s.ExtraProductId,
+                s.OwnerClientId, ownerClientName = ownerName, s.GenerateDrafts, s.DraftDay, s.FeeProductId, s.ExtraProductId, s.AutoSyncCustomers,
                 tenantNit, eligibleClientId = eligibleId, eligibleClientName = eligibleName
             };
         }
@@ -125,6 +126,7 @@ namespace Fel.Api.Tenant.Controllers
             row.DraftDay = request.DraftDay;
             row.FeeProductId = request.FeeProductId;
             row.ExtraProductId = request.ExtraProductId;
+            row.AutoSyncCustomers = request.AutoSyncCustomers;
             row.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
             return Ok(await BuildSettingsAsync(tenantId, row));

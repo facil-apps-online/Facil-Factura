@@ -20,6 +20,7 @@ interface InvoicingSettings {
   draftDay: number;
   feeProductId: string | null;
   extraProductId: string | null;
+  autoSyncCustomers: boolean;
   tenantNit: string;
   eligibleClientId: string | null;
   eligibleClientName: string | null;
@@ -144,6 +145,11 @@ export default function InvoicingSettingsCard() {
                 placeholder="Si lo dejas vacío, usa el de la cuota" options={[{ value: '', label: 'Usar el de la cuota' }, ...productOptions]} />
             </div>
           </div>
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={settings.autoSyncCustomers} onChange={e => set({ autoSyncCustomers: e.target.checked })} className="mt-0.5 h-4 w-4 accent-blue-600" />
+            <span>Crear automáticamente, en la empresa emisora, el tercero de cada cliente nuevo que registres (también puedes sincronizarlos a mano desde Terceros)</span>
+          </label>
+
           <p className="text-xs text-slate-400">
             El producto da el nombre, el IVA y la unidad de la línea; el precio y la cantidad salen del plan. Cada plan puede traer sus propios productos.
             Si cambias de empresa emisora, guarda y luego elige los productos de su catálogo.

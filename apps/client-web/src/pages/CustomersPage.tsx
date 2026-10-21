@@ -8,6 +8,8 @@ import CustomerFormModal from '../components/CustomerFormModal';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import { useConfirm } from '@/components/ConfirmDialog';
+import TenantSyncModal from '../components/TenantSyncModal';
+import { useSession } from '../context/SessionContext';
 
 const PARTY_TYPES = [
   { value: 'Cliente', label: 'Clientes' },
@@ -19,6 +21,10 @@ const PARTY_TYPES = [
 
 export default function CustomersPage() {
   const confirm = useConfirm();
+  const { features, isAdministrator } = useSession();
+  // Empresa propietaria del tenant: sincroniza los clientes del tenant como terceros y puede filtrarlos.
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [originFilter, setOriginFilter] = useState<'' | 'tenant' | 'incomplete'>('');
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -87,6 +93,12 @@ export default function CustomersPage() {
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
+  const showTenantTools = features.tenantOwner && activeType === 'Cliente';
+  const visibleCustomers = customers.filter(c =>
+    originFilter === 'tenant' ? !!c.linkedClientId
+    : originFilter === 'incomplete' ? !c.email || !c.address || (c.countryCode === 'CO' && !c.cityCode)
+    : true);
+
   const columns: DataTableColumn<any>[] = [
     {
       key: 'identification',
@@ -106,7 +118,12 @@ export default function CustomersPage() {
       header: 'Razón Social / Nombre',
       primary: true,
       cellClassName: 'font-bold text-slate-900',
-      render: c => c.name,
+      render: c => (
+        <span className="flex flex-wrap items-center gap-2">
+          {c.name}
+          {c.linkedClientId && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700" title="Es un cliente de tu tenant, sincronizado desde su lista">Cliente del tenant</span>}
+        </span>
+      ),
       sortValue: c => c.name,
       searchValue: c => c.name
     },
@@ -182,6 +199,11 @@ export default function CustomersPage() {
           <p className="mt-1 text-slate-500">Administra clientes, proveedores y empleados.</p>
         </div>
         <div className="flex flex-wrap gap-3">
+          {showTenantTools && isAdministrator && (
+            <button onClick={() => setSyncOpen(true)} className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+              Sincronizar clientes del tenant
+            </button>
+          )}
           <ImportExcelButton endpoint="/client/customers/import" templateEndpoint="/client/customers/template" label="Importar Excel" onDone={loadCustomers} />
           <button
             onClick={() => handleOpenModal()}
@@ -206,8 +228,17 @@ export default function CustomersPage() {
         ))}
       </div>
 
+      {showTenantTools && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {([['', 'Todos'], ['tenant', 'Del tenant'], ['incomplete', 'Incompletos']] as const).map(([value, label]) => (
+            <button key={value} onClick={() => setOriginFilter(value)}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${originFilter === value ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{label}</button>
+          ))}
+        </div>
+      )}
+
       <DataTable
-        rows={customers}
+        rows={visibleCustomers}
         columns={columns}
         rowKey={c => c.id}
         tableFrom="wide"
@@ -221,6 +252,8 @@ export default function CustomersPage() {
           </>
         )}
       />
+
+      <TenantSyncModal open={syncOpen} onClose={() => setSyncOpen(false)} onDone={loadCustomers} />
 
       <CustomerFormModal
         open={isModalOpen}

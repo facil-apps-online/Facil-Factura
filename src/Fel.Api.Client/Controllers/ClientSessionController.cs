@@ -65,7 +65,12 @@ namespace Fel.Api.Client.Controllers
                 allBranches = Branch.CanViewAllBranches,
                 branches,
                 // Módulos que el Tenant activó para este cliente: el portal oculta el menú y la ruta de lo que esté apagado.
-                features = new { payments = client?.ControlsPayments ?? false, foreignCurrency = client?.ForeignCurrencyEnabled ?? false, dianLookup = await _acquirerLookup.IsAvailableAsync(Branch.ClientId) },
+                features = new
+                {
+                    payments = client?.ControlsPayments ?? false, foreignCurrency = client?.ForeignCurrencyEnabled ?? false, dianLookup = await _acquirerLookup.IsAvailableAsync(Branch.ClientId),
+                    // Esta empresa es la propietaria de su tenant (la que factura a los demás): puede sincronizar los clientes del tenant como terceros.
+                    tenantOwner = await _dbContext.TenantInvoicingSettings.AsNoTracking().AnyAsync(s => s.OwnerClientId == Branch.ClientId)
+                },
                 // Ubicación de la empresa: el buscador de direcciones la usa para mostrar primero lo que queda cerca.
                 location = client?.Latitude != null && client.Longitude != null ? new { latitude = client.Latitude, longitude = client.Longitude } : null,
                 roles = ClientUserRoles.All.Select(r => new { value = r.Value, label = r.Label }),

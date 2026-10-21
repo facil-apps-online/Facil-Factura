@@ -1036,6 +1036,8 @@ namespace Fel.Infrastructure.Data
             {
                 entity.ToTable("Customers");
                 entity.HasKey(e => e.Id);
+                // Un solo tercero por cliente del tenant en cada empresa propietaria.
+                entity.HasIndex(e => new { e.ClientId, e.LinkedClientId }).IsUnique().HasFilter("[LinkedClientId] IS NOT NULL");
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(250);
                 entity.Property(e => e.IdentificationNumber).IsRequired().HasMaxLength(50);
                 entity.Property(e => e.CountryCode).IsRequired().HasMaxLength(2).HasDefaultValue("CO");

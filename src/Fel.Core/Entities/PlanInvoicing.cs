@@ -34,6 +34,9 @@ namespace Fel.Core.Entities
         public Guid? FeeProductId { get; set; }
         public Guid? ExtraProductId { get; set; }
 
+        // Cuando el tenant crea un cliente nuevo, se crea su tercero en la empresa emisora al instante. Encendido por defecto.
+        public bool AutoSyncCustomers { get; set; } = true;
+
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 

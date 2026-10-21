@@ -21,12 +21,14 @@ namespace Fel.Api.Tenant.Controllers
         private readonly ICryptoService _cryptoService;
         private readonly PasswordResetService _passwordResetService;
         private readonly DianRutParserService _rutParser;
+        private readonly OwnerCustomerSyncService _customerSync;
         private readonly string _clientPortalUrl;
 
         public TenantClientsController(
             FelDbContext dbContext, ICryptoService cryptoService, PasswordResetService passwordResetService,
-            DianRutParserService rutParser, IConfiguration config)
+            DianRutParserService rutParser, OwnerCustomerSyncService customerSync, IConfiguration config)
         {
+            _customerSync = customerSync;
             _dbContext = dbContext;
             _cryptoService = cryptoService;
             _passwordResetService = passwordResetService;
@@ -307,6 +309,11 @@ namespace Fel.Api.Tenant.Controllers
             }
 
             await _dbContext.SaveChangesAsync();
+
+            // Si el tenant tiene empresa propietaria con la sincronización automática encendida, su tercero se crea ya. Un fallo aquí no debe
+            // impedir el alta del cliente: el tercero se puede crear después desde Terceros → Sincronizar.
+            try { await _customerSync.EnsureForNewClientAsync(tenantId, client.Id); }
+            catch (Exception) { /* se reintenta al sincronizar o al generar el primer borrador */ }
 
             return Ok(new { client.Id, client.CompanyName, client.TaxId, client.Email, client.IsActive });
         }

@@ -152,6 +152,7 @@ builder.Services.AddScoped<Fel.Infrastructure.Services.BranchCredentialResolver>
 builder.Services.AddScoped<Fel.Core.Interfaces.IDianSoapClient, Fel.Infrastructure.Dian.DianSoapClient>();
 builder.Services.AddScoped<Fel.Infrastructure.Dian.AcquirerLookupService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ClientPlanUsageService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.OwnerCustomerSyncService>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IReceptionEventService, Fel.Infrastructure.Dian.ReceptionEventService>();
 
 builder.Services.AddDbContext<FelDbContext>(options =>

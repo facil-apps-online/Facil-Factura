@@ -76,7 +76,8 @@ namespace Fel.Api.Client.Imports
         // Largos de las columnas de la base (Products y Customers). Una fila que los supera no se guarda: se avisa en la vista previa.
         public const int Name = 250;          // terceros
         public const int ProductName = 1000;  // productos
-        public const int Code = 50;
+        public const int Code = 100;           // a la DIAN se envían los primeros 50 (ver BaseUblStrategy.DianItemCode)
+        public const int DianCode = 50;
         public const int IdentificationNumber = 50;
 
         public static ImportOption[] NameTooLong(int max) => new ImportOption[]

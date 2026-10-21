@@ -26,6 +26,14 @@ namespace Fel.Infrastructure.Ubl.Strategies
         // Mínimo 2 decimales para que lo que ya salía con 2 siga igual.
         internal static string QuantityOrPrice(decimal value) => value.ToString("0.00####", System.Globalization.CultureInfo.InvariantCulture);
 
+        public const int DianItemCodeMaxLength = 50;
+
+        public static string DianItemCode(string? code)
+        {
+            var value = code ?? string.Empty;
+            return value.Length <= DianItemCodeMaxLength ? value : value[..DianItemCodeMaxLength].TrimEnd();
+        }
+
         public BaseUblStrategy(ICryptoService cryptoService)
         {
             _cryptoService = cryptoService;
@@ -415,8 +423,9 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 // referencia en producción activa — presente en cada línea de ambos, antes de
                 // StandardItemIdentification. Faltaba por completo. No tenemos un código de
                 // vendedor distinto del código de ítem, se reusa el mismo valor.
-                new XElement(cac + "SellersItemIdentification", new XElement(cbc + "ID", line.ItemCode)),
-                new XElement(cac + "StandardItemIdentification", new XElement(cbc + "ID", new XAttribute("schemeID", "999"), line.ItemCode))
+                // El código del producto admite 100 caracteres en el sistema, pero el Anexo Técnico lo limita a 50 en el XML: a la DIAN van los primeros 50.
+                new XElement(cac + "SellersItemIdentification", new XElement(cbc + "ID", DianItemCode(line.ItemCode))),
+                new XElement(cac + "StandardItemIdentification", new XElement(cbc + "ID", new XAttribute("schemeID", "999"), DianItemCode(line.ItemCode)))
             );
 
             // Factura de exportación (opcionales): marca y modelo van justo después de la descripción (secuencia UBL, como en el ejemplo oficial

@@ -53,6 +53,7 @@ namespace Fel.Api.Client.Imports
             if (sheet.FileErrors.Count > 0) return result;
 
             var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var seenDian = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); // primeros 50 caracteres del código -> fila
             var isSupport = ctx.Scope == ProductScope.Support;
 
             foreach (var row in sheet.Rows)
@@ -193,6 +194,12 @@ namespace Fel.Api.Client.Imports
 
                 if (preview.Status != ImportStatus.Create) continue;
                 seen[code] = row.Row;
+                if (code.Length > BulkImportLimits.DianCode)
+                {
+                    var dianCode = code[..BulkImportLimits.DianCode].TrimEnd();
+                    if (seenDian.TryGetValue(dianCode, out var sameRow)) preview.Warnings.Add($"Los primeros {BulkImportLimits.DianCode} caracteres del código coinciden con los de la fila {sameRow}: en el XML de la DIAN aparecerán iguales.");
+                    else seenDian[dianCode] = row.Row;
+                }
 
                 var product = new Product
                 {

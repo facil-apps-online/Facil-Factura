@@ -17,7 +17,50 @@ namespace Fel.Infrastructure.Services
         {
             if (documentTypeCode.StartsWith("DS")) return SampleSupportDocumentData(documentTypeCode);
             if (documentTypeCode.StartsWith("NE")) return SampleNominaData(documentTypeCode);
+            if (documentTypeCode == "FE-AIU") return SampleAiuInvoiceData(mostrarRetenciones);
             return SampleInvoiceData(documentTypeCode, mostrarRetenciones);
+        }
+
+        // Factura AIU: parte de la factura estándar de muestra y cambia lo propio del contrato (mismos campos que InvoiceReportDataMapper.Build):
+        // tipo de operación, objeto, las cuatro líneas con su porcentaje, el resumen AIU y los totales coherentes con ellas.
+        private static Dictionary<string, object?> SampleAiuInvoiceData(bool mostrarRetenciones)
+        {
+            var data = SampleInvoiceData("FE-STD", mostrarRetenciones);
+            var documento = (Dictionary<string, object?>)data["Documento"]!;
+            const string objeto = "Obra civil de adecuación de bodega y cerramiento perimetral del predio, según propuesta comercial No. 045 de 2026";
+            documento["TipoOperacion"] = "AIU";
+            documento["AiuObjeto"] = "Objeto del contrato: " + objeto;
+            documento["Subtotal"] = "1.200.000";
+            documento["Iva"] = "199.500";
+            documento["Total"] = "1.399.500";
+            documento["TotalEnLetras"] = "UN MILLÓN TRESCIENTOS NOVENTA Y NUEVE MIL QUINIENTOS PESOS";
+            documento["TotalRetenciones"] = null;
+            documento["NetoAPagar"] = null;
+
+            Dictionary<string, object?> Line(string ordinal, string code, string name, string value, string iva, string pct, string? aiuPct) => new()
+            {
+                ["Ordinal"] = ordinal, ["Codigo"] = code, ["Nombre"] = name, ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = value,
+                ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = iva == "0%" ? "Excluido" : "Gravado", ["PorcentajeIva"] = iva,
+                ["ValorIva"] = pct, ["TotalLinea"] = value, ["PorcentajeAiu"] = aiuPct,
+                ["Marca"] = null, ["Modelo"] = null, ["PartidaArancelaria"] = null, ["MandanteNombre"] = null, ["MandanteIdentificacion"] = null, ["MandanteTexto"] = null
+            };
+            data["Items"] = new List<Dictionary<string, object?>>
+            {
+                Line("1", "AIU-A", "Administración (A.I.U.)", "100.000", "0%", "0", "10%"),
+                Line("2", "AIU-I", "Imprevistos (A.I.U.)", "50.000", "0%", "0", "5%"),
+                Line("3", "AIU-U", "Utilidad (A.I.U.)", "50.000", "19%", "9.500", "5%"),
+                Line("4", "SERVICIO", objeto, "1.000.000", "19%", "190.000", null)
+            };
+            data["Aiu"] = new List<Dictionary<string, object?>>
+            {
+                new() { ["Concepto"] = "Valor del servicio (base del contrato)", ["Porcentaje"] = "", ["Valor"] = "1.000.000" },
+                new() { ["Concepto"] = "Administración", ["Porcentaje"] = "10%", ["Valor"] = "100.000" },
+                new() { ["Concepto"] = "Imprevistos", ["Porcentaje"] = "5%", ["Valor"] = "50.000" },
+                new() { ["Concepto"] = "Utilidad", ["Porcentaje"] = "5%", ["Valor"] = "50.000" },
+                new() { ["Concepto"] = "Base gravable del IVA", ["Porcentaje"] = "", ["Valor"] = "1.050.000" }
+            };
+            data["Impuestos"] = new List<Dictionary<string, object?>> { new() { ["Concepto"] = "IVA 19%", ["Valor"] = "199.500", ["Tipo"] = "Iva" } };
+            return data;
         }
 
         private static Dictionary<string, object?> SampleInvoiceData(string documentTypeCode, bool mostrarRetenciones)

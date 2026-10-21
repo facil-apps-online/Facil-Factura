@@ -111,6 +111,9 @@ namespace Fel.Infrastructure.Dataico
             var observaciones = DocumentNotes.Texts(invoice).Select((text, idx) => (Position: idx + 1, Text: text)).ToList();
             // Una factura de mandato declara un mandante en cada línea; así se reconoce sin depender del tipo de documento.
             var esMandato = items.Any(i => !string.IsNullOrWhiteSpace(i.MandanteIdentification));
+            // Factura AIU: los datos del contrato viven en el documento; la plantilla imprime el objeto, el porcentaje de cada línea A/I/U y el resumen.
+            var aiu = invoice.TypeCode == "FE-AIU" ? AiuContractData.TryRead(invoice.SectorExtensionData) : null;
+            var aiuResumen = aiu == null ? new List<Dictionary<string, object?>>() : BuildAiuSummary(aiu, items, Money, Pct);
             // NIT lleva su dígito de verificación (el del tercero o, si no lo tiene guardado, el calculado).
             var documentoAdquirente = customer == null ? null
                 : $"{DataicoMapper.MapIdentificationType(customer.IdentificationType)} {customer.IdentificationNumber}"
@@ -280,7 +283,9 @@ namespace Fel.Infrastructure.Dataico
                     // Todas las observaciones en un solo texto, una por línea: lo que leen las plantillas que todavía usan un
                     // solo campo. Las plantillas que quieran una fila por observación usan la lista "Observaciones".
                     ["Notas"] = string.Join("\n", observaciones.Select(o => o.Text)),
-                    ["TipoOperacion"] = esMandato ? "Mandatos" : invoice.TypeCode == "FE-EXP" ? "Exportación" : "Estándar",
+                    ["TipoOperacion"] = esMandato ? "Mandatos" : invoice.TypeCode == "FE-EXP" ? "Exportación" : aiu != null ? "AIU" : "Estándar",
+                    // Factura AIU: objeto del contrato ya listo para imprimir; vacío en cualquier otra factura.
+                    ["AiuObjeto"] = aiu == null ? null : $"Objeto del contrato: {aiu.ContractObject.Trim()}",
                     // Factura de exportación: condición de entrega lista para imprimir ("CFR - Costo y flete"); vacía en otra factura.
                     ["Incoterm"] = string.IsNullOrWhiteSpace(invoice.DeliveryTermsCode) ? null
                         : string.IsNullOrWhiteSpace(invoice.DeliveryTermsName) ? invoice.DeliveryTermsCode : $"{invoice.DeliveryTermsCode} - {invoice.DeliveryTermsName}",
@@ -347,8 +352,17 @@ namespace Fel.Infrastructure.Dataico
                     ["MandanteNombre"] = i.MandanteName,
                     ["MandanteIdentificacion"] = i.MandanteIdentification,
                     ["MandanteTexto"] = string.IsNullOrWhiteSpace(i.MandanteIdentification) ? null
-                        : $"Mandante {DataicoMapper.MapIdentificationType(i.MandanteIdentificationType ?? string.Empty)}: {i.MandanteIdentification}"
+                        : $"Mandante {DataicoMapper.MapIdentificationType(i.MandanteIdentificationType ?? string.Empty)}: {i.MandanteIdentification}",
+                    // Factura AIU: porcentaje de las líneas de Administración, Imprevistos y Utilidad; vacío en las demás.
+                    ["PorcentajeAiu"] = aiu == null ? null
+                        : i.Code == AiuContractData.AdminCode ? Pct(aiu.AdminPercent)
+                        : i.Code == AiuContractData.UnforeseenCode ? Pct(aiu.UnforeseenPercent)
+                        : i.Code == AiuContractData.ProfitCode ? Pct(aiu.ProfitPercent)
+                        : null
                 }).ToList(),
+
+                // Resumen del contrato AIU (valor del servicio, A, I, U y base gravable del IVA): la plantilla lo pinta tras los ítems. Vacío fuera de AIU.
+                ["Aiu"] = aiuResumen,
 
                 // Una fila por observación, en su orden: la plantilla la pinta como un grupo de detalle, justo después de los ítems.
                 ["Observaciones"] = observaciones.Select(o => new Dictionary<string, object?>
@@ -359,6 +373,31 @@ namespace Fel.Infrastructure.Dataico
 
                 ["Impuestos"] = impuestos
             };
+        }
+
+        // Filas del resumen AIU. Los valores salen de las líneas del documento (lo que de verdad se factura), no se recalculan con los
+        // porcentajes. La base gravable del IVA es la suma de las líneas gravadas: la Utilidad y, si lleva IVA, el servicio.
+        private static List<Dictionary<string, object?>> BuildAiuSummary(
+            AiuContractData aiu, IReadOnlyList<DocumentItem> items, Func<decimal, string> money, Func<decimal, string> pct)
+        {
+            decimal LineBase(DocumentItem i) => i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100m);
+            Dictionary<string, object?> Row(string concept, string percent, decimal value) =>
+                new() { ["Concepto"] = concept, ["Porcentaje"] = percent, ["Valor"] = money(value) };
+
+            var rows = new List<Dictionary<string, object?>>();
+            var service = items.FirstOrDefault(i => i.Code == AiuContractData.ServiceCode);
+            // Los borradores AIU anteriores no tienen línea de servicio: en ese caso la fila no se imprime.
+            if (service != null) rows.Add(Row("Valor del servicio (base del contrato)", string.Empty, LineBase(service)));
+            void Add(string concept, string code, decimal percent)
+            {
+                var line = items.FirstOrDefault(i => i.Code == code);
+                if (line != null) rows.Add(Row(concept, pct(percent), LineBase(line)));
+            }
+            Add("Administración", AiuContractData.AdminCode, aiu.AdminPercent);
+            Add("Imprevistos", AiuContractData.UnforeseenCode, aiu.UnforeseenPercent);
+            Add("Utilidad", AiuContractData.ProfitCode, aiu.ProfitPercent);
+            rows.Add(Row("Base gravable del IVA", string.Empty, items.Where(i => i.IvaTreatment == IvaTreatment.Gravado).Sum(LineBase)));
+            return rows;
         }
     }
 }

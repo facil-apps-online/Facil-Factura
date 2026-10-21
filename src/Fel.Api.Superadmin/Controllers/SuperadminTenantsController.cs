@@ -104,6 +104,105 @@ namespace Fel.Api.Superadmin.Controllers
             });
         }
 
+        private static Fel.Infrastructure.Services.TenantRutData ToTenantRutData(Fel.Infrastructure.Services.DianRutParserService.ParsedRutData rut) => new()
+        {
+            TaxId = rut.TaxId, VerificationDigit = rut.VerificationDigit,
+            PersonType = string.IsNullOrWhiteSpace(rut.FirstName) && string.IsNullOrWhiteSpace(rut.FirstLastName) ? "PJ" : "PN",
+            CommercialName = rut.CommercialName, Email = rut.Email, Phone = rut.Phone, Address = rut.Address, City = rut.City, CityCode = rut.CityCode,
+            Department = rut.Department, EconomicActivity = rut.EconomicActivity,
+            TaxRegime = RegimenDesdeResponsabilidades(rut.ResponsibilityCodes), TaxRegimeCode = rut.ResponsibilityCodes.Contains("48") ? "48" : "49",
+            IncomeTaxRegime = rut.IncomeTaxRegimeCode,
+            IsGranContribuyente = rut.IsGranContribuyente, IsAgenteRetenedorIva = rut.IsAgenteRetenedorIva, IsAutorretenedorRenta = rut.IsAutorretenedorRenta,
+            LegalRepresentativeFirstName = rut.RepresentativeFirstName, LegalRepresentativeOtherNames = rut.RepresentativeOtherNames,
+            LegalRepresentativeFirstLastName = rut.RepresentativeFirstLastName, LegalRepresentativeSecondLastName = rut.RepresentativeSecondLastName,
+            LegalRepresentativeDocumentType = rut.RepresentativeDocumentType, LegalRepresentativeDocumentNumber = rut.RepresentativeDocumentNumber,
+            LegalRepresentativeRepresentationCode = rut.RepresentativeRepresentationCode, LegalRepresentativeStartDate = rut.RepresentativeStartDate
+        };
+
+        /// <summary>
+        /// Completa un tenant que ya existe con su RUT: llena solo lo que está vacío (nunca pisa lo ya escrito), y crea o completa la empresa propietaria
+        /// del tenant con lo fiscal del RUT. El RUT debe ser del mismo NIT del tenant (si el tenant no tiene NIT todavía, se le asigna el del RUT).
+        /// </summary>
+        [HttpPost("{id:guid}/apply-rut")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ApplyRut(Guid id, [FromForm] IFormFile file)
+        {
+            if (file == null || file.Length == 0) return BadRequest(new { message = "No se adjuntó ningún archivo." });
+            if (!string.Equals(file.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "El RUT debe ser el PDF que descarga el portal de la DIAN." });
+
+            var tenant = await _dbContext.Tenants.FindAsync(id);
+            if (tenant == null) return NotFound();
+
+            using var stream = file.OpenReadStream();
+            var rut = await _rutParser.ParsePdfAsync(stream);
+            if (!rut.IsSuccess) return BadRequest(new { message = rut.ErrorMessage });
+
+            static string Digits(string? v) => new string((v ?? string.Empty).Where(char.IsDigit).ToArray());
+            var tenantNit = Digits(tenant.TaxId);
+            if (tenantNit.Length > 0 && tenantNit != Digits(rut.TaxId))
+                return Conflict(new { message = $"El RUT es del NIT {rut.TaxId}, no de este tenant (NIT {tenant.TaxId})." });
+            if (tenantNit.Length == 0 && await _dbContext.Tenants.AnyAsync(t => t.Id != id && t.TaxId == rut.TaxId))
+                return BadRequest(new { message = $"Ya existe otro tenant con el NIT {rut.TaxId}." });
+
+            var data = ToTenantRutData(rut);
+            var filled = new List<string>();
+            void Fill(string label, string? current, string? incoming, Action<string> set)
+            {
+                if (string.IsNullOrWhiteSpace(incoming) || !string.IsNullOrWhiteSpace(current)) return;
+                set(incoming!);
+                filled.Add(label);
+            }
+
+            Fill("NIT", tenant.TaxId, rut.TaxId, v => tenant.TaxId = v);
+            Fill("Dígito de verificación", tenant.VerificationDigit, rut.VerificationDigit, v => tenant.VerificationDigit = v);
+            Fill("Razón social", tenant.LegalName, rut.LegalName, v => tenant.LegalName = v);
+            if (data.PersonType == "PN")
+            {
+                Fill("Primer nombre", tenant.FirstName, rut.FirstName, v => tenant.FirstName = v);
+                Fill("Segundo nombre", tenant.SecondName, rut.SecondName, v => tenant.SecondName = v);
+                Fill("Primer apellido", tenant.FirstLastName, rut.FirstLastName, v => tenant.FirstLastName = v);
+                Fill("Segundo apellido", tenant.SecondLastName, rut.SecondLastName, v => tenant.SecondLastName = v);
+            }
+            Fill("Correo de facturación electrónica", tenant.EinvoicingEmail, rut.Email, v => tenant.EinvoicingEmail = v);
+            Fill("Correo de contacto", tenant.ContactEmail, rut.Email, v => tenant.ContactEmail = v);
+            Fill("Teléfono de contacto", tenant.ContactPhone, rut.Phone, v => tenant.ContactPhone = v);
+            Fill("Dirección física", tenant.PhysicalAddressLine1, rut.Address, v => tenant.PhysicalAddressLine1 = v);
+            Fill("Ciudad física", tenant.PhysicalCity, rut.City, v => tenant.PhysicalCity = v);
+            Fill("Departamento físico", tenant.PhysicalState, rut.Department, v => tenant.PhysicalState = v);
+            Fill("Dirección fiscal", tenant.Address, rut.Address, v => tenant.Address = v);
+            Fill("Ciudad fiscal", tenant.City, rut.City, v => tenant.City = v);
+            Fill("Teléfono fiscal", tenant.Phone, rut.Phone, v => tenant.Phone = v);
+            Fill("Régimen", tenant.TaxRegime, data.TaxRegime, v => tenant.TaxRegime = v);
+            Fill("Actividad económica", tenant.EconomicActivity, rut.EconomicActivity, v => tenant.EconomicActivity = v);
+
+            await using var tx = await _dbContext.Database.BeginTransactionAsync();
+            await _dbContext.SaveChangesAsync();
+            var owner = await Fel.Infrastructure.Services.TenantOwnerProvisioning.EnsureOwnerAsync(_dbContext, tenant, data);
+            await _dbContext.SaveChangesAsync();
+
+            var coreStatus = "Skipped";
+            if (!string.IsNullOrWhiteSpace(tenant.CoreTenantId) && filled.Count > 0)
+            {
+                var coreResult = await _core.UpdateTenantAsync(tenant.CoreTenantId, ToCoreTenant(tenant, null));
+                if (coreResult.IsFailed)
+                {
+                    await tx.RollbackAsync();
+                    return StatusCode(StatusCodes.Status502BadGateway,
+                        $"No se pudo actualizar el tenant en Core, se descartaron los cambios. Detalle: {coreResult.Error}");
+                }
+                coreStatus = coreResult.Outcome.ToString();
+            }
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                tenantFilled = filled,
+                ownerClient = new { owner.OwnerClientId, owner.Created, filledFields = owner.FilledFields },
+                coreSync = coreStatus
+            });
+        }
+
         /// <summary>
         /// Deduce el régimen tributario de las responsabilidades del RUT: la 47 es Régimen Simple
         /// y la 48 marca responsable de IVA. Es solo una sugerencia para el formulario.

@@ -69,6 +69,10 @@ export const TenantEdit = () => {
   const [saving, setSaving] = useState(false);
   // Suspensión de la plataforma (p. ej. por mora): el tenant queda en solo lectura y sus clientes sin acceso. Solo el superadmin la maneja.
   const [block, setBlock] = useState<{ at: string | null; reason: string | null; parentAt: string | null; parentReason: string | null }>({ at: null, reason: null, parentAt: null, parentReason: null });
+  // Completar el tenant con su RUT: llena solo lo vacío y crea o completa su empresa propietaria.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [applyingRut, setApplyingRut] = useState(false);
+  const [rutResult, setRutResult] = useState<{ ok: boolean; lines: string[] } | null>(null);
   const [blockReason, setBlockReason] = useState('');
   const [confirmingBlock, setConfirmingBlock] = useState(false);
   const [togglingBlock, setTogglingBlock] = useState(false);
@@ -98,6 +102,31 @@ export const TenantEdit = () => {
       toast.error(typeof err?.response?.data === 'string' ? err.response.data : 'No se pudo cambiar la suspensión.');
     } finally {
       setTogglingBlock(false);
+    }
+  };
+
+  const applyRut = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setApplyingRut(true);
+    setRutResult(null);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const { data } = await api.post(`/tenants/${id}/apply-rut`, body, { headers: { 'Content-Type': undefined } });
+      const lines: string[] = [];
+      if (data.tenantFilled?.length) lines.push(`Datos del tenant completados: ${data.tenantFilled.join(', ')}.`);
+      else lines.push('El tenant ya tenía todos esos datos: no se cambió nada.');
+      if (data.ownerClient?.created) lines.push('Se creó su empresa propietaria (cliente con el mismo NIT) y quedó como empresa emisora.');
+      if (data.ownerClient?.filledFields?.length) lines.push(`Empresa propietaria completada: ${data.ownerClient.filledFields.join(', ')}.`);
+      setRutResult({ ok: true, lines });
+      setReloadKey(k => k + 1);
+    } catch (err: any) {
+      const message = err?.response?.data?.message ?? (typeof err?.response?.data === 'string' ? err.response.data : null) ?? 'No se pudo leer el RUT.';
+      setRutResult({ ok: false, lines: [message] });
+    } finally {
+      setApplyingRut(false);
     }
   };
 
@@ -166,7 +195,7 @@ export const TenantEdit = () => {
     loadUsers();
     loadIntegratorBilling();
     loadTenantIntegrators();
-  }, [id]);
+  }, [id, reloadKey]);
 
   const loadPackages = () => {
     api.get(`/billing/tenant/${id}/prepaid-packages`)
@@ -389,6 +418,26 @@ export const TenantEdit = () => {
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Datos fiscales y facturación</h1>
           <p className="text-slate-400 font-medium">{formData.commercialName}</p>
         </div>
+      </div>
+
+      <div className="mb-8 p-6 rounded-3xl border border-slate-700/50 glass-panel">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-white">Completar con el RUT</h2>
+            <p className="text-sm text-slate-400 mt-1">
+              Sube el RUT (PDF de la DIAN) de este tenant: se llenan solo los datos que estén vacíos, sin pisar lo ya escrito, y se crea o completa su empresa propietaria con lo fiscal y el representante legal. El RUT debe ser del mismo NIT.
+            </p>
+          </div>
+          <label className={`shrink-0 cursor-pointer px-5 py-2.5 rounded-xl font-bold text-sm text-white ${applyingRut ? 'bg-slate-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}>
+            {applyingRut ? 'Leyendo el RUT...' : 'Subir RUT'}
+            <input type="file" accept="application/pdf" className="hidden" disabled={applyingRut} onChange={applyRut} />
+          </label>
+        </div>
+        {rutResult && (
+          <ul className={`mt-4 space-y-1 text-sm ${rutResult.ok ? 'text-emerald-300' : 'text-rose-300'}`}>
+            {rutResult.lines.map((l, i) => <li key={i}>{l}</li>)}
+          </ul>
+        )}
       </div>
 
       <div className={`mb-8 p-6 rounded-3xl border ${block.at ? 'border-red-500/50 bg-red-500/10' : 'border-slate-700/50 glass-panel'}`}>

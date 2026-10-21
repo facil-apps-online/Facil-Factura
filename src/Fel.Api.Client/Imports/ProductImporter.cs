@@ -63,16 +63,29 @@ namespace Fel.Api.Client.Imports
                 var code = ImportText.Collapse(row.Get("REF"));
                 var name = ImportText.Collapse(row.Get("DESCRIPCION"));
                 if (code.Length == 0) preview.Errors.Add("Falta el código (REF).");
-                else if (code.Length > BulkImportLimits.Code) preview.Errors.Add($"El código tiene {code.Length} caracteres; el máximo es {BulkImportLimits.Code}.");
                 if (name.Length == 0) preview.Errors.Add("Falta la descripción.");
 
-                // Nombre más largo de lo que admite la base: no se recorta en silencio; el usuario decide cortarlo u omitir la fila.
+                // Código o nombre más largos de lo que admite la base: no se recortan en silencio; el usuario decide cortarlos u omitir la fila.
+                // (El código se copia a la línea de factura, que admite 50 caracteres.)
+                ctx.Options.Decisions.TryGetValue(row.Row, out var chosenRow);
+                string? Choice(string field) => chosenRow != null && chosenRow.TryGetValue(field, out var c) ? c : null;
+                var codeDecisionPending = false;
                 var nameDecisionPending = false;
                 var omitRow = false;
+                if (code.Length > BulkImportLimits.Code)
+                {
+                    var choice = Choice("codeLength");
+                    if (choice == "truncate")
+                    {
+                        preview.Warnings.Add($"El código tenía {code.Length} caracteres y se cortó a {BulkImportLimits.Code}.");
+                        code = code[..BulkImportLimits.Code].TrimEnd();
+                    }
+                    else if (choice == "omit") omitRow = true;
+                    else codeDecisionPending = true;
+                }
                 if (name.Length > BulkImportLimits.ProductName)
                 {
-                    ctx.Options.Decisions.TryGetValue(row.Row, out var chosenRow);
-                    var choice = chosenRow != null && chosenRow.TryGetValue("nameLength", out var c) ? c : null;
+                    var choice = Choice("nameLength");
                     if (choice == "truncate")
                     {
                         preview.Warnings.Add($"El nombre tenía {name.Length} caracteres y se cortó a {BulkImportLimits.ProductName}.");
@@ -155,6 +168,11 @@ namespace Fel.Api.Client.Imports
                 // ---- estado
                 if (preview.Errors.Count > 0) preview.Status = ImportStatus.Error;
                 else if (omitRow) preview.Status = ImportStatus.Skipped;
+                else if (codeDecisionPending)
+                {
+                    preview.Status = ImportStatus.Decision;
+                    preview.Decision = new ImportDecision { Field = "codeLength", Label = $"El código tiene {code.Length} caracteres (máximo {BulkImportLimits.Code})", Options = BulkImportLimits.CodeTooLong(BulkImportLimits.Code).ToList() };
+                }
                 else if (nameDecisionPending)
                 {
                     preview.Status = ImportStatus.Decision;

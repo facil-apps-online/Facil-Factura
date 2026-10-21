@@ -83,6 +83,11 @@ namespace Fel.Api.Client.Imports
         {
             new("truncate", $"Cortar el nombre a {max} caracteres"), new("omit", "Omitir esta fila")
         };
+
+        public static ImportOption[] CodeTooLong(int max) => new ImportOption[]
+        {
+            new("truncate", $"Cortar el código a {max} caracteres"), new("omit", "Omitir esta fila")
+        };
     }
 
     public static class BulkImportOptionsParser

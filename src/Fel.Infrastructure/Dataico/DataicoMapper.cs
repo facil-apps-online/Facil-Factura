@@ -82,7 +82,8 @@ namespace Fel.Infrastructure.Dataico
                 party_identification = customer.IdentificationNumber,
                 party_type = MapPartyType(customer.IdentificationType),
                 tax_level_code = customer.DataicoTaxLevelCode,
-                regimen = customer.DataicoRegimen,
+                // Régimen simple (47) manda SIMPLE aunque el catálogo de Dataico del tercero diga otra cosa.
+                regimen = customer.IncomeTaxRegime == "47" ? "SIMPLE" : customer.DataicoRegimen,
                 department = department,
                 city = city,
                 address_line = customer.Address,

@@ -42,8 +42,22 @@ namespace Fel.Infrastructure.Dian
                 CityCode = isForeign ? string.Empty : customer.CityCode ?? string.Empty,
                 CityName = isForeign ? customer.CityName : municipality?.Name ?? customer.CityName,
                 Address = customer.Address,
-                Email = customer.Email
+                Email = customer.Email,
+                TaxLevelCodes = TaxLevelCodesFor(customer)
             };
+        }
+
+        // Responsabilidades fiscales del adquirente para el XML (lista 04 de la DIAN): O-13 gran contribuyente, O-15 autorretenedor, O-23 agente de
+        // retención de IVA y O-47 régimen simple. Sin ninguna, R-99-PN (no aplica), que es lo que se enviaba siempre.
+        public static List<string> TaxLevelCodesFor(Customer customer)
+        {
+            var codes = new List<string>();
+            if (customer.IsGranContribuyente) codes.Add("O-13");
+            if (customer.IsAutorretenedorRenta) codes.Add("O-15");
+            if (customer.IsAgenteRetenedorIva) codes.Add("O-23");
+            if (customer.IncomeTaxRegime == "47") codes.Add("O-47");
+            if (codes.Count == 0) codes.Add("R-99-PN");
+            return codes;
         }
 
         public static UblInvoiceData BuildInvoiceData(

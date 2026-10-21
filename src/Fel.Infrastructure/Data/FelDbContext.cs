@@ -90,6 +90,7 @@ namespace Fel.Infrastructure.Data
             {
                 entity.ToTable("Tenants");
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.IncomeTaxRegime).HasMaxLength(2);
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
                 entity.Property(e => e.Email).HasMaxLength(150);
                 entity.Property(e => e.PlatformBlockReason).HasMaxLength(500);
@@ -1036,6 +1037,7 @@ namespace Fel.Infrastructure.Data
             {
                 entity.ToTable("Customers");
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.IncomeTaxRegime).HasMaxLength(2);
                 // Un solo tercero por cliente del tenant en cada empresa propietaria.
                 entity.HasIndex(e => new { e.ClientId, e.LinkedClientId }).IsUnique().HasFilter("[LinkedClientId] IS NOT NULL");
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(250);

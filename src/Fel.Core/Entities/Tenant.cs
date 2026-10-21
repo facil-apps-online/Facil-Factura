@@ -18,6 +18,11 @@ namespace Fel.Core.Entities
         public string Phone { get; set; } = string.Empty;
         public string TaxRegime { get; set; } = string.Empty;
         public string EconomicActivity { get; set; } = string.Empty;
+        // Responsabilidades fiscales (las mismas que tiene un cliente): marcas del RUT y régimen de renta (05 ordinario, 04 especial, 47 simple).
+        public bool IsGranContribuyente { get; set; }
+        public bool IsAgenteRetenedorIva { get; set; }
+        public bool IsAutorretenedorRenta { get; set; }
+        public string? IncomeTaxRegime { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
         

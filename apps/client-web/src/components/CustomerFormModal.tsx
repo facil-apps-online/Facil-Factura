@@ -21,6 +21,8 @@ const initialForm = {
   latitude: null as number | null, longitude: null as number | null,
   taxRegime: '49', fiscalResponsibilities: 'R-99-PN',
   dataicoTaxLevelCode: '', dataicoRegimen: '',
+  // Responsabilidades fiscales del tercero (las mismas que tiene un cliente): marcas del RUT y régimen de renta.
+  isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false, incomeTaxRegime: '',
   workerType: '', contractType: '', paymentMeans: '', bank: '', accountType: '', accountNumber: '',
   highRisk: false, integralSalary: false, baseSalary: 0, startDate: '', fireDate: ''
 };
@@ -84,6 +86,7 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
         ...editingCustomer,
         personType: inferredPersonType,
         countryCode: editingCustomer.countryCode || 'CO',
+        incomeTaxRegime: editingCustomer.incomeTaxRegime || '',
         stateName: editingCustomer.stateName || '',
         firstName: editingCustomer.firstName || '',
         secondName: editingCustomer.secondName || '',
@@ -244,7 +247,11 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
         email: rut.email || prev.email,
         phone: rut.phone || prev.phone,
         dataicoRegimen: rut.dataicoRegimen || prev.dataicoRegimen,
-        dataicoTaxLevelCode: rut.dataicoTaxLevelCode || prev.dataicoTaxLevelCode
+        dataicoTaxLevelCode: rut.dataicoTaxLevelCode || prev.dataicoTaxLevelCode,
+        isGranContribuyente: rut.isGranContribuyente ?? prev.isGranContribuyente,
+        isAgenteRetenedorIva: rut.isAgenteRetenedorIva ?? prev.isAgenteRetenedorIva,
+        isAutorretenedorRenta: rut.isAutorretenedorRenta ?? prev.isAutorretenedorRenta,
+        incomeTaxRegime: rut.incomeTaxRegime || prev.incomeTaxRegime
       }));
       toast.success('Datos del RUT cargados — revísalos antes de guardar.');
       geocodeRutAddress(rut.address, rut.cityName, rut.department);
@@ -514,6 +521,26 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
                   placeholder="Buscar nivel tributario..."
                   options={taxLevelCatalog.map(c => ({ value: c.category, label: c.name }))}
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Régimen de renta</label>
+                <SearchableSelect
+                  value={formData.incomeTaxRegime}
+                  onChange={v => setFormData({ ...formData, incomeTaxRegime: v, dataicoRegimen: v === '47' ? 'SIMPLE' : formData.dataicoRegimen })}
+                  placeholder="Sin definir"
+                  options={[{ value: '', label: 'Sin definir' }, { value: '05', label: 'Ordinario (05)' }, { value: '04', label: 'Especial (04)' }, { value: '47', label: 'Régimen Simple de Tributación (47)' }]}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-bold text-slate-700 mb-1">Responsabilidades tributarias</label>
+                <div className="flex flex-wrap gap-x-6 gap-y-2">
+                  {([['isGranContribuyente', 'Gran contribuyente (13)'], ['isAgenteRetenedorIva', 'Agente retenedor de IVA (09)'], ['isAutorretenedorRenta', 'Autorretenedor de renta (15)']] as const).map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-sm text-slate-600">
+                      <input type="checkbox" checked={!!(formData as any)[key]} onChange={e => setFormData({ ...formData, [key]: e.target.checked })} className="h-4 w-4 accent-blue-600" />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               </div>
               </>
             )}

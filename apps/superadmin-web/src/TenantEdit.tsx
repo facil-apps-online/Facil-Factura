@@ -20,6 +20,10 @@ interface TenantEditForm {
   phone: string;
   taxRegime: string;
   economicActivity: string;
+  isGranContribuyente: boolean;
+  isAgenteRetenedorIva: boolean;
+  isAutorretenedorRenta: boolean;
+  incomeTaxRegime: string;
   latitude: number | null;
   longitude: number | null;
   parentTenantId: string | null;
@@ -47,6 +51,16 @@ interface DocType {
   name: string;
   governingEntity: string;
 }
+
+// El régimen guardado puede venir del RUT con otro texto ("Régimen Simple de Tributación", "No responsable de IVA"): se lleva a las opciones del selector.
+const normalizeRegime = (value?: string | null) => {
+  const v = (value || '').toLowerCase();
+  if (!v) return '';
+  if (v.includes('simple')) return 'Régimen Simple';
+  if (v.includes('no responsable')) return 'No Responsable de IVA';
+  if (v.includes('responsable')) return 'Responsable de IVA';
+  return value || '';
+};
 
 export const TenantEdit = () => {
   const { id } = useParams<{ id: string }>();
@@ -162,8 +176,12 @@ export const TenantEdit = () => {
         address: res.data.address || '',
         city: res.data.city || '',
         phone: res.data.phone || '',
-        taxRegime: res.data.taxRegime || '',
+        taxRegime: normalizeRegime(res.data.taxRegime),
         economicActivity: res.data.economicActivity || '',
+        isGranContribuyente: !!res.data.isGranContribuyente,
+        isAgenteRetenedorIva: !!res.data.isAgenteRetenedorIva,
+        isAutorretenedorRenta: !!res.data.isAutorretenedorRenta,
+        incomeTaxRegime: res.data.incomeTaxRegime || '',
         latitude: res.data.latitude || 4.6097, // Default: Bogotá
         longitude: res.data.longitude || -74.0817,
         parentTenantId: res.data.parentTenantId || null,
@@ -576,6 +594,28 @@ export const TenantEdit = () => {
                 <div className="relative">
                   <FileText className="absolute left-3 top-3.5 w-4 h-4 text-slate-500" />
                   <input type="text" placeholder="Ej. 6201" className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500" value={formData.economicActivity} onChange={e => setFormData({...formData, economicActivity: e.target.value})} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-400 mb-1">Régimen de renta</label>
+                <select className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-blue-500" value={formData.incomeTaxRegime} onChange={e => setFormData({...formData, incomeTaxRegime: e.target.value})}>
+                  <option value="">Sin definir</option>
+                  <option value="05">Ordinario (05)</option>
+                  <option value="04">Especial (04)</option>
+                  <option value="47">Régimen Simple de Tributación (47)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-400 mb-2">Responsabilidades tributarias</label>
+                <div className="space-y-2">
+                  {([['isGranContribuyente', 'Gran contribuyente (13)'], ['isAgenteRetenedorIva', 'Agente retenedor de IVA (09)'], ['isAutorretenedorRenta', 'Autorretenedor de renta (15)']] as const).map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-sm text-slate-300">
+                      <input type="checkbox" checked={!!(formData as any)[key]} onChange={e => setFormData({...formData, [key]: e.target.checked})} className="h-4 w-4 accent-indigo-500" />
+                      {label}
+                    </label>
+                  ))}
                 </div>
               </div>
             </div>

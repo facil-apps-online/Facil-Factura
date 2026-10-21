@@ -79,7 +79,11 @@ namespace Fel.Api.Client.Controllers
                 // deduce una sugerencia razonable para los dos catálogos que Dataico exige.
                 dataicoRegimen = rut.ResponsibilityCodes.Contains("47") ? "SIMPLE" : "ORDINARIO",
                 dataicoTaxLevelCode = rut.ResponsibilityCodes.Contains("48") ? "RESPONSABLE_DE_IVA" : "NO_RESPONSABLE_DE_IVA",
-                isElectronicInvoicer = rut.IsElectronicInvoicer
+                isElectronicInvoicer = rut.IsElectronicInvoicer,
+                isGranContribuyente = rut.IsGranContribuyente,
+                isAgenteRetenedorIva = rut.IsAgenteRetenedorIva,
+                isAutorretenedorRenta = rut.IsAutorretenedorRenta,
+                incomeTaxRegime = rut.IncomeTaxRegimeCode
             });
         }
 
@@ -228,6 +232,10 @@ namespace Fel.Api.Client.Controllers
                 customer.FiscalResponsibilities = updateData.FiscalResponsibilities;
                 customer.DataicoTaxLevelCode = updateData.DataicoTaxLevelCode;
                 customer.DataicoRegimen = updateData.DataicoRegimen;
+                customer.IsGranContribuyente = updateData.IsGranContribuyente;
+                customer.IsAgenteRetenedorIva = updateData.IsAgenteRetenedorIva;
+                customer.IsAutorretenedorRenta = updateData.IsAutorretenedorRenta;
+                customer.IncomeTaxRegime = string.IsNullOrWhiteSpace(updateData.IncomeTaxRegime) ? null : updateData.IncomeTaxRegime;
                 customer.WorkerType = updateData.WorkerType;
                 customer.ContractType = updateData.ContractType;
                 customer.PaymentMeans = updateData.PaymentMeans;

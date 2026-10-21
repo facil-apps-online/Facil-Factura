@@ -45,6 +45,11 @@ namespace Fel.Core.Entities
         // Requeridos por Dataico al facturar a este tercero (catálogo propio de Dataico, no DIAN)
         public string DataicoTaxLevelCode { get; set; } = string.Empty; // Ej: SIMPLIFICADO, COMUN, RESPONSABLE_DE_IVA
         public string DataicoRegimen { get; set; } = string.Empty; // Ej: SIMPLE, ORDINARIO
+        // Responsabilidades fiscales (las mismas que tiene un cliente): marcas del RUT y régimen de renta (05 ordinario, 04 especial, 47 simple).
+        public bool IsGranContribuyente { get; set; }
+        public bool IsAgenteRetenedorIva { get; set; }
+        public bool IsAutorretenedorRenta { get; set; }
+        public string? IncomeTaxRegime { get; set; }
 
         // Solo aplica cuando PartyType = Empleado (requeridos por Dataico para Nómina Electrónica)
         public string? WorkerType { get; set; }

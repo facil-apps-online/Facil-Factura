@@ -230,6 +230,10 @@ namespace Fel.Api.Superadmin.Controllers
             Fill("Teléfono fiscal", tenant.Phone, rut.Phone, v => tenant.Phone = v);
             Fill("Régimen", tenant.TaxRegime, data.TaxRegime, v => tenant.TaxRegime = v);
             Fill("Actividad económica", tenant.EconomicActivity, rut.EconomicActivity, v => tenant.EconomicActivity = v);
+            Fill("Régimen de renta", tenant.IncomeTaxRegime, rut.IncomeTaxRegimeCode, v => tenant.IncomeTaxRegime = v);
+            if (rut.IsGranContribuyente && !tenant.IsGranContribuyente) { tenant.IsGranContribuyente = true; filled.Add("Gran contribuyente"); }
+            if (rut.IsAgenteRetenedorIva && !tenant.IsAgenteRetenedorIva) { tenant.IsAgenteRetenedorIva = true; filled.Add("Agente retenedor de IVA"); }
+            if (rut.IsAutorretenedorRenta && !tenant.IsAutorretenedorRenta) { tenant.IsAutorretenedorRenta = true; filled.Add("Autorretenedor de renta"); }
 
             await using var tx = await _dbContext.Database.BeginTransactionAsync();
             await _dbContext.SaveChangesAsync();
@@ -264,9 +268,9 @@ namespace Fel.Api.Superadmin.Controllers
         /// </summary>
         private static string RegimenDesdeResponsabilidades(List<string> codigos)
         {
-            if (codigos.Contains("47")) return "Régimen Simple de Tributación";
+            if (codigos.Contains("47")) return "Régimen Simple";
             if (codigos.Contains("48")) return "Responsable de IVA";
-            return "No responsable de IVA";
+            return "No Responsable de IVA";
         }
 
         // Suspensión de la plataforma (p. ej. por mora): el tenant entra a su portal en solo lectura y sus clientes (y los de sus aliados) no
@@ -419,6 +423,10 @@ namespace Fel.Api.Superadmin.Controllers
                 // Datos fiscales del tenant: del RUT cuando viene; si no, los de la dirección física del formulario.
                 TaxRegime = rut?.TaxRegime ?? string.Empty,
                 EconomicActivity = rut?.EconomicActivity ?? string.Empty,
+                IsGranContribuyente = rut?.IsGranContribuyente ?? false,
+                IsAgenteRetenedorIva = rut?.IsAgenteRetenedorIva ?? false,
+                IsAutorretenedorRenta = rut?.IsAutorretenedorRenta ?? false,
+                IncomeTaxRegime = string.IsNullOrWhiteSpace(rut?.IncomeTaxRegime) ? null : rut!.IncomeTaxRegime,
                 Address = !string.IsNullOrWhiteSpace(rut?.Address) ? rut!.Address! : request.PhysicalAddressLine1 ?? string.Empty,
                 City = !string.IsNullOrWhiteSpace(rut?.City) ? rut!.City! : request.PhysicalCity ?? string.Empty,
                 Phone = !string.IsNullOrWhiteSpace(rut?.Phone) ? rut!.Phone! : request.ContactPhone ?? string.Empty
@@ -626,6 +634,10 @@ namespace Fel.Api.Superadmin.Controllers
             t.Phone,
             t.TaxRegime,
             t.EconomicActivity,
+            t.IsGranContribuyente,
+            t.IsAgenteRetenedorIva,
+            t.IsAutorretenedorRenta,
+            t.IncomeTaxRegime,
             t.DefaultLanguageCode,
             t.DefaultTimezone,
             t.DefaultCurrencyId,
@@ -677,6 +689,10 @@ namespace Fel.Api.Superadmin.Controllers
             tenant.Phone = request.Phone;
             tenant.TaxRegime = request.TaxRegime;
             tenant.EconomicActivity = request.EconomicActivity;
+            tenant.IsGranContribuyente = request.IsGranContribuyente;
+            tenant.IsAgenteRetenedorIva = request.IsAgenteRetenedorIva;
+            tenant.IsAutorretenedorRenta = request.IsAutorretenedorRenta;
+            tenant.IncomeTaxRegime = string.IsNullOrWhiteSpace(request.IncomeTaxRegime) ? null : request.IncomeTaxRegime;
             tenant.Latitude = request.Latitude;
             tenant.Longitude = request.Longitude;
 
@@ -1079,6 +1095,10 @@ namespace Fel.Api.Superadmin.Controllers
         public string Phone { get; set; } = string.Empty;
         public string TaxRegime { get; set; } = string.Empty;
         public string EconomicActivity { get; set; } = string.Empty;
+        public bool IsGranContribuyente { get; set; }
+        public bool IsAgenteRetenedorIva { get; set; }
+        public bool IsAutorretenedorRenta { get; set; }
+        public string? IncomeTaxRegime { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
 

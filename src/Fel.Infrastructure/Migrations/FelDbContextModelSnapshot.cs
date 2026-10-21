@@ -1824,7 +1824,20 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("IncomeTaxRegime")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
                     b.Property<bool>("IntegralSalary")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsAgenteRetenedorIva")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsAutorretenedorRenta")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsGranContribuyente")
                         .HasColumnType("bit");
 
                     b.Property<double?>("Latitude")
@@ -4966,7 +4979,20 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("FirstName")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("IncomeTaxRegime")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsAgenteRetenedorIva")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsAutorretenedorRenta")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsGranContribuyente")
                         .HasColumnType("bit");
 
                     b.Property<double?>("Latitude")

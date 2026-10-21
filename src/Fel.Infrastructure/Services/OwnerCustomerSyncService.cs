@@ -84,6 +84,8 @@ namespace Fel.Infrastructure.Services
                 DataicoTaxLevelCode = t.TaxRegime == "48" ? "RESPONSABLE_DE_IVA" : t.TaxRegime == "49" ? "NO_RESPONSABLE_DE_IVA"
                     : defaults?.CustomerTaxLevelCode ?? "NO_RESPONSABLE_DE_IVA",
                 DataicoRegimen = t.IncomeTaxRegime == "47" ? "SIMPLE" : defaults?.CustomerRegimen ?? "ORDINARIO",
+                IsGranContribuyente = t.IsGranContribuyente, IsAgenteRetenedorIva = t.IsAgenteRetenedorIva, IsAutorretenedorRenta = t.IsAutorretenedorRenta,
+                IncomeTaxRegime = t.IncomeTaxRegime,
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
             };
             if (!isCompany)
@@ -115,6 +117,17 @@ namespace Fel.Infrastructure.Services
             Str("Régimen tributario", c.TaxRegime, source.TaxRegime, v => c.TaxRegime = v);
             Str("Nivel tributario", c.DataicoTaxLevelCode, source.DataicoTaxLevelCode, v => c.DataicoTaxLevelCode = v);
             Str("Régimen", c.DataicoRegimen, source.DataicoRegimen, v => c.DataicoRegimen = v);
+
+            void Flag(string label, bool current, bool incoming, Action<bool> set)
+            {
+                if (!incoming || current) return;
+                if (apply) set(true);
+                fills.Add(label);
+            }
+            Flag("Gran contribuyente", c.IsGranContribuyente, source.IsGranContribuyente, v => c.IsGranContribuyente = v);
+            Flag("Agente retenedor de IVA", c.IsAgenteRetenedorIva, source.IsAgenteRetenedorIva, v => c.IsAgenteRetenedorIva = v);
+            Flag("Autorretenedor de renta", c.IsAutorretenedorRenta, source.IsAutorretenedorRenta, v => c.IsAutorretenedorRenta = v);
+            Str("Régimen de renta", c.IncomeTaxRegime ?? string.Empty, source.IncomeTaxRegime ?? string.Empty, v => c.IncomeTaxRegime = v);
 
             if (c.LinkedClientId != t.Id)
             {

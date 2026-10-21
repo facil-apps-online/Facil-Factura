@@ -72,7 +72,11 @@ namespace Fel.Infrastructure.Services
                     City = FirstNonEmpty(tenant.PhysicalCity, tenant.City),
                     IsActive = true,
                     CreatedAt = now,
-                    IntegratorId = NativeIntegratorId
+                    IntegratorId = NativeIntegratorId,
+                    IsGranContribuyente = tenant.IsGranContribuyente,
+                    IsAgenteRetenedorIva = tenant.IsAgenteRetenedorIva,
+                    IsAutorretenedorRenta = tenant.IsAutorretenedorRenta,
+                    IncomeTaxRegime = tenant.IncomeTaxRegime
                 };
                 if (rut != null) FillClient(owner, rut, onlyEmpty: false, null);
                 db.Clients.Add(owner);

@@ -52,11 +52,14 @@ namespace Fel.Api.Tenant.Controllers
             public bool CountPayroll { get; set; } = true;
             // Nulo = la acción general del tenant.
             public PlanExceedAction? ExceedAction { get; set; }
+            // Productos de la empresa emisora para las líneas de la factura de este plan. Nulo = los del tenant.
+            public Guid? FeeProductId { get; set; }
+            public Guid? ExtraProductId { get; set; }
         }
 
         private static object ToDto(TenantPlan p, int clients) => new
         {
-            p.Id, p.Name, p.Description, p.Cycle, p.FixedFee, p.FeeTiming, p.IncludedDocuments, p.PricePerDocument, p.Scope, p.IsActive, p.ExceedAction,
+            p.Id, p.Name, p.Description, p.Cycle, p.FixedFee, p.FeeTiming, p.IncludedDocuments, p.PricePerDocument, p.Scope, p.IsActive, p.ExceedAction, p.FeeProductId, p.ExtraProductId,
             countApproved = p.CountedStatuses.HasFlag(PlanCountedStatuses.Approved),
             countRejected = p.CountedStatuses.HasFlag(PlanCountedStatuses.Rejected),
             countInProcess = p.CountedStatuses.HasFlag(PlanCountedStatuses.InProcess),
@@ -90,6 +93,8 @@ namespace Fel.Api.Tenant.Controllers
             p.PricePerDocument = r.PricePerDocument;
             p.Scope = r.Scope;
             p.ExceedAction = r.ExceedAction;
+            p.FeeProductId = r.FeeProductId;
+            p.ExtraProductId = r.ExtraProductId;
             p.CountedStatuses = (r.CountApproved ? PlanCountedStatuses.Approved : 0) | (r.CountRejected ? PlanCountedStatuses.Rejected : 0) | (r.CountInProcess ? PlanCountedStatuses.InProcess : 0);
             p.CountedTypes = (r.CountInvoices ? PlanCountedTypes.Invoices : 0) | (r.CountNotes ? PlanCountedTypes.Notes : 0)
                              | (r.CountSupportDocuments ? PlanCountedTypes.SupportDocuments : 0) | (r.CountPayroll ? PlanCountedTypes.Payroll : 0);

@@ -74,6 +74,10 @@ namespace Fel.Core.Entities
         // Qué hacer al llegar al límite de documentos incluidos. Nulo = la opción general del tenant (TenantPlanSettings).
         public PlanExceedAction? ExceedAction { get; set; }
 
+        // Productos de la empresa emisora del tenant para las líneas de cuota y de excedente de la factura de este plan. Nulo = los del tenant.
+        public Guid? FeeProductId { get; set; }
+        public Guid? ExtraProductId { get; set; }
+
         // Archivar no borra: los clientes con historial siguen apuntando a su plan.
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -99,6 +103,8 @@ namespace Fel.Core.Entities
         public decimal? PricePerDocumentOverride { get; set; }
         // Pisa la acción al llegar al límite solo para este cliente. Nulo = la del plan o la general.
         public PlanExceedAction? ExceedActionOverride { get; set; }
+        // Facturación automática de planes: Skip = no se le generan borradores a este cliente.
+        public PlanInvoicingMode InvoicingMode { get; set; } = PlanInvoicingMode.Default;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }

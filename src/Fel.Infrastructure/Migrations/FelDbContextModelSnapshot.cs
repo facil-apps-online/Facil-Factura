@@ -1573,6 +1573,9 @@ namespace Fel.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int>("InvoicingMode")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("PlanId")
                         .HasColumnType("uniqueidentifier");
 
@@ -3062,6 +3065,61 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("AssignmentId", "PeriodStart", "Kind", "BranchId");
 
                     b.ToTable("PlanAlerts", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.PlanCharge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid?>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ExtraAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("FeeAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PlanName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("RunPeriod")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "RunPeriod")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "RunPeriod");
+
+                    b.ToTable("PlanCharges", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
@@ -5146,6 +5204,34 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("TenantIntegratorBillings", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.TenantInvoicingSettings", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DraftDay")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ExtraProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("FeeProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("GenerateDrafts")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("OwnerClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("TenantId");
+
+                    b.ToTable("TenantInvoicingSettings", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.TenantPlan", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5170,6 +5256,12 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<int?>("ExceedAction")
                         .HasColumnType("int");
+
+                    b.Property<Guid?>("ExtraProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("FeeProductId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("FeeTiming")
                         .HasColumnType("int");
@@ -6267,6 +6359,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Client");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.PlanCharge", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
@@ -6433,6 +6536,17 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Integrator");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.TenantInvoicingSettings", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Tenant");
                 });

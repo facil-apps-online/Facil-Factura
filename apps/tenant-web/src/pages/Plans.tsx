@@ -5,6 +5,7 @@ import { api, getErrorMessage } from '../lib/api';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import PlanFormModal, { type Plan, CYCLE_LABELS, SCOPE_LABELS } from '../components/PlanFormModal';
 import PlanSettingsCard, { EXCEED_LABELS } from '../components/PlanSettingsCard';
+import InvoicingSettingsCard from '../components/InvoicingSettingsCard';
 
 const money = (value: number) => `$${value.toLocaleString('es-CO')}`;
 
@@ -73,6 +74,7 @@ export default function Plans() {
       </div>
 
       <PlanSettingsCard />
+      <InvoicingSettingsCard />
 
       <DataTable
         rows={plans ?? []}

@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { Home, Users, FileKey, FileSignature, Settings, Palette, FileText, Briefcase, Code2, ChevronLeft, ChevronRight, Layers, Building2, Check, Loader2, Network, Package } from 'lucide-react';
+import { Home, Users, FileKey, FileSignature, Settings, Palette, FileText, Briefcase, Code2, ChevronLeft, ChevronRight, Layers, Building2, Check, Loader2, Network, Package, Receipt } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from './lib/api';
 import { Toaster } from 'sonner';
@@ -20,6 +20,7 @@ import Developers from './pages/Developers';
 import GroupBilling from './pages/GroupBilling';
 import Allies from './pages/Allies';
 import Plans from './pages/Plans';
+import Charges from './pages/Charges';
 import SessionGuard from '@shared/components/session/SessionGuard';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 import ProfilePage from '@shared/components/session/ProfilePage';
@@ -119,6 +120,7 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
     { to: "/associates", icon: <Briefcase size={20} />, label: "Asociados" },
     { to: "/group-billing", icon: <Layers size={20} />, label: "Facturación del grupo" },
     { to: "/plans", icon: <Package size={20} />, label: "Planes" },
+    { to: "/charges", icon: <Receipt size={20} />, label: "Cobros" },
     { to: "/allies", icon: <Network size={20} />, label: "Aliados" },
     { to: "/branding", icon: <Palette size={20} />, label: "Apariencia (Branding)" },
     { to: "/templates", icon: <FileText size={20} />, label: "Modelos de Documentos" },
@@ -320,6 +322,7 @@ function App() {
                   <Route path="/group-billing" element={<GroupBilling />} />
                   <Route path="/allies" element={<Allies />} />
                   <Route path="/plans" element={<Plans />} />
+                  <Route path="/charges" element={<Charges />} />
                   <Route path="/certificates" element={<Certificates />} />
                   <Route path="/resolutions" element={<Resolutions />} />
                   <Route path="/branding" element={<Branding />} />

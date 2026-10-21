@@ -57,6 +57,8 @@ builder.ConfigureServices((hostContext, services) =>
     services.AddHostedService<CertificatePollingWorker>(); // Sincroniza solicitudes de certificado con Viafirma, ensambla el .p12 y notifica al cliente
     services.AddScoped<Fel.Infrastructure.Services.ClientPlanUsageService>();
     services.AddScoped<Fel.Infrastructure.Services.PlanAlertService>();
+    services.AddScoped<Fel.Infrastructure.Services.PlanInvoicingService>();
+    services.AddHostedService<PlanInvoicingWorker>(); // Borradores de cobro de los planes (facturación automática opcional del tenant)
     services.AddHostedService<PlanAlertWorker>(); // Avisos y bloqueo por límite de documentos de los planes
 });
 

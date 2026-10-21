@@ -39,7 +39,9 @@ export default function SupportEntry({ onAuthSuccess }: { onAuthSuccess: () => v
     localStorage.removeItem(BRANCH_STORAGE_KEY);
     localStorage.setItem(SUPPORT_STORAGE_KEY, JSON.stringify({ client: params.get('client') ?? '', by: params.get('by') ?? '' } satisfies SupportInfo));
     onAuthSuccess();
-    navigate('/', { replace: true });
+    // Ruta a la que abrir (solo rutas internas del portal).
+    const next = params.get('next');
+    navigate(next && next.startsWith('/') && !next.startsWith('//') ? next : '/', { replace: true });
   }, [navigate, onAuthSuccess]);
 
   return (

@@ -71,6 +71,8 @@ namespace Fel.Infrastructure.Data
         public DbSet<ClientPlanAssignment> ClientPlanAssignments => Set<ClientPlanAssignment>();
         public DbSet<TenantPlanSettings> TenantPlanSettings => Set<TenantPlanSettings>();
         public DbSet<PlanAlert> PlanAlerts => Set<PlanAlert>();
+        public DbSet<TenantInvoicingSettings> TenantInvoicingSettings => Set<TenantInvoicingSettings>();
+        public DbSet<PlanCharge> PlanCharges => Set<PlanCharge>();
         public DbSet<ClientEnabledRetentionConcept> ClientEnabledRetentionConcepts => Set<ClientEnabledRetentionConcept>();
         public DbSet<DeveloperUser> DeveloperUsers => Set<DeveloperUser>();
 
@@ -929,6 +931,26 @@ namespace Fel.Infrastructure.Data
                 entity.ToTable("TenantPlanSettings");
                 entity.HasKey(e => e.TenantId);
                 entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<TenantInvoicingSettings>(entity =>
+            {
+                entity.ToTable("TenantInvoicingSettings");
+                entity.HasKey(e => e.TenantId);
+                entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<PlanCharge>(entity =>
+            {
+                entity.ToTable("PlanCharges");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.PlanName).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Description).HasMaxLength(500);
+                entity.Property(e => e.FeeAmount).HasPrecision(18, 2);
+                entity.Property(e => e.ExtraAmount).HasPrecision(18, 2);
+                entity.HasIndex(e => new { e.ClientId, e.RunPeriod }).IsUnique();
+                entity.HasIndex(e => new { e.TenantId, e.RunPeriod });
+                entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<PlanAlert>(entity =>

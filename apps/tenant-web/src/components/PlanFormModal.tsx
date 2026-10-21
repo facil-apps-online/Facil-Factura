@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import SearchableSelect from '@shared/components/SearchableSelect';
+import { productLabel, type InvoicingProduct } from './InvoicingSettingsCard';
 
 export interface Plan {
   id: string;
@@ -23,6 +24,8 @@ export interface Plan {
   countSupportDocuments: boolean;
   countPayroll: boolean;
   exceedAction: 'Notify' | 'Block' | null;
+  feeProductId: string | null;
+  extraProductId: string | null;
   clients: number;
 }
 
@@ -31,7 +34,7 @@ export const SCOPE_LABELS: Record<string, string> = { PerClient: 'Toda la empres
 
 const EMPTY: Omit<Plan, 'id' | 'isActive' | 'clients'> = {
   name: '', description: '', cycle: 'Monthly', fixedFee: 0, feeTiming: 'Advance', includedDocuments: 0, pricePerDocument: 0, scope: 'PerClient',
-  countApproved: true, countRejected: true, countInProcess: false, countInvoices: true, countNotes: true, countSupportDocuments: true, countPayroll: true, exceedAction: null,
+  countApproved: true, countRejected: true, countInProcess: false, countInvoices: true, countNotes: true, countSupportDocuments: true, countPayroll: true, exceedAction: null, feeProductId: null, extraProductId: null,
 };
 
 // Plantillas para empezar: cada una solo cambia las reglas de documentos; todo se puede ajustar después.
@@ -65,9 +68,11 @@ export default function PlanFormModal({ open, plan, onClose, onSaved }: PlanForm
   const [form, setForm] = useState({ ...EMPTY });
   const [unlimited, setUnlimited] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [products, setProducts] = useState<InvoicingProduct[]>([]);
 
   useEffect(() => {
     if (!open) return;
+    api.get<InvoicingProduct[]>('/tenant/invoicing/products').then(res => setProducts(res.data)).catch(() => setProducts([]));
     if (plan) {
       const { id, isActive, clients, ...rest } = plan;
       setForm({ ...EMPTY, ...rest, description: rest.description ?? '' });
@@ -191,6 +196,23 @@ export default function PlanFormModal({ open, plan, onClose, onSaved }: PlanForm
               <SearchableSelect value={form.exceedAction ?? ''} onChange={v => set({ exceedAction: (v || null) as Plan['exceedAction'] })} placeholder="Usar la opción general"
                 options={[{ value: '', label: 'Usar la opción general' }, { value: 'Notify', label: 'Solo avisar' }, { value: 'Block', label: 'Bloquear al cliente' }]} />
               <p className="mt-1 text-xs text-slate-400">Los adicionales se cobran siempre al precio del plan. Bloquear impide que el cliente entre y emita hasta el siguiente ciclo.</p>
+            </div>
+          )}
+
+          {products.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelClass}>Producto de la cuota en la factura (opcional)</label>
+                <SearchableSelect value={form.feeProductId ?? ''} onChange={v => set({ feeProductId: v || null })} placeholder="El de la configuración general"
+                  options={[{ value: '', label: 'El de la configuración general' }, ...products.map(p => ({ value: p.id, label: productLabel(p) }))]} />
+              </div>
+              {!unlimited && (
+                <div>
+                  <label className={labelClass}>Producto de los documentos adicionales (opcional)</label>
+                  <SearchableSelect value={form.extraProductId ?? ''} onChange={v => set({ extraProductId: v || null })} placeholder="El de la configuración general"
+                    options={[{ value: '', label: 'El de la configuración general' }, ...products.map(p => ({ value: p.id, label: productLabel(p) }))]} />
+                </div>
+              )}
             </div>
           )}
 

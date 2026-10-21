@@ -46,7 +46,7 @@ namespace Fel.Api.Tenant.Controllers
                 assignment = assignment == null ? null : new
                 {
                     assignment.Id, assignment.PlanId, planName = assignment.Plan?.Name, assignment.StartDate, assignment.EndDate,
-                    assignment.FixedFeeOverride, assignment.PricePerDocumentOverride, assignment.ExceedActionOverride, planExceedAction = assignment.Plan?.ExceedAction
+                    assignment.FixedFeeOverride, assignment.PricePerDocumentOverride, assignment.ExceedActionOverride, assignment.InvoicingMode, planExceedAction = assignment.Plan?.ExceedAction
                 },
                 usage = history.FirstOrDefault(),
                 history,
@@ -62,6 +62,7 @@ namespace Fel.Api.Tenant.Controllers
             public decimal? FixedFeeOverride { get; set; }
             public decimal? PricePerDocumentOverride { get; set; }
             public Fel.Core.Entities.PlanExceedAction? ExceedActionOverride { get; set; }
+            public Fel.Core.Entities.PlanInvoicingMode InvoicingMode { get; set; }
         }
 
         [HttpPut]
@@ -76,7 +77,7 @@ namespace Fel.Api.Tenant.Controllers
                 return BadRequest("El plan está archivado.");
             if (request.FixedFeeOverride is < 0 || request.PricePerDocumentOverride is < 0) return BadRequest("La cuota y el precio no pueden ser negativos.");
 
-            await _usage.AssignAsync(clientId, plan.Id, (request.StartDate ?? DateTime.UtcNow).Date, request.FixedFeeOverride, request.PricePerDocumentOverride, request.ExceedActionOverride);
+            await _usage.AssignAsync(clientId, plan.Id, (request.StartDate ?? DateTime.UtcNow).Date, request.FixedFeeOverride, request.PricePerDocumentOverride, request.ExceedActionOverride, request.InvoicingMode);
             await _dbContext.SaveChangesAsync();
             return await Get(clientId);
         }

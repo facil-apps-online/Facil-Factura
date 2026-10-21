@@ -82,7 +82,7 @@ namespace Fel.Infrastructure.Services
 
         // Asigna un plan a un cliente desde "start": cierra el plan vigente el día anterior (queda el historial) y descarta asignaciones futuras. Si el
         // vigente empezó ese mismo día, se reemplaza en lugar de dejar dos el mismo día. No guarda: quien llama hace SaveChanges.
-        public async Task AssignAsync(Guid clientId, Guid planId, DateTime start, decimal? feeOverride, decimal? priceOverride, PlanExceedAction? exceedOverride = null)
+        public async Task AssignAsync(Guid clientId, Guid planId, DateTime start, decimal? feeOverride, decimal? priceOverride, PlanExceedAction? exceedOverride = null, PlanInvoicingMode invoicingMode = PlanInvoicingMode.Default)
         {
             var day = start.Date;
             var all = await _dbContext.ClientPlanAssignments.Where(a => a.ClientId == clientId).ToListAsync();
@@ -96,6 +96,7 @@ namespace Fel.Infrastructure.Services
                 current.FixedFeeOverride = feeOverride;
                 current.PricePerDocumentOverride = priceOverride;
                 current.ExceedActionOverride = exceedOverride;
+                current.InvoicingMode = invoicingMode;
                 return;
             }
             if (current != null) current.EndDate = day.AddDays(-1);
@@ -103,7 +104,7 @@ namespace Fel.Infrastructure.Services
             _dbContext.ClientPlanAssignments.Add(new ClientPlanAssignment
             {
                 Id = Guid.NewGuid(), ClientId = clientId, PlanId = planId, StartDate = day,
-                FixedFeeOverride = feeOverride, PricePerDocumentOverride = priceOverride, ExceedActionOverride = exceedOverride, CreatedAt = DateTime.UtcNow
+                FixedFeeOverride = feeOverride, PricePerDocumentOverride = priceOverride, ExceedActionOverride = exceedOverride, InvoicingMode = invoicingMode, CreatedAt = DateTime.UtcNow
             });
         }
 

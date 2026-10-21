@@ -39,6 +39,7 @@ interface Assignment {
   fixedFeeOverride: number | null;
   pricePerDocumentOverride: number | null;
   exceedActionOverride: 'Notify' | 'Block' | null;
+  invoicingMode: 'Default' | 'Skip';
 }
 
 interface PlanAlertRow {
@@ -76,6 +77,7 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
   const [feeOverride, setFeeOverride] = useState('');
   const [priceOverride, setPriceOverride] = useState('');
   const [exceedOverride, setExceedOverride] = useState('');
+  const [skipInvoicing, setSkipInvoicing] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -88,6 +90,7 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
       setFeeOverride(a?.fixedFeeOverride != null ? String(a.fixedFeeOverride) : '');
       setPriceOverride(a?.pricePerDocumentOverride != null ? String(a.pricePerDocumentOverride) : '');
       setExceedOverride(a?.exceedActionOverride ?? '');
+      setSkipInvoicing(a?.invoicingMode === 'Skip');
     } catch (err) {
       toast.error(getErrorMessage(err, 'No se pudo cargar el plan del cliente'));
       setState({ assignment: null, usage: null, history: [], alerts: [] });
@@ -105,6 +108,7 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
         fixedFeeOverride: feeOverride === '' ? null : Number(feeOverride),
         pricePerDocumentOverride: priceOverride === '' ? null : Number(priceOverride),
         exceedActionOverride: exceedOverride === '' ? null : exceedOverride,
+        invoicingMode: skipInvoicing ? 'Skip' : 'Default',
       });
       toast.success('Plan asignado');
       await load();
@@ -174,6 +178,10 @@ export default function ClientPlanTab({ clientId }: { clientId: string }) {
           <SearchableSelect value={exceedOverride} onChange={setExceedOverride} placeholder="La del plan"
             options={[{ value: '', label: 'La del plan (o la opción general)' }, ...Object.entries(EXCEED_LABELS).map(([value, label]) => ({ value, label }))]} />
         </div>
+        <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={skipInvoicing} onChange={e => setSkipInvoicing(e.target.checked)} className="h-4 w-4 accent-blue-600" />
+          No generar borradores de cobro para este cliente (facturación automática de planes)
+        </label>
         <p className="mt-3 text-xs text-slate-400">La cuota, el precio y la acción especiales pisan los del plan solo para este cliente. Déjalos vacíos para usar los del plan.</p>
         <div className="mt-4 flex gap-3">
           <button onClick={assign} disabled={saving || !planId} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">

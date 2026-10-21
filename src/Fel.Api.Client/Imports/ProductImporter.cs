@@ -15,6 +15,7 @@ namespace Fel.Api.Client.Imports
         public ISet<string> ExistingCodes { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Tarifas de IVA del catálogo (19, 5, 10...): una tarifa distinta se carga igual, con aviso.
         public ISet<decimal> IvaRates { get; init; } = new HashSet<decimal>();
+        public BulkImportOptions Options { get; init; } = new();
     }
 
     public sealed class ProductImportResult
@@ -62,7 +63,24 @@ namespace Fel.Api.Client.Imports
                 var code = ImportText.Collapse(row.Get("REF"));
                 var name = ImportText.Collapse(row.Get("DESCRIPCION"));
                 if (code.Length == 0) preview.Errors.Add("Falta el código (REF).");
+                else if (code.Length > BulkImportLimits.Code) preview.Errors.Add($"El código tiene {code.Length} caracteres; el máximo es {BulkImportLimits.Code}.");
                 if (name.Length == 0) preview.Errors.Add("Falta la descripción.");
+
+                // Nombre más largo de lo que admite la base: no se recorta en silencio; el usuario decide cortarlo u omitir la fila.
+                var nameDecisionPending = false;
+                var omitRow = false;
+                if (name.Length > BulkImportLimits.ProductName)
+                {
+                    ctx.Options.Decisions.TryGetValue(row.Row, out var chosenRow);
+                    var choice = chosenRow != null && chosenRow.TryGetValue("nameLength", out var c) ? c : null;
+                    if (choice == "truncate")
+                    {
+                        preview.Warnings.Add($"El nombre tenía {name.Length} caracteres y se cortó a {BulkImportLimits.ProductName}.");
+                        name = name[..BulkImportLimits.ProductName].TrimEnd();
+                    }
+                    else if (choice == "omit") omitRow = true;
+                    else nameDecisionPending = true;
+                }
 
                 // ---- precio
                 decimal price = 0;
@@ -136,6 +154,12 @@ namespace Fel.Api.Client.Imports
 
                 // ---- estado
                 if (preview.Errors.Count > 0) preview.Status = ImportStatus.Error;
+                else if (omitRow) preview.Status = ImportStatus.Skipped;
+                else if (nameDecisionPending)
+                {
+                    preview.Status = ImportStatus.Decision;
+                    preview.Decision = new ImportDecision { Field = "nameLength", Label = $"El nombre tiene {name.Length} caracteres (máximo {BulkImportLimits.ProductName})", Options = BulkImportLimits.NameTooLong(BulkImportLimits.ProductName).ToList() };
+                }
                 else if (ctx.ExistingCodes.Contains(code)) { preview.Status = ImportStatus.Duplicate; preview.Notes.Add($"Ya existe un producto con el código {code}."); }
                 else if (seen.TryGetValue(code, out var firstRow)) { preview.Status = ImportStatus.Duplicate; preview.Notes.Add($"Código repetido en la fila {firstRow}."); }
 

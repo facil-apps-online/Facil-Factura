@@ -175,25 +175,30 @@ namespace Fel.Api.Client.Controllers
         // Valida el archivo completo SIN guardar nada y devuelve, fila por fila, lo que se crearía y lo que se omite.
         [HttpPost("import/preview")]
         [RequestSizeLimit(Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes)]
-        public async Task<IActionResult> ImportPreview(IFormFile file)
+        public async Task<IActionResult> ImportPreview(IFormFile file, [FromForm] string? options)
         {
-            var analysis = await AnalyzeImportAsync(file);
+            var analysis = await AnalyzeImportAsync(file, options);
             return analysis.Error != null ? BadRequest(analysis.Error) : Ok(analysis.Result!.Preview);
         }
 
         // Vuelve a validar el mismo archivo y guarda los productos válidos en una sola operación: o se crean todos o ninguno.
         [HttpPost("import/confirm")]
         [RequestSizeLimit(Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes)]
-        public async Task<IActionResult> ImportConfirm(IFormFile file)
+        public async Task<IActionResult> ImportConfirm(IFormFile file, [FromForm] string? options)
         {
-            var analysis = await AnalyzeImportAsync(file);
+            var analysis = await AnalyzeImportAsync(file, options);
             if (analysis.Error != null) return BadRequest(analysis.Error);
             var result = analysis.Result!;
             if (result.Preview.FileErrors.Count > 0) return BadRequest(string.Join(" ", result.Preview.FileErrors));
             if (result.Products.Count == 0) return BadRequest("No hay productos por crear en este archivo.");
 
             _dbContext.Products.AddRange(result.Products);
-            await _dbContext.SaveChangesAsync();
+            try { await _dbContext.SaveChangesAsync(); }
+            catch (DbUpdateException ex)
+            {
+                // Todo o nada: no se creó ningún producto. Se explica en vez de responder 500.
+                return BadRequest("No se pudo guardar la carga; no se creó ningún producto. " + (ex.InnerException?.Message ?? ex.Message));
+            }
             return Ok(new Fel.Api.Client.Imports.BulkImportResult
             {
                 Created = result.Products.Count,
@@ -201,12 +206,14 @@ namespace Fel.Api.Client.Controllers
             });
         }
 
-        private async Task<(Fel.Api.Client.Imports.ProductImportResult? Result, string? Error)> AnalyzeImportAsync(IFormFile? file)
+        private async Task<(Fel.Api.Client.Imports.ProductImportResult? Result, string? Error)> AnalyzeImportAsync(IFormFile? file, string? optionsJson)
         {
             var clientId = GetCurrentClientId();
             if (file == null || file.Length == 0) return (null, "Debes adjuntar un archivo Excel (.xlsx).");
             if (file.Length > Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes) return (null, "El archivo supera los 10 MB.");
 
+            var options = Fel.Api.Client.Imports.BulkImportOptionsParser.Parse(optionsJson);
+            if (options == null) return (null, "Las opciones de la carga no son válidas.");
             var scope = ParseScope(Request.Query["scope"]);
             var codes = await _dbContext.Products.AsNoTracking().Where(p => p.ClientId == clientId && p.Scope == scope).Select(p => p.Code).ToListAsync();
             var rates = (await _dbContext.TaxCatalogItems.AsNoTracking().Where(t => t.Kind == TaxCatalogKind.IvaRate && t.IsActive).Select(t => t.Category).ToListAsync())
@@ -217,7 +224,8 @@ namespace Fel.Api.Client.Controllers
                 Scope = scope,
                 Units = await _dbContext.UnitsOfMeasure.AsNoTracking().Where(u => u.IsActive).ToListAsync(),
                 ExistingCodes = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase),
-                IvaRates = new HashSet<decimal>(rates)
+                IvaRates = new HashSet<decimal>(rates),
+                Options = options
             };
 
             using var stream = file.OpenReadStream();

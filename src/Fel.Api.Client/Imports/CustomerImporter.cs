@@ -109,6 +109,7 @@ namespace Fel.Api.Client.Imports
                 var number = idType is "41" or "42" ? Regex.Replace(rawNumber, "[^A-Za-z0-9]", "").ToUpperInvariant() : ImportText.DigitsOnly(rawNumber);
 
                 if (number.Length == 0) preview.Errors.Add("Falta el número de identificación.");
+                else if (number.Length > BulkImportLimits.IdentificationNumber) preview.Errors.Add($"La identificación tiene {number.Length} caracteres; el máximo es {BulkImportLimits.IdentificationNumber}.");
                 else if (idType is "13" or "31" or "22" or "12" or "11" or "21" or "47" or "48" or "91" && !Regex.IsMatch(rawNumber.Trim().Replace(".", "").Replace(" ", ""), @"^\d+$"))
                     preview.Warnings.Add($"La identificación '{row.Get("IDENTIFICACION")}' trae caracteres que no son dígitos; se guardó solo con los números.");
 
@@ -122,6 +123,20 @@ namespace Fel.Api.Client.Imports
                 var isNit = idType is "31" or "50";
                 var name = isNit ? (razon.Length > 0 ? razon : composed) : (composed.Length > 0 ? composed : razon);
                 if (name.Length == 0) preview.Errors.Add("Falta el nombre o la razón social.");
+                // Nombre más largo de lo que admite la base: el usuario decide cortarlo u omitir la fila.
+                var nameDecisionPending = false;
+                var omitRow = false;
+                if (name.Length > BulkImportLimits.Name)
+                {
+                    var choice = decisions.TryGetValue("nameLength", out var c) ? c : null;
+                    if (choice == "truncate")
+                    {
+                        preview.Warnings.Add($"El nombre tenía {name.Length} caracteres y se cortó a {BulkImportLimits.Name}.");
+                        name = name[..BulkImportLimits.Name].TrimEnd();
+                    }
+                    else if (choice == "omit") omitRow = true;
+                    else nameDecisionPending = true;
+                }
                 foreach (var surname in new[] { last, secondLast })
                     if (surname.Length > 0 && !surname.Any(char.IsLetter)) preview.Warnings.Add($"El apellido '{surname}' parece un dato mal digitado.");
 
@@ -225,9 +240,14 @@ namespace Fel.Api.Client.Imports
                     preview.Status = ImportStatus.Decision;
                     preview.Decision = new ImportDecision { Field = "partyType", Label = $"Categoría '{row.Get("CATEGORIA")}'", Options = PartyOptions.ToList() };
                 }
-                else if (roles.Count == 0)
+                else if (omitRow || roles.Count == 0)
                 {
                     preview.Status = ImportStatus.Skipped;
+                }
+                else if (nameDecisionPending)
+                {
+                    preview.Status = ImportStatus.Decision;
+                    preview.Decision = new ImportDecision { Field = "nameLength", Label = $"El nombre tiene {name.Length} caracteres (máximo {BulkImportLimits.Name})", Options = BulkImportLimits.NameTooLong(BulkImportLimits.Name).ToList() };
                 }
 
                 // ---- lo que se guardaría

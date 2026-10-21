@@ -284,7 +284,12 @@ namespace Fel.Api.Client.Controllers
             if (result.Customers.Count == 0) return BadRequest("No hay terceros por crear en este archivo.");
 
             _dbContext.Customers.AddRange(result.Customers);
-            await _dbContext.SaveChangesAsync();
+            try { await _dbContext.SaveChangesAsync(); }
+            catch (DbUpdateException ex)
+            {
+                // Todo o nada: no se creó ningún tercero. Se explica en vez de responder 500.
+                return BadRequest("No se pudo guardar la carga; no se creó ningún tercero. " + (ex.InnerException?.Message ?? ex.Message));
+            }
             return Ok(new Fel.Api.Client.Imports.BulkImportResult { Created = result.Customers.Count, Skipped = result.Preview.Rows.Count(r => r.Status != Fel.Api.Client.Imports.ImportStatus.Create) });
         }
 

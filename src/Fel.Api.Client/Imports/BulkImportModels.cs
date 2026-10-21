@@ -71,6 +71,31 @@ namespace Fel.Api.Client.Imports
         public Dictionary<int, Dictionary<string, string>> Decisions { get; set; } = new();
     }
 
+    public static class BulkImportLimits
+    {
+        // Largos de las columnas de la base (Products y Customers). Una fila que los supera no se guarda: se avisa en la vista previa.
+        public const int Name = 250;          // terceros
+        public const int ProductName = 1000;  // productos
+        public const int Code = 50;
+        public const int IdentificationNumber = 50;
+
+        public static ImportOption[] NameTooLong(int max) => new ImportOption[]
+        {
+            new("truncate", $"Cortar el nombre a {max} caracteres"), new("omit", "Omitir esta fila")
+        };
+    }
+
+    public static class BulkImportOptionsParser
+    {
+        // Opciones que el portal manda junto al archivo (JSON). Null en error.
+        public static BulkImportOptions? Parse(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return new BulkImportOptions();
+            try { return System.Text.Json.JsonSerializer.Deserialize<BulkImportOptions>(json, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new BulkImportOptions(); }
+            catch (System.Text.Json.JsonException) { return null; }
+        }
+    }
+
     public sealed class BulkImportResult
     {
         public int Created { get; set; }

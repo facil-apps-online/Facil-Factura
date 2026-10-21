@@ -41,18 +41,32 @@ namespace Fel.Infrastructure.Dataico
             Document invoice, Customer customer, ICollection<DocumentItem> items,
             Client client, Resolution resolution, string paymentMeans, string paymentMeansType)
         {
-            // Con Dataico se emiten factura estándar, factura de mandato y notas crédito/débito: los demás tipos de
-            // factura (AIU, salud, transporte) llevan información propia que este envío no manda, y saldrían como
+            // Con Dataico se emiten factura estándar, de mandato, de exportación, AIU y notas crédito/débito: los demás tipos de
+            // factura (salud, transporte) llevan información propia que este envío no manda, y saldrían como
             // una venta común. Solo están disponibles con emisión directa a la DIAN.
             var isMandate = false;
             var isExport = false;
+            Fel.Core.Models.AiuContractData? aiu = null;
             if (invoice.DocumentTypeId.HasValue)
             {
                 var documentType = await _dbContext.DocumentTypes.AsNoTracking()
                     .Where(t => t.Id == invoice.DocumentTypeId.Value).Select(t => new { t.Code, t.OperationType }).FirstOrDefaultAsync();
-                if (documentType != null && documentType.Code is not ("FE-STD" or "FE-MANDATO" or "FE-EXP" or "NC" or "ND"))
+                if (documentType != null && documentType.Code is not ("FE-STD" or "FE-MANDATO" or "FE-EXP" or "FE-AIU" or "NC" or "ND"))
                 {
-                    throw new NotSupportedException("Este tipo de factura solo está disponible con emisión directa a la DIAN; con el integrador configurado solo se emite factura estándar, de mandato, de exportación y notas crédito/débito.");
+                    throw new NotSupportedException("Este tipo de factura solo está disponible con emisión directa a la DIAN; con el integrador configurado solo se emite factura estándar, de mandato, de exportación, AIU y notas crédito/débito.");
+                }
+                if (documentType?.Code == "FE-AIU")
+                {
+                    // Mismas exigencias que la vía directa: el objeto del contrato y las tres líneas A, I y U.
+                    aiu = Fel.Core.Models.AiuContractData.TryRead(invoice.SectorExtensionData);
+                    if (aiu == null || string.IsNullOrWhiteSpace(aiu.ContractObject))
+                        throw new NotSupportedException("La factura AIU debe indicar el objeto del contrato.");
+                    var codes = items.Select(i => i.Code).ToHashSet();
+                    // Dataico pide además la línea del servicio contratado: un borrador AIU creado antes de que existiera no la tiene.
+                    if (!codes.Contains(Fel.Core.Models.AiuContractData.ServiceCode))
+                        throw new NotSupportedException("La factura AIU debe llevar la línea del servicio contratado. Abre el borrador y vuelve a indicar el valor del servicio para regenerar las líneas.");
+                    if (!codes.Contains(Fel.Core.Models.AiuContractData.AdminCode) || !codes.Contains(Fel.Core.Models.AiuContractData.UnforeseenCode) || !codes.Contains(Fel.Core.Models.AiuContractData.ProfitCode))
+                        throw new NotSupportedException("La factura AIU debe llevar las líneas de Administración, Imprevistos y Utilidad.");
                 }
                 isMandate = documentType?.OperationType == DocumentType.MandateOperationType;
                 isExport = documentType?.Code == "FE-EXP";
@@ -120,7 +134,7 @@ namespace Fel.Infrastructure.Dataico
                     .Where(t => t.DataicoCode != null && t.DataicoCode != "")
                     .ToDictionaryAsync(t => t.Code, t => t.DataicoCode!);
 
-                var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType, identificationTypeOverrides, isMandate, isExport);
+                var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType, identificationTypeOverrides, isMandate, isExport, aiu);
                 result = await _dataicoApiService.SendInvoiceAsync(dataicoRequest, credentials);
             }
 

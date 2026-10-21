@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Fel.Core.Entities;
+using Fel.Core.Models;
 using Fel.Infrastructure.Dataico.Models;
 
 namespace Fel.Infrastructure.Dataico
@@ -105,7 +106,8 @@ namespace Fel.Infrastructure.Dataico
             string paymentMeansType,
             IReadOnlyDictionary<string, string>? identificationTypeOverrides = null,
             bool isMandate = false,
-            bool isExport = false)
+            bool isExport = false,
+            AiuContractData? aiu = null)
         {
             // La condición de entrega (Incoterm) y la marca, modelo y subpartida de los ítems de una exportación se guardan en el documento y
             // salen en el XML de la DIAN y en el PDF, pero no viajan aquí: el cuerpo de Dataico para exportación no trae esos campos.
@@ -118,7 +120,7 @@ namespace Fel.Infrastructure.Dataico
                 issue_date = document.IssueDate.ToString("dd/MM/yyyy"),
                 payment_date = BuildPaymentDate(document),
                 order_reference = document.PurchaseOrderReference,
-                operation = isMandate ? MandateOperation : null,
+                operation = isMandate ? MandateOperation : aiu != null ? AiuOperation : null,
                 notes = BuildNotes(document),
                 // Moneda extranjera: solo cuando el documento no está en COP y trae TRM y fecha.
                 currency = IsForeignCurrency(document) ? document.Currency : null,
@@ -162,6 +164,14 @@ namespace Fel.Infrastructure.Dataico
                         : DataicoMapper.MapIdentificationType(item.MandanteIdentificationType, identificationTypeOverrides);
                 }
 
+                // Factura AIU: la línea del servicio contratado se marca para Dataico. Con aiu_contract arma el cbc:Note del contrato
+                // ("Contrato de servicios AIU por concepto de: ..."); probado en su sandbox.
+                if (aiu != null && item.Code == AiuContractData.ServiceCode)
+                {
+                    dataicoItem.aiu_administration = true;
+                    dataicoItem.aiu_contract = aiu.ContractObject.Trim();
+                }
+
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);
                 if (ivaTax != null)
                 {
@@ -179,6 +189,9 @@ namespace Fel.Infrastructure.Dataico
 
         // Valor de "operation" que Dataico espera para el tipo de operación 11 (Mandatos).
         private const string MandateOperation = "MANDATO";
+
+        // Y para el tipo de operación 09 (contrato AIU).
+        private const string AiuOperation = "AIU";
 
         // Observaciones del documento en su orden, una por entrada; null si no tiene (Dataico no recibe "notes" vacío).
         private static List<string>? BuildNotes(Document document)

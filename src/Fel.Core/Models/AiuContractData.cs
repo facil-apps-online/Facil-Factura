@@ -14,6 +14,8 @@ namespace Fel.Core.Models
         public const string AdminCode = "AIU-A";
         public const string UnforeseenCode = "AIU-I";
         public const string ProfitCode = "AIU-U";
+        // Línea del servicio contratado: lleva el valor base (se cobra) y, opcionalmente, su propio IVA. Dataico la exige con las marcas AIU.
+        public const string ServiceCode = "SERVICIO";
 
         // Texto con el que DEBE empezar el cbc:Note de la línea de Administración; después va el
         // objeto del contrato facturado (regla del Anexo: "El contribuyente debe incluir el objeto
@@ -25,6 +27,8 @@ namespace Fel.Core.Models
         public decimal UnforeseenPercent { get; set; }
         public decimal ProfitPercent { get; set; }
         public decimal IvaRate { get; set; } = 19;
+        // IVA de la línea del servicio (0 = sin IVA); el de la Utilidad es IvaRate.
+        public decimal ServiceIvaRate { get; set; }
         public string ContractObject { get; set; } = string.Empty;
 
         public string BuildAdminNote() => $"{NotePrefix} {ContractObject.Trim()}";

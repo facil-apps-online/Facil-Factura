@@ -54,8 +54,9 @@ const invoiceNetTotal = (inv: any) =>
   (inv.totalAmount || 0) - invoiceRetentionsTotal(inv) - (inv.generalDiscountAmount || 0) + (inv.generalChargeAmount || 0);
 
 // Contrato AIU (Administración, Imprevistos, Utilidad) — factura con tipo de operación "09". El
-// formulario pide la base del contrato y los porcentajes y genera las tres líneas; solo la
-// Utilidad causa IVA. El objeto del contrato va en la nota obligatoria de la línea de Administración.
+// formulario pide el valor del servicio y los porcentajes y genera cuatro líneas: Administración, Imprevistos, Utilidad y el propio
+// servicio (que se cobra). A y I no causan IVA; la Utilidad y, si se indica, el servicio sí. El objeto del contrato va en la nota
+// obligatoria de la línea de Administración (y, con Dataico, en la del servicio).
 // Se guarda como JSON en sectorExtensionData ({ aiu: {...} }), el backend lo lee del documento.
 interface AiuParams {
   baseAmount: number;
@@ -63,29 +64,32 @@ interface AiuParams {
   unforeseenPercent: number;
   profitPercent: number;
   ivaRate: number;
+  // IVA de la línea del servicio (0 = sin IVA).
+  serviceIvaRate: number;
   contractObject: string;
 }
-const AIU_DEFAULT: AiuParams = { baseAmount: 0, adminPercent: 10, unforeseenPercent: 5, profitPercent: 5, ivaRate: 19, contractObject: '' };
+const AIU_DEFAULT: AiuParams = { baseAmount: 0, adminPercent: 10, unforeseenPercent: 5, profitPercent: 5, ivaRate: 19, serviceIvaRate: 0, contractObject: '' };
 const AIU_OPERATION_TYPE = '09';
 const MANDATE_OPERATION_TYPE = '11';
 const OBSERVATION_MAX_LENGTH = 500;
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const buildAiuItems = (aiu: AiuParams) => {
-  const base = (code: string, name: string, percent: number, taxed: boolean) => {
-    const unitPrice = round2(aiu.baseAmount * percent / 100);
-    const taxAmount = taxed ? round2(unitPrice * aiu.ivaRate / 100) : 0;
+  const line = (code: string, name: string, unitPrice: number, ivaRate: number) => {
+    const taxAmount = round2(unitPrice * ivaRate / 100);
     return {
       productId: '', code, name, quantity: 1, unitPrice,
       unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined',
-      ivaTreatment: taxed ? 'Gravado' : 'Excluido', taxRate: taxed ? aiu.ivaRate : 0, discountRate: 0,
+      ivaTreatment: ivaRate > 0 ? 'Gravado' : 'Excluido', taxRate: ivaRate, discountRate: 0,
       taxAmount, totalAmount: unitPrice + taxAmount, retentions: [] as any[]
     };
   };
+  const percentOf = (percent: number) => round2(aiu.baseAmount * percent / 100);
   return [
-    base('AIU-A', 'Administración (A.I.U.)', aiu.adminPercent, false),
-    base('AIU-I', 'Imprevistos (A.I.U.)', aiu.unforeseenPercent, false),
-    base('AIU-U', 'Utilidad (A.I.U.)', aiu.profitPercent, true),
+    line('AIU-A', 'Administración (A.I.U.)', percentOf(aiu.adminPercent), 0),
+    line('AIU-I', 'Imprevistos (A.I.U.)', percentOf(aiu.unforeseenPercent), 0),
+    line('AIU-U', 'Utilidad (A.I.U.)', percentOf(aiu.profitPercent), aiu.ivaRate),
+    line('SERVICIO', aiu.contractObject.trim() || 'Servicio contratado', aiu.baseAmount, aiu.serviceIvaRate),
   ];
 };
 
@@ -783,7 +787,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const removeObservation = (index: number) =>
     setFormData({ ...formData, observations: formData.observations.filter((_, i) => i !== index) });
 
-  // Cambia algún dato del contrato AIU: se regeneran las tres líneas y los totales.
+  // Cambia algún dato del contrato AIU: se regeneran las cuatro líneas y los totales.
   const applyAiu = (next: AiuParams) => {
     const items = buildAiuItems(next);
     const sub = items.reduce((sum, i) => sum + i.unitPrice, 0);
@@ -1572,10 +1576,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             {isAiu && formData.aiu && (
               <div className="mb-8">
                 <h3 className="text-lg font-bold text-slate-800 mb-1">Contrato AIU</h3>
-                <p className="text-sm text-slate-500 mb-4">Administración, Imprevistos y Utilidad. El IVA se calcula solo sobre la Utilidad.</p>
+                <p className="text-sm text-slate-500 mb-4">Se factura el servicio más Administración, Imprevistos y Utilidad. Administración e Imprevistos no causan IVA; la Utilidad y el servicio sí, si indicas su tarifa.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-500 mb-1">Valor base del contrato ($)</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Valor del servicio ($)</label>
                     <DecimalInput value={formData.aiu.baseAmount} onValueChange={v => applyAiu({ ...formData.aiu!, baseAmount: v })} placeholder="0" blankWhenZero className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
                   </div>
                   <div>
@@ -1596,9 +1600,13 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     <label className="block text-xs font-bold text-slate-500 mb-1">IVA sobre la Utilidad %</label>
                     <DecimalInput value={formData.aiu.ivaRate} onValueChange={v => applyAiu({ ...formData.aiu!, ivaRate: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
                   </div>
-                  <div className="md:col-span-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">IVA sobre el servicio % (0 = sin IVA)</label>
+                    <DecimalInput value={formData.aiu.serviceIvaRate} onValueChange={v => applyAiu({ ...formData.aiu!, serviceIvaRate: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
+                  </div>
+                  <div className="md:col-span-2">
                     <label className="block text-xs font-bold text-slate-500 mb-1">Objeto del contrato</label>
-                    <input type="text" placeholder="Ej. Obra civil de adecuación de bodega" value={formData.aiu.contractObject} onChange={e => setFormData({ ...formData, aiu: { ...formData.aiu!, contractObject: e.target.value } })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" />
+                    <input type="text" placeholder="Ej. Obra civil de adecuación de bodega" value={formData.aiu.contractObject} onChange={e => applyAiu({ ...formData.aiu!, contractObject: e.target.value })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" />
                     <p className="text-xs text-slate-400 mt-1">Va en la línea de Administración como: "{'Contrato de servicios AIU por concepto de:'} …"</p>
                   </div>
                 </div>

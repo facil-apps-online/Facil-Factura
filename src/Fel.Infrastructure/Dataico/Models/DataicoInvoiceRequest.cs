@@ -32,6 +32,16 @@ namespace Fel.Infrastructure.Dataico.Models
         [JsonPropertyName("mandante_identification_type")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? mandante_identification_type { get; set; }
+
+        // Factura AIU: la línea del servicio contratado se marca con aiu_administration y apunta con aiu_contract a la línea de Utilidad
+        // (SKU "AIU-U"). Ejemplos "Enviar factura - AIU" del Postman de Dataico.
+        [JsonPropertyName("aiu_administration")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? aiu_administration { get; set; }
+
+        [JsonPropertyName("aiu_contract")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? aiu_contract { get; set; }
     }
 
     public class DataicoInvoiceActions

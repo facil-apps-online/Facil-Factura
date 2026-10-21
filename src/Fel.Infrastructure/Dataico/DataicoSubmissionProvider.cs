@@ -98,7 +98,24 @@ namespace Fel.Infrastructure.Dataico
             Fel.Infrastructure.Dataico.Models.DataicoResult result;
             Document? originalInvoiceForPdf = null;
 
-            if (invoice.TypeCode is "NC" or "ND")
+            if (invoice.TypeCode == "NC" && !invoice.ReferenceDocumentId.HasValue)
+            {
+                // Nota crédito sin factura de referencia: lleva su propio tercero, los ítems y el motivo; el período es el mes de la emisión.
+                if (customer == null) throw new NotSupportedException("La nota crédito sin factura debe indicar el tercero.");
+                if (items.Count == 0) throw new NotSupportedException("La nota crédito sin factura debe llevar al menos un ítem.");
+                if (string.IsNullOrWhiteSpace(invoice.DiscrepancyResponseCode)) throw new NotSupportedException("La nota crédito sin factura debe indicar el motivo.");
+
+                var reasonCodes = await _dbContext.TaxCatalogItems.AsNoTracking()
+                    .Where(t => t.Kind == TaxCatalogKind.CreditNoteReason && t.DianCode != null)
+                    .ToDictionaryAsync(t => t.Category, t => t.DianCode!);
+                var idOverrides = await _dbContext.IdentificationTypes
+                    .Where(t => t.DataicoCode != null && t.DataicoCode != "")
+                    .ToDictionaryAsync(t => t.Code, t => t.DataicoCode!);
+                result = await _dataicoApiService.SendCreditNoteAsync(
+                    DataicoDocumentMapper.BuildCreditNoteRequest(invoice, resolution, client, null, items, reasonCodes, customer, idOverrides),
+                    credentials);
+            }
+            else if (invoice.TypeCode is "NC" or "ND")
             {
                 if (!invoice.ReferenceDocumentId.HasValue)
                 {

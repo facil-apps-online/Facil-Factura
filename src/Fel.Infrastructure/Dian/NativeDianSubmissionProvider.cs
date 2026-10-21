@@ -139,7 +139,21 @@ namespace Fel.Infrastructure.Dian
             // factura (mismo DianCode="01" y sin el grupo DiscrepancyResponse que exige la DIAN).
             Fel.Core.Models.UblInvoiceData ublData;
             string filePrefix;
-            if (invoice.ReferenceDocumentId.HasValue)
+            if (documentType?.Code == "ND" && !invoice.ReferenceDocumentId.HasValue)
+            {
+                // Sin esto una nota débito sin referencia caería en la rama de factura y saldría como una factura de venta.
+                throw new NotSupportedException("La nota débito debe referenciar la factura que ajusta.");
+            }
+
+            if (documentType?.Code == "NC" && !invoice.ReferenceDocumentId.HasValue)
+            {
+                // Nota crédito sin factura de referencia (CustomizationID 22): lleva su tercero, ítems y motivo; el período es el mes de la emisión.
+                if (items.Count == 0) throw new NotSupportedException("La nota crédito sin factura debe llevar al menos un ítem.");
+                if (string.IsNullOrWhiteSpace(invoice.DiscrepancyResponseCode)) throw new NotSupportedException("La nota crédito sin factura debe indicar el motivo.");
+                ublData = DianDocumentMapper.BuildCreditNoteData(invoice, null, customer, items, resolution, client, location, municipalities, documentType, paymentMeansDianCodes, countryNames);
+                filePrefix = Fel.Infrastructure.Services.DianFileNaming.NotaCredito;
+            }
+            else if (invoice.ReferenceDocumentId.HasValue)
             {
                 if (documentType == null)
                     throw new InvalidOperationException("Esta nota no tiene un tipo de documento asignado; no se puede determinar su código DIAN.");

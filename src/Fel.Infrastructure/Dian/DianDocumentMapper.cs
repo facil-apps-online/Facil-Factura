@@ -285,7 +285,7 @@ namespace Fel.Infrastructure.Dian
         // falta resolverlos de nuevo acá.
         public static UblInvoiceData BuildCreditNoteData(
             Document document,
-            Document originalDocument,
+            Document? originalDocument,
             Customer customer,
             IEnumerable<DocumentItem> items,
             Resolution resolution,
@@ -299,11 +299,24 @@ namespace Fel.Infrastructure.Dian
             var data = BuildInvoiceData(document, customer, items, resolution, client, location, municipalitiesByCode, paymentMeansDianCodes, documentType, originalDocument, countryNames);
             data.DiscrepancyResponseCode = document.DiscrepancyResponseCode ?? string.Empty;
             data.DiscrepancyDescription = document.ReferenceConcept;
+            if (originalDocument == null)
+            {
+                // Nota crédito sin factura de referencia: tipo de operación 22, sin BillingReference y con el período que afecta
+                // (el mes de la emisión). Estructura confirmada contra el XML que genera Dataico y contra el Anexo (CAE01, CBF01).
+                data.OperationType = NoReferenceNoteOperationType;
+                var period = NotePeriod.Of(document.IssueDate);
+                data.InvoicePeriodStart = period.Start;
+                data.InvoicePeriodEnd = period.End;
+                return data;
+            }
             data.BillingReferenceCufe = originalDocument.Cufe ?? string.Empty;
             data.BillingReferenceDocumentNumber = originalDocument.Number;
             data.BillingReferenceDate = originalDocument.IssueDate;
             return data;
         }
+
+        // CustomizationID de una nota crédito que no referencia una factura (tabla 13.1.5.2 del Anexo).
+        public const string NoReferenceNoteOperationType = "22";
 
         // Nota Débito real del portal de cliente — mismo mapeo que BuildCreditNoteData, DianCode/
         // OperationType distintos ya vienen del DocumentType ("ND"→"92"/"30").

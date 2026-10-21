@@ -46,6 +46,10 @@ namespace Fel.Core.Models
         public string? BillingReferenceDocumentNumber { get; set; }
         public DateTime? BillingReferenceDate { get; set; }
         public string? BillingReferenceCufe { get; set; }
+
+        // Período que afecta una nota crédito sin factura de referencia (CustomizationID 22): cac:InvoicePeriod, obligatorio en ese caso (Anexo 1.9, CAE01).
+        public DateTime? InvoicePeriodStart { get; set; }
+        public DateTime? InvoicePeriodEnd { get; set; }
         public string? DiscrepancyResponseCode { get; set; }
         public string? DiscrepancyDescription { get; set; }
 

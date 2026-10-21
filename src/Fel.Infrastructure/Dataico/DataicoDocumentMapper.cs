@@ -214,9 +214,12 @@ namespace Fel.Infrastructure.Dataico
             return "OTROS";
         }
 
+        // originalInvoiceDataicoId nulo = nota crédito sin factura de referencia: viaja el tercero, el período (el mes de la fecha de
+        // emisión, como el legacy) y sin_factura_referenciada en lugar de invoice_id.
         public static DataicoCreditNoteRequest BuildCreditNoteRequest(
-            Document document, Resolution resolution, Client client, string originalInvoiceDataicoId, IEnumerable<DocumentItem> items,
-            IReadOnlyDictionary<string, string>? reasonDianCodes = null)
+            Document document, Resolution resolution, Client client, string? originalInvoiceDataicoId, IEnumerable<DocumentItem> items,
+            IReadOnlyDictionary<string, string>? reasonDianCodes = null, Customer? customer = null,
+            IReadOnlyDictionary<string, string>? identificationTypeOverrides = null)
         {
             var request = new DataicoCreditNoteRequest
             {
@@ -233,6 +236,15 @@ namespace Fel.Infrastructure.Dataico
                 numbering = new DataicoNumbering { prefix = string.IsNullOrWhiteSpace(document.Prefix) ? resolution.Prefix : document.Prefix, flexible = true },
                 charges = BuildCharges(document)
             };
+
+            if (originalInvoiceDataicoId == null)
+            {
+                var (periodStart, periodEnd) = Fel.Core.Models.NotePeriod.Of(document.IssueDate);
+                request.sin_factura_referenciada = true;
+                request.invoice_period_start_date = periodStart.ToString("dd/MM/yyyy");
+                request.invoice_period_end_date = periodEnd.ToString("dd/MM/yyyy");
+                request.customer = customer == null ? null : DataicoMapper.ToDataicoParty(customer, identificationTypeOverrides);
+            }
 
             request.retentions = BuildDocumentRetentions(document);
 

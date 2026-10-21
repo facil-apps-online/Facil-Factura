@@ -44,11 +44,18 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cbc + "DocumentCurrencyCode", new XAttribute("listAgencyID", "6"), new XAttribute("listAgencyName", "United Nations Economic Commission for Europe"), new XAttribute("listID", "ISO 4217 Alpha"), data.Currency),
                 new XElement(cbc + "LineCountNumeric", data.Lines.Count.ToString()),
 
+                // Período que afecta una nota sin factura de referencia (CustomizationID 22): obligatorio en ese caso.
+                data.InvoicePeriodStart.HasValue && data.InvoicePeriodEnd.HasValue
+                    ? new XElement(cac + "InvoicePeriod",
+                        new XElement(cbc + "StartDate", data.InvoicePeriodStart.Value.ToString("yyyy-MM-dd")),
+                        new XElement(cbc + "EndDate", data.InvoicePeriodEnd.Value.ToString("yyyy-MM-dd")))
+                    : null,
+
                 // DiscrepancyResponse: siempre presente (es el motivo del ajuste), referencie o no
                 // una factura puntual. Cuando es referenciada, ReferenceID repite el número de esa
                 // factura; cuando no, no hay documento que referenciar en este campo.
                 new XElement(cac + "DiscrepancyResponse",
-                    new XElement(cbc + "ReferenceID", isReferenced ? data.BillingReferenceDocumentNumber : ""),
+                    isReferenced ? new XElement(cbc + "ReferenceID", data.BillingReferenceDocumentNumber) : null,
                     new XElement(cbc + "ResponseCode", data.DiscrepancyResponseCode ?? "2"),
                     new XElement(cbc + "Description", data.DiscrepancyDescription ?? "Anulación parcial")
                 ),

@@ -401,6 +401,24 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     setView('create');
   };
 
+  // Nota crédito sin factura de referencia: se emite con su propio tercero e ítems (útil cuando una factura quedó aceptada por error y hay
+  // que ajustarla de otra forma). No afecta a ninguna factura; el período que informa a la DIAN es el mes de la emisión.
+  const creditNoteType = documentTypes.find(d => d.typeCode === 'NC');
+  const handleCreateUnreferencedNote = () => {
+    if (!creditNoteType) { toast.error('La nota crédito no está habilitada para tu empresa.'); return; }
+    const reason = creditNoteReasonCatalog.find(c => c.category === '1');
+    setEditingId(null);
+    setPaymentTermCustom(false);
+    setFormData({
+      ...initialForm,
+      documentTypeId: creditNoteType.id,
+      referenceDocumentId: null,
+      discrepancyResponseCode: '1',
+      referenceConcept: reason?.name || 'Devolución parcial de los bienes y/o no aceptación parcial del servicio'
+    });
+    setView('create');
+  };
+
   const { previewingId, preview: handlePreviewPdf } = usePdfPreview(cfg.api);
 
   const openResendModal = (invoice: any) => {
@@ -803,6 +821,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const sub = items.reduce((sum, i) => sum + i.unitPrice, 0);
       const tax = items.reduce((sum, i) => sum + i.taxAmount, 0);
       setFormData({ ...formData, documentTypeId: typeId, aiu, items, subtotal: sub, taxAmount: tax, totalAmount: sub + tax });
+    } else if (!isSupport && next?.typeCode === 'NC' && !formData.referenceDocumentId) {
+      const reason = creditNoteReasonCatalog.find(c => c.category === '1');
+      setFormData({ ...formData, documentTypeId: typeId, discrepancyResponseCode: '1', referenceConcept: reason?.name || formData.referenceConcept, aiu: null });
     } else if (formData.aiu) {
       // Se sale de AIU: las líneas generadas no sirven para otro tipo de factura.
       setFormData({ ...formData, documentTypeId: typeId, aiu: null, items: [], subtotal: 0, taxAmount: 0, totalAmount: 0 });
@@ -1184,7 +1205,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     }
   };
 
-  const isNote = !!formData.referenceDocumentId;
+  // Nota crédito sin factura de referencia: el tipo es "Nota crédito" y no hay documento original.
+  const isUnreferencedNote = !isSupport && selectedDocType?.typeCode === 'NC' && !formData.referenceDocumentId;
+  const isNote = !!formData.referenceDocumentId || isUnreferencedNote;
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
@@ -1480,7 +1503,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </div>
             )}
 
-            {formData.referenceDocumentId && !isSupport && (() => {
+            {isNote && !isSupport && (() => {
               const isDebitNote = formData.documentTypeId === documentTypes.find(d => d.code === '92')?.id;
               return (
                 <div className="mb-8 p-4 sm:p-6 bg-amber-50 border border-amber-200 rounded-xl">
@@ -1489,7 +1512,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     Generando {isDebitNote ? 'Nota Débito' : 'Nota Crédito'}
                   </h3>
                   <p className="text-sm text-amber-700 mb-4">
-                    {isDebitNote
+                    {isUnreferencedNote
+                      ? 'Esta nota no afecta a ninguna factura: indica el cliente, los ítems y el motivo. El período que se informa a la DIAN es el mes de la fecha de emisión.'
+                      : isDebitNote
                       ? 'Esta nota afectará a la factura seleccionada agregando un cargo adicional.'
                       : 'Esta nota afectará a la factura seleccionada. Puedes emitirla por el valor total (sin tocar nada) o ajustar las líneas/cantidades para una devolución parcial.'}
                   </p>
@@ -2393,6 +2418,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           {mode === 'invoice' && features.dataico && (
             <button onClick={() => setShowDataicoLookup(true)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all">
               <Search size={18} /> Consultar factura
+            </button>
+          )}
+          {mode === 'invoice' && creditNoteType && (
+            <button onClick={handleCreateUnreferencedNote} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all">
+              <RotateCcw size={18} /> Nota crédito sin factura
             </button>
           )}
           {cfg.importExcel && <ImportExcelButton endpoint="/client/invoices/import" templateEndpoint="/client/invoices/template" label="Importar Excel" onDone={loadData} />}

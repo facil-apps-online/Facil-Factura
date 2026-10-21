@@ -25,8 +25,27 @@ namespace Fel.Infrastructure.Dataico.Models
 
         // Id interno que Dataico le asignó a la factura original (su "uuid" de respuesta) — no es
         // nuestro Id ni el CUFE.
+        // Vacío en una nota sin factura de referencia (ver sin_factura_referenciada).
         [JsonPropertyName("invoice_id")]
-        public string invoice_id { get; set; } = string.Empty;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? invoice_id { get; set; }
+
+        // Nota sin factura de referencia: Dataico no recibe invoice_id sino el tercero, el período que afecta y esta marca
+        // (ejemplo "Enviar Nota Credito - No Ref" del Postman de Dataico y legacy FEL).
+        [JsonPropertyName("sin_factura_referenciada")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? sin_factura_referenciada { get; set; }
+
+        [JsonPropertyName("invoice_period_start_date")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? invoice_period_start_date { get; set; } // dd/MM/yyyy
+
+        [JsonPropertyName("invoice_period_end_date")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? invoice_period_end_date { get; set; } // dd/MM/yyyy
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DataicoParty? customer { get; set; }
 
         [JsonPropertyName("issue_date")]
         public string issue_date { get; set; } = string.Empty; // dd/MM/yyyy

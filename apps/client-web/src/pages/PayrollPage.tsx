@@ -17,6 +17,8 @@ import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions'
 import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
 import DecimalInput from '../components/DecimalInput';
 import { todayColombia } from '../lib/colombiaTime';
+import DataicoLookupModal from '../components/DataicoLookupModal';
+import { useSession } from '../context/SessionContext';
 
 
 interface Concept {
@@ -58,6 +60,8 @@ export default function PayrollPage() {
   const [entries, setEntries] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { features } = useSession();
+  const [showDataicoLookup, setShowDataicoLookup] = useState(false);
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list');
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -606,12 +610,25 @@ export default function PayrollPage() {
 
   return (
     <div className="p-3 sm:p-4">
+      {showDataicoLookup && (
+        <DataicoLookupModal
+          endpoint="/client/payroll"
+          title="Consultar nómina en Dataico"
+          placeholder="Ej. ESP1"
+          kinds={[{ value: 'entry', label: 'Nómina' }, { value: 'deletion', label: 'Nota de eliminación' }, { value: 'replacement', label: 'Nota de reemplazo' }]}
+          onClose={() => setShowDataicoLookup(false)} />
+      )}
       <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800">Nómina electrónica</h1>
           <p className="text-slate-500 mt-1">Historial de nómina emitida</p>
         </div>
         <div className="flex flex-wrap gap-3">
+          {features.dataico && (
+            <button onClick={() => setShowDataicoLookup(true)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all">
+              <Search size={18} /> Consultar nómina
+            </button>
+          )}
           <ImportExcelButton endpoint="/client/payroll/import" templateEndpoint="/client/payroll/template" label="Importar Excel" onDone={loadData} />
           <button onClick={() => { setEditingId(null); setFormData(initialForm); setView('create'); }} className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all">
             <Plus size={20} /> Nueva Nómina

@@ -58,6 +58,16 @@ namespace Fel.Api.Client.Controllers
             _legendService = legendService;
         }
 
+        // Consulta en Dataico de un documento soporte (kind vacío) o de su nota de ajuste (kind=adjustment). Solo lee: no guarda nada.
+        [HttpGet("dataico-lookup")]
+        public Task<IActionResult> DataicoLookup([FromQuery] string? number, [FromQuery] string? kind) => DataicoLookupAsync(SupportKind(kind), number);
+
+        [HttpGet("dataico-lookup/file")]
+        public Task<IActionResult> DataicoLookupFile([FromQuery] string? number, [FromQuery] string? kind, [FromQuery] string? type) => DataicoLookupFileAsync(SupportKind(kind), number, type);
+
+        private static DataicoLookupKind SupportKind(string? kind) =>
+            string.Equals(kind, "adjustment", System.StringComparison.OrdinalIgnoreCase) ? DataicoLookupKind.SupportDocAdjustment : DataicoLookupKind.SupportDoc;
+
         // Ver el comentario equivalente en InvoiceController.
         private async Task<(Dictionary<string, string> PaymentMeans, Dictionary<string, string> FormaPago)> GetPaymentCatalogsAsync()
         {

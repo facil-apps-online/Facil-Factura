@@ -23,6 +23,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<Fel.Infrastructure.Security.SessionStampValidator>();
 builder.Services.AddScoped<Fel.Infrastructure.Security.AccountSessionService>();
 builder.Services.AddScoped<Fel.Api.Client.Security.ClientSessionIssuer>();
+builder.Services.AddScoped<Fel.Infrastructure.Dataico.DataicoLookupService>();
 
 // Misma llave/algoritmo que SessionTokenService usa para firmar — ver SessionHeaderGuardMiddleware
 // para cómo se aplica (solo exige el JWT cuando la petición ya trae x-client-id o x-developer-id).

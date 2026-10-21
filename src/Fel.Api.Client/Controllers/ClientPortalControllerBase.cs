@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Fel.Api.Client.Controllers
 {
@@ -31,6 +32,27 @@ namespace Fel.Api.Client.Controllers
 
         // Sucursal concreta para crear o emitir.
         protected Guid GetCurrentBranchId() => Branch.RequireBranchId();
+
+        // Consulta de un documento ya emitido en la cuenta de Dataico del cliente (factura, documento soporte, nómina y sus notas), y descarga de su XML o su
+        // representación gráfica. Cada controlador solo elige el tipo de documento; ver DataicoLookupService.
+        protected async Task<IActionResult> DataicoLookupAsync(Fel.Infrastructure.Dataico.DataicoLookupKind kind, string? number)
+        {
+            var client = await LoadLookupClientAsync();
+            if (client == null) return NotFound(new { message = "Cliente no encontrado." });
+            var result = await HttpContext.RequestServices.GetRequiredService<Fel.Infrastructure.Dataico.DataicoLookupService>().LookupAsync(client, kind, number);
+            return result.Ok ? Ok(result.Summary) : StatusCode(result.Status, new { message = result.Error });
+        }
+
+        protected async Task<IActionResult> DataicoLookupFileAsync(Fel.Infrastructure.Dataico.DataicoLookupKind kind, string? number, string? type)
+        {
+            var client = await LoadLookupClientAsync();
+            if (client == null) return NotFound(new { message = "Cliente no encontrado." });
+            var result = await HttpContext.RequestServices.GetRequiredService<Fel.Infrastructure.Dataico.DataicoLookupService>().DownloadAsync(client, kind, number, type);
+            return result.Ok ? File(result.Bytes!, result.ContentType!, result.FileName!) : StatusCode(result.Status, new { message = result.Error });
+        }
+
+        private Task<Fel.Core.Entities.Client?> LoadLookupClientAsync() =>
+            HttpContext.RequestServices.GetRequiredService<FelDbContext>().Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == Branch.ClientId);
 
         // Valida la lista de un lote y la deja sin repetidos. Devuelve null si es válida.
         protected IActionResult? ValidateBatch(BatchRequest? request, out List<Guid> ids)

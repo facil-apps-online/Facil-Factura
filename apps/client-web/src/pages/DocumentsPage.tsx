@@ -2415,9 +2415,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           <p className="text-slate-500 mt-1">Gestión de documentos electrónicos</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          {mode === 'invoice' && features.dataico && (
+          {features.dataico && (
             <button onClick={() => setShowDataicoLookup(true)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all">
-              <Search size={18} /> Consultar factura
+              <Search size={18} /> {isSupport ? 'Consultar documento' : 'Consultar factura'}
             </button>
           )}
           {mode === 'invoice' && creditNoteType && (
@@ -2581,7 +2581,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         <DianResponseDialog doc={responseModalInv} label={`${cfg.singular} ${responseModalInv.number || 'Borrador'}`} onClose={() => setResponseModalInv(null)} />
       )}
 
-      {showDataicoLookup && <DataicoLookupModal onClose={() => setShowDataicoLookup(false)} />}
+      {showDataicoLookup && (isSupport
+        ? <DataicoLookupModal
+            endpoint="/client/support-documents"
+            title="Consultar documento soporte en Dataico"
+            placeholder="Ej. DS201"
+            kinds={[{ value: 'document', label: 'Documento soporte' }, { value: 'adjustment', label: 'Nota de ajuste' }]}
+            onClose={() => setShowDataicoLookup(false)} />
+        : <DataicoLookupModal endpoint="/client/invoices" title="Consultar factura en Dataico" placeholder="Ej. FEG92010" onClose={() => setShowDataicoLookup(false)} />)}
       {resendModalInv && (
         <Modal
           open

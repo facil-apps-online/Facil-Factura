@@ -37,6 +37,20 @@ namespace Fel.Api.Client.Controllers
         private readonly DataicoCustomPdfService _customPdfService;
         private readonly IFacilReportsClient _facilReportsClient;
 
+        // Consulta en Dataico de una nómina (kind vacío), de su nota de eliminación (kind=deletion) o de reemplazo (kind=replacement). Solo lee: no guarda nada.
+        [HttpGet("dataico-lookup")]
+        public Task<IActionResult> DataicoLookup([FromQuery] string? number, [FromQuery] string? kind) => DataicoLookupAsync(PayrollKind(kind), number);
+
+        [HttpGet("dataico-lookup/file")]
+        public Task<IActionResult> DataicoLookupFile([FromQuery] string? number, [FromQuery] string? kind, [FromQuery] string? type) => DataicoLookupFileAsync(PayrollKind(kind), number, type);
+
+        private static DataicoLookupKind PayrollKind(string? kind) => kind?.ToLowerInvariant() switch
+        {
+            "deletion" => DataicoLookupKind.PayrollDeletion,
+            "replacement" => DataicoLookupKind.PayrollReplacement,
+            _ => DataicoLookupKind.Payroll
+        };
+
         public PayrollController(FelDbContext dbContext, ICryptoService cryptoService, IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, IFacilReportsClient facilReportsClient)
         {
             _facilReportsClient = facilReportsClient;

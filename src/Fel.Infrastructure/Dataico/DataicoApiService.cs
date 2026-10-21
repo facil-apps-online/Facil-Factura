@@ -41,6 +41,14 @@ namespace Fel.Infrastructure.Dataico
         // Consulta una factura ya emitida en la cuenta por su número (prefijo + consecutivo, "PE1"). Solo lee.
         Task<DataicoResult> GetInvoiceByNumberAsync(string number, DataicoCredentials credentials);
 
+        // Consulta de un documento soporte y de su nota de ajuste por prefijo y número (separados).
+        Task<DataicoResult> GetSupportDocAsync(string prefix, string number, DataicoCredentials credentials);
+        Task<DataicoResult> GetSupportDocAdjustmentAsync(string prefix, string number, DataicoCredentials credentials);
+
+        // Consulta de una nómina y de sus notas por prefijo y número. kindPath: payroll-entries | payroll-deletions | payroll-replacements.
+        // staging sigue el ambiente de la cuenta; con includePdf el PDF llega dentro de la respuesta (base64).
+        Task<DataicoResult> GetPayrollDocumentAsync(string kindPath, string prefix, string number, bool staging, bool includePdf, DataicoCredentials credentials);
+
         // Descarga el XML o el PDF de un documento (la URL sale de la respuesta de Dataico). Devuelve null si Dataico no lo entrega.
         Task<(byte[] Bytes, string ContentType)?> DownloadFileAsync(string url, DataicoCredentials credentials);
 
@@ -152,6 +160,17 @@ namespace Fel.Infrastructure.Dataico
 
         public Task<DataicoResult> GetInvoiceByNumberAsync(string number, DataicoCredentials credentials)
             => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/invoices?number={Uri.EscapeDataString(number)}", credentials, null);
+
+        public Task<DataicoResult> GetSupportDocAsync(string prefix, string number, DataicoCredentials credentials)
+            => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/support_docs?prefix={Uri.EscapeDataString(prefix)}&number={Uri.EscapeDataString(number)}", credentials, null);
+
+        public Task<DataicoResult> GetSupportDocAdjustmentAsync(string prefix, string number, DataicoCredentials credentials)
+            => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/support_doc_adjustments?prefix={Uri.EscapeDataString(prefix)}&number={Uri.EscapeDataString(number)}", credentials, null);
+
+        public Task<DataicoResult> GetPayrollDocumentAsync(string kindPath, string prefix, string number, bool staging, bool includePdf, DataicoCredentials credentials)
+            => ExecuteAsync(HttpMethod.Get,
+                $"{PayrollBaseUrl}/{kindPath}/{Uri.EscapeDataString(prefix)}/{Uri.EscapeDataString(number)}?staging={(staging ? "true" : "false")}&include-pdf={(includePdf ? "true" : "false")}",
+                credentials, null, TimeSpan.FromSeconds(120));
 
         public async Task<(byte[] Bytes, string ContentType)?> DownloadFileAsync(string url, DataicoCredentials credentials)
         {

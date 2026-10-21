@@ -42,12 +42,39 @@ namespace Fel.Api.Tenant.Controllers
             public Guid? ExtraProductId { get; set; }
         }
 
+        // Solo los dígitos del NIT, sin puntos, guion ni dígito de verificación aparte: así se compara el del tenant con el de un cliente.
+        private static string Digits(string? value) => new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
+        // La empresa emisora de un tenant es su propia empresa: el único cliente suyo con el mismo NIT del tenant. Nulo si no existe todavía.
+        private async Task<(string TenantNit, Guid? ClientId, string? ClientName)> FindEligibleAsync(Guid tenantId)
+        {
+            var nit = Digits(await _dbContext.Tenants.AsNoTracking().Where(t => t.Id == tenantId).Select(t => t.TaxId).FirstOrDefaultAsync());
+            if (nit.Length == 0) return (nit, null, null);
+            var candidates = await _dbContext.Clients.AsNoTracking().Where(c => c.TenantId == tenantId && c.IsActive && !c.IsDeveloperSandbox)
+                .Select(c => new { c.Id, c.TaxId, Name = !string.IsNullOrEmpty(c.CommercialName) ? c.CommercialName : c.CompanyName }).ToListAsync();
+            var match = candidates.FirstOrDefault(c => Digits(c.TaxId) == nit);
+            return (nit, match?.Id, match?.Name);
+        }
+
+        private async Task<string?> ValidateOwnerAsync(Guid tenantId, Guid ownerClientId)
+        {
+            var (nit, eligibleId, _) = await FindEligibleAsync(tenantId);
+            if (nit.Length == 0) return "Completa el NIT del tenant antes de definir la empresa emisora.";
+            if (eligibleId != ownerClientId) return $"La empresa emisora debe ser la empresa del tenant: el cliente con el mismo NIT ({nit}).";
+            return null;
+        }
+
         private async Task<object> BuildSettingsAsync(Guid tenantId, TenantInvoicingSettings? row)
         {
             var s = row ?? new TenantInvoicingSettings { TenantId = tenantId };
+            var (tenantNit, eligibleId, eligibleName) = await FindEligibleAsync(tenantId);
             var ownerName = s.OwnerClientId == null ? null
                 : await _dbContext.Clients.AsNoTracking().Where(c => c.Id == s.OwnerClientId).Select(c => !string.IsNullOrEmpty(c.CommercialName) ? c.CommercialName : c.CompanyName).FirstOrDefaultAsync();
-            return new { s.OwnerClientId, ownerClientName = ownerName, s.GenerateDrafts, s.DraftDay, s.FeeProductId, s.ExtraProductId };
+            return new
+            {
+                s.OwnerClientId, ownerClientName = ownerName, s.GenerateDrafts, s.DraftDay, s.FeeProductId, s.ExtraProductId,
+                tenantNit, eligibleClientId = eligibleId, eligibleClientName = eligibleName
+            };
         }
 
         [HttpGet("settings")]
@@ -64,8 +91,13 @@ namespace Fel.Api.Tenant.Controllers
             var tenantId = GetCurrentTenantId();
             if (request.DraftDay is < 1 or > 28) return BadRequest("El día del ciclo debe estar entre 1 y 28.");
 
-            if (request.OwnerClientId != null && !await _dbContext.Clients.AnyAsync(c => c.Id == request.OwnerClientId && c.TenantId == tenantId && c.IsActive))
-                return BadRequest("La empresa emisora debe ser un cliente activo de este tenant.");
+            if (request.OwnerClientId != null)
+            {
+                if (!await _dbContext.Clients.AnyAsync(c => c.Id == request.OwnerClientId && c.TenantId == tenantId && c.IsActive))
+                    return BadRequest("La empresa emisora debe ser un cliente activo de este tenant.");
+                var ownerError = await ValidateOwnerAsync(tenantId, request.OwnerClientId.Value);
+                if (ownerError != null) return BadRequest(ownerError);
+            }
 
             foreach (var productId in new[] { request.FeeProductId, request.ExtraProductId }.Where(p => p != null))
             {
@@ -106,6 +138,8 @@ namespace Fel.Api.Tenant.Controllers
             var tenantId = GetCurrentTenantId();
             if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId && c.IsActive))
                 return BadRequest("La empresa emisora debe ser un cliente activo de este tenant.");
+            var ownerError = await ValidateOwnerAsync(tenantId, clientId);
+            if (ownerError != null) return BadRequest(ownerError);
 
             var row = await _dbContext.TenantInvoicingSettings.FirstOrDefaultAsync(s => s.TenantId == tenantId);
             if (row == null)

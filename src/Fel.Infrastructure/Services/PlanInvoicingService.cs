@@ -95,6 +95,9 @@ namespace Fel.Infrastructure.Services
             var ownerId = settings.OwnerClientId.Value;
             var owner = await _db.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == ownerId && c.TenantId == tenantId && c.IsActive, ct);
             if (owner == null) { result.Messages.Add("La empresa emisora no existe o está inactiva."); return result; }
+            var tenantNit = new string((await _db.Tenants.AsNoTracking().Where(t => t.Id == tenantId).Select(t => t.TaxId).FirstOrDefaultAsync(ct) ?? string.Empty).Where(char.IsDigit).ToArray());
+            if (tenantNit.Length == 0 || new string((owner.TaxId ?? string.Empty).Where(char.IsDigit).ToArray()) != tenantNit)
+            { result.Messages.Add("La empresa emisora debe tener el mismo NIT del tenant."); return result; }
 
             var ownerDefaults = await _db.ClientInvoiceDefaults.AsNoTracking().FirstOrDefaultAsync(d => d.ClientId == ownerId, ct);
             var mainBranchId = await BranchProvisioning.MainBranchIdAsync(_db, ownerId);

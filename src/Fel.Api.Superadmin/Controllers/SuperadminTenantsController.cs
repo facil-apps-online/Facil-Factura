@@ -267,6 +267,11 @@ namespace Fel.Api.Superadmin.Controllers
 
             await _dbContext.SaveChangesAsync();
 
+            // Todo tenant arranca con su empresa propietaria (cliente con su mismo NIT), que queda como su empresa emisora. Sin NIT no se crea; se
+            // crea cuando se complete (ver UpdateTenant).
+            await Fel.Infrastructure.Services.TenantOwnerProvisioning.EnsureOwnerAsync(_dbContext, tenant);
+            await _dbContext.SaveChangesAsync();
+
             // Crear (o reutilizar) el usuario administrador del tenant si se proporcionó.
             // Sin contraseña manual: igual que CreateTenantUser/UpsertPortalUser/InviteDeveloper,
             // se crea con un hash aleatorio inutilizable y se invita por correo a que la persona
@@ -519,6 +524,10 @@ namespace Fel.Api.Superadmin.Controllers
             // unique_platform_country_slug y cambiarlo rompería el enlace.
 
             await using var tx = await _dbContext.Database.BeginTransactionAsync();
+            await _dbContext.SaveChangesAsync();
+
+            // Si el tenant se registró sin NIT y ahora lo tiene, se crea su empresa propietaria (no hace nada si ya la tiene).
+            await Fel.Infrastructure.Services.TenantOwnerProvisioning.EnsureOwnerAsync(_dbContext, tenant);
             await _dbContext.SaveChangesAsync();
 
             // Propagar a Core si el tenant está enlazado.

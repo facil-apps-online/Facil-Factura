@@ -20,9 +20,10 @@ interface InvoicingSettings {
   draftDay: number;
   feeProductId: string | null;
   extraProductId: string | null;
+  tenantNit: string;
+  eligibleClientId: string | null;
+  eligibleClientName: string | null;
 }
-
-interface ClientOption { id: string; companyName: string; isActive: boolean }
 
 export const productLabel = (p: InvoicingProduct) =>
   `${p.code} · ${p.name} · ${p.ivaTreatment === 'Gravado' ? `IVA ${p.ivaRate}%` : p.ivaTreatment}${p.priceIncludesIva ? ' (precio con IVA)' : ''}`;
@@ -31,7 +32,6 @@ export const productLabel = (p: InvoicingProduct) =>
 // ciclo un borrador de factura por cliente en esa empresa. Nunca emite: la emisión la hace una persona desde el portal de la empresa emisora.
 export default function InvoicingSettingsCard() {
   const [settings, setSettings] = useState<InvoicingSettings | null>(null);
-  const [clients, setClients] = useState<ClientOption[]>([]);
   const [products, setProducts] = useState<InvoicingProduct[]>([]);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -40,10 +40,9 @@ export default function InvoicingSettingsCard() {
   const loadProducts = () => api.get<InvoicingProduct[]>('/tenant/invoicing/products').then(res => setProducts(res.data)).catch(() => setProducts([]));
 
   useEffect(() => {
-    Promise.all([api.get<InvoicingSettings>('/tenant/invoicing/settings'), api.get<ClientOption[]>('/tenant/clients')])
-      .then(([s, c]) => {
+    api.get<InvoicingSettings>('/tenant/invoicing/settings')
+      .then(s => {
         setSettings(s.data);
-        setClients(c.data.filter(x => x.isActive));
         // Sin empresa emisora todavía: el panel abre solo, para que se vea dónde se define.
         if (!s.data.ownerClientId) setOpen(true);
       })
@@ -109,9 +108,17 @@ export default function InvoicingSettingsCard() {
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="xl:col-span-2">
               <label className="mb-1 block text-sm font-bold text-slate-700">Empresa emisora (tu empresa)</label>
-              <SearchableSelect value={settings.ownerClientId ?? ''} onChange={v => set({ ownerClientId: v || null })} placeholder="Elige uno de tus clientes..."
-                options={clients.map(c => ({ value: c.id, label: c.companyName }))} />
-              <p className="mt-1 text-xs text-slate-400">Es la empresa que factura a tus clientes: debe estar creada como cliente, con su certificado y su resolución.</p>
+              {settings.eligibleClientId ? (
+                <SearchableSelect value={settings.ownerClientId ?? ''} onChange={v => set({ ownerClientId: v || null })} placeholder="Sin empresa emisora"
+                  options={[{ value: '', label: 'Sin empresa emisora' }, { value: settings.eligibleClientId, label: `${settings.eligibleClientName} · NIT ${settings.tenantNit}` }]} />
+              ) : (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+                  {settings.tenantNit
+                    ? `Aún no tienes tu empresa creada como cliente. Créala con el mismo NIT del tenant (${settings.tenantNit}) y vuelve aquí.`
+                    : 'Completa el NIT de tu tenant para poder definir la empresa emisora.'}
+                </p>
+              )}
+              <p className="mt-1 text-xs text-slate-400">Es tu propia empresa (el cliente con el mismo NIT del tenant) y solo puede haber una. Debe tener su certificado y su resolución.</p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-bold text-slate-700">Día del ciclo</label>

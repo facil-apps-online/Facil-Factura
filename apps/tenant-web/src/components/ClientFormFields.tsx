@@ -3,9 +3,17 @@ import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-m
 import { FileUp, Loader2, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import SearchableSelect from '@shared/components/SearchableSelect';
 
 const libraries: "places"[] = ['places'];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSy_TU_LLAVE_DE_PRUEBA_AQUI";
+
+const ROUNDING_ADJUSTMENT_OPTIONS = [
+  { value: 'None', label: 'Sin ajuste' },
+  { value: 'Peso', label: 'Ajuste al peso (quita los centavos)' },
+  { value: 'Decena', label: 'Ajuste a la decena' },
+  { value: 'Centena', label: 'Ajuste a la centena' }
+];
 
 const LEGAL_DOCUMENT_COUNTRIES = [
   ['CO', 'Colombia'], ['AR', 'Argentina'], ['BO', 'Bolivia'], ['BR', 'Brasil'],
@@ -284,6 +292,17 @@ export default function ClientFormFields({ client, setClient, associates, showBi
                 <span className="block text-xs text-slate-400 mt-0.5">Su formulario de factura permite elegir la moneda (USD, EUR...) e indicar la TRM. Apagado, todo sale en pesos.</span>
               </span>
             </label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Ajuste de centavos en las facturas</label>
+            <SearchableSelect
+              options={ROUNDING_ADJUSTMENT_OPTIONS}
+              value={client.roundingAdjustment || 'None'}
+              onChange={v => setClient({ ...client, roundingAdjustment: v })}
+              inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+            />
+            <p className="text-xs text-slate-400 mt-1">Para clientes que facturan a entidades que no manejan centavos. A cada factura en pesos se le crea un descuento general con lo que sobre del valor a pagar (siempre hacia abajo). No cambia el IVA y se informa en el XML.</p>
           </div>
 
           <div>

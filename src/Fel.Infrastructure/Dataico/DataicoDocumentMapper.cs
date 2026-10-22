@@ -70,6 +70,17 @@ namespace Fel.Infrastructure.Dataico
                 });
             }
 
+            // Ajuste de centavos del Client: otro descuento general.
+            if (document.RoundingAdjustmentAmount.HasValue && document.RoundingAdjustmentAmount.Value > 0)
+            {
+                charges.Add(new DataicoCharge
+                {
+                    reason = string.IsNullOrWhiteSpace(document.RoundingAdjustmentReason) ? "AJUSTE DE CENTAVOS" : document.RoundingAdjustmentReason,
+                    base_amount = document.RoundingAdjustmentAmount.Value,
+                    discount = true
+                });
+            }
+
             if (document.GeneralChargeAmount.HasValue && document.GeneralChargeAmount.Value > 0)
             {
                 charges.Add(new DataicoCharge

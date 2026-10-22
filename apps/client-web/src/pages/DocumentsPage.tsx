@@ -51,7 +51,7 @@ const invoiceRetentionsTotal = (inv: any) =>
 // Total neto de un documento: el bruto (subtotal + IVA) menos retenciones y descuento general,
 // más cargo general — misma fórmula que el "Total:" del formulario de creación/edición.
 const invoiceNetTotal = (inv: any) =>
-  (inv.totalAmount || 0) - invoiceRetentionsTotal(inv) - (inv.generalDiscountAmount || 0) + (inv.generalChargeAmount || 0);
+  (inv.totalAmount || 0) - invoiceRetentionsTotal(inv) - (inv.generalDiscountAmount || 0) - (inv.roundingAdjustmentAmount || 0) + (inv.generalChargeAmount || 0);
 
 // Contrato AIU (Administración, Imprevistos, Utilidad) — factura con tipo de operación "09". El
 // formulario pide el valor del servicio y los porcentajes y genera cuatro líneas: Administración, Imprevistos, Utilidad y el propio
@@ -73,6 +73,17 @@ const AIU_OPERATION_TYPE = '09';
 const MANDATE_OPERATION_TYPE = '11';
 const OBSERVATION_MAX_LENGTH = 500;
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+// Ajuste de centavos del cliente (lo define el tenant): lo que sobra del valor a pagar sobre su múltiplo inferior se descuenta (1.234.567,89 → 0,89 al peso).
+// El servidor lo recalcula al guardar y al emitir; aquí solo se muestra mientras se llena la factura.
+const ROUNDING_UNITS: Record<string, number> = { Peso: 1, Decena: 10, Centena: 100 };
+const ROUNDING_REASONS: Record<string, string> = { Peso: 'Ajuste al peso', Decena: 'Ajuste a la decena', Centena: 'Ajuste a la centena' };
+const roundingAdjustmentFor = (mode: string | undefined, payable: number) => {
+  const unit = mode ? ROUNDING_UNITS[mode] : 0;
+  if (!unit || payable <= 0) return 0;
+  const rounded = round2(payable);
+  return round2(rounded - Math.floor(rounded / unit) * unit);
+};
 
 const buildAiuItems = (aiu: AiuParams) => {
   const line = (code: string, name: string, unitPrice: number, ivaRate: number) => {
@@ -968,6 +979,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     r.taxCategory === 'RET_IVA' ? formData.taxAmount * r.rate / 100 : formData.subtotal * r.rate / 100;
   const generalRetentionsTotal = formData.generalRetentions.reduce((sum, r) => sum + generalRetentionAmount(r), 0);
   const totalRetentions = retentionsTotal + generalRetentionsTotal;
+  // Solo las facturas de venta en pesos se ajustan (no las notas ni los documentos soporte).
+  const roundingMode = features.roundingAdjustment;
+  const roundingApplies = !isSupport && !!selectedDocType?.typeCode?.startsWith('FE') && !formData.referenceDocumentId && (formData.currency || 'COP') === 'COP';
+  const formRoundingAdjustment = roundingApplies ? roundingAdjustmentFor(roundingMode, formData.totalAmount - formData.generalDiscountAmount + formData.generalChargeAmount) : 0;
 
   // Desglose del totalizador de retenciones por cada categoría+tarifa (las por ítem se agrupan
   // entre todos los ítems que la usan, y se suman con la general si coincide categoría+tarifa).
@@ -1965,6 +1980,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     <span className="font-mono">-{symOf(formData)}{fmt.money(formData.generalDiscountAmount)}</span>
                   </div>
                 )}
+                {formRoundingAdjustment > 0 && (
+                  <div className="flex justify-between text-rose-600 mb-2">
+                    <span>{ROUNDING_REASONS[roundingMode || ''] || 'Ajuste de centavos'}:</span>
+                    <span className="font-mono">-{symOf(formData)}{fmt.money(formRoundingAdjustment)}</span>
+                  </div>
+                )}
                 {formData.generalChargeAmount > 0 && (
                   <div className="flex justify-between text-emerald-600 mb-2">
                     <span>{formData.generalChargeReason || 'Cargo general'}:</span>
@@ -1974,7 +1995,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 <div className="mb-4 pb-4 border-b border-slate-200" />
                 <div className="flex justify-between font-extrabold text-xl text-slate-800">
                   <span>Total:</span>
-                  <span className="font-mono">{symOf(formData)}{fmt.money((formData.totalAmount - totalRetentions - formData.generalDiscountAmount + formData.generalChargeAmount))}</span>
+                  <span className="font-mono">{symOf(formData)}{fmt.money((formData.totalAmount - totalRetentions - formData.generalDiscountAmount - formRoundingAdjustment + formData.generalChargeAmount))}</span>
                 </div>
               </div>
             </div>
@@ -2238,6 +2259,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 ))}
                 {inv.generalDiscountAmount > 0 && (
                   <div className="flex justify-between text-rose-600"><span>{inv.generalDiscountReason || 'Descuento'}</span><span className="font-mono">-${fmt.moneyInt(inv.generalDiscountAmount)}</span></div>
+                )}
+                {inv.roundingAdjustmentAmount > 0 && (
+                  <div className="flex justify-between text-rose-600"><span>{inv.roundingAdjustmentReason || 'Ajuste de centavos'}</span><span className="font-mono">-${fmt.money(inv.roundingAdjustmentAmount)}</span></div>
                 )}
                 {inv.generalChargeAmount > 0 && (
                   <div className="flex justify-between text-slate-700"><span>{inv.generalChargeReason || 'Cargo'}</span><span className="font-mono">${fmt.moneyInt(inv.generalChargeAmount)}</span></div>

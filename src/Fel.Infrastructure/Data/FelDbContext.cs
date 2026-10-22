@@ -367,6 +367,7 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.ReceptionEventPrefix).HasMaxLength(10).IsRequired().HasDefaultValue("EV");
                 entity.Property(e => e.ReceptionEventStartNumber).HasDefaultValue(1);
                 entity.Property(e => e.ForeignCurrencyEnabled).HasDefaultValue(false);
+                entity.Property(e => e.RoundingAdjustment).HasMaxLength(10).IsRequired().HasDefaultValue("None");
                 entity.Property(e => e.DecimalSeparator).HasMaxLength(1).IsRequired().HasDefaultValue(".");
                 entity.Property(e => e.LegalRepresentativeFirstName).HasMaxLength(100);
                 entity.Property(e => e.LegalRepresentativeOtherNames).HasMaxLength(100);
@@ -545,6 +546,8 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.TaxAmount).HasColumnType("decimal(18,4)");
                 entity.Property(e => e.TotalAmount).HasColumnType("decimal(18,4)");
                 entity.Property(e => e.GeneralDiscountAmount).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.RoundingAdjustmentAmount).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.RoundingAdjustmentReason).HasMaxLength(100);
             });
 
             modelBuilder.Entity<DocumentItem>(entity =>

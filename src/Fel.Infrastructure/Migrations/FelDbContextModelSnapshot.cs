@@ -1230,6 +1230,13 @@ namespace Fel.Infrastructure.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(1);
 
+                    b.Property<string>("RoundingAdjustment")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("None");
+
                     b.Property<string>("SmtpFromEmail")
                         .HasColumnType("nvarchar(max)");
 
@@ -2113,6 +2120,13 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<Guid?>("ResolutionId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("RoundingAdjustmentAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("RoundingAdjustmentReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("SectorExtensionData")
                         .IsRequired()

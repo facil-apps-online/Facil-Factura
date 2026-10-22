@@ -124,6 +124,12 @@ namespace Fel.Core.Entities
         public string? GeneralDiscountReason { get; set; }
         public decimal? GeneralDiscountAmount { get; set; }
 
+        // Descuento automático por el ajuste de centavos del Client (ver RoundingAdjustment): lo que sobra del valor a pagar para dejarlo
+        // al peso, a la decena o a la centena. Va aparte del descuento general que escribe el usuario para no sumarse dos veces al editar el
+        // borrador; en el XML y en Dataico viaja como un descuento general más. Nulo si no aplica.
+        public decimal? RoundingAdjustmentAmount { get; set; }
+        public string? RoundingAdjustmentReason { get; set; }
+
         // Cargo general del documento completo (ej. "Flete"), simétrico al descuento general
         // — se envía a Dataico como "charges" con discount=false.
         public string? GeneralChargeReason { get; set; }

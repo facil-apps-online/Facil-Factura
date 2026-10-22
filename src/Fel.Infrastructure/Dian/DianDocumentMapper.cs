@@ -254,6 +254,20 @@ namespace Fel.Infrastructure.Dian
                     Amount = generalDiscount
                 });
             }
+            // Ajuste de centavos del Client: otro descuento general (mismo código 09), que baja el valor a pagar del XML.
+            var roundingAdjustment = document.RoundingAdjustmentAmount ?? 0;
+            if (roundingAdjustment > 0)
+            {
+                data.AllowanceCharges.Add(new AllowanceChargeData
+                {
+                    ChargeIndicator = false,
+                    ReasonCode = "09",
+                    Reason = string.IsNullOrWhiteSpace(document.RoundingAdjustmentReason) ? "Ajuste de centavos" : document.RoundingAdjustmentReason,
+                    Percentage = 100m,
+                    BaseAmount = roundingAdjustment,
+                    Amount = roundingAdjustment
+                });
+            }
             var generalCharge = document.GeneralChargeAmount ?? 0;
             if (generalCharge > 0)
             {
@@ -268,7 +282,7 @@ namespace Fel.Infrastructure.Dian
             }
 
             // FAU14: valor de la factura = TaxInclusiveAmount - descuentos + cargos.
-            data.PayableAmount = data.TaxInclusiveAmount - generalDiscount + generalCharge;
+            data.PayableAmount = data.TaxInclusiveAmount - generalDiscount - roundingAdjustment + generalCharge;
 
             return data;
         }

@@ -62,6 +62,10 @@ namespace Fel.Core.Entities
         // formulario de factura no ofrece moneda: todo sale en COP.
         public bool ForeignCurrencyEnabled { get; set; }
 
+        // Ajuste de centavos: este Client factura a entidades que no manejan centavos, así que a cada factura en pesos se le descuenta (hacia abajo,
+        // nunca se redondea hacia arriba) lo que sobre del valor a pagar: None, Peso, Decena o Centena (ver RoundingAdjustment).
+        public string RoundingAdjustment { get; set; } = Fel.Core.Models.RoundingAdjustment.None;
+
         // Responsabilidad de renta del RUT (casilla 53), excluyentes entre sí: 05 = Impuesto de renta
         // y complementarios régimen ordinario, 04 = régimen especial, 47 = Régimen Simple de
         // Tributación. Vacío = aún no capturado: la representación gráfica no declara nada.

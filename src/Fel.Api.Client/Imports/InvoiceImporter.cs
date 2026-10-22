@@ -12,7 +12,7 @@ namespace Fel.Api.Client.Imports
         public Guid ClientId { get; init; }
         public Guid BranchId { get; init; }
         public Guid DocumentTypeId { get; init; }
-        public string DocumentTypeCode { get; init; } = "FE";
+        public string DocumentTypeCode { get; init; } = "FE-STD";
         public Guid ResolutionId { get; init; }
         // Fecha de emisión de los borradores: hoy (hora de Colombia), sin importar la fecha del archivo.
         public DateTime Today { get; init; }

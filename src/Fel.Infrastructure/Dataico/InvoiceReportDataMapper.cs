@@ -161,7 +161,7 @@ namespace Fel.Infrastructure.Dataico
                     + DianRounding.Round2(DianRounding.Round2(baseAmount) * gr.Rate / 100);
             }
             var totalRetenciones = retencionesPorCategoria.Values.Sum();
-            var totalNeto = invoice.TotalAmount - (invoice.GeneralDiscountAmount ?? 0) + (invoice.GeneralChargeAmount ?? 0);
+            var totalNeto = invoice.TotalAmount - (invoice.GeneralDiscountAmount ?? 0) - (invoice.RoundingAdjustmentAmount ?? 0) + (invoice.GeneralChargeAmount ?? 0);
 
             // IVA discriminado por tarifa, para la misma tabla de pie que las retenciones — solo
             // ítems Gravados con tarifa > 0 generan línea (un Excluido/Exento con 0% no aporta IVA
@@ -210,6 +210,15 @@ namespace Fel.Infrastructure.Dataico
                 {
                     ["Concepto"] = string.IsNullOrWhiteSpace(invoice.GeneralDiscountReason) ? "Descuento general" : invoice.GeneralDiscountReason,
                     ["Valor"] = Money(invoice.GeneralDiscountAmount!.Value),
+                    ["Tipo"] = "Descuento"
+                });
+            }
+            if ((invoice.RoundingAdjustmentAmount ?? 0) > 0)
+            {
+                impuestos.Add(new Dictionary<string, object?>
+                {
+                    ["Concepto"] = string.IsNullOrWhiteSpace(invoice.RoundingAdjustmentReason) ? "Ajuste de centavos" : invoice.RoundingAdjustmentReason,
+                    ["Valor"] = Money(invoice.RoundingAdjustmentAmount!.Value),
                     ["Tipo"] = "Descuento"
                 });
             }
@@ -302,7 +311,7 @@ namespace Fel.Infrastructure.Dataico
                     // Totales — ya formateados como texto (separadores según Client.DecimalSeparator, 2 decimales).
                     ["Subtotal"] = Money(invoice.Subtotal),
                     ["Iva"] = Money(invoice.TaxAmount),
-                    ["Descuento"] = Money(invoice.GeneralDiscountAmount ?? 0),
+                    ["Descuento"] = Money((invoice.GeneralDiscountAmount ?? 0) + (invoice.RoundingAdjustmentAmount ?? 0)),
                     ["Cargo"] = Money(invoice.GeneralChargeAmount ?? 0),
                     // Ambos null cuando la plantilla tiene MostrarRetenciones=false o el documento
                     // no tiene retenciones — así la plantilla oculta la línea sin más lógica.

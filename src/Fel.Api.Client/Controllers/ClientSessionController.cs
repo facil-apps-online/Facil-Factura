@@ -98,7 +98,7 @@ namespace Fel.Api.Client.Controllers
                 .ToListAsync();
 
             var client = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == Branch.ClientId)
-                .Select(c => new { c.ControlsPayments, c.ForeignCurrencyEnabled, c.Latitude, c.Longitude, IsDataico = c.Integrator.Code == "DATAICO" })
+                .Select(c => new { c.ControlsPayments, c.ForeignCurrencyEnabled, c.RoundingAdjustment, c.Latitude, c.Longitude, IsDataico = c.Integrator.Code == "DATAICO" })
                 .FirstOrDefaultAsync();
 
             return Ok(new
@@ -110,7 +110,7 @@ namespace Fel.Api.Client.Controllers
                 // Módulos que el Tenant activó para este cliente: el portal oculta el menú y la ruta de lo que esté apagado.
                 features = new
                 {
-                    payments = client?.ControlsPayments ?? false, foreignCurrency = client?.ForeignCurrencyEnabled ?? false, dianLookup = await _acquirerLookup.IsAvailableAsync(Branch.ClientId), dataico = client?.IsDataico ?? false,
+                    payments = client?.ControlsPayments ?? false, foreignCurrency = client?.ForeignCurrencyEnabled ?? false, roundingAdjustment = client?.RoundingAdjustment ?? "None", dianLookup = await _acquirerLookup.IsAvailableAsync(Branch.ClientId), dataico = client?.IsDataico ?? false,
                     // Esta empresa es la propietaria de su tenant (la que factura a los demás): puede sincronizar los clientes del tenant como terceros.
                     tenantOwner = await _dbContext.TenantInvoicingSettings.AsNoTracking().AnyAsync(s => s.OwnerClientId == Branch.ClientId)
                 },

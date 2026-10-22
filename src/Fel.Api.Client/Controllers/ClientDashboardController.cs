@@ -60,7 +60,7 @@ namespace Fel.Api.Client.Controllers
                 var periodDocs = await _dbContext.Documents.AsNoTracking().ForBranch(CurrentBranchScope)
                     .Where(d => d.ClientId == clientId && d.IssueDate >= periodStart && d.IssueDate < periodEnd)
                     // TotalAmount es el bruto (subtotal + IVA): el total del documento aplica además el descuento y el cargo general.
-                    .Select(d => new { d.Status, d.TypeCode, TotalAmount = d.TotalAmount - (d.GeneralDiscountAmount ?? 0) + (d.GeneralChargeAmount ?? 0) })
+                    .Select(d => new { d.Status, d.TypeCode, TotalAmount = d.TotalAmount - (d.GeneralDiscountAmount ?? 0) - (d.RoundingAdjustmentAmount ?? 0) + (d.GeneralChargeAmount ?? 0) })
                     .ToListAsync();
 
                 var recentDocuments = await _dbContext.Documents.AsNoTracking().ForBranch(CurrentBranchScope)
@@ -74,7 +74,7 @@ namespace Fel.Api.Client.Controllers
                         d.Number,
                         d.ProcessedAt,
                         CustomerName = d.Customer != null ? d.Customer.Name : null,
-                        TotalAmount = d.TotalAmount - (d.GeneralDiscountAmount ?? 0) + (d.GeneralChargeAmount ?? 0)
+                        TotalAmount = d.TotalAmount - (d.GeneralDiscountAmount ?? 0) - (d.RoundingAdjustmentAmount ?? 0) + (d.GeneralChargeAmount ?? 0)
                     })
                     .ToListAsync();
 

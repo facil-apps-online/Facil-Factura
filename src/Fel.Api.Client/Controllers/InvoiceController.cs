@@ -428,6 +428,8 @@ namespace Fel.Api.Client.Controllers
                     invoice.Notes = (invoice.Notes ?? string.Empty).Trim();
                 }
 
+                Fel.Core.Models.RoundingAdjustment.Apply(invoice, invoice.Items, await _dbContext.Clients.AsNoTracking().Where(c => c.Id == clientId).Select(c => c.RoundingAdjustment).FirstOrDefaultAsync());
+
                 _dbContext.Documents.Add(invoice);
                 await _dbContext.SaveChangesAsync();
 
@@ -548,6 +550,8 @@ namespace Fel.Api.Client.Controllers
                     _dbContext.DocumentGeneralRetentions.Add(generalRetention);
                 }
 
+                Fel.Core.Models.RoundingAdjustment.Apply(invoice, invoiceData.Items, await _dbContext.Clients.AsNoTracking().Where(c => c.Id == clientId).Select(c => c.RoundingAdjustment).FirstOrDefaultAsync());
+
                 await _dbContext.SaveChangesAsync();
                 return Ok(invoice);
             }
@@ -638,6 +642,9 @@ namespace Fel.Api.Client.Controllers
                 {
                     return BadRequest("Debes indicar el medio de pago.");
                 }
+
+                // El ajuste de centavos se recalcula con lo que realmente se va a enviar (el borrador pudo guardarse antes de activarlo en el cliente).
+                Fel.Core.Models.RoundingAdjustment.Apply(invoice, invoice.Items, client.RoundingAdjustment);
 
                 DocumentSubmissionResult result;
                 try
@@ -744,6 +751,9 @@ namespace Fel.Api.Client.Controllers
             if (result.Preview.FileErrors.Count > 0) return BadRequest(string.Join(" ", result.Preview.FileErrors));
             if (result.Documents.Count == 0) return BadRequest("No hay facturas por crear en este archivo.");
 
+            var roundingMode = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == GetCurrentClientId()).Select(c => c.RoundingAdjustment).FirstOrDefaultAsync();
+            foreach (var document in result.Documents) Fel.Core.Models.RoundingAdjustment.Apply(document, document.Items, roundingMode);
+
             _dbContext.Customers.AddRange(result.Customers);
             _dbContext.Products.AddRange(result.Products);
             _dbContext.Documents.AddRange(result.Documents);
@@ -783,7 +793,7 @@ namespace Fel.Api.Client.Controllers
                 .OrderByDescending(r => r.IsDefault).ThenByDescending(r => r.ValidTo).ToListAsync();
             var resolution = options.ResolutionId.HasValue ? resolutions.FirstOrDefault(r => r.Id == options.ResolutionId.Value) : resolutions.FirstOrDefault();
             var docType = await _dbContext.ClientEnabledDocumentTypes.AsNoTracking()
-                .Where(e => e.ClientId == clientId && e.DocumentType!.IsActive && e.DocumentType.Code == "FE")
+                .Where(e => e.ClientId == clientId && e.DocumentType!.IsActive && e.DocumentType.Code == "FE-STD")
                 .Select(e => e.DocumentType!).FirstOrDefaultAsync();
             if (sheet.FileErrors.Count == 0)
             {

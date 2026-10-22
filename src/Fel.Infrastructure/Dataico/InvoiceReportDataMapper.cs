@@ -167,10 +167,25 @@ namespace Fel.Infrastructure.Dataico
             // ítems Gravados con tarifa > 0 generan línea (un Excluido/Exento con 0% no aporta IVA
             // que discriminar).
             var ivaPorTarifa = new Dictionary<decimal, decimal>();
+            var impuestosAdicionales = new Dictionary<(string Categoria, decimal Tarifa), decimal>();
             foreach (var item in items)
             {
                 if (item.TaxRate <= 0) continue;
                 ivaPorTarifa[item.TaxRate] = ivaPorTarifa.GetValueOrDefault(item.TaxRate) + item.TaxAmount;
+                foreach (var tax in item.AdditionalTaxes)
+                {
+                    var key = (tax.TaxCategory, tax.Rate);
+                    impuestosAdicionales[key] = impuestosAdicionales.GetValueOrDefault(key) + tax.Amount;
+                }
+            }
+            // Los impuestos adicionales se imprimen en la misma tabla que el IVA; no se tratan como retenciones.
+            foreach (var item in items.Where(i => i.TaxRate <= 0))
+            {
+                foreach (var tax in item.AdditionalTaxes)
+                {
+                    var key = (tax.TaxCategory, tax.Rate);
+                    impuestosAdicionales[key] = impuestosAdicionales.GetValueOrDefault(key) + tax.Amount;
+                }
             }
 
             // Tabla unificada para el subreporte del pie: IVA (suma, texto normal) y — solo si la
@@ -183,6 +198,15 @@ namespace Fel.Infrastructure.Dataico
                 impuestos.Add(new Dictionary<string, object?>
                 {
                     ["Concepto"] = $"IVA {Pct(kv.Key)}",
+                    ["Valor"] = Money(kv.Value),
+                    ["Tipo"] = "Iva"
+                });
+            }
+            foreach (var kv in impuestosAdicionales.OrderBy(kv => kv.Key.Categoria).ThenBy(kv => kv.Key.Tarifa))
+            {
+                impuestos.Add(new Dictionary<string, object?>
+                {
+                    ["Concepto"] = $"{kv.Key.Categoria} {Pct(kv.Key.Tarifa)}",
                     ["Valor"] = Money(kv.Value),
                     ["Tipo"] = "Iva"
                 });

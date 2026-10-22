@@ -299,7 +299,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                     new XElement(cbc + "TaxAmount", new XAttribute("currencyID", data.Currency), tax.TaxAmount.ToString("0.00").Replace(",", ".")),
                     new XElement(cac + "TaxCategory",
                         new XElement(cbc + "Percent", tax.Percent.ToString("0.00").Replace(",", ".")),
-                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", tax.TaxId), new XElement(cbc + "Name", "IVA"))
+                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", tax.TaxId), new XElement(cbc + "Name", tax.TaxName))
                     )
                 ));
             }
@@ -496,7 +496,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                         new XElement(cbc + "TaxAmount", new XAttribute("currencyID", currency), tax.TaxAmount.ToString("0.00").Replace(",", ".")),
                         new XElement(cac + "TaxCategory",
                             new XElement(cbc + "Percent", tax.Percent.ToString("0.00").Replace(",", ".")),
-                            new XElement(cac + "TaxScheme", new XElement(cbc + "ID", tax.TaxId), new XElement(cbc + "Name", "IVA"))
+                            new XElement(cac + "TaxScheme", new XElement(cbc + "ID", tax.TaxId), new XElement(cbc + "Name", tax.TaxName))
                         )
                     ));
                 }

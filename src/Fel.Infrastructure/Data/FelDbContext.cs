@@ -46,6 +46,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<UnitOfMeasure> UnitsOfMeasure => Set<UnitOfMeasure>();
         public DbSet<DocumentItem> DocumentItems { get; set; }
         public DbSet<DocumentRetention> DocumentRetentions => Set<DocumentRetention>();
+        public DbSet<DocumentItemTax> DocumentItemTaxes => Set<DocumentItemTax>();
         public DbSet<DocumentGeneralRetention> DocumentGeneralRetentions => Set<DocumentGeneralRetention>();
         public DbSet<DocumentObservation> DocumentObservations => Set<DocumentObservation>();
         public DbSet<TenantUserPricing> TenantUserPricings => Set<TenantUserPricing>();
@@ -600,6 +601,20 @@ namespace Fel.Infrastructure.Data
 
                 entity.HasOne(e => e.DocumentItem)
                       .WithMany(i => i.Retentions)
+                      .HasForeignKey(e => e.DocumentItemId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<DocumentItemTax>(entity =>
+            {
+                entity.ToTable("DocumentItemTaxes");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.TaxCategory).IsRequired().HasMaxLength(30);
+                entity.Property(e => e.Rate).HasColumnType("decimal(5,2)");
+                entity.Property(e => e.BaseAmount).HasColumnType("decimal(18,4)");
+                entity.Property(e => e.Amount).HasColumnType("decimal(18,4)");
+                entity.HasOne(e => e.DocumentItem)
+                      .WithMany(i => i.AdditionalTaxes)
                       .HasForeignKey(e => e.DocumentItemId)
                       .OnDelete(DeleteBehavior.Cascade);
             });

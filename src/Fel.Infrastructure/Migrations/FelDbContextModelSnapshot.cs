@@ -2308,6 +2308,36 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("DocumentItems", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.DocumentItemTax", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("BaseAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("DocumentItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentItemId");
+
+                    b.ToTable("DocumentItemTaxes", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.DocumentLegendByPrefix", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6331,6 +6361,17 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.DocumentItemTax", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.DocumentItem", "DocumentItem")
+                        .WithMany("AdditionalTaxes")
+                        .HasForeignKey("DocumentItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DocumentItem");
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.DocumentLegendByPrefix", b =>
                 {
                     b.HasOne("Fel.Core.Entities.Client", "Client")
@@ -6791,6 +6832,8 @@ namespace Fel.Infrastructure.Migrations
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentItem", b =>
                 {
+                    b.Navigation("AdditionalTaxes");
+
                     b.Navigation("Retentions");
                 });
 

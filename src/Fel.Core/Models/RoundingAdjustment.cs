@@ -53,7 +53,7 @@ namespace Fel.Core.Models
             document.RoundingAdjustmentReason = null;
             if (Unit(mode) == 0 || !Applies(document)) return;
 
-            var gross = items.Sum(i => i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100) + i.TaxAmount);
+            var gross = items.Sum(i => i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100) + i.TaxAmount + i.AdditionalTaxes.Sum(t => t.Amount));
             var payable = gross - (document.GeneralDiscountAmount ?? 0) + (document.GeneralChargeAmount ?? 0);
             var adjustment = Compute(payable, mode);
             if (adjustment <= 0) return;

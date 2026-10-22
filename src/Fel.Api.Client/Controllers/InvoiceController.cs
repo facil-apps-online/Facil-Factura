@@ -207,6 +207,7 @@ namespace Fel.Api.Client.Controllers
                     .Include(d => d.Resolution)
                     .Include(d => d.ReferenceDocument)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.AdditionalTaxes)
                     .Include(d => d.GeneralRetentions)
                     .Where(d => d.ClientId == clientId && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
                     .OrderByDescending(d => d.IssueDate)
@@ -267,6 +268,7 @@ namespace Fel.Api.Client.Controllers
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.AdditionalTaxes)
                     .Include(d => d.GeneralRetentions)
                     .FirstOrDefaultAsync(d => d.Id == id);
 
@@ -316,6 +318,7 @@ namespace Fel.Api.Client.Controllers
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.AdditionalTaxes)
                     .Include(d => d.GeneralRetentions)
                     .FirstOrDefaultAsync(d => d.Id == id);
 
@@ -400,6 +403,11 @@ namespace Fel.Api.Client.Controllers
                     {
                         retention.Id = Guid.NewGuid();
                         retention.DocumentItemId = item.Id;
+                    }
+                    foreach (var tax in item.AdditionalTaxes)
+                    {
+                        tax.Id = Guid.NewGuid();
+                        tax.DocumentItemId = item.Id;
                     }
                 }
 
@@ -531,6 +539,11 @@ namespace Fel.Api.Client.Controllers
                         retention.Id = Guid.NewGuid();
                         retention.DocumentItemId = item.Id;
                     }
+                    foreach (var tax in item.AdditionalTaxes)
+                    {
+                        tax.Id = Guid.NewGuid();
+                        tax.DocumentItemId = item.Id;
+                    }
 
                     // Se agrega vía el DbSet (no invoice.Items.Add) para que EF lo marque Added de
                     // forma explícita: como el Document padre ya viene trackeado (se cargó arriba),
@@ -569,6 +582,7 @@ namespace Fel.Api.Client.Controllers
                 var clientId = GetCurrentClientId();
                 var invoice = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.AdditionalTaxes)
                     .Include(d => d.GeneralRetentions)
                     .Include(d => d.Customer)
                     .FirstOrDefaultAsync(d => d.Id == id);
@@ -815,7 +829,7 @@ namespace Fel.Api.Client.Controllers
                 .Select(c => new { c.Id, c.IdentificationNumber }).ToListAsync();
             var existingCustomerIds = new Dictionary<string, Guid>();
             foreach (var c in customers) existingCustomerIds.TryAdd(Fel.Api.Client.Imports.InvoiceImporter.NormalizeParty(c.IdentificationNumber), c.Id);
-            var existingProducts = (await _dbContext.Products.AsNoTracking().Include(p => p.UnitOfMeasure)
+            var existingProducts = (await _dbContext.Products.AsNoTracking().Include(p => p.UnitOfMeasure).Include(p => p.Taxes)
                     .Where(p => p.ClientId == clientId && p.Scope == ProductScope.Invoice).ToListAsync())
                 .GroupBy(p => p.Code, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
             var rates = (await _dbContext.TaxCatalogItems.AsNoTracking().Where(t => t.Kind == TaxCatalogKind.IvaRate && t.IsActive).Select(t => t.Category).ToListAsync())
@@ -906,6 +920,7 @@ namespace Fel.Api.Client.Controllers
                     .Include(d => d.Customer)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
+                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.AdditionalTaxes)
                     .Include(d => d.GeneralRetentions)
                     .FirstOrDefaultAsync(d => d.Id == id);
 

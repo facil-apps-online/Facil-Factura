@@ -29,6 +29,21 @@ namespace Fel.Infrastructure.Dataico
             _ => null
         };
 
+        private static string DataicoTaxCategory(string category) => category switch
+        {
+            "IMP_CONSUMO" or "IMP_CONSUMO_LICOR" => "IC",
+            "IMP_BOLSA_PLASTICA" => "IBP",
+            _ => category
+        };
+
+        private static void AddAdditionalTaxes(List<DataicoTax> target, IEnumerable<DocumentItemTax> taxes)
+        {
+            foreach (var tax in taxes.Where(t => !string.IsNullOrWhiteSpace(t.TaxCategory) && t.Rate >= 0))
+            {
+                target.Add(new DataicoTax { tax_category = DataicoTaxCategory(tax.TaxCategory), tax_rate = tax.Rate });
+            }
+        }
+
         // Retenciones por ítem (las que se eligen a mano en cada línea): solo categoría y tarifa, Dataico
         // calcula base y valor. "extra" solo lo usa el documento soporte: las retenciones generales del
         // documento, que se agregan a cada ítem (ver BuildSupportDocumentRequest).
@@ -188,6 +203,7 @@ namespace Fel.Infrastructure.Dataico
                 {
                     dataicoItem.taxes.Add(ivaTax);
                 }
+                AddAdditionalTaxes(dataicoItem.taxes, item.AdditionalTaxes);
 
                 request.items.Add(dataicoItem);
             }
@@ -275,6 +291,7 @@ namespace Fel.Infrastructure.Dataico
 
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);
                 if (ivaTax != null) dataicoItem.taxes.Add(ivaTax);
+                AddAdditionalTaxes(dataicoItem.taxes, item.AdditionalTaxes);
 
                 request.items.Add(dataicoItem);
             }
@@ -319,6 +336,7 @@ namespace Fel.Infrastructure.Dataico
 
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);
                 if (ivaTax != null) dataicoItem.taxes.Add(ivaTax);
+                AddAdditionalTaxes(dataicoItem.taxes, item.AdditionalTaxes);
 
                 request.items.Add(dataicoItem);
             }
@@ -373,6 +391,7 @@ namespace Fel.Infrastructure.Dataico
                 {
                     adjustmentItem.taxes.Add(ivaTax);
                 }
+                AddAdditionalTaxes(adjustmentItem.taxes, item.AdditionalTaxes);
 
                 request.items.Add(adjustmentItem);
             }
@@ -439,6 +458,7 @@ namespace Fel.Infrastructure.Dataico
                 {
                     dataicoItem.taxes.Add(ivaTax);
                 }
+                AddAdditionalTaxes(dataicoItem.taxes, item.AdditionalTaxes);
 
                 request.items.Add(dataicoItem);
             }

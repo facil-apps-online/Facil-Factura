@@ -218,6 +218,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [retentionCatalog, setRetentionCatalog] = useState<{ id: string, category: string, name: string, rate: number }[]>([]);
   const [ivaRateCatalog, setIvaRateCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  const [otherTaxCatalog, setOtherTaxCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [paymentTermCatalog, setPaymentTermCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [paymentMeansCatalog, setPaymentMeansCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [formaPagoCatalog, setFormaPagoCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
@@ -324,6 +325,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       .catch(() => {});
     api.get('/client/tax-catalog?kind=IvaRate')
       .then(res => setIvaRateCatalog(res.data))
+      .catch(() => {});
+    api.get('/client/tax-catalog?kind=OtherTax')
+      .then(res => setOtherTaxCatalog(res.data))
       .catch(() => {});
     api.get('/client/tax-catalog?kind=PaymentTerm')
       .then(res => setPaymentTermCatalog(res.data))
@@ -508,6 +512,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           discountRate: i.discountRate || 0,
           taxAmount: i.taxAmount,
           totalAmount: i.totalAmount,
+           additionalTaxes: (i.additionalTaxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate, baseAmount: t.baseAmount, amount: t.amount })),
           brandName: i.brandName || '',
           modelName: i.modelName || '',
           tariffCode: i.tariffCode || '',
@@ -605,6 +610,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           discountRate: i.discountRate || 0,
           taxAmount: i.taxAmount,
           totalAmount: i.totalAmount,
+           additionalTaxes: (i.additionalTaxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate, baseAmount: t.baseAmount, amount: t.amount })),
           retentions: (i.retentions || []).map((r: any) => {
             const concept = autoRetentionCatalog.find((c: any) => c.taxCategory === r.taxCategory && c.rate === r.rate);
             return {
@@ -670,6 +676,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           discountRate: i.discountRate || 0,
           taxAmount: i.taxAmount,
           totalAmount: i.totalAmount,
+           additionalTaxes: (i.additionalTaxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate, baseAmount: t.baseAmount, amount: t.amount })),
           retentions: (i.retentions || []).map((r: any) => {
             const concept = autoRetentionCatalog.find((c: any) => c.taxCategory === r.taxCategory && c.rate === r.rate);
             return {
@@ -730,6 +737,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           discountRate: i.discountRate || 0,
           taxAmount: i.taxAmount,
           totalAmount: i.totalAmount,
+           additionalTaxes: (i.additionalTaxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate, baseAmount: t.baseAmount, amount: t.amount })),
           // La nota es el reflejo del documento que ajusta: se copian sus retenciones (por ítem y generales)
           // y el descuento/cargo generales, igual que hace la nota crédito con la factura.
           retentions: (i.retentions || []).map((r: any) => {
@@ -848,7 +856,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { productId: '', code: '', name: '', quantity: 1, unitPrice: 0, unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined', ivaTreatment: isSupport ? 'Exento' : 'Gravado', taxRate: isSupport ? 0 : 19, discountRate: 0, taxAmount: 0, totalAmount: 0, retentions: [] }]
+      items: [...formData.items, { productId: '', code: '', name: '', quantity: 1, unitPrice: 0, unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined', ivaTreatment: isSupport ? 'Exento' : 'Gravado', taxRate: isSupport ? 0 : 19, discountRate: 0, taxAmount: 0, totalAmount: 0, additionalTaxes: [], retentions: [] }]
     });
   };
 
@@ -874,6 +882,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         item.unitOfMeasureDisplayFormat = p.unitOfMeasure?.displayFormat || 'Combined';
         item.ivaTreatment = isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado');
         item.taxRate = isSupport ? 0 : (p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0);
+        item.additionalTaxes = isSupport ? [] : (p.taxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate }));
       }
     }
 
@@ -892,7 +901,35 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     const effectiveRate = !isSupport && item.ivaTreatment === 'Gravado' ? item.taxRate : 0;
     const lineBase = item.quantity * item.unitPrice * (1 - (item.discountRate || 0) / 100);
     item.taxAmount = lineBase * (effectiveRate / 100);
-    item.totalAmount = lineBase + item.taxAmount;
+    item.additionalTaxes = (item.additionalTaxes || []).map((tax: any) => ({ ...tax, baseAmount: lineBase, amount: lineBase * (Number(tax.rate) || 0) / 100 }));
+    item.totalAmount = lineBase + item.taxAmount + item.additionalTaxes.reduce((sum: number, tax: any) => sum + (tax.amount || 0), 0);
+  };
+
+  const updateAdditionalTax = (itemIndex: number, taxIndex: number, field: string, value: any) => {
+    const items = [...formData.items];
+    const item = { ...items[itemIndex], additionalTaxes: [...(items[itemIndex].additionalTaxes || [])] };
+    item.additionalTaxes[taxIndex] = { ...item.additionalTaxes[taxIndex], [field]: value };
+    recalcItem(item);
+    items[itemIndex] = item;
+    recalculateTotals(items);
+  };
+
+  const addAdditionalTax = (itemIndex: number) => {
+    const first = otherTaxCatalog[0];
+    if (!first) return;
+    const items = [...formData.items];
+    const item = { ...items[itemIndex], additionalTaxes: [...(items[itemIndex].additionalTaxes || []), { taxCategory: first.category, rate: 0 }] };
+    recalcItem(item);
+    items[itemIndex] = item;
+    recalculateTotals(items);
+  };
+
+  const removeAdditionalTax = (itemIndex: number, taxIndex: number) => {
+    const items = [...formData.items];
+    const item = { ...items[itemIndex], additionalTaxes: (items[itemIndex].additionalTaxes || []).filter((_: any, i: number) => i !== taxIndex) };
+    recalcItem(item);
+    items[itemIndex] = item;
+    recalculateTotals(items);
   };
 
   // Vigencia del UVT: el valor más reciente cuyo EffectiveFrom no supere la fecha de factura.
@@ -912,7 +949,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     let tax = 0;
     newItems.forEach(i => {
       sub += i.quantity * i.unitPrice * (1 - (i.discountRate || 0) / 100);
-      tax += i.taxAmount;
+      tax += i.taxAmount + (i.additionalTaxes || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
     });
     setFormData({
       ...formData,
@@ -1033,6 +1070,17 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     return Array.from(map.values()).sort((a, b) => a.order - b.order);
   };
 
+  const additionalTaxBreakdown = () => {
+    const map = new Map<string, { label: string, amount: number }>();
+    formData.items.forEach(item => (item.additionalTaxes || []).forEach((tax: any) => {
+      const key = `${tax.taxCategory}|${tax.rate}`;
+      const current = map.get(key);
+      const label = `${otherTaxCatalog.find(c => c.category === tax.taxCategory)?.name || tax.taxCategory} ${tax.rate}%`;
+      map.set(key, { label, amount: (current?.amount || 0) + (tax.amount || 0) });
+    }));
+    return Array.from(map.values());
+  };
+
   // Mandante creado desde la línea: se agrega a la lista y queda elegido en esa misma línea.
   const handleMandanteSaved = (mandante: any) => {
     const index = mandanteModalForItemIndex;
@@ -1073,7 +1121,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
       const rate = isSupport ? 0 : (p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0);
       const newItems = [...formData.items];
-      const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: baseUnitPrice(p, isSupport), ivaTreatment: isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado'), taxRate: rate };
+       const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: baseUnitPrice(p, isSupport), ivaTreatment: isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado'), taxRate: rate, additionalTaxes: isSupport ? [] : (p.taxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate })) };
       recalcItem(item);
       newItems[productModalForItemIndex] = item;
       recalculateTotals(newItems);
@@ -1170,7 +1218,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             retentions: (i.retentions || []).map((r: any) => {
               const baseAmount = r.baseType === 'IvaGenerado' ? i.taxAmount : lineBase;
               return { taxCategory: r.taxCategory, rate: r.rate, baseAmount, amount: baseAmount * r.rate / 100 };
-            })
+            }),
+            additionalTaxes: (i.additionalTaxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate, baseAmount: lineBase, amount: lineBase * t.rate / 100 }))
           };
         })
       };
@@ -1304,6 +1353,24 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 : ivaRateCatalog.map(c => ({ value: c.category, label: `${c.category}%` }))}
             />
           )}
+        </div>
+      ),
+      additionalTaxes: (
+        <div className="space-y-1 min-w-52">
+          {(item.additionalTaxes || []).map((tax: any, taxIndex: number) => (
+            <div key={taxIndex} className="flex items-center gap-1">
+              <SearchableSelect
+                className="flex-1"
+                inputClassName="w-full p-1.5 border border-slate-200 rounded text-xs outline-none"
+                value={tax.taxCategory}
+                onChange={v => updateAdditionalTax(index, taxIndex, 'taxCategory', v)}
+                options={otherTaxCatalog.map(c => ({ value: c.category, label: c.name }))}
+              />
+              <DecimalInput maxDecimals={2} value={tax.rate || 0} onValueChange={v => updateAdditionalTax(index, taxIndex, 'rate', v)} className="w-16 p-1.5 border border-slate-200 rounded text-xs font-mono" />
+              <button type="button" onClick={() => removeAdditionalTax(index, taxIndex)} className="text-rose-400 hover:text-rose-600" title="Quitar impuesto"><X size={14} /></button>
+            </div>
+          ))}
+          <button type="button" onClick={() => addAdditionalTax(index)} disabled={otherTaxCatalog.length === 0} className="text-xs text-primary font-semibold hover:underline disabled:opacity-40">+ Impuesto adicional</button>
         </div>
       ),
       // Factura de exportación: marca, modelo y subpartida arancelaria del ítem (todos opcionales).
@@ -1685,6 +1752,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                       <th className="p-2">Precio unitario</th>
                       <th className="p-2">Descuento %</th>
                       <th className="p-2">IVA</th>
+                      <th className="p-2">Otros impuestos</th>
                       <th className="p-2">Retención</th>
                       <th className="p-2 text-right">Total</th>
                       <th className="p-2"></th>
@@ -1702,6 +1770,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                           <td className="p-2">{f.unitPrice}</td>
                           <td className="p-2">{f.discount}</td>
                           <td className="p-2">{f.iva}</td>
+                          <td className="p-2">{f.additionalTaxes}</td>
                           <td className="p-2">{f.retention}</td>
                           <td className="p-2 pr-3 text-right font-mono font-bold text-slate-700">
                             {symOf(formData)}{fmt.money(item.totalAmount)}
@@ -1761,10 +1830,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                         <span className={label}>Precio unitario</span>
                         {f.unitPrice}
                       </div>
-                      <div>
+                        <div>
                         <span className={label}>IVA</span>
                         {f.iva}
                       </div>
+                        <div>
+                          <span className={label}>Otros impuestos</span>
+                          {f.additionalTaxes}
+                        </div>
                       <div>
                         <span className={label}>Retención</span>
                         {f.retention}
@@ -1967,6 +2040,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                       <span className="font-mono">{symOf(formData)}{fmt.money(g.base)}</span>
                     </div>
                   )
+                ))}
+                {additionalTaxBreakdown().map(t => (
+                  <div key={t.label} className="flex justify-between text-slate-500 mb-2">
+                    <span>{t.label}:</span>
+                    <span className="font-mono">{symOf(formData)}{fmt.money(t.amount)}</span>
+                  </div>
                 ))}
                 {discriminatedRetentions().map(r => (
                   <div key={r.label} className="flex justify-between text-rose-600 mb-2">

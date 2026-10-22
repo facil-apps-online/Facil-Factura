@@ -14,6 +14,24 @@ namespace Fel.Infrastructure.Dian
     // DIAN, pero el resto del mapeo (líneas, impuestos, resolución, terceros) es correcto ya.
     public static class DianDocumentMapper
     {
+        private static (string Id, string Name) DianTax(string category) => category switch
+        {
+            "IMP_CONSUMO" or "IMP_CONSUMO_LICOR" => ("04", "INC"),
+            "IMP_BOLSA_PLASTICA" => ("05", "ICBPER"),
+            "ICA" or "IMP_ICA" => ("03", "ICA"),
+            _ when category.Length == 2 && category.All(char.IsDigit) => (category, category),
+            _ => (category, category)
+        };
+
+        private static void AddTaxGroup(
+            IDictionary<(string Id, string Name, decimal Rate), (decimal Base, decimal Amount)> groups,
+            (string Id, string Name, decimal Rate) key,
+            decimal baseAmount,
+            decimal amount)
+        {
+            var previous = groups.TryGetValue(key, out var value) ? value : (Base: 0m, Amount: 0m);
+            groups[key] = (previous.Base + baseAmount, previous.Amount + amount);
+        }
         // Código DIAN (tabla 13.3.4.2 Medios de Pago) para pago a crédito sin instrumento fijo
         // todavía definido — "ZZZ: Acuerdo mutuo". Fijo y no de catálogo: se usa siempre que la
         // venta es a crédito, sin importar qué Medio de Pago quedó seleccionado en el documento
@@ -181,7 +199,7 @@ namespace Fel.Infrastructure.Dian
             // — la base imponible (TaxableAmount) debe reportarse para toda línea, tenga o no IVA
             // efectivo. Ahora se agrupa siempre, y cada línea también lleva su propio TaxSubtotal
             // (ver BaseUblStrategy.BuildLine), con Percent=0 para Exento/Excluido.
-            var taxGroups = new Dictionary<decimal, (decimal Base, decimal Amount)>();
+            var taxGroups = new Dictionary<(string Id, string Name, decimal Rate), (decimal Base, decimal Amount)>();
             decimal lineExtension = 0;
 
             foreach (var item in itemsList)
@@ -218,16 +236,21 @@ namespace Fel.Infrastructure.Dian
 
                 if (!outsideTaxBase)
                 {
-                    line.Taxes.Add(new TaxSubtotal { TaxId = "01", TaxableAmount = lineBase, TaxAmount = item.TaxAmount, Percent = item.TaxRate });
-                    var prev = taxGroups.TryGetValue(item.TaxRate, out var v) ? v : (Base: 0m, Amount: 0m);
-                    taxGroups[item.TaxRate] = (prev.Base + lineBase, prev.Amount + item.TaxAmount);
+                    line.Taxes.Add(new TaxSubtotal { TaxId = "01", TaxName = "IVA", TaxableAmount = lineBase, TaxAmount = item.TaxAmount, Percent = item.TaxRate });
+                    AddTaxGroup(taxGroups, ("01", "IVA", item.TaxRate), lineBase, item.TaxAmount);
+                    foreach (var tax in item.AdditionalTaxes.Where(t => t.Amount != 0))
+                    {
+                        var dianTax = DianTax(tax.TaxCategory);
+                        line.Taxes.Add(new TaxSubtotal { TaxId = dianTax.Id, TaxName = dianTax.Name, TaxableAmount = tax.BaseAmount == 0 ? lineBase : tax.BaseAmount, TaxAmount = tax.Amount, Percent = tax.Rate });
+                        AddTaxGroup(taxGroups, (dianTax.Id, dianTax.Name, tax.Rate), tax.BaseAmount == 0 ? lineBase : tax.BaseAmount, tax.Amount);
+                    }
                 }
                 data.Lines.Add(line);
             }
 
-            foreach (var (rate, (baseAmount, amount)) in taxGroups)
+            foreach (var (key, values) in taxGroups)
             {
-                data.Taxes.Add(new TaxSubtotal { TaxId = "01", TaxableAmount = baseAmount, TaxAmount = amount, Percent = rate });
+                data.Taxes.Add(new TaxSubtotal { TaxId = key.Id, TaxName = key.Name, TaxableAmount = values.Base, TaxAmount = values.Amount, Percent = key.Rate });
             }
 
             var totalTax = taxGroups.Values.Sum(v => v.Amount);

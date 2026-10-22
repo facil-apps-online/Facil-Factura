@@ -42,6 +42,8 @@ namespace Fel.Core.Entities
         // distintas de RET_FUENTE/RET_ICA), por eso vive en el ítem y no en el documento completo.
         public ICollection<DocumentRetention> Retentions { get; set; } = new List<DocumentRetention>();
 
+        public ICollection<DocumentItemTax> AdditionalTaxes { get; set; } = new List<DocumentItemTax>();
+
         // La retención de esta línea se calcula automáticamente a partir del concepto del producto;
         // este interruptor permite anularla puntualmente en una línea excepcional sin tocar el
         // producto ni el catálogo.

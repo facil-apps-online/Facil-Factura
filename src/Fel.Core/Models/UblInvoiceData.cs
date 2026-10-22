@@ -109,6 +109,7 @@ namespace Fel.Core.Models
     public class TaxSubtotal
     {
         public string TaxId { get; set; } = "01";
+        public string TaxName { get; set; } = "IVA";
         public decimal TaxAmount { get; set; }
         public decimal TaxableAmount { get; set; }
         public decimal Percent { get; set; }

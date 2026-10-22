@@ -124,7 +124,7 @@ namespace Fel.Infrastructure.Dian
                     if (xmlEntry == null) continue;
                     using var entryStream = xmlEntry.Open();
                     using var reader = new StreamReader(entryStream, System.Text.Encoding.UTF8);
-                    xml = await reader.ReadToEndAsync();
+                    xml = ReceivedDocumentXmlExtractor.Extract(await reader.ReadToEndAsync());
                 }
 
                 ParsedReceivedDocument parsed;

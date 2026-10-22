@@ -189,7 +189,7 @@ namespace Fel.Api.Client.Controllers
             if (!isZip)
             {
                 using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
-                return await reader.ReadToEndAsync();
+                return ReceivedDocumentXmlExtractor.Extract(await reader.ReadToEndAsync());
             }
 
             using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
@@ -199,7 +199,7 @@ namespace Fel.Api.Client.Controllers
 
             using var entryStream = xmlEntry.Open();
             using var entryReader = new StreamReader(entryStream, System.Text.Encoding.UTF8);
-            return await entryReader.ReadToEndAsync();
+            return ReceivedDocumentXmlExtractor.Extract(await entryReader.ReadToEndAsync());
         }
     }
 }

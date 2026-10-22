@@ -295,8 +295,6 @@ namespace Fel.Api.Client.Imports
                         if (product.TaxesPending) preview.Warnings.Add(tag + $"El producto {code} tiene los impuestos por completar; la línea sale sin IVA.");
                     }
                     else newProductNames.Add(code);
-                    if (ImportText.ParseDecimal(row.Get("IMP_CONSUMO")) is > 0) preview.Warnings.Add(tag + "El impuesto al consumo del archivo no se aplica en las líneas de la factura; se ignoró.");
-
                     decimal unitPrice;
                     if (filePrice != null) unitPrice = filePrice.Value;
                     else if (!isNewProduct && product.UnitPrice > 0)
@@ -309,6 +307,17 @@ namespace Fel.Api.Client.Imports
                     var unit = ctx.Products.Units.FirstOrDefault(u => u.Id == product.UnitOfMeasureId) ?? product.UnitOfMeasure;
                     var lineBase = Math.Round(qty.Value * unitPrice * (1 - discount / 100), 2, MidpointRounding.AwayFromZero);
                     var tax = Math.Round(lineBase * rate / 100, 2, MidpointRounding.AwayFromZero);
+                    var additionalTaxes = product.Taxes
+                        .Where(t => !string.IsNullOrWhiteSpace(t.TaxCategory) && t.Rate >= 0)
+                        .Select(t => new DocumentItemTax
+                        {
+                            Id = Guid.NewGuid(),
+                            TaxCategory = t.TaxCategory,
+                            Rate = t.Rate,
+                            BaseAmount = lineBase,
+                            Amount = Math.Round(lineBase * t.Rate / 100, 2, MidpointRounding.AwayFromZero)
+                        }).ToList();
+                    var additionalTaxTotal = additionalTaxes.Sum(t => t.Amount);
                     var item = new DocumentItem
                     {
                         Id = Guid.NewGuid(),
@@ -325,7 +334,8 @@ namespace Fel.Api.Client.Imports
                         TaxRate = rate,
                         DiscountRate = discount,
                         TaxAmount = tax,
-                        TotalAmount = lineBase + tax
+                        TotalAmount = lineBase + tax + additionalTaxTotal,
+                        AdditionalTaxes = additionalTaxes
                     };
                     foreach (var (column, category) in new[] { ("RET_FUENTE", "RET_FUENTE"), ("RET_ICA", "RET_ICA"), ("RET_IVA", "RET_IVA") })
                     {
@@ -345,9 +355,9 @@ namespace Fel.Api.Client.Imports
                 }
                 if (items.Count == 0 && preview.Errors.Count == 0 && !omit && pending == null) preview.Errors.Add("La factura no tiene líneas.");
 
-                var subtotal = items.Sum(i => i.TotalAmount - i.TaxAmount);
+                var subtotal = items.Sum(i => i.TotalAmount - i.TaxAmount - i.AdditionalTaxes.Sum(t => t.Amount));
                 var taxTotal = items.Sum(i => i.TaxAmount);
-                var total = subtotal + taxTotal;
+                var total = subtotal + taxTotal + items.Sum(i => i.AdditionalTaxes.Sum(t => t.Amount));
                 if (generalDiscount > subtotal) preview.Errors.Add("El descuento global es mayor que el subtotal de la factura.");
 
                 // ---- estado

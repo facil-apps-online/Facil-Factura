@@ -1,3 +1,4 @@
+using System;
 using ClosedXML.Excel;
 using Fel.Api.Client.Models;
 
@@ -76,6 +77,70 @@ namespace Fel.Api.Client.Imports
                     new[] { "DEPARTAMENTO / CIUDAD", "No", "Ubicación", "Se buscan en el catálogo de municipios de la DIAN sin importar tildes ni mayúsculas. Si no se reconocen, se avisa." },
                     new[] { "DIRECCION", "No", "Dirección", "Si falta, en la vista previa eliges: la dirección del cliente, la por defecto para terceros nuevos o dejarla vacía." },
                     new[] { "CATEGORIA", "No", "Rol del tercero", "CLIENTE, PROVEEDOR, CLIENTE/PROVEEDOR (se crean los dos roles), NOMINA (empleado) o MANDANTE. Vacío = CLIENTE. Cualquier otro valor lo decides en la vista previa." }
+                });
+
+            return ExcelTemplateHelper.ToBytes(workbook);
+        }
+
+        public static byte[] Invoices()
+        {
+            using var workbook = new XLWorkbook();
+            var sheet = workbook.Worksheets.Add("Facturas");
+            string[] headers =
+            {
+                "NUMERO", "TIPO_MEDIO_DE_PAGO", "MEDIO_DE_PAGO", "FECHA_VENCIMIENTO", "ORDEN_DE_COMPRA", "OBSERVACIONES",
+                "CLIENTE_TIPO_IDENTIFICATION", "CLIENTE_IDENTIFICATION", "CLIENTE_NOMBRE", "CLIENTE_TIPO", "CLIENTE_DIRECCION", "CLIENTE_TELEFONO", "CLIENTE_CIUDAD",
+                "CLIENTE_DEPARTAMENTO", "CLIENTE_CORREO", "CLIENTE_TAX_LEVEL", "CLIENTE_REGIMEN",
+                "ITEM_REFERENCIA", "ITEM_DESCRIPCION", "ITEM_CANTIDAD", "ITEM_PRECIO", "ITEM_DESCUENTO%", "IVA%", "RET_FUENTE%", "RET_ICA%", "RET_IVA%",
+                "DESCUENTO_GLOBAL", "DESCUENTO_GLOBAL_DESCRIPCION"
+            };
+            ExcelTemplateHelper.WriteHeaderRow(sheet, 1, headers);
+
+            string[][] examples =
+            {
+                new[] { "1", "DEBITO", "TRANSFERENCIA", "", "", "Pago del mes de octubre", "CC", "1032456789", "JUAN CARLOS PEREZ GOMEZ", "PERSONA_NATURAL", "CALLE 10 # 20-30", "3109876543", "Bogota, D.C.", "BOGOTA",
+                    "juan.perez@correo.com", "NO_RESPONSABLE_DE_IVA", "ORDINARIO", "PENSION", "Pensión octubre", "1", "335000", "", "", "", "", "", "", "" },
+                new[] { "2", "CREDITO", "", "", "OC-100", "", "NIT", "900123456", "EJEMPLO COMERCIAL S.A.S.", "PERSONA_JURIDICA", "CARRERA 43A # 1-50", "3001234567", "Medellin", "ANTIOQUIA",
+                    "facturacion@ejemplo.com", "RESPONSABLE_DE_IVA", "ORDINARIO", "SRV-001", "Servicio de asesoría", "2", "150000", "", "19", "", "", "", "", "" },
+                new[] { "2", "CREDITO", "", "", "OC-100", "", "NIT", "900123456", "EJEMPLO COMERCIAL S.A.S.", "PERSONA_JURIDICA", "CARRERA 43A # 1-50", "3001234567", "Medellin", "ANTIOQUIA",
+                    "facturacion@ejemplo.com", "RESPONSABLE_DE_IVA", "ORDINARIO", "SRV-002", "Soporte mensual", "1", "80000", "10", "19", "", "", "", "", "" }
+            };
+            // La fecha de vencimiento de la factura a crédito se escribe 30 días después de hoy; el ejemplo se ajusta al descargar la plantilla.
+            var due = DateTime.Today.AddDays(30).ToString("dd/MM/yyyy");
+            for (var r = 0; r < examples.Length; r++)
+                for (var c = 0; c < examples[r].Length; c++)
+                {
+                    var value = headers[c] == "FECHA_VENCIMIENTO" && examples[r][1] == "CREDITO" ? due : examples[r][c];
+                    sheet.Cell(2 + r, c + 1).SetValue(value);
+                }
+
+            Dropdown(sheet, 2, "DEBITO", "CREDITO");
+            Dropdown(sheet, 3, "TRANSFERENCIA", "CASH", "DEBIT_CARD", "CREDIT_CARD", "MUTUAL_AGREEMENT");
+            Dropdown(sheet, 7, "CC", "NIT", "CE", "TI", "RC", "NUIP", "TE", "PEP", "PPT", "PASAPORTE", "IE");
+            sheet.Columns().AdjustToContents();
+            foreach (var col in new[] { 4, 8, 12 }) sheet.Column(col).Style.NumberFormat.Format = "@";
+
+            Instructions(workbook, "Carga masiva de facturas",
+                "Llena la hoja \"Facturas\" (los tres renglones de ejemplo se pueden borrar): cada fila es una línea y las filas con el mismo NUMERO forman una sola factura. Las columnas se reconocen por su nombre, en cualquier orden; también puedes subir un archivo CSV (separado por ; o ,). Las facturas quedan como BORRADORES con la resolución que elijas; se emiten después desde la lista.",
+                new[]
+                {
+                    new[] { "NUMERO", "No", "Agrupa las líneas de una misma factura", "No es el número de la factura: el consecutivo lo asigna el sistema al emitir. Sin NUMERO, cada fila es una factura." },
+                    new[] { "TIPO_MEDIO_DE_PAGO", "Sí", "Forma de pago", "DEBITO (Contado) o CREDITO." },
+                    new[] { "MEDIO_DE_PAGO", "Contado", "Medio de pago", "TRANSFERENCIA (o BANK_TRANSFER), CASH (efectivo), DEBIT_CARD, CREDIT_CARD, MUTUAL_AGREEMENT. Si no se reconoce lo eliges en la vista previa. En crédito no se pide." },
+                    new[] { "FECHA_VENCIMIENTO", "Crédito", "Vencimiento de la factura a crédito (dd/mm/aaaa)", "Debe ser posterior a hoy. De contado no se usa: vence el día de la emisión." },
+                    new[] { "FECHA_EXPEDICION", "No", "Fecha de emisión del archivo", "Se ignora: las facturas se crean con la fecha de hoy (hora de Colombia)." },
+                    new[] { "ORDEN_DE_COMPRA / OBSERVACIONES", "No", "Orden de compra del cliente y observaciones de la factura", "" },
+                    new[] { "CLIENTE_TIPO_IDENTIFICATION / CLIENTE_IDENTIFICATION", "Sí", "Documento del cliente", "CC, NIT, CE, TI, RC, NUIP, TE, PEP, PPT, PASAPORTE, IE o el código DIAN. Si el tercero no existe se crea con rol Cliente." },
+                    new[] { "CLIENTE_NOMBRE", "Sí", "Nombre o razón social", "O CLIENTE_PRIMER_NOMBRE y CLIENTE_APELLIDO para armar el nombre de una persona natural." },
+                    new[] { "CLIENTE_TIPO / CLIENTE_TAX_LEVEL / CLIENTE_REGIMEN", "No", "PERSONA_NATURAL o PERSONA_JURIDICA; RESPONSABLE_DE_IVA o NO_RESPONSABLE_DE_IVA; ORDINARIO, SIMPLE, AUTORRETENEDOR o GRAN_CONTRIBUYENTE", "Solo se usan al crear el tercero." },
+                    new[] { "CLIENTE_DIRECCION / TELEFONO / CIUDAD / DEPARTAMENTO / CORREO", "No", "Datos del tercero nuevo", "La ciudad se busca en el catálogo de municipios de la DIAN. Si falta la dirección eliges qué hacer en la vista previa." },
+                    new[] { "ITEM_REFERENCIA", "Sí", "Código del producto", "Si el producto existe la línea toma sus impuestos y su unidad; si no existe se crea." },
+                    new[] { "ITEM_DESCRIPCION", "No", "Texto de la línea", "Sin descripción se usa el nombre del producto. Si el producto es nuevo, también es su nombre." },
+                    new[] { "ITEM_CANTIDAD / ITEM_PRECIO", "Sí", "Cantidad y precio unitario antes de impuestos", "El precio acepta 335000, 335,000 o 335.000." },
+                    new[] { "ITEM_DESCUENTO%", "No", "Descuento de la línea, en %", "" },
+                    new[] { "IVA%", "No", "IVA de la línea, solo para productos nuevos", "Producto nuevo sin IVA: la línea sale Excluida y el producto queda con \"impuestos por completar\". Producto existente: se usa su IVA." },
+                    new[] { "RET_FUENTE% / RET_ICA% / RET_IVA%", "No", "Retenciones de la línea, en %", "" },
+                    new[] { "DESCUENTO_GLOBAL / DESCUENTO_GLOBAL_DESCRIPCION", "No", "Descuento general de la factura (valor en pesos) y su motivo", "Se toma de la primera línea de la factura que lo traiga." }
                 });
 
             return ExcelTemplateHelper.ToBytes(workbook);

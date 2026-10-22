@@ -719,173 +719,131 @@ namespace Fel.Api.Client.Controllers
             return new EmptyResult();
         }
 
-        [HttpGet("template")]
-        public IActionResult DownloadTemplate()
+        // ---- Carga masiva de facturas (borradores): plantilla, vista previa y confirmación (ver InvoiceImporter).
+        [HttpGet("bulk/template")]
+        public IActionResult DownloadBulkTemplate() =>
+            File(Fel.Api.Client.Imports.BulkImportTemplates.Invoices(), Fel.Api.Client.Models.ExcelTemplateHelper.XlsxContentType, "plantilla_facturas.xlsx");
+
+        // Valida el archivo completo SIN guardar nada y devuelve, factura por factura, lo que se crearía.
+        [HttpPost("bulk/import/preview")]
+        [RequestSizeLimit(Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes)]
+        public async Task<IActionResult> BulkImportPreview(IFormFile file, [FromForm] string? options)
         {
-            using var workbook = new ClosedXML.Excel.XLWorkbook();
-
-            var headerSheet = workbook.Worksheets.Add("Encabezados");
-            Fel.Api.Client.Models.ExcelTemplateHelper.WriteHeaderRow(headerSheet, 1,
-                "NumeroInterno", "Identificacion", "MedioDePago", "FormaDePago");
-            headerSheet.Cell(2, 1).Value = "FAC-001";
-            headerSheet.Cell(2, 2).Value = "12345678";
-            headerSheet.Cell(2, 3).Value = "EFECTIVO";
-            headerSheet.Cell(2, 4).Value = "DEBITO";
-            headerSheet.Columns().AdjustToContents();
-
-            var detailSheet = workbook.Worksheets.Add("Detalle");
-            Fel.Api.Client.Models.ExcelTemplateHelper.WriteHeaderRow(detailSheet, 1,
-                "NumeroInterno", "Codigo", "Nombre", "Cantidad", "ValorUnitario", "TarifaIVA");
-            detailSheet.Cell(2, 1).Value = "FAC-001";
-            detailSheet.Cell(2, 2).Value = "SKU-001";
-            detailSheet.Cell(2, 3).Value = "Producto de ejemplo";
-            detailSheet.Cell(2, 4).Value = 1;
-            detailSheet.Cell(2, 5).Value = 50000;
-            detailSheet.Cell(2, 6).Value = 19;
-            detailSheet.Columns().AdjustToContents();
-
-            var bytes = Fel.Api.Client.Models.ExcelTemplateHelper.ToBytes(workbook);
-            return File(bytes, Fel.Api.Client.Models.ExcelTemplateHelper.XlsxContentType, "plantilla_facturas.xlsx");
+            var analysis = await AnalyzeBulkImportAsync(file, options);
+            return analysis.Error != null ? BadRequest(analysis.Error) : Ok(analysis.Result!.Preview);
         }
 
-        // Plantilla de importación masiva (2 hojas):
-        // Hoja "Encabezados": NumeroInterno | Identificacion | MedioDePago | FormaDePago
-        // Hoja "Detalle": NumeroInterno | Codigo | Nombre | Cantidad | ValorUnitario | TarifaIVA
-        [HttpPost("import")]
-        public async Task<IActionResult> Import(IFormFile file)
+        // Vuelve a validar el mismo archivo con las decisiones del usuario y guarda terceros, productos y facturas en una sola operación: o se crea todo o nada.
+        [HttpPost("bulk/import/confirm")]
+        [RequestSizeLimit(Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes)]
+        public async Task<IActionResult> BulkImportConfirm(IFormFile file, [FromForm] string? options)
         {
-            try
+            var analysis = await AnalyzeBulkImportAsync(file, options);
+            if (analysis.Error != null) return BadRequest(analysis.Error);
+            var result = analysis.Result!;
+            if (result.Preview.FileErrors.Count > 0) return BadRequest(string.Join(" ", result.Preview.FileErrors));
+            if (result.Documents.Count == 0) return BadRequest("No hay facturas por crear en este archivo.");
+
+            _dbContext.Customers.AddRange(result.Customers);
+            _dbContext.Products.AddRange(result.Products);
+            _dbContext.Documents.AddRange(result.Documents);
+            try { await _dbContext.SaveChangesAsync(); }
+            catch (DbUpdateException ex)
             {
-                var clientId = GetCurrentClientId();
-
-                var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
-                if (client == null) return NotFound("Emisor no encontrado.");
-
-                if (client.Integrator.Code != "DATAICO")
-                {
-                    return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");
-                }
-
-                var resolution = await _dbContext.Resolutions.ForBranch(_dbContext, CurrentBranchScope)
-                    .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
-                    .OrderByDescending(r => r.IsDefault)
-                    .ThenByDescending(r => r.ValidTo)
-                    .FirstOrDefaultAsync();
-
-                if (resolution == null)
-                {
-                    return BadRequest("No hay una resolución de facturación activa disponible para esta sucursal.");
-                }
-
-                if (file == null || file.Length == 0)
-                {
-                    return BadRequest("Debes adjuntar un archivo Excel (.xlsx).");
-                }
-
-                using var stream = file.OpenReadStream();
-                using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
-                var headerSheet = workbook.Worksheet("Encabezados");
-                var detailSheet = workbook.Worksheet("Detalle");
-
-                var summary = new Fel.Api.Client.Models.ImportSummary();
-
-                foreach (var headerRow in headerSheet.RowsUsed().Skip(1))
-                {
-                    var rowNumber = headerRow.RowNumber();
-                    summary.TotalRows++;
-
-                    try
-                    {
-                        var internalNumber = headerRow.Cell(1).GetString().Trim();
-                        var identification = headerRow.Cell(2).GetString().Trim();
-                        var paymentMeans = headerRow.Cell(3).GetString().Trim().ToUpperInvariant();
-                        var paymentMeansType = headerRow.Cell(4).GetString().Trim().ToUpperInvariant();
-
-                        // Esta importación no trae rol: seleccionar explícitamente el Cliente evita
-                        // ambigüedad cuando la identificación también existe como Proveedor/Empleado.
-                        var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.ClientId == clientId &&
-                            c.IdentificationNumber == identification && c.PartyType == PartyType.Cliente);
-                        if (customer == null)
-                        {
-                            summary.Results.Add(new Fel.Api.Client.Models.ImportRowResult { Row = rowNumber, Success = false, Message = $"No existe un tercero con identificación {identification}." });
-                            summary.Failed++;
-                            continue;
-                        }
-
-                        var items = detailSheet.RowsUsed().Skip(1)
-                            .Where(r => r.Cell(1).GetString().Trim() == internalNumber)
-                            .Select((r, idx) => new DocumentItem
-                            {
-                                Id = Guid.NewGuid(),
-                                LineNumber = idx,
-                                Code = r.Cell(2).GetString().Trim(),
-                                Name = r.Cell(3).GetString().Trim(),
-                                Quantity = r.Cell(4).GetValue<decimal>(),
-                                UnitPrice = r.Cell(5).GetValue<decimal>(),
-                                TaxRate = r.Cell(6).IsEmpty() ? 0 : r.Cell(6).GetValue<decimal>()
-                            }).ToList();
-
-                        if (items.Count == 0)
-                        {
-                            summary.Results.Add(new Fel.Api.Client.Models.ImportRowResult { Row = rowNumber, Success = false, Message = $"No se encontraron ítems para el número interno {internalNumber} en la hoja Detalle." });
-                            summary.Failed++;
-                            continue;
-                        }
-
-                        // La carga masiva solo deja las facturas en borrador — el cliente las revisa y
-                        // las emite una a una (o las edita) desde la lista. Nunca se envían a Dataico
-                        // automáticamente desde el import.
-                        var invoice = new Document
-                        {
-                            Id = Guid.NewGuid(),
-                            ClientId = clientId,
-                            BranchId = GetCurrentBranchId(),
-                            CustomerId = customer.Id,
-                            Customer = customer,
-                            TypeCode = "FE",
-                            Number = DateTime.UtcNow.Ticks.ToString(),
-                            Status = "DRAFT",
-                            CreatedAt = DateTime.UtcNow,
-                            IssueDate = Fel.Core.Models.ColombiaTime.Now,
-                            PaymentMeans = paymentMeans,
-                            PaymentMeansType = paymentMeansType,
-                            Subtotal = items.Sum(i => i.Quantity * i.UnitPrice),
-                            TaxAmount = items.Sum(i => i.Quantity * i.UnitPrice * i.TaxRate / 100),
-                            TotalAmount = items.Sum(i => i.Quantity * i.UnitPrice * (1 + i.TaxRate / 100))
-                        };
-
-                        foreach (var item in items)
-                        {
-                            item.DocumentId = invoice.Id;
-                            item.TaxAmount = item.Quantity * item.UnitPrice * item.TaxRate / 100;
-                            item.TotalAmount = item.Quantity * item.UnitPrice * (1 + item.TaxRate / 100);
-                            invoice.Items.Add(item);
-                        }
-
-                        _dbContext.Documents.Add(invoice);
-                        await _dbContext.SaveChangesAsync();
-
-                        summary.Results.Add(new Fel.Api.Client.Models.ImportRowResult
-                        {
-                            Row = rowNumber,
-                            Success = true,
-                            Message = $"Borrador de factura {internalNumber} creado. Revísala y emítela desde la lista."
-                        });
-                        summary.Succeeded++;
-                    }
-                    catch (Exception ex)
-                    {
-                        summary.Results.Add(new Fel.Api.Client.Models.ImportRowResult { Row = rowNumber, Success = false, Message = ex.Message });
-                        summary.Failed++;
-                    }
-                }
-
-                return Ok(summary);
+                // Todo o nada: no se creó nada. Se explica en vez de responder 500.
+                return BadRequest("No se pudo guardar la carga; no se creó ninguna factura. " + (ex.InnerException?.Message ?? ex.Message));
             }
-            catch (UnauthorizedAccessException ex)
+
+            var summary = new Fel.Api.Client.Imports.BulkImportResult
             {
-                return Unauthorized(ex.Message);
+                Created = result.Documents.Count,
+                Skipped = result.Preview.Rows.Count(r => r.Status != Fel.Api.Client.Imports.ImportStatus.Create)
+            };
+            summary.Messages.Add("Las facturas quedaron como borradores: revísalas y emítelas desde la lista.");
+            if (result.Customers.Count > 0) summary.Messages.Add($"Terceros creados: {result.Customers.Count}.");
+            if (result.Products.Count > 0) summary.Messages.Add($"Productos creados: {result.Products.Count} (los que no traían IVA quedaron con los impuestos por completar).");
+            return Ok(summary);
+        }
+
+        private async Task<(Fel.Api.Client.Imports.InvoiceImportResult? Result, string? Error)> AnalyzeBulkImportAsync(IFormFile? file, string? optionsJson)
+        {
+            var clientId = GetCurrentClientId();
+            var branchId = GetCurrentBranchId();
+            if (file == null || file.Length == 0) return (null, "Debes adjuntar un archivo Excel (.xlsx) o CSV.");
+            if (file.Length > Fel.Api.Client.Imports.ExcelSheetReader.MaxBytes) return (null, "El archivo supera los 10 MB.");
+            var options = Fel.Api.Client.Imports.BulkImportOptionsParser.Parse(optionsJson);
+            if (options == null) return (null, "Las opciones de la carga no son válidas.");
+
+            using var stream = file.OpenReadStream();
+            var sheet = Fel.Api.Client.Imports.ExcelSheetReader.ReadFile(stream, file.FileName, Fel.Api.Client.Imports.InvoiceImporter.Aliases, Fel.Api.Client.Imports.InvoiceImporter.Required);
+
+            // Sin resolución de factura de venta activa en esta sucursal no se carga nada (las facturas no se podrían emitir).
+            var resolutions = await _dbContext.Resolutions.AsNoTracking().ForBranch(_dbContext, CurrentBranchScope)
+                .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
+                .OrderByDescending(r => r.IsDefault).ThenByDescending(r => r.ValidTo).ToListAsync();
+            var resolution = options.ResolutionId.HasValue ? resolutions.FirstOrDefault(r => r.Id == options.ResolutionId.Value) : resolutions.FirstOrDefault();
+            var docType = await _dbContext.ClientEnabledDocumentTypes.AsNoTracking()
+                .Where(e => e.ClientId == clientId && e.DocumentType!.IsActive && e.DocumentType.Code == "FE")
+                .Select(e => e.DocumentType!).FirstOrDefaultAsync();
+            if (sheet.FileErrors.Count == 0)
+            {
+                if (resolution == null) sheet.FileErrors.Add(resolutions.Count == 0
+                    ? "Esta sucursal no tiene una resolución de factura de venta activa. Configúrala antes de cargar facturas."
+                    : "La resolución elegida no es una resolución de factura de venta activa de esta sucursal.");
+                else if (docType == null) sheet.FileErrors.Add("Este emisor no tiene habilitado el tipo de documento Factura de venta.");
             }
+            if (sheet.FileErrors.Count > 0)
+            {
+                var failed = new Fel.Api.Client.Imports.InvoiceImportResult();
+                failed.Preview.FileErrors.AddRange(sheet.FileErrors);
+                return (failed, null);
+            }
+
+            var client = await _dbContext.Clients.AsNoTracking().FirstAsync(c => c.Id == clientId);
+            var defaults = await _dbContext.ClientInvoiceDefaults.AsNoTracking().FirstOrDefaultAsync(x => x.ClientId == clientId);
+            var customers = await _dbContext.Customers.AsNoTracking().Where(c => c.ClientId == clientId && c.PartyType == PartyType.Cliente)
+                .Select(c => new { c.Id, c.IdentificationNumber }).ToListAsync();
+            var existingCustomerIds = new Dictionary<string, Guid>();
+            foreach (var c in customers) existingCustomerIds.TryAdd(Fel.Api.Client.Imports.InvoiceImporter.NormalizeParty(c.IdentificationNumber), c.Id);
+            var existingProducts = (await _dbContext.Products.AsNoTracking().Include(p => p.UnitOfMeasure)
+                    .Where(p => p.ClientId == clientId && p.Scope == ProductScope.Invoice).ToListAsync())
+                .GroupBy(p => p.Code, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var rates = (await _dbContext.TaxCatalogItems.AsNoTracking().Where(t => t.Kind == TaxCatalogKind.IvaRate && t.IsActive).Select(t => t.Category).ToListAsync())
+                .Select(c => decimal.TryParse(c, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : -1).Where(d => d >= 0).ToList();
+            var catalogs = await _dbContext.TaxCatalogItems.AsNoTracking()
+                .Where(i => (i.Kind == TaxCatalogKind.PaymentMeans || i.Kind == TaxCatalogKind.FormaPago) && i.IsActive).ToListAsync();
+
+            var context = new Fel.Api.Client.Imports.InvoiceImportContext
+            {
+                ClientId = clientId,
+                BranchId = branchId,
+                DocumentTypeId = docType!.Id,
+                DocumentTypeCode = docType.Code,
+                ResolutionId = resolution!.Id,
+                Today = Fel.Core.Models.ColombiaTime.Now,
+                ExistingCustomerIds = existingCustomerIds,
+                ExistingProducts = existingProducts,
+                PaymentMeans = catalogs.Where(i => i.Kind == TaxCatalogKind.PaymentMeans).ToDictionary(i => i.Category, i => i.Name),
+                FormaPago = catalogs.Where(i => i.Kind == TaxCatalogKind.FormaPago).ToDictionary(i => i.Category, i => i.Name),
+                Customers = new Fel.Api.Client.Imports.CustomerImportContext
+                {
+                    ClientId = clientId,
+                    Municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToListAsync(),
+                    IdentificationTypes = await _dbContext.IdentificationTypes.AsNoTracking().Where(t => t.IsActive).ToDictionaryAsync(t => t.Code, t => t.Name),
+                    ClientAddress = new Fel.Api.Client.Imports.AddressDefaults(client.Address, client.CityCode, client.City, null),
+                    DefaultAddress = new Fel.Api.Client.Imports.AddressDefaults(defaults?.CustomerAddress, defaults?.CustomerCityCode, defaults?.CustomerCityName, defaults?.CustomerPostalCode),
+                    Options = options
+                },
+                Products = new Fel.Api.Client.Imports.ProductImportContext
+                {
+                    ClientId = clientId,
+                    Scope = ProductScope.Invoice,
+                    Units = await _dbContext.UnitsOfMeasure.AsNoTracking().Where(u => u.IsActive).ToListAsync(),
+                    IvaRates = new HashSet<decimal>(rates),
+                    Options = options
+                }
+            };
+            return (Fel.Api.Client.Imports.InvoiceImporter.Analyze(sheet, context), null);
         }
 
         private static string DocumentTypeLabel(string typeCode) => typeCode switch

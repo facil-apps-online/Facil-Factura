@@ -3,7 +3,7 @@ import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, Ro
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
-import ImportExcelButton from '../components/ImportExcelButton';
+import BulkImportModal from '../components/BulkImportModal';
 import CustomerFormModal from '../components/CustomerFormModal';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
@@ -200,6 +200,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [responseModalInv, setResponseModalInv] = useState<any>(null);
   const [resendModalInv, setResendModalInv] = useState<any>(null);
   const [showDataicoLookup, setShowDataicoLookup] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [resendEmailDraft, setResendEmailDraft] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resolutionFilter, setResolutionFilter] = useState('');
@@ -2426,7 +2427,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               <RotateCcw size={18} /> Nota crédito sin factura
             </button>
           )}
-          {cfg.importExcel && <ImportExcelButton endpoint="/client/invoices/import" templateEndpoint="/client/invoices/template" label="Importar Excel" onDone={loadData} />}
+          {cfg.importExcel && (
+            <button onClick={() => setShowBulkImport(true)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all">
+              <FileText size={18} /> Carga masiva
+            </button>
+          )}
           <button
             onClick={handleCreateNew}
             className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all"
@@ -2590,6 +2595,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             kinds={[{ value: 'document', label: 'Documento soporte' }, { value: 'adjustment', label: 'Nota de ajuste' }]}
             onClose={() => setShowDataicoLookup(false)} />
         : <DataicoLookupModal endpoint="/client/invoices" title="Consultar factura en Dataico" placeholder="Ej. FEG92010" onClose={() => setShowDataicoLookup(false)} />)}
+      {showBulkImport && (
+        <BulkImportModal title="Carga masiva de facturas" entityLabel="facturas" endpoint="/client/invoices/bulk" addressOptions resolutionOptions onDone={loadData} onClose={() => setShowBulkImport(false)} />
+      )}
       {resendModalInv && (
         <Modal
           open

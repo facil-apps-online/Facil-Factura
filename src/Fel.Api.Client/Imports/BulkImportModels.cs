@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -68,6 +69,8 @@ namespace Fel.Api.Client.Imports
     {
         // Para las filas sin dirección o ciudad: "client" (la del cliente), "default" (la configurada por defecto para terceros nuevos) o "blank".
         public string AddressMode { get; set; } = "blank";
+        // Facturas: resolución con la que quedan los borradores; vacío = la predeterminada de la sucursal.
+        public Guid? ResolutionId { get; set; }
         public Dictionary<int, Dictionary<string, string>> Decisions { get; set; } = new();
     }
 

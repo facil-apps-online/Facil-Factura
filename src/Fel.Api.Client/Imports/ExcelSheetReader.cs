@@ -43,6 +43,100 @@ namespace Fel.Api.Client.Imports
             return string.Join("_", sb.ToString().Split('_', StringSplitOptions.RemoveEmptyEntries));
         }
 
+        // Excel (.xlsx) o texto separado por delimitador (.csv / .txt), según el nombre del archivo.
+        public static SheetData ReadFile(Stream stream, string? fileName, IReadOnlyDictionary<string, string[]> aliases, IReadOnlyCollection<string> required)
+        {
+            var name = fileName ?? string.Empty;
+            return name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
+                ? ReadCsv(stream, aliases, required)
+                : Read(stream, aliases, required);
+        }
+
+        // Nombre normalizado de la columna del archivo -> nombre canónico.
+        private static Dictionary<string, string> BuildLookup(IReadOnlyDictionary<string, string[]> aliases)
+        {
+            var lookup = new Dictionary<string, string>();
+            foreach (var (canonical, names) in aliases)
+            {
+                lookup[NormalizeHeader(canonical)] = canonical;
+                foreach (var n in names) lookup[NormalizeHeader(n)] = canonical;
+            }
+            return lookup;
+        }
+
+        // CSV como lo exportan los sistemas contables: delimitador ; , o tabulación (se detecta en el encabezado), comillas dobles para los textos con
+        // delimitador, y codificación UTF-8 o, si no lo es, ISO-8859-1. Las filas conservan su número de línea del archivo.
+        private static SheetData ReadCsv(Stream stream, IReadOnlyDictionary<string, string[]> aliases, IReadOnlyCollection<string> required)
+        {
+            var data = new SheetData();
+            byte[] bytes;
+            using (var ms = new MemoryStream()) { stream.CopyTo(ms); bytes = ms.ToArray(); }
+            string text;
+            try { text = new UTF8Encoding(false, true).GetString(bytes); }
+            catch (DecoderFallbackException) { text = Encoding.Latin1.GetString(bytes); }
+            text = text.TrimStart('﻿');
+
+            var firstLine = text.Split('\n', 2)[0];
+            var delimiter = new[] { ';', ',', '\t' }.OrderByDescending(d => firstLine.Count(c => c == d)).First();
+
+            var records = new List<(int Line, List<string> Cells)>();
+            var cells = new List<string>();
+            var cell = new StringBuilder();
+            var inQuotes = false;
+            var line = 1;
+            var recordLine = 1;
+            void EndCell() { cells.Add(cell.ToString().Trim()); cell.Clear(); }
+            void EndRecord()
+            {
+                EndCell();
+                if (cells.Any(c => c.Length > 0)) records.Add((recordLine, cells));
+                cells = new List<string>();
+            }
+            for (var i = 0; i < text.Length; i++)
+            {
+                var ch = text[i];
+                if (inQuotes)
+                {
+                    if (ch == '"') { if (i + 1 < text.Length && text[i + 1] == '"') { cell.Append('"'); i++; } else inQuotes = false; }
+                    else { if (ch == '\n') line++; cell.Append(ch); }
+                }
+                else if (ch == '"' && cell.Length == 0) inQuotes = true;
+                else if (ch == delimiter) EndCell();
+                else if (ch == '\r') { }
+                else if (ch == '\n') { EndRecord(); line++; recordLine = line; }
+                else cell.Append(ch);
+            }
+            if (cell.Length > 0 || cells.Count > 0) EndRecord();
+
+            if (records.Count == 0) { data.FileErrors.Add("El archivo no tiene datos."); return data; }
+
+            var lookup = BuildLookup(aliases);
+            var columns = new Dictionary<int, string>();
+            for (var c = 0; c < records[0].Cells.Count; c++)
+                if (lookup.TryGetValue(NormalizeHeader(records[0].Cells[c]), out var canonical) && !columns.ContainsValue(canonical)) columns[c] = canonical;
+
+            var missing = required.Where(r => !columns.ContainsValue(r)).ToList();
+            if (missing.Count > 0)
+            {
+                data.FileErrors.Add("Faltan columnas obligatorias: " + string.Join(", ", missing) + ". Descarga la plantilla para ver los nombres.");
+                return data;
+            }
+            if (records.Count - 1 > MaxRows)
+            {
+                data.FileErrors.Add($"El archivo tiene más de {MaxRows:N0} filas. Divídelo en varios archivos.");
+                return data;
+            }
+
+            foreach (var (rowNumber, values) in records.Skip(1))
+            {
+                var row = new Dictionary<string, string>();
+                foreach (var (col, canonical) in columns) row[canonical] = col < values.Count ? values[col] : string.Empty;
+                data.Rows.Add(new SheetRow(rowNumber, row));
+            }
+            if (data.Rows.Count == 0) data.FileErrors.Add("El archivo tiene los encabezados pero ninguna fila de datos.");
+            return data;
+        }
+
         public static SheetData Read(Stream stream, IReadOnlyDictionary<string, string[]> aliases, IReadOnlyCollection<string> required)
         {
             var data = new SheetData();
@@ -55,13 +149,7 @@ namespace Fel.Api.Client.Imports
                 var sheet = workbook.Worksheets.FirstOrDefault(s => s.Visibility == XLWorksheetVisibility.Visible) ?? workbook.Worksheets.FirstOrDefault();
                 if (sheet == null || sheet.LastRowUsed() == null) { data.FileErrors.Add("El archivo no tiene datos."); return data; }
 
-                // nombre normalizado de la columna del archivo -> nombre canónico
-                var lookup = new Dictionary<string, string>();
-                foreach (var (canonical, names) in aliases)
-                {
-                    lookup[NormalizeHeader(canonical)] = canonical;
-                    foreach (var n in names) lookup[NormalizeHeader(n)] = canonical;
-                }
+                var lookup = BuildLookup(aliases);
 
                 var headerRow = sheet.FirstRowUsed();
                 var columns = new Dictionary<int, string>();
@@ -154,6 +242,24 @@ namespace Fel.Api.Client.Imports
             if (lastComma >= 0 && lastDot >= 0) v = lastComma > lastDot ? v.Replace(".", "").Replace(',', '.') : v.Replace(",", "");
             else if (lastComma >= 0) v = v.Replace(',', '.');
             return decimal.TryParse(v, NumberStyles.Number | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var d) ? d : null;
+        }
+
+        // Valor en pesos tal como lo escriben los archivos de contabilidad: "335,000" y "335.000" son miles (un separador seguido de exactamente tres
+        // dígitos), "1.234,50" y "1,234.50" traen decimales. Un separador con menos o más de tres dígitos detrás es decimal ("12,5").
+        public static decimal? ParseMoney(string? value)
+        {
+            var v = (value ?? string.Empty).Trim().Replace("$", "").Replace(" ", "");
+            if (v.Length == 0) return null;
+            var lastComma = v.LastIndexOf(',');
+            var lastDot = v.LastIndexOf('.');
+            if (lastComma < 0 && lastDot < 0) return ParseDecimal(v);
+            if (lastComma >= 0 && lastDot >= 0) return ParseDecimal(v);
+            var sep = lastComma >= 0 ? ',' : '.';
+            var last = v.LastIndexOf(sep);
+            var count = v.Count(c => c == sep);
+            var afterDigits = v.Length - last - 1;
+            var thousands = count > 1 || (afterDigits == 3 && last > 0 && !(v.StartsWith("0") && count == 1 && last == 1));
+            return thousands ? ParseDecimal(v.Replace(sep.ToString(), "")) : ParseDecimal(v.Replace(',', '.'));
         }
 
         public static string DigitsOnly(string? value) => new string((value ?? string.Empty).Where(char.IsDigit).ToArray());

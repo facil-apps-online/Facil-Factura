@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
@@ -37,6 +37,8 @@ interface Preview {
 
 interface ImportOptions {
   addressMode: 'client' | 'default' | 'blank';
+  // Facturas: resolución con la que quedan los borradores.
+  resolutionId?: string;
   decisions: Record<number, Record<string, string>>;
 }
 
@@ -50,6 +52,8 @@ interface BulkImportModalProps {
   query?: string;
   // Terceros: permite elegir qué hacer con las filas sin dirección o ciudad.
   addressOptions?: boolean;
+  // Facturas: permite elegir la resolución de factura de venta de los borradores (por defecto, la predeterminada).
+  resolutionOptions?: boolean;
   onDone: () => void;
   onClose: () => void;
 }
@@ -75,15 +79,28 @@ const ADDRESS_MODES = [
 
 // Carga masiva desde Excel en tres pasos: descargar la plantilla y elegir el archivo, ver la vista previa (sin guardar nada) y confirmar.
 // Lo usan terceros y productos. El servidor valida el archivo completo en la vista previa y lo vuelve a validar al confirmar.
-export default function BulkImportModal({ title, entityLabel, endpoint, query, addressOptions, onDone, onClose }: BulkImportModalProps) {
+interface ResolutionItem { id: string; prefix: string; resolutionNumber: string; numberStart: number; numberEnd: number; nextNumber: number | null; documentType: string; isDefault: boolean; }
+
+export default function BulkImportModal({ title, entityLabel, endpoint, query, addressOptions, resolutionOptions, onDone, onClose }: BulkImportModalProps) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [options, setOptions] = useState<ImportOptions>({ addressMode: 'blank', decisions: {} });
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState<'preview' | 'confirm' | 'template' | null>(null);
-  const [result, setResult] = useState<{ created: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; skipped: number; messages?: string[] } | null>(null);
+  const [resolutions, setResolutions] = useState<ResolutionItem[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    if (!resolutionOptions) return;
+    api.get<ResolutionItem[]>('/client/resolutions').then(res => {
+      const fe = res.data.filter(r => r.documentType === 'FE');
+      setResolutions(fe);
+      const preferred = fe.find(r => r.isDefault) ?? fe[0];
+      if (preferred) setOptions(o => ({ ...o, resolutionId: preferred.id }));
+    }).catch(() => {});
+  }, [resolutionOptions]);
 
   const url = (path: string) => `${endpoint}${path}${query ? `?${query}` : ''}`;
   const formFor = (f: File, o: ImportOptions) => {
@@ -125,7 +142,7 @@ export default function BulkImportModal({ title, entityLabel, endpoint, query, a
 
   const onFile = (f: File | null) => {
     if (!f) return;
-    const fresh: ImportOptions = { addressMode: options.addressMode, decisions: {} };
+    const fresh: ImportOptions = { addressMode: options.addressMode, resolutionId: options.resolutionId, decisions: {} };
     setFile(f);
     setOptions(fresh);
     setResult(null);
@@ -148,7 +165,7 @@ export default function BulkImportModal({ title, entityLabel, endpoint, query, a
     if (!file || !preview) return;
     setBusy('confirm');
     try {
-      const res = await api.post<{ created: number; skipped: number }>(url('/import/confirm'), formFor(file, options), MULTIPART);
+      const res = await api.post<{ created: number; skipped: number; messages?: string[] }>(url('/import/confirm'), formFor(file, options), MULTIPART);
       setResult(res.data);
       onDone();
     } catch (err) {
@@ -218,6 +235,7 @@ export default function BulkImportModal({ title, entityLabel, endpoint, query, a
           <div className="flex flex-col items-center gap-3 py-8 text-center">
             <CheckCircle2 size={44} className="text-emerald-600" />
             <p className="text-lg font-bold text-slate-800">Se cargaron {result.created} {entityLabel}</p>
+            {result.messages?.map((m, i) => <p key={i} className="text-sm text-slate-600">{m}</p>)}
             {result.skipped > 0 && <p className="text-sm text-slate-500">{result.skipped} fila(s) se omitieron (ya existían, tenían errores o no se decidieron).</p>}
           </div>
         ) : (
@@ -226,9 +244,9 @@ export default function BulkImportModal({ title, entityLabel, endpoint, query, a
               <button onClick={downloadTemplate} disabled={busy !== null} className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                 {busy === 'template' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Descargar plantilla
               </button>
-              <input ref={fileInput} type="file" accept=".xlsx" className="hidden" onChange={e => { onFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+              <input ref={fileInput} type="file" accept={resolutionOptions ? '.xlsx,.csv' : '.xlsx'} className="hidden" onChange={e => { onFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
               <button onClick={() => fileInput.current?.click()} disabled={busy !== null} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-50">
-                {busy === 'preview' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} {file ? 'Cambiar archivo' : 'Elegir archivo Excel'}
+                {busy === 'preview' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} {file ? 'Cambiar archivo' : resolutionOptions ? 'Elegir archivo Excel o CSV' : 'Elegir archivo Excel'}
               </button>
               {file && <span className="flex min-w-0 items-center gap-1.5 text-sm text-slate-600"><FileSpreadsheet size={16} className="shrink-0" /><span className="truncate">{file.name}</span></span>}
             </div>
@@ -241,6 +259,19 @@ export default function BulkImportModal({ title, entityLabel, endpoint, query, a
             {preview && preview.fileErrors.length > 0 && (
               <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                 {preview.fileErrors.map((e, i) => <p key={i}>{e}</p>)}
+              </div>
+            )}
+
+            {resolutionOptions && resolutions.length > 0 && (
+              <div className="max-w-xl">
+                <label className="mb-1 block text-xs font-bold text-slate-500">Resolución de las facturas</label>
+                <SearchableSelect
+                  options={resolutions.map(r => ({ value: r.id, label: `${r.prefix ? r.prefix + ' · ' : ''}Res. ${r.resolutionNumber} (${r.numberStart}–${r.numberEnd})${r.isDefault ? ' · predeterminada' : ''}` }))}
+                  value={options.resolutionId ?? ''}
+                  onChange={v => changeOptions({ ...options, resolutionId: v })}
+                  placeholder="Elige una resolución"
+                  inputClassName="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
               </div>
             )}
 

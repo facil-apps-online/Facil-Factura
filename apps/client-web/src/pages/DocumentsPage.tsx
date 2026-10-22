@@ -342,11 +342,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         : getDateRangeForPreset(datePreset)!;
       const [invRes, custRes, prodRes, docTypesRes, mandantesRes, currencyRes, incotermRes, defaultsRes] = await Promise.all([
         api.get(`${cfg.api}?from=${range.from}&to=${range.to}`),
-        api.get(`/client/customers?partyType=${cfg.partyType}`),
+        // Lista liviana: el formulario solo muestra nombre e identificación; al emitir, el servidor carga el tercero completo por su id.
+        api.get(`/client/customers?partyType=${cfg.partyType}&lite=true`),
         api.get(`/client/products?scope=${isSupport ? 'Support' : 'Invoice'}`),
         cfg.documentTypes ? api.get('/client/invoices/document-types') : Promise.resolve({ data: [] }),
         // Terceros marcados como mandante: los elige cada línea de una factura de mandato.
-        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/customers?partyType=Mandante'),
+        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/customers?partyType=Mandante&lite=true'),
         !isSupport && features.foreignCurrency ? api.get('/client/tax-catalog?kind=Currency') : Promise.resolve({ data: [] }),
         isSupport ? Promise.resolve({ data: [] }) : api.get('/client/tax-catalog?kind=Incoterm'),
         isSupport ? Promise.resolve({ data: null }) : api.get('/client/invoice-defaults')

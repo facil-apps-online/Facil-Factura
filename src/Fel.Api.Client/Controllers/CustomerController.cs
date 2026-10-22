@@ -88,16 +88,26 @@ namespace Fel.Api.Client.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] PartyType? partyType)
+        // lite=true: solo lo que necesita un selector de terceros en un formulario (id, nombre, identificación, correo y rol). Evita mandar al navegador
+        // todos los campos de miles de terceros cuando solo se va a elegir uno.
+        public async Task<IActionResult> GetAll([FromQuery] PartyType? partyType, [FromQuery] bool lite = false)
         {
             try
             {
                 var clientId = GetCurrentClientId();
-                var query = _dbContext.Customers.Where(c => c.ClientId == clientId);
+                var query = _dbContext.Customers.AsNoTracking().Where(c => c.ClientId == clientId);
 
                 if (partyType.HasValue)
                 {
                     query = query.Where(c => c.PartyType == partyType.Value);
+                }
+
+                if (lite)
+                {
+                    return Ok(await query
+                        .OrderByDescending(c => c.CreatedAt)
+                        .Select(c => new { c.Id, c.Name, c.IdentificationType, c.IdentificationNumber, c.VerificationDigit, c.Email, c.PartyType })
+                        .ToListAsync());
                 }
 
                 var customers = await query

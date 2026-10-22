@@ -107,7 +107,7 @@ const supportWithRetentions = {
 
 // Devuelve la respuesta simulada para una petición, o [] si el endpoint no está en la tabla.
 function respond(pathname: string, search: string, session: MockSession): unknown {
-  if (pathname.endsWith('/client/session')) return { features: { payments: false }, ...session, ...sessionCatalogs };
+  if (pathname.endsWith('/client/session')) return { features: { payments: false }, companies: [], ...session, ...sessionCatalogs };
   if (pathname.endsWith('/client/users')) return users;
   if (pathname.endsWith('/client/note-numberings')) return noteNumberings;
   if (pathname.endsWith('/v1/branding/my-branding')) return branding;

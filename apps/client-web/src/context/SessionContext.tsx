@@ -65,7 +65,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         // La principal va primero en la lista: es la sucursal por defecto.
         const next = storedIsValid ? stored! : session.branches[0].id;
         localStorage.setItem(BRANCH_STORAGE_KEY, next);
-        setData(session);
+        // Sin empresas adicionales si el servidor no las manda: el selector de empresa solo aparece con dos o más.
+        setData({ ...session, companies: session.companies ?? [] });
         setSelected(next);
       })
       .catch(() => setFailed(true));

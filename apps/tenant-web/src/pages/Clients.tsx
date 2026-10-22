@@ -19,7 +19,9 @@ const initialNewClient = {
   legalRepresentativeRepresentationCode: '', legalRepresentativeStartDate: null as string | null,
   taxRegime: '', economicActivity: '', associateId: '' as string | null,
   isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false, incomeTaxRegime: '', foreignCurrencyEnabled: false, decimalSeparator: '.',
-  latitude: null as number | null, longitude: null as number | null
+  latitude: null as number | null, longitude: null as number | null,
+  // "Native" o "Dataico"; vacío = el de por defecto (cuando el tenant tiene un solo proveedor habilitado no hay nada que elegir).
+  documentProvider: '' as string
 };
 
 interface Client {
@@ -80,6 +82,7 @@ export default function Clients() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [newClient, setNewClient] = useState(initialNewClient);
+  const [integrators, setIntegrators] = useState<{ id: string, code: string, name: string }[]>([]);
   const [associates, setAssociates] = useState<{ id: string, name: string, isActive: boolean }[]>([]);
   const [creating, setCreating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -103,10 +106,13 @@ export default function Clients() {
   useEffect(() => {
     loadClients();
     api.get('/tenant/associates').then(res => setAssociates(res.data)).catch(() => {});
+    api.get('/tenant/integrators').then(res => setIntegrators(res.data)).catch(() => {});
   }, []);
 
   const openCreateModal = () => {
-    setNewClient(initialNewClient);
+    // Con más de un proveedor habilitado el tenant elige; por defecto el motor propio (Nativo) si lo tiene.
+    const defaultProvider = integrators.length > 1 ? (integrators.some(i => i.code === 'NATIVE') ? 'Native' : integrators[0].code === 'DATAICO' ? 'Dataico' : 'Native') : '';
+    setNewClient({ ...initialNewClient, documentProvider: defaultProvider });
     setShowModal(true);
   };
 
@@ -409,6 +415,27 @@ export default function Clients() {
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
             </div>
             <form onSubmit={handleCreate} className="p-6 overflow-y-auto">
+              {integrators.length > 1 && (
+                <div className="mb-6">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Proveedor de documentos electrónicos</label>
+                  <div className="flex gap-3">
+                    {integrators.map(i => {
+                      const value = i.code === 'DATAICO' ? 'Dataico' : 'Native';
+                      return (
+                        <button
+                          key={i.id}
+                          type="button"
+                          onClick={() => setNewClient({ ...newClient, documentProvider: value })}
+                          className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-colors ${newClient.documentProvider === value ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                        >
+                          {i.code === 'NATIVE' ? 'Motor propio (DIAN directa)' : i.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1.5">Después se puede cambiar en la pestaña de credenciales del cliente.</p>
+                </div>
+              )}
               <ClientFormFields client={newClient} setClient={setNewClient} associates={associates} />
               <div className="flex gap-3 justify-end pt-6 border-t border-slate-100 mt-6">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-medium transition-colors">Cancelar</button>

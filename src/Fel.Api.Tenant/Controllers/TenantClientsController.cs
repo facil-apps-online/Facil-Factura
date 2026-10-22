@@ -231,6 +231,22 @@ namespace Fel.Api.Tenant.Controllers
                 return BadRequest("El régimen de renta no es válido (05 ordinario, 04 especial o 47 simple).");
             }
 
+            // Proveedor de documentos: el que elija el tenant si es uno de los que tiene habilitados; sin elegir, el de por defecto (ver DefaultIntegrator).
+            Guid integratorId;
+            if (string.IsNullOrWhiteSpace(request.DocumentProvider))
+            {
+                integratorId = await Fel.Infrastructure.Services.DefaultIntegrator.ForTenantAsync(_dbContext, tenantId);
+            }
+            else
+            {
+                var chosenCode = request.DocumentProvider == "Dataico" ? "DATAICO" : "NATIVE";
+                var chosen = await _dbContext.TenantEnabledIntegrators
+                    .Where(e => e.TenantId == tenantId && e.Integrator!.Code == chosenCode && e.Integrator.IsActive)
+                    .Select(e => (Guid?)e.IntegratorId).FirstOrDefaultAsync();
+                if (chosen == null) return BadRequest("Tu cuenta no tiene habilitado ese proveedor de documentos.");
+                integratorId = chosen.Value;
+            }
+
             var client = new Client
             {
                 Id = Guid.NewGuid(),
@@ -271,9 +287,9 @@ namespace Fel.Api.Tenant.Controllers
                 Longitude = request.Longitude,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
-                // Por defecto factura directo con la DIAN; se cambia a un integrador desde
-                // /{id}/document-provider si el Client necesita Dataico u otro.
-                IntegratorId = Guid.Parse("00000000-0000-0000-0000-000000000101")
+                // Nace con un integrador que el tenant tenga habilitado: la emisión directa con la DIAN si la tiene (como siempre) o, si solo tiene otro
+                // (p. ej. Dataico), ese. Se cambia desde /{id}/document-provider.
+                IntegratorId = integratorId
             };
 
             _dbContext.Clients.Add(client);
@@ -589,6 +605,9 @@ namespace Fel.Api.Tenant.Controllers
 
             if (client.IntegratorId != integrator.Id)
             {
+                // Solo se puede cambiar hacia un proveedor que el tenant tenga habilitado (si no cambia, no se estorba a quien ya lo tenía).
+                if (!await _dbContext.TenantEnabledIntegrators.AnyAsync(e => e.TenantId == tenantId && e.IntegratorId == integrator.Id))
+                    return BadRequest("Tu cuenta no tiene habilitado ese proveedor de documentos.");
                 var now = DateTime.UtcNow;
                 var openAssignment = await _dbContext.ClientIntegratorAssignments
                     .FirstOrDefaultAsync(a => a.ClientId == client.Id && a.EffectiveTo == null);
@@ -813,6 +832,8 @@ namespace Fel.Api.Tenant.Controllers
 
     public class CreateClientRequest
     {
+        // "Native" o "Dataico"; vacío = el de por defecto del tenant. Debe ser uno de los habilitados para el tenant.
+        public string? DocumentProvider { get; set; }
         public string CompanyName { get; set; } = string.Empty;
         public string PersonType { get; set; } = "PJ";
         public string CommercialName { get; set; } = string.Empty;

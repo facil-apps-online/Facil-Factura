@@ -72,7 +72,7 @@ namespace Fel.Infrastructure.Services
                     City = FirstNonEmpty(tenant.PhysicalCity, tenant.City),
                     IsActive = true,
                     CreatedAt = now,
-                    IntegratorId = NativeIntegratorId,
+                    IntegratorId = await DefaultIntegrator.ForTenantAsync(db, tenant.Id),
                     IsGranContribuyente = tenant.IsGranContribuyente,
                     IsAgenteRetenedorIva = tenant.IsAgenteRetenedorIva,
                     IsAutorretenedorRenta = tenant.IsAutorretenedorRenta,

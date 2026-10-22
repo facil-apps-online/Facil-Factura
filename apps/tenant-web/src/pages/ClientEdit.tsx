@@ -107,6 +107,9 @@ export default function ClientEdit() {
   const [savingDocProvider, setSavingDocProvider] = useState(false);
   const docLock = useCredentialLock();
   const [integrators, setIntegrators] = useState<{ id: string, code: string, name: string }[]>([]);
+  // Si el tenant solo tiene un proveedor habilitado, es ese el que aplica a todos sus clientes (aunque alguno haya quedado guardado con otro).
+  const onlyProvider = integrators.length === 1 ? (integrators[0].code === 'DATAICO' ? 'Dataico' : 'Native') : null;
+  const effectiveProvider = onlyProvider ?? savedProvider;
   const [prepaidPackages, setPrepaidPackages] = useState<any[]>([]);
   const [prepaidBags, setPrepaidBags] = useState<any[]>([]);
   const [showPackageModal, setShowPackageModal] = useState(false);
@@ -432,6 +435,13 @@ export default function ClientEdit() {
     api.get(`/tenant/clients/${id}/prepaid/packages`).then(res => setPrepaidPackages(res.data)).catch(() => {});
     api.get(`/tenant/clients/${id}/prepaid/bags`).then(res => setPrepaidBags(res.data)).catch(() => {});
   };
+
+  // Con un solo proveedor habilitado se preselecciona, y si el cliente quedó guardado con otro se abre el candado para capturar las credenciales.
+  useEffect(() => {
+    if (!onlyProvider || !savedProvider) return;
+    setDocProvider(prev => (prev.documentProvider === onlyProvider ? prev : { ...prev, documentProvider: onlyProvider }));
+    if (savedProvider !== onlyProvider) docLock.unlock();
+  }, [onlyProvider, savedProvider, docProvider.documentProvider]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadIntegrators = () => {
     api.get('/tenant/integrators').then(res => setIntegrators(res.data)).catch(() => {});
@@ -1111,7 +1121,7 @@ export default function ClientEdit() {
             <FileSignature size={18} /> Resoluciones y Consecutivos
           </button>
           {/* La habilitación ante la DIAN la hace Dataico con su propio software: solo aplica a la emisión directa. */}
-          {savedProvider !== 'Dataico' && (
+          {effectiveProvider !== 'Dataico' && (
             <button
               onClick={() => setActiveTab('dian')}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
@@ -1122,7 +1132,7 @@ export default function ClientEdit() {
             </button>
           )}
           {/* Con Dataico firma y transmite Dataico con su propio certificado: aquí no se carga ninguno. */}
-          {savedProvider !== 'Dataico' && (
+          {effectiveProvider !== 'Dataico' && (
             <button
               onClick={() => setActiveTab('certificate')}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
@@ -1259,7 +1269,7 @@ export default function ClientEdit() {
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-bold text-slate-800">Resoluciones de Facturación</h2>
                   <div className="flex items-center gap-2">
-                    {savedProvider === 'Dataico' && (
+                    {effectiveProvider === 'Dataico' && (
                       <button onClick={handleSyncDataico} disabled={syncingDataico} title="Trae las resoluciones vigentes que Dataico tiene vinculadas al NIT del cliente" className="bg-white hover:bg-slate-50 disabled:opacity-60 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2 text-sm">
                         {syncingDataico ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} Sincronizar con Dataico
                       </button>
@@ -1369,7 +1379,7 @@ export default function ClientEdit() {
               </>
             )}
 
-            {activeTab === 'certificate' && savedProvider !== 'Dataico' && (
+            {activeTab === 'certificate' && effectiveProvider !== 'Dataico' && (
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                 <div className="flex items-center gap-4 mb-8">
                   <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
@@ -1521,7 +1531,9 @@ export default function ClientEdit() {
                   <p className="text-slate-500 text-sm mb-6">
                     {integrators.length > 1
                       ? 'Por defecto los documentos se emiten con el motor propio. Si este emisor factura con otro proveedor, actívalo aquí y captura sus credenciales.'
-                      : 'Los documentos de este emisor se emiten con el motor propio (emisión directa ante la DIAN).'}
+                      : onlyProvider === 'Dataico'
+                        ? 'Los documentos de este emisor se emiten con Dataico: captura aquí las credenciales de su cuenta y guarda.'
+                        : 'Los documentos de este emisor se emiten con el motor propio (emisión directa ante la DIAN).'}
                   </p>
                   <div className="mb-4 flex justify-end"><CredentialLockButton unlocked={docLock.unlocked} onToggle={docLock.toggle} /></div>
                   <form onSubmit={handleSaveDocProvider} className="space-y-4" autoComplete="off">
@@ -1859,7 +1871,7 @@ export default function ClientEdit() {
               </div>
             )}
 
-            {activeTab === 'dian' && savedProvider !== 'Dataico' && (
+            {activeTab === 'dian' && effectiveProvider !== 'Dataico' && (
               <div className="relative">
                 {/* Splash Screen Overlay for DIAN Tab */}
                 {(isHabilitating || habilitationStatus?.status === 'Approved') && (

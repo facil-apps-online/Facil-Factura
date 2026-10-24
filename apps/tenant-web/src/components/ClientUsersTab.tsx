@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Pencil, Mail, Power, PowerOff, X, UserRound, Loader2, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Plus, Pencil, Mail, Link2, Power, PowerOff, X, UserRound, Loader2, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import { copyText } from '@shared/lib/clipboard';
 
 interface ClientUserRow {
   id: string;
@@ -134,6 +135,18 @@ export default function ClientUsersTab({ clientId }: { clientId: string }) {
     }
   };
 
+  // El enlace de invitación para mandarlo por otro medio (WhatsApp); si ya venció, el servidor genera uno nuevo.
+  const copyInvitationLink = async (u: ClientUserRow) => {
+    try {
+      const { link } = (await api.post(`${base}/${u.id}/invitation-link`)).data as { link: string };
+      if (await copyText(link)) toast.success(`Enlace de invitación de ${u.name} copiado.`);
+      else toast.message('Copie el enlace de invitación:', { description: link, duration: 30000 });
+      load();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudo obtener el enlace de invitación.'));
+    }
+  };
+
   const setActive = async (u: ClientUserRow, active: boolean) => {
     if (!active && !window.confirm(`¿Desactivar el acceso de ${u.name}?`)) return;
     try {
@@ -194,6 +207,9 @@ export default function ClientUsersTab({ clientId }: { clientId: string }) {
                   <button onClick={() => openEdit(u)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar" aria-label={`Editar a ${u.name}`}><Pencil size={16} /></button>
                   {u.isActive && (
                     <button onClick={() => resend(u)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Reenviar invitación" aria-label={`Reenviar invitación a ${u.name}`}><Mail size={16} /></button>
+                  )}
+                  {u.isActive && (
+                    <button onClick={() => copyInvitationLink(u)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Copiar enlace de invitación" aria-label={`Copiar enlace de invitación de ${u.name}`}><Link2 size={16} /></button>
                   )}
                   {u.isActive ? (
                     <button onClick={() => setActive(u, false)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Desactivar" aria-label={`Desactivar a ${u.name}`}><PowerOff size={16} /></button>

@@ -131,6 +131,19 @@ namespace Fel.Api.Tenant.Controllers
             catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
 
+        [HttpPost("{userId:guid}/invitation-link")]
+        public async Task<IActionResult> InvitationLink(Guid clientId, Guid userId)
+        {
+            try
+            {
+                if (!await OwnsClientAsync(clientId)) return NotFound();
+
+                var result = await _users.GetInvitationLinkAsync(clientId, userId, _clientPortalUrl);
+                return result.Succeeded ? Ok(new { link = result.Value }) : Failure(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
+        }
+
         [HttpPost("{userId:guid}/deactivate")]
         public async Task<IActionResult> Deactivate(Guid clientId, Guid userId)
         {

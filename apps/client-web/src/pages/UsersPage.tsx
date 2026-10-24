@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import SearchableSelect from '@shared/components/SearchableSelect';
+import { copyText } from '@shared/lib/clipboard';
 
 import { api, getErrorMessage } from '../lib/api';
 import { useSession } from '../context/SessionContext';
@@ -111,6 +112,18 @@ export default function UsersPage() {
     }
   };
 
+  // El enlace de invitación para mandarlo por otro medio (WhatsApp); si ya venció, el servidor genera uno nuevo.
+  const copyInvitationLink = async (user: PortalUser) => {
+    try {
+      const { link } = (await api.post(`/client/users/${user.id}/invitation-link`)).data as { link: string };
+      if (await copyText(link)) toast.success(`Enlace de invitación de ${user.name} copiado.`);
+      else toast.message('Copie el enlace de invitación:', { description: link, duration: 30000 });
+      load();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudo obtener el enlace de invitación.'));
+    }
+  };
+
   const setActive = async (user: PortalUser, active: boolean) => {
     if (!active && !(await confirm(`¿Desactivar el acceso de ${user.name}? No podrá iniciar sesión hasta que lo reactives.`))) return;
     try {
@@ -185,6 +198,7 @@ export default function UsersPage() {
           <>
             <RowIconButton action="edit" label={`Editar ${u.name}`} onClick={() => openEdit(u)} />
             {u.isActive && <RowIconButton action="resend" label={`Reenviar invitación a ${u.name}`} onClick={() => resend(u)} />}
+            {u.isActive && <RowIconButton action="copyLink" label={`Copiar enlace de invitación de ${u.name}`} onClick={() => copyInvitationLink(u)} />}
             {u.isActive && !u.isSelf && <RowIconButton action="deactivate" label={`Desactivar a ${u.name}`} onClick={() => setActive(u, false)} />}
             {!u.isActive && <RowIconButton action="reactivate" label={`Reactivar a ${u.name}`} onClick={() => setActive(u, true)} />}
           </>

@@ -31,11 +31,8 @@ namespace Fel.Api.Client.Security
         public async Task<List<ClientUser>> CompaniesOfAsync(Guid tenantId, string email) =>
             await _dbContext.ClientUsers.Include(u => u.Client)
                 .Where(u => u.Email == email && u.Client.TenantId == tenantId && u.IsActive && u.Client.IsActive && u.Client.BlockedAt == null)
-                .OrderBy(u => u.Client.CommercialName).ThenBy(u => u.Client.CompanyName)
+                .OrderBy(u => u.Client.CompanyName)
                 .ToListAsync();
-
-        public static string CompanyName(Fel.Core.Entities.Client client) =>
-            string.IsNullOrWhiteSpace(client.CommercialName) ? client.CompanyName : client.CommercialName;
 
         public async Task<IssueResult> IssueAsync(ClientUser user, Tenant tenant)
         {

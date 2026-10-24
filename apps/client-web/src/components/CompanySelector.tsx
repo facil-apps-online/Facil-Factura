@@ -32,7 +32,7 @@ export default function CompanySelector() {
   return (
     <div className="w-40 shrink-0 sm:w-64" data-testid="company-selector">
       <SearchableSelect
-        options={companies.map(c => ({ value: c.clientId, label: c.name }))}
+        options={companies.map(c => ({ value: c.clientId, label: c.taxId ? `${c.name} · NIT ${c.taxId}` : c.name }))}
         value={currentClientId}
         onChange={change}
         placeholder="Empresa"

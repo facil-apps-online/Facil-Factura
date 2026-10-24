@@ -993,6 +993,23 @@ namespace Fel.Api.Superadmin.Controllers
             return Ok(new { message = "Invitación reenviada." });
         }
 
+        // El enlace de invitación para copiarlo y enviarlo por otro medio (WhatsApp) en lugar del correo.
+        [HttpPost("{id:guid}/users/{userId:guid}/invitation-link")]
+        public async Task<IActionResult> UserInvitationLink(Guid id, Guid userId)
+        {
+            var asignacion = await _dbContext.TenantUserAssignments
+                .FirstOrDefaultAsync(a => a.TenantUserId == userId && a.TenantId == id);
+            if (asignacion == null) return NotFound();
+
+            if (!asignacion.IsActive)
+            {
+                return BadRequest("Este administrador fue revocado en este tenant; reactívalo antes de copiar el enlace de invitación.");
+            }
+
+            var link = await _passwordResetService.GetLinkAsync(PortalUserType.Tenant, userId, _tenantPortalUrl);
+            return Ok(new { link });
+        }
+
         [HttpDelete("{id:guid}/users/{userId:guid}")]
         public async Task<IActionResult> RevokeTenantUser(Guid id, Guid userId)
         {

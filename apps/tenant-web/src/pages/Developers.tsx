@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Code2, Mail, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, Code2, Mail, Link2, RotateCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import { copyText } from '@shared/lib/clipboard';
 
 interface Developer {
   id: string;
@@ -55,6 +56,17 @@ export default function Developers() {
       toast.success('Invitación reenviada');
     } catch (err: any) {
       toast.error(err.response?.data || 'Error al reenviar la invitación');
+    }
+  };
+
+  // El enlace de invitación para mandarlo por otro medio (WhatsApp); si ya venció, el servidor genera uno nuevo.
+  const handleCopyInvitationLink = async (d: Developer) => {
+    try {
+      const { link } = (await api.post(`/tenant/developers/${d.id}/invitation-link`)).data as { link: string };
+      if (await copyText(link)) toast.success(`Enlace de invitación de ${d.name} copiado`);
+      else toast.message('Copie el enlace de invitación:', { description: link, duration: 30000 });
+    } catch (err: any) {
+      toast.error(err.response?.data || 'Error al obtener el enlace de invitación');
     }
   };
 
@@ -134,6 +146,9 @@ export default function Developers() {
           <>
             <button onClick={() => handleResendInvitation(d.id)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Reenviar invitación" aria-label={`Reenviar invitación a ${d.name}`}>
               <Mail size={16} />
+            </button>
+            <button onClick={() => handleCopyInvitationLink(d)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Copiar enlace de invitación" aria-label={`Copiar enlace de invitación de ${d.name}`}>
+              <Link2 size={16} />
             </button>
             <button onClick={() => handleRevoke(d.id)} className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-white rounded shadow-sm border border-slate-200" title="Revocar acceso" aria-label={`Revocar acceso de ${d.name}`}>
               <Trash2 size={16} />

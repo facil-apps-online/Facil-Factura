@@ -44,6 +44,20 @@ namespace Fel.Infrastructure.Services
             string portalBaseUrl, string templateType, string? tenantCoreId = null,
             string? brandLogoUrl = null, string? brandName = null, CancellationToken ct = default)
         {
+            var resetLink = await GetLinkAsync(userType, userId, portalBaseUrl, ct);
+            return await _core.QueuePlatformEmailAsync(email, templateType, new Dictionary<string, string>
+            {
+                ["reset_link"] = resetLink,
+                ["user_name"] = userName,
+                ["logo_url"] = string.IsNullOrWhiteSpace(brandLogoUrl) ? DefaultBrandLogoUrl : brandLogoUrl,
+                ["brand_name"] = string.IsNullOrWhiteSpace(brandName) ? DefaultBrandName : brandName
+            }, tenantCoreId, ct);
+        }
+
+        // El enlace de invitación/restablecimiento sin enviarlo por correo, para que quien administra lo copie y lo mande por otro medio (WhatsApp).
+        // Reutiliza el enlace vigente y, si ya venció o se usó, genera uno nuevo.
+        public async Task<string> GetLinkAsync(PortalUserType userType, Guid userId, string portalBaseUrl, CancellationToken ct = default)
+        {
             // Si ya hay un enlace vigente (no vencido, no usado) para este usuario, se reenvía ese
             // mismo — no tiene sentido emitir uno nuevo cada vez que el tenant hace clic en
             // "reenviar": dejaría varios enlaces simultáneamente válidos y, si el destinatario borró
@@ -74,14 +88,7 @@ namespace Fel.Infrastructure.Services
                 await _db.SaveChangesAsync(ct);
             }
 
-            var resetLink = $"{portalBaseUrl.TrimEnd('/')}/reset-password?token={rawToken}";
-            return await _core.QueuePlatformEmailAsync(email, templateType, new Dictionary<string, string>
-            {
-                ["reset_link"] = resetLink,
-                ["user_name"] = userName,
-                ["logo_url"] = string.IsNullOrWhiteSpace(brandLogoUrl) ? DefaultBrandLogoUrl : brandLogoUrl,
-                ["brand_name"] = string.IsNullOrWhiteSpace(brandName) ? DefaultBrandName : brandName
-            }, tenantCoreId, ct);
+            return $"{portalBaseUrl.TrimEnd('/')}/reset-password?token={rawToken}";
         }
 
         // Devuelve el usuario referenciado si el token es válido, no vencido y no usado, y de paso

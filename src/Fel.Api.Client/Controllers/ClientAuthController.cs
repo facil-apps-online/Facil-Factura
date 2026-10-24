@@ -93,8 +93,8 @@ namespace Fel.Api.Client.Controllers
                 {
                     requiresCompany = true,
                     companies = open
-                        .OrderBy(u => Fel.Api.Client.Security.ClientSessionIssuer.CompanyName(u.Client))
-                        .Select(u => new { clientId = u.ClientId, name = Fel.Api.Client.Security.ClientSessionIssuer.CompanyName(u.Client), taxId = u.Client.TaxId })
+                        .OrderBy(u => u.Client.CompanyName)
+                        .Select(u => new { clientId = u.ClientId, name = u.Client.CompanyName, taxId = u.Client.TaxId })
                 });
             }
 

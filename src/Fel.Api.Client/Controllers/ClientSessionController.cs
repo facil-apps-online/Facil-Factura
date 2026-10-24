@@ -40,7 +40,7 @@ namespace Fel.Api.Client.Controllers
 
             var companies = await _sessionIssuer.CompaniesOfAsync(me.TenantId, me.Email);
             if (companies.Count < 2) return new List<object>();
-            return companies.Select(u => (object)new { clientId = u.ClientId, name = Fel.Api.Client.Security.ClientSessionIssuer.CompanyName(u.Client) }).ToList();
+            return companies.Select(u => (object)new { clientId = u.ClientId, name = u.Client.CompanyName, taxId = u.Client.TaxId }).ToList();
         }
 
         public sealed class SwitchCompanyRequest

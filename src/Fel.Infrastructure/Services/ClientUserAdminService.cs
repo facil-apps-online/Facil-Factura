@@ -144,6 +144,29 @@ namespace Fel.Infrastructure.Services
             return UserAdminResult<InvitationOutcome>.Ok(await SendInvitationAsync(user, portalUrl));
         }
 
+        // El enlace de invitación para que quien administra lo copie y lo envíe por otro medio; cuenta como invitación hecha.
+        public async Task<UserAdminResult<string>> GetInvitationLinkAsync(Guid clientId, Guid userId, string portalUrl)
+        {
+            var user = await _dbContext.ClientUsers.FirstOrDefaultAsync(u => u.Id == userId && u.ClientId == clientId);
+            if (user == null) return UserAdminResult<string>.Missing();
+            if (!user.IsActive) return UserAdminResult<string>.Invalid("Este acceso está desactivado; reactívalo antes de copiar el enlace de invitación.");
+
+            var link = await _passwordResetService.GetLinkAsync(PortalUserType.Client, user.Id, portalUrl);
+            var tenantId = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == clientId).Select(c => c.TenantId).FirstAsync();
+            await MarkInvitedAsync(user, tenantId);
+            return UserAdminResult<string>.Ok(link);
+        }
+
+        // La invitación es de la persona: queda cumplida en todos sus accesos del tenant (los de su mismo correo).
+        private async Task MarkInvitedAsync(ClientUser user, Guid tenantId)
+        {
+            var now = DateTime.UtcNow;
+            var group = await _dbContext.ClientUsers.Where(u => u.Email == user.Email && u.Client.TenantId == tenantId && u.InvitedAt == null).ToListAsync();
+            foreach (var member in group) member.InvitedAt = now;
+            user.InvitedAt ??= now;
+            await _dbContext.SaveChangesAsync();
+        }
+
         public async Task<UserAdminResult<ClientUser>> SetActiveAsync(Guid clientId, Guid userId, bool active, Guid? actingUserId)
         {
             var user = await _dbContext.ClientUsers.FirstOrDefaultAsync(u => u.Id == userId && u.ClientId == clientId);
@@ -201,12 +224,7 @@ namespace Fel.Infrastructure.Services
 
             if (result.IsSuccess)
             {
-                // La invitación es de la persona: queda cumplida en todos sus accesos del tenant (los de su mismo correo).
-                var now = DateTime.UtcNow;
-                var group = await _dbContext.ClientUsers.Where(u => u.Email == user.Email && u.Client.TenantId == client.TenantId && u.InvitedAt == null).ToListAsync();
-                foreach (var member in group) member.InvitedAt = now;
-                user.InvitedAt ??= now;
-                await _dbContext.SaveChangesAsync();
+                await MarkInvitedAsync(user, client.TenantId);
                 return new InvitationOutcome(true, null);
             }
             return new InvitationOutcome(false, result.IsNotConfigured ? "El servicio de correo no está configurado." : (result.Error ?? "No se pudo enviar la invitación."));

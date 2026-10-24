@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-maps/api';
-import { ArrowLeft, Save, MapPin, Building2, Phone, Hash, FileText, Coins, ChevronDown, Check, Users, UserPlus, X, Mail, Trash2, RotateCcw, Cable, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ArrowLeft, Save, MapPin, Building2, Phone, Hash, FileText, Coins, ChevronDown, Check, Users, UserPlus, X, Mail, Link2, Trash2, RotateCcw, Cable, ToggleLeft, ToggleRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import { copyText } from '@shared/lib/clipboard';
 
 const libraries: "places"[] = ['places'];
 // TODO: El usuario deberá reemplazar esto por su API Key real en el .env
@@ -343,6 +344,17 @@ export const TenantEdit = () => {
       toast.success("Invitación reenviada");
     } catch (err: any) {
       toast.error(err.response?.data || "Error al reenviar la invitación");
+    }
+  };
+
+  // El enlace de invitación para mandarlo por otro medio (WhatsApp); si ya venció, el servidor genera uno nuevo.
+  const handleCopyUserInvitationLink = async (userId: string) => {
+    try {
+      const { link } = (await api.post(`/tenants/${id}/users/${userId}/invitation-link`)).data as { link: string };
+      if (await copyText(link)) toast.success("Enlace de invitación copiado");
+      else toast.message("Copie el enlace de invitación:", { description: link, duration: 30000 });
+    } catch (err: any) {
+      toast.error(err.response?.data || "Error al obtener el enlace de invitación");
     }
   };
 
@@ -806,6 +818,9 @@ export const TenantEdit = () => {
                       <>
                         <button type="button" onClick={() => handleResendUserInvitation(u.id)} className="p-1.5 text-slate-500 hover:text-blue-400 transition-colors bg-slate-800 rounded-lg border border-slate-700" title="Reenviar invitación">
                           <Mail className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => handleCopyUserInvitationLink(u.id)} className="p-1.5 text-slate-500 hover:text-blue-400 transition-colors bg-slate-800 rounded-lg border border-slate-700" title="Copiar enlace de invitación">
+                          <Link2 className="w-4 h-4" />
                         </button>
                         <button type="button" onClick={() => handleRevokeUser(u.id)} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors bg-slate-800 rounded-lg border border-slate-700" title="Revocar acceso">
                           <Trash2 className="w-4 h-4" />

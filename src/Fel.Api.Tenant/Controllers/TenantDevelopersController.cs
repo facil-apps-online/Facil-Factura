@@ -144,6 +144,30 @@ namespace Fel.Api.Tenant.Controllers
             }
         }
 
+        // El enlace de invitación para copiarlo y enviarlo por otro medio (WhatsApp) en lugar del correo.
+        [HttpPost("{id}/invitation-link")]
+        public async Task<IActionResult> InvitationLink(Guid id)
+        {
+            try
+            {
+                var tenantId = GetCurrentTenantId();
+                var developer = await _dbContext.DeveloperUsers.FirstOrDefaultAsync(d => d.Id == id && d.TenantId == tenantId);
+                if (developer == null) return NotFound();
+
+                if (!developer.IsActive)
+                {
+                    return BadRequest("Este developer fue revocado; no se puede copiar el enlace de invitación.");
+                }
+
+                var link = await _passwordResetService.GetLinkAsync(PortalUserType.Developer, developer.Id, _developerPortalUrl);
+                return Ok(new { link });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> RevokeDeveloper(Guid id)
         {

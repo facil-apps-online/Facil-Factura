@@ -77,6 +77,13 @@ namespace Fel.Api.Client.Controllers
                 : new { message = "No se pudo enviar el correo de invitación.", sent = false, detail = invitation.Error });
         }
 
+        [HttpPost("{id:guid}/invitation-link")]
+        public async Task<IActionResult> InvitationLink(Guid id)
+        {
+            var result = await _users.GetInvitationLinkAsync(GetCurrentClientId(), id, _portalUrl);
+            return result.Succeeded ? Ok(new { link = result.Value }) : Failure(result);
+        }
+
         [HttpPost("{id:guid}/deactivate")]
         public async Task<IActionResult> Deactivate(Guid id)
         {

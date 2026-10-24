@@ -15,11 +15,49 @@ namespace Fel.Api.Tenant.Controllers
     {
         private readonly FelDbContext _dbContext;
         private readonly IFacilReportsClient _reportsClient;
+        private readonly Fel.Infrastructure.Services.UnusedTemplateDraftService _unusedDrafts;
 
-        public TenantTemplatesController(FelDbContext dbContext, IFacilReportsClient reportsClient)
+        public TenantTemplatesController(FelDbContext dbContext, IFacilReportsClient reportsClient, Fel.Infrastructure.Services.UnusedTemplateDraftService unusedDrafts)
         {
             _dbContext = dbContext;
             _reportsClient = reportsClient;
+            _unusedDrafts = unusedDrafts;
+        }
+
+        // GET: api/tenant/templates/unused-drafts — borradores propios del Tenant que nunca se usaron.
+        [HttpGet("unused-drafts")]
+        public async Task<IActionResult> GetUnusedDrafts()
+        {
+            try
+            {
+                var tenantId = GetCurrentTenantId();
+                return Ok(await _unusedDrafts.ListAsync(t => t.TenantId == tenantId && t.ClientId == null));
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
+        }
+
+        // POST: api/tenant/templates/unused-drafts/delete
+        [HttpPost("unused-drafts/delete")]
+        public async Task<IActionResult> DeleteUnusedDrafts([FromBody] Fel.Infrastructure.Services.UnusedDraftsRequest request)
+        {
+            try
+            {
+                var tenantId = GetCurrentTenantId();
+                return Ok(new { count = await _unusedDrafts.DeleteAsync(t => t.TenantId == tenantId && t.ClientId == null, request.Ids ?? new()) });
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
+        }
+
+        // POST: api/tenant/templates/unused-drafts/archive
+        [HttpPost("unused-drafts/archive")]
+        public async Task<IActionResult> ArchiveUnusedDrafts([FromBody] Fel.Infrastructure.Services.UnusedDraftsRequest request)
+        {
+            try
+            {
+                var tenantId = GetCurrentTenantId();
+                return Ok(new { count = await _unusedDrafts.ArchiveAsync(t => t.TenantId == tenantId && t.ClientId == null, request.Ids ?? new()) });
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(ex.Message); }
         }
 
         private Guid GetCurrentTenantId()

@@ -17,12 +17,31 @@ namespace Fel.Api.Superadmin.Controllers
     {
         private readonly FelDbContext _dbContext;
         private readonly IFacilReportsClient _facilReportsClient;
+        private readonly Fel.Infrastructure.Services.UnusedTemplateDraftService _unusedDrafts;
 
-        public SuperadminTemplatesController(FelDbContext dbContext, IFacilReportsClient facilReportsClient)
+        public SuperadminTemplatesController(FelDbContext dbContext, IFacilReportsClient facilReportsClient, Fel.Infrastructure.Services.UnusedTemplateDraftService unusedDrafts)
         {
             _dbContext = dbContext;
             _facilReportsClient = facilReportsClient;
+            _unusedDrafts = unusedDrafts;
         }
+
+        // Ámbito del Superadmin: solo las plantillas globales.
+        private static readonly System.Linq.Expressions.Expression<Func<DocumentTemplate, bool>> GlobalScope = t => t.TenantId == null && t.ClientId == null;
+
+        // GET: api/superadmin/templates/unused-drafts — borradores globales que nunca se usaron.
+        [HttpGet("unused-drafts")]
+        public async Task<IActionResult> GetUnusedDrafts() => Ok(await _unusedDrafts.ListAsync(GlobalScope));
+
+        // POST: api/superadmin/templates/unused-drafts/delete
+        [HttpPost("unused-drafts/delete")]
+        public async Task<IActionResult> DeleteUnusedDrafts([FromBody] Fel.Infrastructure.Services.UnusedDraftsRequest request) =>
+            Ok(new { count = await _unusedDrafts.DeleteAsync(GlobalScope, request.Ids ?? new()) });
+
+        // POST: api/superadmin/templates/unused-drafts/archive
+        [HttpPost("unused-drafts/archive")]
+        public async Task<IActionResult> ArchiveUnusedDrafts([FromBody] Fel.Infrastructure.Services.UnusedDraftsRequest request) =>
+            Ok(new { count = await _unusedDrafts.ArchiveAsync(GlobalScope, request.Ids ?? new()) });
 
         private static async Task<byte[]> ReadBytesAsync(IFormFile file)
         {
@@ -514,9 +533,9 @@ namespace Fel.Api.Superadmin.Controllers
                     return BadRequest("No puedes eliminar una plantilla publicada. Súbele una nueva versión para reemplazarla.");
                 }
 
-                if (await _dbContext.DocumentTemplates.AnyAsync(t => t.PreviousVersionId == id))
+                if (await _unusedDrafts.IsReferencedAsync(id))
                 {
-                    return BadRequest("No puedes eliminar esta plantilla porque tiene una versión posterior que depende de ella.");
+                    return BadRequest("No puedes eliminar esta plantilla: un cliente la tiene seleccionada, ya se emitieron documentos con ella o hay otra plantilla que depende de ella.");
                 }
 
                 _dbContext.DocumentTemplates.Remove(template);

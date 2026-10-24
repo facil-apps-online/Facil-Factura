@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@radix-ui/react-alert-dialog": path.resolve(__dirname, "./node_modules/@radix-ui/react-alert-dialog"),
       // Codigo compartido entre portales. En desarrollo vive en apps/_shared; en la imagen de
       // Docker el Dockerfile lo copia dentro de la app (./_shared) para que resuelva
       // node_modules. Se toma la que exista.

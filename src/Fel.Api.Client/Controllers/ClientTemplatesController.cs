@@ -18,11 +18,57 @@ namespace Fel.Api.Client.Controllers
     {
         private readonly FelDbContext _dbContext;
         private readonly IFacilReportsClient _reportsClient;
+        private readonly Fel.Infrastructure.Services.UnusedTemplateDraftService _unusedDrafts;
 
-        public ClientTemplatesController(FelDbContext dbContext, IFacilReportsClient reportsClient)
+        public ClientTemplatesController(FelDbContext dbContext, IFacilReportsClient reportsClient, Fel.Infrastructure.Services.UnusedTemplateDraftService unusedDrafts)
         {
             _dbContext = dbContext;
             _reportsClient = reportsClient;
+            _unusedDrafts = unusedDrafts;
+        }
+
+        // GET: api/client/templates/unused-drafts — borradores propios del cliente que nunca se usaron.
+        [HttpGet("unused-drafts")]
+        public async Task<IActionResult> GetUnusedDrafts()
+        {
+            var clientId = GetCurrentClientId();
+            return Ok(await _unusedDrafts.ListAsync(t => t.ClientId == clientId));
+        }
+
+        // POST: api/client/templates/unused-drafts/delete
+        [HttpPost("unused-drafts/delete")]
+        public async Task<IActionResult> DeleteUnusedDrafts([FromBody] Fel.Infrastructure.Services.UnusedDraftsRequest request)
+        {
+            var clientId = GetCurrentClientId();
+            return Ok(new { count = await _unusedDrafts.DeleteAsync(t => t.ClientId == clientId, request.Ids ?? new()) });
+        }
+
+        // DELETE: api/client/templates/{id} — solo un borrador propio que ningún cliente seleccionó, ningún documento usó y de
+        // la que no depende otra plantilla. Una publicada se reemplaza con una versión nueva.
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> DeleteTemplate(Guid id)
+        {
+            var clientId = GetCurrentClientId();
+            var template = await _dbContext.DocumentTemplates.FirstOrDefaultAsync(t => t.Id == id && t.ClientId == clientId);
+            if (template == null) return NotFound("Plantilla no encontrada.");
+
+            if (template.Status != TemplateStatus.Draft)
+                return BadRequest("Solo se pueden eliminar plantillas en borrador. Una plantilla publicada se reemplaza publicando una nueva versión.");
+
+            if (await _unusedDrafts.IsReferencedAsync(id))
+                return BadRequest("No puedes eliminar esta plantilla: está seleccionada, ya se emitieron documentos con ella o hay otra plantilla que depende de ella.");
+
+            _dbContext.DocumentTemplates.Remove(template);
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { message = "Plantilla eliminada." });
+        }
+
+        // POST: api/client/templates/unused-drafts/archive
+        [HttpPost("unused-drafts/archive")]
+        public async Task<IActionResult> ArchiveUnusedDrafts([FromBody] Fel.Infrastructure.Services.UnusedDraftsRequest request)
+        {
+            var clientId = GetCurrentClientId();
+            return Ok(new { count = await _unusedDrafts.ArchiveAsync(t => t.ClientId == clientId, request.Ids ?? new()) });
         }
 
         // GET: api/client/templates/available/{documentTypeId}

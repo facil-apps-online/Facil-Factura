@@ -146,6 +146,7 @@ builder.Services.AddSingleton<Fel.Core.Interfaces.IMessageQueue, Fel.Infrastruct
 builder.Services.AddHttpClient<Fel.Core.Interfaces.ICoreApiClient, Fel.Infrastructure.Services.CoreApiClient>();
 builder.Services.AddHttpClient<Fel.Core.Interfaces.IFacilReportsClient, Fel.Infrastructure.Services.FacilReportsClient>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.PasswordResetService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.UnusedTemplateDraftService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ClientUserAdminService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ResolutionBranchService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.DataicoResolutionSyncService>();

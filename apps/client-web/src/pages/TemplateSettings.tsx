@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Copy, Upload, GitBranch, Pencil, Eye, Loader2 } from 'lucide-react';
+import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Copy, Upload, GitBranch, Pencil, Eye, Loader2, Trash2, Brush } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { buildNumberFormat, setDecimalSeparator, useNumberFormat } from '../lib/numberFormat';
@@ -8,6 +8,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { Button } from '../components/ui/button';
 import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
+import UnusedDraftsDialog from '@shared/components/UnusedDraftsDialog';
 import ReceptionSettingsPanel from '../components/ReceptionSettingsPanel';
 
 interface ClientSetting {
@@ -49,6 +50,7 @@ export default function TemplateSettings() {
   const [selectedSetting, setSelectedSetting] = useState<ClientSetting | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<AvailableTemplate[]>([]);
   const [myTemplates, setMyTemplates] = useState<MyTemplate[]>([]);
+  const [showCleanup, setShowCleanup] = useState(false);
   const [showCloneModal, setShowCloneModal] = useState<{ id: string, name: string } | null>(null);
   const [cloneData, setCloneData] = useState({ newName: '', newRepxTemplateKey: '' });
   const [showVersionModal, setShowVersionModal] = useState<string | null>(null);
@@ -147,6 +149,17 @@ export default function TemplateSettings() {
     }
   };
 
+  const handleDeleteOwn = async (t: MyTemplate) => {
+    if (!(await confirm(`¿Eliminar el borrador "${t.name}"? Esta acción no se puede deshacer.`, { title: 'Eliminar borrador', confirmText: 'Eliminar' }))) return;
+    try {
+      await api.delete(`/client/templates/${t.id}`);
+      toast.success("Borrador eliminado.");
+      loadMyTemplates();
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, "No se pudo eliminar el borrador."));
+    }
+  };
+
   const handlePublishOwn = async (id: string) => {
     if (!(await confirm("¿Publicar esta plantilla? Quedará disponible para aplicarla a tus comprobantes.", { destructive: false, confirmText: 'Publicar' }))) return;
     try {
@@ -242,15 +255,33 @@ export default function TemplateSettings() {
 
   return (
     <div className="p-3 sm:p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="mb-6 sm:mb-10">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
-          <LayoutTemplate className="w-8 h-8 text-primary" />
-          Diseño de mis Facturas
-        </h1>
-        <p className="text-slate-500 mt-2 text-base font-medium">
-          Personaliza el aspecto visual que verán tus clientes al recibir sus comprobantes electrónicos.
-        </p>
+      <div className="mb-6 flex flex-col gap-3 sm:mb-10 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
+            <LayoutTemplate className="w-8 h-8 text-primary" />
+            Diseño de mis Facturas
+          </h1>
+          <p className="text-slate-500 mt-2 text-base font-medium">
+            Personaliza el aspecto visual que verán tus clientes al recibir sus comprobantes electrónicos.
+          </p>
+        </div>
+        <Button type="button" variant="ghost" onClick={() => setShowCleanup(true)} className="min-h-11 shrink-0 gap-2 border border-slate-200 bg-white md:min-h-0">
+          <Brush size={16} /> Limpiar borradores
+        </Button>
       </div>
+
+      <UnusedDraftsDialog
+        open={showCleanup}
+        onOpenChange={setShowCleanup}
+        load={async () => (await api.get('/client/templates/unused-drafts')).data}
+        onDelete={async ids => (await api.post('/client/templates/unused-drafts/delete', { ids })).data.count}
+        onArchive={async ids => (await api.post('/client/templates/unused-drafts/archive', { ids })).data.count}
+        onDone={(action, count) => {
+          toast.success(`${count} ${count === 1 ? 'plantilla' : 'plantillas'} ${action === 'delete' ? (count === 1 ? 'eliminada' : 'eliminadas') : (count === 1 ? 'archivada' : 'archivadas')}.`);
+          loadMyTemplates();
+          if (selectedSetting) handleSelectType(selectedSetting);
+        }}
+      />
 
       {/* Logo del Cliente (solo para sus comprobantes — el portal usa la marca de tu proveedor) */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 mb-6">
@@ -502,6 +533,11 @@ export default function TemplateSettings() {
                           {t.status === 'Draft' && (
                             <button onClick={() => handlePublishOwn(t.id)} className="min-h-11 px-3 py-1.5 text-xs font-bold text-white bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-1 md:min-h-0">
                               <Upload size={14} /> Publicar
+                            </button>
+                          )}
+                          {t.status === 'Draft' && (
+                            <button onClick={() => handleDeleteOwn(t)} aria-label={`Eliminar el borrador ${t.name}`} title="Eliminar borrador" className="min-h-11 px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1 md:min-h-0">
+                              <Trash2 size={14} /> Eliminar
                             </button>
                           )}
                           {t.status === 'Published' && (

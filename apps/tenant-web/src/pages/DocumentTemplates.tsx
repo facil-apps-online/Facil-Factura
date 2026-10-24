@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, Save, FileText, Upload, Globe, User, GitBranch, Pencil, Eye, Loader2, Trash2 } from 'lucide-react';
+import { Copy, Save, FileText, Upload, Globe, User, GitBranch, Pencil, Eye, Loader2, Trash2, Brush } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import ConfirmAlert from '@shared/components/ConfirmAlert';
+import UnusedDraftsDialog from '@shared/components/UnusedDraftsDialog';
 
 interface DocumentTemplate {
   id: string;
@@ -18,6 +20,10 @@ interface DocumentTemplate {
 
 export default function DocumentTemplates() {
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
+  // Limpieza de borradores sin uso y confirmaciones de borrar o publicar una plantilla.
+  const [showCleanup, setShowCleanup] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ kind: 'delete' | 'publish'; tpl: DocumentTemplate } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [showCloneModal, setShowCloneModal] = useState<string | null>(null);
   const [cloneData, setCloneData] = useState({ newName: '', newRepxTemplateKey: '' });
   const [showVersionModal, setShowVersionModal] = useState<string | null>(null);
@@ -81,7 +87,6 @@ export default function DocumentTemplates() {
   };
 
   const handleDelete = async (tpl: DocumentTemplate) => {
-    if (!window.confirm(`¿Eliminar el borrador "${tpl.name}"? Esta acción no se puede deshacer.`)) return;
     try {
       await api.delete(`/tenant/templates/${tpl.id}`);
       toast.success("Plantilla eliminada.");
@@ -92,7 +97,6 @@ export default function DocumentTemplates() {
   };
 
   const handlePublish = async (id: string) => {
-    if (!window.confirm("¿Seguro que deseas publicar esta plantilla? Se archivará la anterior.")) return;
     try {
       await api.put(`/tenant/templates/${id}/publish`);
       toast.success("Plantilla publicada.");
@@ -168,7 +172,48 @@ export default function DocumentTemplates() {
           </h1>
           <p className="text-slate-500 mt-2 text-base font-medium">Elige un diseño o crea una copia para personalizarla.</p>
         </div>
+        <button
+          onClick={() => setShowCleanup(true)}
+          className="px-4 py-2.5 text-sm font-bold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors shadow-sm inline-flex items-center gap-2 shrink-0"
+        >
+          <Brush size={16} /> Limpiar borradores
+        </button>
       </div>
+
+      <UnusedDraftsDialog
+        open={showCleanup}
+        onOpenChange={setShowCleanup}
+        load={async () => (await api.get('/tenant/templates/unused-drafts')).data}
+        onDelete={async ids => (await api.post('/tenant/templates/unused-drafts/delete', { ids })).data.count}
+        onArchive={async ids => (await api.post('/tenant/templates/unused-drafts/archive', { ids })).data.count}
+        onDone={(action, count) => {
+          toast.success(`${count} ${count === 1 ? 'plantilla' : 'plantillas'} ${action === 'delete' ? (count === 1 ? 'eliminada' : 'eliminadas') : (count === 1 ? 'archivada' : 'archivadas')}.`);
+          loadTemplates();
+        }}
+      />
+
+      <ConfirmAlert
+        open={confirmAction !== null}
+        onOpenChange={open => { if (!open) setConfirmAction(null); }}
+        title={confirmAction?.kind === 'delete' ? 'Eliminar borrador' : 'Publicar plantilla'}
+        description={confirmAction?.kind === 'delete'
+          ? `¿Eliminar el borrador "${confirmAction.tpl.name}"? Esta acción no se puede deshacer.`
+          : '¿Seguro que deseas publicar esta plantilla? Se archivará la anterior.'}
+        confirmText={confirmAction?.kind === 'delete' ? 'Eliminar' : 'Publicar'}
+        destructive={confirmAction?.kind === 'delete'}
+        busy={confirmBusy}
+        onConfirm={async () => {
+          if (!confirmAction) return;
+          setConfirmBusy(true);
+          try {
+            if (confirmAction.kind === 'delete') await handleDelete(confirmAction.tpl);
+            else await handlePublish(confirmAction.tpl.id);
+          } finally {
+            setConfirmBusy(false);
+            setConfirmAction(null);
+          }
+        }}
+      />
 
       <DataTable
         rows={templates}
@@ -211,7 +256,7 @@ export default function DocumentTemplates() {
             )}
             {!tpl.isGlobal && tpl.status === 'Draft' && (
               <button
-                onClick={() => handlePublish(tpl.id)}
+                onClick={() => setConfirmAction({ kind: 'publish', tpl })}
                 className="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-blue-600 rounded-xl transition-all shadow-md shadow-blue-500/20 inline-flex items-center"
               >
                 <Upload className="w-4 h-4 mr-2" />
@@ -220,7 +265,7 @@ export default function DocumentTemplates() {
             )}
             {!tpl.isGlobal && tpl.status === 'Draft' && (
               <button
-                onClick={() => handleDelete(tpl)}
+                onClick={() => setConfirmAction({ kind: 'delete', tpl })}
                 title="Eliminar borrador"
                 aria-label={`Eliminar el borrador ${tpl.name}`}
                 className="p-2 text-rose-500 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-xl transition-all"

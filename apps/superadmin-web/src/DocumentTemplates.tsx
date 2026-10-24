@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Plus, Trash2, FileText, ArrowLeft, Upload, Loader2, Eye, Pencil, Undo2 } from 'lucide-react';
+import { Plus, Trash2, FileText, ArrowLeft, Upload, Loader2, Eye, Pencil, Undo2, Brush } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import ConfirmAlert from '@shared/components/ConfirmAlert';
+import UnusedDraftsDialog from '@shared/components/UnusedDraftsDialog';
 
 interface DocumentTemplate {
   id: string;
@@ -31,6 +33,11 @@ export const DocumentTemplates = () => {
   const [uploadingVersion, setUploadingVersion] = useState(false);
 
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+
+  // Limpieza de borradores sin uso y confirmación del borrado de una plantilla suelta.
+  const [showCleanup, setShowCleanup] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DocumentTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const handlePreview = async (id: string) => {
     setPreviewingId(id);
@@ -150,14 +157,18 @@ export const DocumentTemplates = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("¿Seguro que deseas eliminar esta plantilla?")) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await api.delete(`/templates/${id}`);
+      await api.delete(`/templates/${deleteTarget.id}`);
       toast.success("Eliminada correctamente");
       loadTemplates();
     } catch (err: any) {
       toast.error(err.response?.data || "No se puede eliminar la plantilla");
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -212,14 +223,47 @@ export const DocumentTemplates = () => {
           </h1>
           <p className="text-slate-400 mt-2 text-lg font-medium">Administra las plantillas y sus versiones para este tipo de documento.</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-600/30 transition-all transform hover:-translate-y-1"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Nueva Plantilla
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowCleanup(true)}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-5 py-3 rounded-2xl font-bold flex items-center transition-colors"
+          >
+            <Brush className="w-5 h-5 mr-2" />
+            Limpiar borradores
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-600/30 transition-all transform hover:-translate-y-1"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Nueva Plantilla
+          </button>
+        </div>
       </div>
+
+      <UnusedDraftsDialog
+        theme="dark"
+        open={showCleanup}
+        onOpenChange={setShowCleanup}
+        load={async () => (await api.get('/templates/unused-drafts')).data}
+        onDelete={async ids => (await api.post('/templates/unused-drafts/delete', { ids })).data.count}
+        onArchive={async ids => (await api.post('/templates/unused-drafts/archive', { ids })).data.count}
+        onDone={(action, count) => {
+          toast.success(`${count} ${count === 1 ? 'plantilla' : 'plantillas'} ${action === 'delete' ? (count === 1 ? 'eliminada' : 'eliminadas') : (count === 1 ? 'archivada' : 'archivadas')}.`);
+          loadTemplates();
+        }}
+      />
+
+      <ConfirmAlert
+        theme="dark"
+        open={deleteTarget !== null}
+        onOpenChange={open => { if (!open) setDeleteTarget(null); }}
+        title="Eliminar plantilla"
+        description={`¿Seguro que deseas eliminar "${deleteTarget?.name ?? ''}"? Esta acción no se puede deshacer.`}
+        confirmText="Eliminar"
+        busy={deleting}
+        onConfirm={handleDelete}
+      />
 
       <div className="mt-8">
         <DataTable
@@ -257,7 +301,7 @@ export const DocumentTemplates = () => {
                   Nueva Versión
                 </button>
               )}
-              <button onClick={() => handleDelete(tpl.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${tpl.name}`}>
+              <button onClick={() => setDeleteTarget(tpl)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${tpl.name}`}>
                 <Trash2 className="w-5 h-5" />
               </button>
             </>

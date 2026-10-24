@@ -87,7 +87,7 @@ namespace Fel.Infrastructure.Dataico
         // resuelta para este documento — decide si las filas de retención entran a "Impuestos" y
         // si se calcula "NetoAPagar". El IVA discriminado se arma siempre, independiente de este
         // flag.
-        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null)
+        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -99,7 +99,7 @@ namespace Fel.Infrastructure.Dataico
             string RetPct(decimal value) => value.ToString("0.###", nf) + "%";
             var esIntegradorExterno = client.Integrator.Kind == IntegratorKind.ThirdPartyIntegrator;
 
-            var documentoTipo = invoice.TypeCode switch
+            var calculatedDocumentoTipo = invoice.TypeCode switch
             {
                 "NC" => "NOTA CRÉDITO ELECTRÓNICA",
                 "ND" => "NOTA DÉBITO ELECTRÓNICA",
@@ -108,6 +108,10 @@ namespace Fel.Infrastructure.Dataico
             };
 
             // Mandato: la lista de observaciones; cualquier otra factura o nota: la observación general como única fila.
+            var documentoTipo = string.IsNullOrWhiteSpace(documentTypeTitle)
+                ? (string.IsNullOrWhiteSpace(invoice.DocumentType?.ReportTitle) ? calculatedDocumentoTipo : invoice.DocumentType!.ReportTitle)
+                : documentTypeTitle!;
+
             var observaciones = DocumentNotes.Texts(invoice).Select((text, idx) => (Position: idx + 1, Text: text)).ToList();
             // Una factura de mandato declara un mandante en cada línea; así se reconoce sin depender del tipo de documento.
             var esMandato = items.Any(i => !string.IsNullOrWhiteSpace(i.MandanteIdentification));
@@ -256,7 +260,7 @@ namespace Fel.Infrastructure.Dataico
                 });
             }
 
-            return new Dictionary<string, object?>
+            var report = new Dictionary<string, object?>
             {
                 ["Documento"] = new Dictionary<string, object?>
                 {
@@ -406,6 +410,19 @@ namespace Fel.Infrastructure.Dataico
 
                 ["Impuestos"] = impuestos
             };
+
+            // Compatibilidad con las plantillas REPX antiguas (incluidas las tirillas POS
+            // propias del sistema) que todavía leen los campos como Parameters.EmisorLogoUrl,
+            // Parameters.EmisorRazonSocial, etc. Las plantillas nuevas usan Documento.*.
+            // Mantener ambos contratos permite publicar una plantilla personalizada sin exigir
+            // que se rediseñen las existentes.
+            if (report["Documento"] is Dictionary<string, object?> documento)
+            {
+                foreach (var field in documento)
+                    report.TryAdd(field.Key, field.Value);
+            }
+
+            return report;
         }
 
         // Filas del resumen AIU. Los valores salen de las líneas del documento (lo que de verdad se factura), no se recalculan con los

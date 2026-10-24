@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
@@ -19,6 +21,7 @@ namespace Fel.Infrastructure.Dian
         private readonly IDianSoapClient _dianSoapClient;
         private readonly IDataicoApiService _dataicoApiService;
         private readonly ICryptoService _cryptoService;
+        private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> NumberingLocks = new();
 
         public ReceptionEventService(
             FelDbContext dbContext, ICryptoVault cryptoVault, IUblGenerator ublGenerator,
@@ -48,6 +51,21 @@ namespace Fel.Infrastructure.Dian
                 EventCode = eventCode,
                 SentAt = DateTime.UtcNow
             };
+
+            // También validamos documentos antiguos que fueron guardados antes de distinguir
+            // InvoiceTypeCode=05; así nunca se intenta enviar un Documento Soporte a RADIAN.
+            try
+            {
+                ReceivedDocumentParser.Parse(document.RawXml);
+            }
+            catch (NotSupportedException ex)
+            {
+                evt.Status = "REJECTED";
+                evt.DianResponseMessage = ex.Message;
+                _dbContext.ReceivedDocumentEvents.Add(evt);
+                await _dbContext.SaveChangesAsync();
+                return evt;
+            }
 
             if (await UsesDataicoAsync(client))
                 return await TriggerViaDataicoAsync(document, client, evt);
@@ -112,6 +130,7 @@ namespace Fel.Infrastructure.Dian
 
         public async Task TriggerEnabledEventsAsync(ReceivedDocument document, Client client)
         {
+            if (!document.IsCredit) return;
             // Los eventos automáticos son los de la sucursal que recibió el documento (o, si no tiene propios, los de la principal).
             var events = await new Fel.Infrastructure.Services.BranchCredentialResolver(_dbContext).ReceptionEventsAsync(client.Id, document.BranchId);
             var viaDataico = await UsesDataicoAsync(client);
@@ -147,13 +166,59 @@ namespace Fel.Infrastructure.Dian
             || result.RawResponse.Contains("Demasiadas peticiones paralelas")
             || result.RawResponse.Contains("Gateway Time-out");
 
+        private static int? SuggestedEventNumber(DataicoResult result)
+        {
+            var match = Regex.Match(result.RawResponse ?? string.Empty, @"Vamos a usar:\s*'(?<number>\d+)'", RegexOptions.IgnoreCase);
+            return match.Success && int.TryParse(match.Groups["number"].Value, out var number) ? number : null;
+        }
+
+        private static string DataicoDocumentType(string documentTypeCode) => documentTypeCode switch
+        {
+            "91" => "NOTA_CREDITO",
+            "92" => "NOTA_DEBITO",
+            _ => "FACTURA_VENTA"
+        };
+
+        // Dataico espera el código DANE municipal sin el prefijo del departamento (Bogotá: 001, no 11001).
+        private static string NormalizeEventCity(string? city, string? department)
+        {
+            var cityDigits = new string((city ?? string.Empty).Where(char.IsDigit).ToArray());
+            var departmentDigits = new string((department ?? string.Empty).Where(char.IsDigit).ToArray());
+
+            if (cityDigits.Length == 5 && departmentDigits.Length == 2 && cityDigits.StartsWith(departmentDigits, StringComparison.Ordinal))
+                return cityDigits[2..];
+
+            return cityDigits.Length > 3 ? cityDigits[^3..] : cityDigits;
+        }
+
+        private static string NormalizeEventDepartment(string? department)
+        {
+            var departmentDigits = new string((department ?? string.Empty).Where(char.IsDigit).ToArray());
+            return departmentDigits.Length >= 2 ? departmentDigits[^2..] : departmentDigits;
+        }
+
         private async Task<ReceivedDocumentEvent> TriggerViaDataicoAsync(ReceivedDocument document, Client client, ReceivedDocumentEvent evt)
+        {
+            var numberingLock = NumberingLocks.GetOrAdd(client.Id, _ => new SemaphoreSlim(1, 1));
+            await numberingLock.WaitAsync();
+            try
+            {
+                return await TriggerViaDataicoCoreAsync(document, client, evt);
+            }
+            finally
+            {
+                numberingLock.Release();
+            }
+        }
+
+        private async Task<ReceivedDocumentEvent> TriggerViaDataicoCoreAsync(ReceivedDocument document, Client client, ReceivedDocumentEvent evt)
         {
             async Task<ReceivedDocumentEvent> Finish(string status, string? message)
             {
                 evt.Status = status;
                 evt.DianResponseMessage = message;
-                _dbContext.ReceivedDocumentEvents.Add(evt);
+                if (_dbContext.Entry(evt).State == EntityState.Detached)
+                    _dbContext.ReceivedDocumentEvents.Add(evt);
                 await _dbContext.SaveChangesAsync();
                 return evt;
             }
@@ -173,11 +238,28 @@ namespace Fel.Infrastructure.Dian
             var mailbox = await new Fel.Infrastructure.Services.BranchCredentialResolver(_dbContext).ReceptionMailboxAsync(client.Id, document.BranchId);
             var personEmail = mailbox.User.Contains('@') ? mailbox.User : client.Email;
 
-            // Consecutivo de la cuenta de Dataico: el siguiente al último enviado, sin bajar del número inicial configurado.
-            var lastNumber = await _dbContext.ReceivedDocumentEvents
-                .Where(e => e.ReceivedDocument.ClientId == client.Id && e.EventNumber != null)
-                .MaxAsync(e => e.EventNumber) ?? 0;
-            var number = Math.Max(client.ReceptionEventStartNumber, lastNumber + 1);
+            // Reservamos el consecutivo antes de llamar a Dataico. La transacción serializable evita que dos
+            // cargas simultáneas calculen el mismo número. Así también queda guardado si Dataico responde
+            // que el evento ya existía y no se vuelve a reutilizar en el siguiente intento.
+            var receptionNumbering = await Fel.Infrastructure.Services.ReceptionEventNumberingService.GetOrCreateAsync(_dbContext, client.Id);
+
+            int number = checked((int)await Fel.Infrastructure.Services.ReceptionEventNumberingService.PeekNextAsync(_dbContext, client.Id));
+            /*
+                // Compatibilidad temporal con clientes creados antes de mover esta numeración a Resoluciones.
+                var lastNumber = await _dbContext.ReceivedDocumentEvents
+                    .Where(e => e.ReceivedDocument.ClientId == client.Id && e.EventNumber != null)
+                    .MaxAsync(e => e.EventNumber) ?? 0;
+                var legacyUnnumbered = await _dbContext.ReceivedDocumentEvents
+                    .Where(e => e.ReceivedDocument.ClientId == client.Id && e.EventNumber == null)
+                    .CountAsync();
+                number = Math.Max(client.ReceptionEventStartNumber, lastNumber + legacyUnnumbered + 1);
+            */
+
+            evt.Status = "PENDING";
+            _dbContext.ReceivedDocumentEvents.Add(evt);
+            await _dbContext.SaveChangesAsync();
+
+            var eventPrefix = receptionNumbering.Prefix;
 
             var request = new DataicoReceptionEventEnvelope
             {
@@ -185,6 +267,7 @@ namespace Fel.Infrastructure.Dian
                 {
                     env = credentials.Environment,
                     event_type = DataicoEventType(evt.EventCode),
+                    document_type = DataicoDocumentType(document.DocumentTypeCode),
                     document_number = document.DocumentId,
                     document_cufe = document.Cufe,
                     issue_date = Fel.Core.Models.ColombiaTime.Now.ToString("dd/MM/yyyy"),
@@ -208,8 +291,8 @@ namespace Fel.Infrastructure.Dian
                         address_line = issuer.Address,
                         email = issuer.Email,
                         phone = issuer.Phone,
-                        city = issuer.City,
-                        department = issuer.Department
+                        city = NormalizeEventCity(issuer.City, issuer.Department),
+                        department = NormalizeEventDepartment(issuer.Department)
                     }
                 }
             };
@@ -225,21 +308,41 @@ namespace Fel.Infrastructure.Dian
                 delay *= 2;
             }
 
+            // Dataico puede detectar que la cuenta tiene números pendientes anteriores y devolver
+            // explícitamente el siguiente válido. Alinear el control local y repetir una sola vez
+            // evita dejar el evento rechazado con un consecutivo que Dataico nunca aceptará.
+            var suggestedNumber = SuggestedEventNumber(result);
+            if (!result.Success && suggestedNumber.HasValue && suggestedNumber.Value != number)
+            {
+                number = suggestedNumber.Value;
+                request.reception_event.number = number.ToString();
+                await Fel.Infrastructure.Services.ReceptionEventNumberingService.MoveBackIfAheadAsync(_dbContext, client.Id, number);
+                await _dbContext.SaveChangesAsync();
+                result = await _dataicoApiService.SendReceptionEventAsync(request, credentials);
+            }
+
             if (result.Success)
             {
                 evt.EventNumber = number;
+                await Fel.Infrastructure.Services.ReceptionEventNumberingService.AdvanceIfCurrentAsync(_dbContext, client.Id, number);
                 evt.ProviderUid = result.DataicoDocumentId;
                 evt.Cude = result.Cufe ?? string.Empty;
+                evt.ProviderResponse = result.RawResponse;
+                evt.ProviderXmlUrl = result.XmlUrl;
+                evt.ProviderPdfUrl = result.PdfUrl;
 
                 // Dataico aceptó pero a veces no devuelve el CUDE en la misma respuesta (demora interna): se consulta por su número.
                 if (string.IsNullOrEmpty(evt.Cude))
                 {
                     await Task.Delay(TimeSpan.FromSeconds(3));
-                    var lookup = await _dataicoApiService.GetReceptionEventAsync(client.ReceptionEventPrefix + number, credentials);
+                    var lookup = await _dataicoApiService.GetReceptionEventAsync(eventPrefix + number, credentials);
                     if (lookup.Success)
                     {
                         evt.Cude = lookup.Cufe ?? string.Empty;
                         evt.ProviderUid ??= lookup.DataicoDocumentId;
+                        evt.ProviderResponse ??= lookup.RawResponse;
+                        evt.ProviderXmlUrl ??= lookup.XmlUrl;
+                        evt.ProviderPdfUrl ??= lookup.PdfUrl;
                     }
                 }
 
@@ -250,9 +353,23 @@ namespace Fel.Infrastructure.Dian
 
             if (IsDuplicateEvent(result.RawResponse))
             {
+                evt.EventNumber = number;
+                await Fel.Infrastructure.Services.ReceptionEventNumberingService.AdvanceIfCurrentAsync(_dbContext, client.Id, number);
                 evt.ProviderUid = result.DataicoDocumentId;
                 evt.Cude = result.Cufe ?? string.Empty;
-                return await Finish("SENT", "Dataico informa que este evento ya existe para el documento.");
+                evt.ProviderResponse = result.RawResponse;
+                evt.ProviderXmlUrl = result.XmlUrl;
+                evt.ProviderPdfUrl = result.PdfUrl;
+                var lookup = await _dataicoApiService.GetReceptionEventAsync(eventPrefix + number, credentials);
+                if (lookup.Success)
+                {
+                    evt.ProviderUid ??= lookup.DataicoDocumentId;
+                    evt.Cude = string.IsNullOrWhiteSpace(evt.Cude) ? lookup.Cufe ?? string.Empty : evt.Cude;
+                    evt.ProviderResponse ??= lookup.RawResponse;
+                    evt.ProviderXmlUrl ??= lookup.XmlUrl;
+                    evt.ProviderPdfUrl ??= lookup.PdfUrl;
+                }
+                return await Finish("DUPLICATE", $"Dataico informa que este evento ya existe para el documento. Consecutivo consultado: {eventPrefix}{number}.");
             }
 
             var detail = string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.RawResponse : result.ErrorMessage;

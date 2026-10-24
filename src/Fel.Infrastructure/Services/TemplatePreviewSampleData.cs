@@ -13,12 +13,12 @@ namespace Fel.Infrastructure.Services
         // mostrarRetenciones: refleja DocumentTemplate.MostrarRetenciones de la plantilla que se
         // está previsualizando, para que el diseñador vea exactamente el mismo comportamiento
         // (filas de retención + "Neto a pagar" presentes o no) que tendrá un documento real.
-        public static Dictionary<string, object?> BuildSampleData(string documentTypeCode, bool mostrarRetenciones = true)
+        public static Dictionary<string, object?> BuildSampleData(string documentTypeCode, bool mostrarRetenciones = true, string? documentTypeTitle = null)
         {
-            if (documentTypeCode.StartsWith("DS")) return SampleSupportDocumentData(documentTypeCode);
+            if (documentTypeCode.StartsWith("DS")) return SampleSupportDocumentData(documentTypeCode, documentTypeTitle);
             if (documentTypeCode.StartsWith("NE")) return SampleNominaData(documentTypeCode);
             if (documentTypeCode == "FE-AIU") return SampleAiuInvoiceData(mostrarRetenciones);
-            return SampleInvoiceData(documentTypeCode, mostrarRetenciones);
+            return SampleInvoiceData(documentTypeCode, mostrarRetenciones, documentTypeTitle);
         }
 
         // Factura AIU: parte de la factura estándar de muestra y cambia lo propio del contrato (mismos campos que InvoiceReportDataMapper.Build):
@@ -63,15 +63,15 @@ namespace Fel.Infrastructure.Services
             return data;
         }
 
-        private static Dictionary<string, object?> SampleInvoiceData(string documentTypeCode, bool mostrarRetenciones)
+        private static Dictionary<string, object?> SampleInvoiceData(string documentTypeCode, bool mostrarRetenciones, string? documentTypeTitle = null)
         {
-            var documentoTipo = documentTypeCode switch
+            var documentoTipo = string.IsNullOrWhiteSpace(documentTypeTitle) ? documentTypeCode switch
             {
                 "NC" => "NOTA CRÉDITO ELECTRÓNICA",
                 "ND" => "NOTA DÉBITO ELECTRÓNICA",
                 "DE-POS" => "DOCUMENTO EQUIVALENTE - TIQUETE POS",
                 _ => "FACTURA ELECTRÓNICA DE VENTA"
-            };
+            } : documentTypeTitle;
             var esNota = documentTypeCode is "NC" or "ND";
             var esExportacion = documentTypeCode == "FE-EXP";
             var esMandato = documentTypeCode == "FE-MANDATO";
@@ -79,7 +79,7 @@ namespace Fel.Infrastructure.Services
             // Mismo shape que InvoiceReportDataMapper.Build: "Documento" (campos de un solo valor)
             // más los arreglos anidados ("Items", "Impuestos") que JsonDataSource resuelve como
             // tablas separadas — no el modelo viejo de Parameters planos + un único DataSource.
-            return new Dictionary<string, object?>
+            var data = new Dictionary<string, object?>
             {
                 ["Documento"] = new Dictionary<string, object?>
                 {
@@ -162,6 +162,14 @@ namespace Fel.Infrastructure.Services
 
                 ["Impuestos"] = BuildSampleImpuestos(mostrarRetenciones)
             };
+
+            if (data["Documento"] is Dictionary<string, object?> documento)
+            {
+                foreach (var field in documento)
+                    data.TryAdd(field.Key, field.Value);
+            }
+
+            return data;
         }
 
         // Factura de mandato: cada línea de ejemplo declara un mandante (mismos campos que InvoiceReportDataMapper); vacíos en el resto.
@@ -196,11 +204,11 @@ namespace Fel.Infrastructure.Services
             return impuestos;
         }
 
-        private static Dictionary<string, object?> SampleSupportDocumentData(string documentTypeCode)
+        private static Dictionary<string, object?> SampleSupportDocumentData(string documentTypeCode, string? documentTypeTitle = null)
         {
             var esAjuste = documentTypeCode == "DS-AJUSTE";
             // Mismo shape que SupportDocumentReportDataMapper.Build: "Documento" + "Items" + "Impuestos".
-            return new Dictionary<string, object?>
+            var data = new Dictionary<string, object?>
             {
                 ["Documento"] = new Dictionary<string, object?>
                 {
@@ -228,7 +236,9 @@ namespace Fel.Infrastructure.Services
                     ["ProveedorTelefono"] = "604 555 4321",
                     ["ProveedorEmail"] = "ventas@proveedor.com",
 
-                    ["DocumentoTipo"] = esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO",
+                    ["DocumentoTipo"] = string.IsNullOrWhiteSpace(documentTypeTitle)
+                        ? (esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO")
+                        : documentTypeTitle,
                     ["DocumentoNumero"] = "DS 1",
                     ["NotaReferencia"] = esAjuste ? "Motivo del ajuste: Corrección de valores — documento de ejemplo" : null,
                     ["ResolucionTexto"] = "Resolución de facturación: 18760000002 vigente desde 01/01/2026 hasta: 31/12/2027. Del DS 1 al DS 100000.",
@@ -266,6 +276,17 @@ namespace Fel.Infrastructure.Services
 
                 ["Impuestos"] = new List<Dictionary<string, object?>>()
             };
+
+            // Las tirillas POS del sistema y algunas plantillas publicadas usan todavía
+            // Parameters.* en lugar de Documento.*. La vista previa debe entregar ambos
+            // contratos, igual que el render de documentos reales.
+            if (data["Documento"] is Dictionary<string, object?> documento)
+            {
+                foreach (var field in documento)
+                    data.TryAdd(field.Key, field.Value);
+            }
+
+            return data;
         }
 
         private static Dictionary<string, object?> SampleNominaData(string documentTypeCode)

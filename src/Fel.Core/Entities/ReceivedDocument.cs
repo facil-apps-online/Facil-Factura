@@ -18,6 +18,8 @@ namespace Fel.Core.Entities
 
         public string SourceType { get; set; } = "Manual"; // "Manual" | "Email"
         public string RawXml { get; set; } = string.Empty;
+        public byte[]? OriginalPdf { get; set; }
+        public string? OriginalPdfFileName { get; set; }
 
         public string Cufe { get; set; } = string.Empty;
         public string DocumentTypeCode { get; set; } = string.Empty; // 01=Factura, 91=NC, 92=ND
@@ -26,6 +28,7 @@ namespace Fel.Core.Entities
         public string DocumentId { get; set; } = string.Empty; // cbc:ID completo (prefijo+número tal como viene en el XML del tercero)
         public DateTime IssueDate { get; set; }
         public decimal TotalAmount { get; set; }
+        public bool IsCredit { get; set; }
 
         public DateTime ReceivedAt { get; set; }
 
@@ -50,6 +53,9 @@ namespace Fel.Core.Entities
         public int? EventNumber { get; set; }
         public string? ProviderUid { get; set; }
         public string? DianResponseMessage { get; set; }
+        public string? ProviderResponse { get; set; }
+        public string? ProviderXmlUrl { get; set; }
+        public string? ProviderPdfUrl { get; set; }
         public DateTime SentAt { get; set; }
     }
 }

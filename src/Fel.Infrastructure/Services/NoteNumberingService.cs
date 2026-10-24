@@ -17,6 +17,45 @@ namespace Fel.Infrastructure.Services
             long NextSupportAdjustmentNumber,
             string SupportAdjustmentPrefix);
 
+        public sealed record ResolutionCounters(long NextCreditNoteNumber, long NextDebitNoteNumber);
+
+        public static async Task<ResolutionCounters> GetForResolutionAsync(FelDbContext dbContext, Guid clientId, Guid resolutionId)
+        {
+            // Las resoluciones con el mismo prefijo comparten contador (ver ResolutionNumbering): se muestra el más adelantado.
+            var resolutionIds = await ResolutionNumbering.SamePrefixResolutionIdsAsync(dbContext, clientId, resolutionId) ?? new List<Guid> { resolutionId };
+            var rows = await dbContext.NoteNumberings.AsNoTracking()
+                .Where(n => n.ClientId == clientId && n.ResolutionId != null && resolutionIds.Contains(n.ResolutionId.Value) && n.BranchId == null)
+                .ToListAsync();
+            long Next(NoteKind kind) => rows.Where(r => r.Kind == kind).Max(r => r.NextNumber) ?? 1;
+            return new ResolutionCounters(Next(NoteKind.CreditNote), Next(NoteKind.DebitNote));
+        }
+
+        public static async Task UpdateForResolutionAsync(FelDbContext dbContext, Guid clientId, Guid resolutionId, long? nextCredit, long? nextDebit)
+        {
+            var resolutionIds = await ResolutionNumbering.SamePrefixResolutionIdsAsync(dbContext, clientId, resolutionId) ?? new List<Guid> { resolutionId };
+            var rows = await dbContext.NoteNumberings
+                .Where(n => n.ClientId == clientId && n.ResolutionId != null && resolutionIds.Contains(n.ResolutionId.Value) && n.BranchId == null)
+                .ToListAsync();
+
+            // El valor se aplica a todos los contadores de las resoluciones con el mismo prefijo (comparten numeración); si no hay ninguno, se crea uno.
+            void Set(NoteKind kind, long value)
+            {
+                var kindRows = rows.Where(r => r.Kind == kind).ToList();
+                if (kindRows.Count == 0)
+                {
+                    var row = NoteNumbering.Shared(clientId, kind, resolutionId: resolutionId);
+                    row.NextNumber = value;
+                    dbContext.NoteNumberings.Add(row);
+                    rows.Add(row);
+                    return;
+                }
+                foreach (var row in kindRows) row.NextNumber = value;
+            }
+
+            if (nextCredit.HasValue) Set(NoteKind.CreditNote, nextCredit.Value);
+            if (nextDebit.HasValue) Set(NoteKind.DebitNote, nextDebit.Value);
+        }
+
         public static async Task<SharedCounters> GetSharedAsync(FelDbContext dbContext, Guid clientId)
         {
             var rows = await dbContext.NoteNumberings.AsNoTracking()

@@ -11,6 +11,8 @@ namespace Fel.Core.Entities
         public Guid Id { get; set; }
         public string Code { get; set; } = string.Empty; // e.g. "DIAN-FE", "DIAN-NC", "RIPS"
         public string Name { get; set; } = string.Empty;
+        // Texto que se imprime en [Documento.DocumentoTipo]. No se deriva del código en el reporte.
+        public string ReportTitle { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string GoverningEntity { get; set; } = "DIAN"; // DIAN, MINSALUD, UGP...
         public string DianCode { get; set; } = string.Empty;

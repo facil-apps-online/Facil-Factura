@@ -8,6 +8,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { Button } from '../components/ui/button';
 import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
+import ReceptionSettingsPanel from '../components/ReceptionSettingsPanel';
 
 interface ClientSetting {
   settingId: string;
@@ -58,6 +59,7 @@ export default function TemplateSettings() {
   const [branding, setBranding] = useState<BrandingData>({ invoiceLogoUrl: '', unitOfMeasureDisplayOverride: '' });
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [savingUnitFormat, setSavingUnitFormat] = useState(false);
+  const [activeTab, setActiveTab] = useState<'design' | 'reception'>('design');
 
   const loadBranding = () => {
     api.get<{ invoiceLogoUrl?: string, unitOfMeasureDisplayOverride?: string }>('/v1/branding/my-branding')
@@ -148,7 +150,9 @@ export default function TemplateSettings() {
   const handlePublishOwn = async (id: string) => {
     if (!(await confirm("¿Publicar esta plantilla? Quedará disponible para aplicarla a tus comprobantes.", { destructive: false, confirmText: 'Publicar' }))) return;
     try {
-      await api.put(`/client/templates/${id}/publish`);
+      // El endpoint recibe PublishTemplateRequest; aunque no cambiemos la clave,
+      // debe recibir un cuerpo JSON para que ASP.NET no responda 415.
+      await api.put(`/client/templates/${id}/publish`, {});
       toast.success("Plantilla publicada.");
       loadMyTemplates();
       if (selectedSetting) handleSelectType(selectedSetting);
@@ -249,6 +253,13 @@ export default function TemplateSettings() {
       </div>
 
       {/* Logo del Cliente (solo para sus comprobantes — el portal usa la marca de tu proveedor) */}
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 mb-6">
+        <button type="button" onClick={() => setActiveTab('design')} className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'design' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Diseño de documentos</button>
+        <button type="button" onClick={() => setActiveTab('reception')} className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'reception' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Recepción electrónica</button>
+      </div>
+
+      {activeTab === 'reception' ? <ReceptionSettingsPanel /> : <>
+
       <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8">
         <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 mb-1">
           <Image className="w-5 h-5 text-primary" /> Logo de tus documentos
@@ -516,6 +527,8 @@ export default function TemplateSettings() {
           )}
         </div>
       </div>
+
+      </>}
 
       {showCloneModal && (
         <Modal

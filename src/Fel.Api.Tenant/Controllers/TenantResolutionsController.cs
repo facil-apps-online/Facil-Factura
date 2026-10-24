@@ -112,6 +112,17 @@ namespace Fel.Api.Tenant.Controllers
             var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
             if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
 
+            var isReceptionNumbering = string.Equals(request.DocumentType, "RADIAN", StringComparison.OrdinalIgnoreCase);
+            if (isReceptionNumbering)
+            {
+                if (string.IsNullOrWhiteSpace(request.Prefix) || request.Prefix.Trim().Length > 10)
+                    return BadRequest("El prefijo de los eventos RADIAN es obligatorio y debe tener máximo 10 caracteres.");
+                request.ResolutionNumber = "DATAICO";
+                request.NumberEnd = request.NumberEnd < 1 ? int.MaxValue : request.NumberEnd;
+                request.ValidFrom = request.ValidFrom == default ? new DateTime(2000, 1, 1) : request.ValidFrom;
+                request.ValidTo = request.ValidTo == default ? new DateTime(2099, 12, 31) : request.ValidTo;
+            }
+
             var mainBranchId = await BranchProvisioning.MainBranchIdAsync(_dbContext, clientId);
             var (resolutionBranchIds, branchError) = await _resolutionBranches.ResolveForNewAsync(clientId, request.BranchIds, request.DocumentType, request.Prefix?.Trim() ?? string.Empty, mainBranchId);
             if (branchError != null) return BadRequest(branchError);
@@ -141,7 +152,7 @@ namespace Fel.Api.Tenant.Controllers
             await _dbContext.SaveChangesAsync();
 
             // Cliente Dataico: Dataico toma la resolución de la DIAN al sincronizar; se comprueba que ya la tenga.
-            var dataicoWarning = await _dataicoSync.CheckAfterCreateAsync(clientId, resolution);
+            var dataicoWarning = isReceptionNumbering ? null : await _dataicoSync.CheckAfterCreateAsync(clientId, resolution);
 
             return Ok(new {
                 resolution.Id,

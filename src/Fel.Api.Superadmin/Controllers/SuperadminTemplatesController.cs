@@ -111,7 +111,7 @@ namespace Fel.Api.Superadmin.Controllers
                     return BadRequest("Esta plantilla aún no tiene un archivo .repx asociado.");
                 }
 
-                var data = Fel.Infrastructure.Services.TemplatePreviewSampleData.BuildSampleData(template.DocumentType?.Code ?? "", template.MostrarRetenciones);
+                var data = Fel.Infrastructure.Services.TemplatePreviewSampleData.BuildSampleData(template.DocumentType?.Code ?? "", template.MostrarRetenciones, template.DocumentType?.ReportTitle);
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {

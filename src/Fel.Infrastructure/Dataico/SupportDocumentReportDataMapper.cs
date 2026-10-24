@@ -61,7 +61,7 @@ namespace Fel.Infrastructure.Dataico
             };
         }
 
-        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null)
+        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -166,7 +166,9 @@ namespace Fel.Infrastructure.Dataico
                     ["AdquirenteEmail"] = proveedor?.Email,
 
                     // Documento ("DocumentoTipo", no "DocumentoTitulo": mismo nombre que Factura)
-                    ["DocumentoTipo"] = esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO",
+                    ["DocumentoTipo"] = string.IsNullOrWhiteSpace(documentTypeTitle)
+                        ? (esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO")
+                        : documentTypeTitle,
                     ["DocumentoNumero"] = $"{(string.IsNullOrWhiteSpace(document.Prefix) ? resolution?.Prefix : document.Prefix)} {document.Number}".Trim(),
                     ["NotaReferencia"] = esAjuste && !string.IsNullOrWhiteSpace(document.ReferenceConcept) ? $"Motivo del ajuste: {document.ReferenceConcept}" : null,
                     ["ResolucionTexto"] = resolution == null ? null :

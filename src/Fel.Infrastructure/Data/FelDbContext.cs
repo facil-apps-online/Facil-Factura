@@ -29,6 +29,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<ClientUser> ClientUsers { get; set; }
         public DbSet<Branch> Branches => Set<Branch>();
         public DbSet<NoteNumbering> NoteNumberings => Set<NoteNumbering>();
+        public DbSet<ReceptionEventNumbering> ReceptionEventNumberings => Set<ReceptionEventNumbering>();
         public DbSet<ResolutionBranch> ResolutionBranches => Set<ResolutionBranch>();
         public DbSet<ClientUserBranch> ClientUserBranches => Set<ClientUserBranch>();
         public DbSet<BranchMinSaludCredential> BranchMinSaludCredentials => Set<BranchMinSaludCredential>();
@@ -187,10 +188,9 @@ namespace Fel.Infrastructure.Data
                 entity.ToTable("NoteNumberings");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Prefix).HasMaxLength(10);
-                // Un contador por Client, sucursal (o compartido, con BranchId nulo) y tipo de nota.
-                entity.HasIndex(e => new { e.ClientId, e.BranchId, e.Kind }).IsUnique().HasFilter(null); // sin filtro: los compartidos (BranchId nulo) también son únicos
-                // El prefijo es único por Client y tipo: dos contadores nunca comparten prefijo.
-                entity.HasIndex(e => new { e.ClientId, e.Kind, e.Prefix }).IsUnique().HasFilter("[Prefix] IS NOT NULL");
+                // Un contador por resolución, Client, sucursal (o compartido) y tipo de nota.
+                entity.HasIndex(e => new { e.ClientId, e.ResolutionId, e.BranchId, e.Kind }).IsUnique().HasFilter(null);
+                entity.HasOne(e => e.Resolution).WithMany().HasForeignKey(e => e.ResolutionId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(e => e.Client)
                       .WithMany()
                       .HasForeignKey(e => e.ClientId)
@@ -199,6 +199,15 @@ namespace Fel.Infrastructure.Data
                       .WithMany()
                       .HasForeignKey(e => e.BranchId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<ReceptionEventNumbering>(entity =>
+            {
+                entity.ToTable("ReceptionEventNumberings");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Prefix).IsRequired().HasMaxLength(10);
+                entity.HasIndex(e => e.ClientId).IsUnique();
+                entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<ResolutionBranch>(entity =>

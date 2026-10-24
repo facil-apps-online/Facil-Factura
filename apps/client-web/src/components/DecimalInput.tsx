@@ -9,12 +9,13 @@ interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'o
   maxDecimals?: number;
   /** Mostrar el campo vacío cuando el valor es 0 (cargos, descuentos). */
   blankWhenZero?: boolean;
+  onValueCommit?: (value: number) => void;
 }
 
 // Campo numérico con separador de miles aplicado mientras se escribe ("1,000,000" en vez de "1000000"),
 // en el formato configurado para el cliente. Reemplaza a <input type="number">, que muestra y acepta el
 // separador según el idioma del navegador y no agrupa miles.
-export default function DecimalInput({ value, onValueChange, maxDecimals = 2, blankWhenZero = false, onBlur, onFocus, ...rest }: Props) {
+export default function DecimalInput({ value, onValueChange, maxDecimals = 2, blankWhenZero = false, onValueCommit, onBlur, onFocus, ...rest }: Props) {
   const fmt = useNumberFormat();
   const ref = useRef<HTMLInputElement>(null);
   const caretCount = useRef<number | null>(null);
@@ -63,7 +64,12 @@ export default function DecimalInput({ value, onValueChange, maxDecimals = 2, bl
         onValueChange(parsed);
       }}
       onFocus={(e) => { e.target.select(); onFocus?.(e); }}
-      onBlur={(e) => { setText(render(fmt.typing(text, maxDecimals).value)); onBlur?.(e); }}
+      onBlur={(e) => {
+        const parsed = fmt.typing(text, maxDecimals).value;
+        setText(render(parsed));
+        onValueCommit?.(parsed);
+        onBlur?.(e);
+      }}
     />
   );
 }

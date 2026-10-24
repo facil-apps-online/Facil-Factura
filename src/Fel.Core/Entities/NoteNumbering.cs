@@ -35,6 +35,11 @@ namespace Fel.Core.Entities
         public Guid? BranchId { get; set; }
         public Branch? Branch { get; set; }
 
+        // Resolución de factura a la que pertenece este consecutivo derivado. Null conserva
+        // temporalmente la numeración compartida anterior para migraciones y notas de ajuste.
+        public Guid? ResolutionId { get; set; }
+        public Resolution? Resolution { get; set; }
+
         public NoteKind Kind { get; set; }
 
         // Null = el documento usa el prefijo de su resolución (notas crédito y débito) o el de su resolución de respaldo
@@ -44,11 +49,12 @@ namespace Fel.Core.Entities
         // Próximo consecutivo a asignar. Null = aún no se emitió ninguna (arranca en 1).
         public long? NextNumber { get; set; }
 
-        public static NoteNumbering Shared(Guid clientId, NoteKind kind, string? prefix = null, long? nextNumber = null) => new NoteNumbering
+        public static NoteNumbering Shared(Guid clientId, NoteKind kind, string? prefix = null, long? nextNumber = null, Guid? resolutionId = null) => new NoteNumbering
         {
             Id = Guid.NewGuid(),
             ClientId = clientId,
             Kind = kind,
+            ResolutionId = resolutionId,
             Prefix = prefix,
             NextNumber = nextNumber
         };

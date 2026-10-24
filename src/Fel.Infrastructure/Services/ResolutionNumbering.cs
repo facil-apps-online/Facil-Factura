@@ -91,30 +91,50 @@ namespace Fel.Infrastructure.Services
         // Numeración que le corresponde a una nota: la propia de la sucursal si la tiene y, si no, la compartida del Client.
         // Las Notas Crédito/Débito y de Ajuste no tienen rango autorizado propio ante la DIAN, así que su consecutivo es
         // interno y no compite con el de Factura.
-        private static IQueryable<NoteNumbering> EffectiveNumbering(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind) =>
+        //
+        // Las resoluciones del mismo Client con el mismo prefijo (una renovación conserva el prefijo) comparten UN solo contador de notas: ante la DIAN el
+        // prefijo y el número de una nota deben ser únicos, así que si cada resolución llevara el suyo la segunda arrancaría en 1 y repetiría números.
+        // Entre los contadores de esas resoluciones manda el más adelantado, para no volver a emitir un número ya usado.
+        private static IQueryable<NoteNumbering> EffectiveNumbering(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, IReadOnlyCollection<Guid>? resolutionIds = null) =>
             dbContext.NoteNumberings.AsNoTracking()
-                .Where(n => n.ClientId == clientId && n.Kind == kind && (n.BranchId == branchId || n.BranchId == null))
-                .OrderByDescending(n => n.BranchId != null);
+                .Where(n => n.ClientId == clientId && n.Kind == kind
+                    && (resolutionIds == null ? n.ResolutionId == null : n.ResolutionId != null && resolutionIds.Contains(n.ResolutionId.Value))
+                    && (n.BranchId == branchId || n.BranchId == null))
+                .OrderByDescending(n => n.BranchId != null)
+                .ThenByDescending(n => n.NextNumber ?? 0);
+
+        // Ids de las resoluciones del Client que comparten el prefijo de la dada (incluida ella); null si no se indica resolución.
+        public static async Task<List<Guid>?> SamePrefixResolutionIdsAsync(FelDbContext dbContext, Guid clientId, Guid? resolutionId)
+        {
+            if (resolutionId == null) return null;
+            var prefix = await dbContext.Resolutions.AsNoTracking().Where(r => r.Id == resolutionId).Select(r => r.Prefix).FirstOrDefaultAsync();
+            if (prefix == null) return new List<Guid> { resolutionId.Value };
+            var ids = await dbContext.Resolutions.AsNoTracking()
+                .Where(r => r.ClientId == clientId && r.DocumentType == "FE" && r.Prefix == prefix).Select(r => r.Id).ToListAsync();
+            if (!ids.Contains(resolutionId.Value)) ids.Add(resolutionId.Value);
+            return ids;
+        }
 
         // Prefijo propio de la numeración de la nota (null = el documento usa el de su resolución).
-        public static async Task<string?> GetNotePrefixAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind)
+        public static async Task<string?> GetNotePrefixAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, Guid? resolutionId = null)
         {
-            var prefix = await EffectiveNumbering(dbContext, clientId, branchId, kind).Select(n => n.Prefix).FirstOrDefaultAsync();
+            var prefix = await EffectiveNumbering(dbContext, clientId, branchId, kind, await SamePrefixResolutionIdsAsync(dbContext, clientId, resolutionId)).Select(n => n.Prefix).FirstOrDefaultAsync();
             return string.IsNullOrWhiteSpace(prefix) ? null : prefix;
         }
 
         // Mismo patrón optimista que ClaimNextNumberAsync, pero sobre el contador de NoteNumbering.
-        public static async Task<NoteClaim> ClaimNextNoteAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind)
+        public static async Task<NoteClaim> ClaimNextNoteAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, Guid? resolutionId = null)
         {
+            var resolutionIds = await SamePrefixResolutionIdsAsync(dbContext, clientId, resolutionId);
             while (true)
             {
-                var row = await EffectiveNumbering(dbContext, clientId, branchId, kind)
+                var row = await EffectiveNumbering(dbContext, clientId, branchId, kind, resolutionIds)
                     .Select(n => new { n.Id, n.Prefix, n.NextNumber })
                     .FirstOrDefaultAsync();
 
                 if (row == null)
                 {
-                    await CreateSharedNumberingAsync(dbContext, clientId, kind);
+                    await CreateSharedNumberingAsync(dbContext, clientId, kind, resolutionId);
                     continue;
                 }
 
@@ -132,21 +152,21 @@ namespace Fel.Infrastructure.Services
         // Por si a un Client le falta su contador compartido. Va por SQL directo para no guardar de paso los cambios
         // pendientes del contexto (el documento que se está publicando); si dos peticiones lo crean a la vez, el índice
         // único deja pasar una y la otra solo vuelve a leer.
-        private static async Task CreateSharedNumberingAsync(FelDbContext dbContext, Guid clientId, NoteKind kind)
+        private static async Task CreateSharedNumberingAsync(FelDbContext dbContext, Guid clientId, NoteKind kind, Guid? resolutionId = null)
         {
             var kindValue = (int)kind;
             try
             {
                 await dbContext.Database.ExecuteSqlInterpolatedAsync($@"
-                    INSERT INTO NoteNumberings (Id, ClientId, BranchId, Kind, Prefix, NextNumber)
-                    SELECT {Guid.NewGuid()}, {clientId}, NULL, {kindValue}, NULL, NULL
-                    WHERE NOT EXISTS (SELECT 1 FROM NoteNumberings WHERE ClientId = {clientId} AND BranchId IS NULL AND Kind = {kindValue})");
+                    INSERT INTO NoteNumberings (Id, ClientId, BranchId, ResolutionId, Kind, Prefix, NextNumber)
+                    SELECT {Guid.NewGuid()}, {clientId}, NULL, {resolutionId}, {kindValue}, NULL, NULL
+                    WHERE NOT EXISTS (SELECT 1 FROM NoteNumberings WHERE ClientId = {clientId} AND BranchId IS NULL AND ResolutionId = {resolutionId} AND Kind = {kindValue})");
             }
             catch (Exception)
             {
                 // Si falló porque otra petición la creó en el mismo instante, basta con volver a leer; si no, es un error real.
                 var exists = await dbContext.NoteNumberings.AsNoTracking()
-                    .AnyAsync(n => n.ClientId == clientId && n.BranchId == null && n.Kind == kind);
+                    .AnyAsync(n => n.ClientId == clientId && n.BranchId == null && n.ResolutionId == resolutionId && n.Kind == kind);
                 if (!exists) throw;
             }
         }

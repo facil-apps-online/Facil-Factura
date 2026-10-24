@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using ClosedXML.Excel;
 using Microsoft.AspNetCore.Http;
@@ -161,12 +162,25 @@ namespace Fel.Api.Client.Controllers
             return string.IsNullOrWhiteSpace(customer.CityName) ? "Indica la ciudad del tercero." : null;
         }
 
+        private static string CleanName(string? value) =>
+            Regex.Replace((value ?? string.Empty).Trim(), @"\s+", " ");
+
+        private static void NormalizeNames(Customer customer)
+        {
+            customer.Name = CleanName(customer.Name);
+            customer.FirstName = CleanName(customer.FirstName);
+            customer.SecondName = CleanName(customer.SecondName);
+            customer.FirstLastName = CleanName(customer.FirstLastName);
+            customer.SecondLastName = CleanName(customer.SecondLastName);
+        }
+
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Customer customer)
         {
             try
             {
                 var clientId = GetCurrentClientId();
+                NormalizeNames(customer);
 
                 var countryError = await NormalizeCountryAsync(customer);
                 if (countryError != null) return BadRequest(countryError);
@@ -204,6 +218,7 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
+                NormalizeNames(updateData);
                 var customer = await _dbContext.Customers
                     .FirstOrDefaultAsync(c => c.Id == id && c.ClientId == clientId);
 

@@ -100,6 +100,7 @@ namespace Fel.Api.Client.Controllers
                 {
                     tax.Id = Guid.NewGuid();
                     tax.ProductId = product.Id;
+                    tax.TaxCategory = NormalizeAdditionalTaxCategory(tax.TaxCategory);
                 }
 
                 _dbContext.Products.Add(product);
@@ -153,7 +154,7 @@ namespace Fel.Api.Client.Controllers
                     {
                         Id = Guid.NewGuid(),
                         ProductId = product.Id,
-                        TaxCategory = t.TaxCategory,
+                        TaxCategory = NormalizeAdditionalTaxCategory(t.TaxCategory),
                         Rate = t.Rate
                     });
                 }
@@ -268,6 +269,11 @@ namespace Fel.Api.Client.Controllers
             !string.IsNullOrWhiteSpace(value) && Enum.TryParse<ProductScope>(value, true, out var scope)
                 ? scope
                 : ProductScope.Invoice;
+
+        private static string NormalizeAdditionalTaxCategory(string? category) =>
+            string.Equals(category?.Trim(), "IC", StringComparison.OrdinalIgnoreCase)
+                ? "IMP_CONSUMO"
+                : (category ?? string.Empty).Trim().ToUpperInvariant();
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)

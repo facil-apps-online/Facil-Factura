@@ -23,7 +23,7 @@ namespace Fel.Api.Superadmin.Controllers
         public async Task<IActionResult> GetDocumentTypes()
         {
             var types = await _dbContext.DocumentTypes
-                .Select(d => new { d.Id, d.Code, d.Name, d.IsActive, d.GoverningEntity })
+                .Select(d => new { d.Id, d.Code, d.Name, d.ReportTitle, d.IsActive, d.GoverningEntity })
                 .ToListAsync();
             return Ok(types);
         }
@@ -41,6 +41,7 @@ namespace Fel.Api.Superadmin.Controllers
                 Id = Guid.NewGuid(),
                 Code = request.Code.ToUpper(),
                 Name = request.Name,
+                ReportTitle = request.ReportTitle,
                 GoverningEntity = string.IsNullOrEmpty(request.GoverningEntity) ? "DIAN" : request.GoverningEntity.ToUpper(),
                 IsActive = true
             };
@@ -48,6 +49,22 @@ namespace Fel.Api.Superadmin.Controllers
             _dbContext.DocumentTypes.Add(docType);
             await _dbContext.SaveChangesAsync();
 
+            return Ok(docType);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateDocumentType(Guid id, [FromBody] DocumentTypeRequest request)
+        {
+            var docType = await _dbContext.DocumentTypes.FindAsync(id);
+            if (docType == null) return NotFound();
+            if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.ReportTitle))
+                return BadRequest("El nombre y el título del documento son obligatorios.");
+
+            docType.Code = request.Code.Trim().ToUpperInvariant();
+            docType.Name = request.Name.Trim();
+            docType.ReportTitle = request.ReportTitle.Trim();
+            docType.GoverningEntity = string.IsNullOrWhiteSpace(request.GoverningEntity) ? "DIAN" : request.GoverningEntity.Trim().ToUpperInvariant();
+            await _dbContext.SaveChangesAsync();
             return Ok(docType);
         }
 
@@ -74,6 +91,7 @@ namespace Fel.Api.Superadmin.Controllers
     {
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string ReportTitle { get; set; } = string.Empty;
         public string GoverningEntity { get; set; } = "DIAN";
     }
 }

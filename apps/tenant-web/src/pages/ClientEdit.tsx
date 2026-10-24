@@ -61,6 +61,7 @@ export default function ClientEdit() {
   });
   const [editingResolutionId, setEditingResolutionId] = useState<string | null>(null);
   const documentTypeLabels: Record<string, string> = {
+    RADIAN: 'Eventos RADIAN (recepción)',
     FE: 'Factura Electrónica (FE)',
     NC: 'Nota Crédito (NC)',
     ND: 'Nota Débito (ND)',
@@ -99,8 +100,6 @@ export default function ClientEdit() {
     dataicoAuthToken: '',
     dataicoAccountId: '',
     dataicoEnvironment: 'PRUEBAS',
-    receptionEventPrefix: 'EV',
-    receptionEventStartNumber: 1,
     hasApiPassword: false,
     hasAuthToken: false
   });
@@ -207,17 +206,42 @@ export default function ClientEdit() {
   const loadResolutions = () => {
     api.get(`/tenant/clients/${id}/branches`).then(res => setBranches(res.data)).catch(() => {});
     api.get(`/tenant/clients/${id}/resolutions`)
-      .then(res => setResolutions(res.data))
+      .then(async res => {
+        setResolutions(res.data);
+        const entries = await Promise.all(res.data.filter((r: any) => r.documentType === 'FE').map(async (r: any) => {
+          try { return [r.id, (await api.get(`/tenant/clients/${id}/resolutions/${r.id}/note-numbering`)).data] as const; }
+          catch { return null; }
+        }));
+        setResolutionNoteCounters(Object.fromEntries(entries.filter(Boolean) as any));
+      })
       .catch(() => toast.error("Error al cargar resoluciones"));
   };
 
   const [noteCounters, setNoteCounters] = useState<{ nextCreditNoteNumber: number; nextDebitNoteNumber: number; nextSupportAdjustmentNumber: number } | null>(null);
+  const [resolutionNoteCounters, setResolutionNoteCounters] = useState<Record<string, { nextCreditNoteNumber: number; nextDebitNoteNumber: number; prefix: string }>>({});
+  const [savingResolutionNotes, setSavingResolutionNotes] = useState<string | null>(null);
+  const [receptionNumbering, setReceptionNumbering] = useState<{ prefix: string; nextNumber: number } | null>(null);
+  const [editingReception, setEditingReception] = useState(false);
+  const [receptionDraft, setReceptionDraft] = useState({ prefix: '', nextNumber: '1' });
 
   const loadNoteCounters = () => {
     api.get(`/tenant/clients/${id}/note-counters`)
       .then(res => setNoteCounters(res.data))
       .catch(() => toast.error("Error al cargar los consecutivos de notas"));
   };
+
+  const saveResolutionNoteCounters = async (resolution: any) => {
+    const value = resolutionNoteCounters[resolution.id];
+    if (!value || value.nextCreditNoteNumber < 1 || value.nextDebitNoteNumber < 1) return;
+    setSavingResolutionNotes(resolution.id);
+    try {
+      const res = await api.put(`/tenant/clients/${id}/resolutions/${resolution.id}/note-numbering`, value);
+      setResolutionNoteCounters(prev => ({ ...prev, [resolution.id]: res.data }));
+      toast.success(`Consecutivos de notas para ${resolution.prefix} actualizados`);
+    } catch (err: any) { toast.error(err?.response?.data || 'Error al guardar los consecutivos de notas'); }
+    finally { setSavingResolutionNotes(null); }
+  };
+  const loadReceptionNumbering = () => api.get(`/tenant/clients/${id}/reception-numbering`).then(res => setReceptionNumbering(res.data)).catch(() => toast.error('Error al cargar el consecutivo de eventos RADIAN'));
 
   const [editingNextNumberId, setEditingNextNumberId] = useState<string | null>(null);
   const [nextNumberDraft, setNextNumberDraft] = useState('');
@@ -449,7 +473,7 @@ export default function ClientEdit() {
   };
 
   useEffect(() => {
-    if (activeTab === 'resolutions') { loadResolutions(); loadNoteCounters(); }
+    if (activeTab === 'resolutions') { loadResolutions(); loadNoteCounters(); loadReceptionNumbering(); }
     if (activeTab === 'certificate') loadCertificate();
     if (activeTab === 'dian') loadHabilitationStatus();
     if (activeTab === 'credentials') { loadDocProvider(); loadIntegrators(); }
@@ -678,7 +702,7 @@ export default function ClientEdit() {
     try {
       // La nómina no tiene resolución DIAN real: se completan con valores neutros los campos que
       // el formulario ocultó para este tipo (no aplican, pero el modelo los sigue teniendo).
-      const payload = newRes.documentType === 'NE'
+      const payload = newRes.documentType === 'NE' || newRes.documentType === 'RADIAN'
         ? {
             ...newRes,
             resolutionNumber: newRes.resolutionNumber || 'N/A',
@@ -986,8 +1010,8 @@ export default function ClientEdit() {
       key: 'validity',
       header: 'Vigencia',
       cellClassName: 'text-slate-500',
-      render: r => (r.documentType === 'NE' ? 'Sin vencimiento' : `${new Date(r.validFrom).toLocaleDateString()} - ${new Date(r.validTo).toLocaleDateString()}`),
-      sortValue: r => (r.documentType === 'NE' ? null : r.validTo),
+      render: r => (r.documentType === 'NE' || r.documentType === 'RADIAN' ? 'No aplica' : `${new Date(r.validFrom).toLocaleDateString()} - ${new Date(r.validTo).toLocaleDateString()}`),
+      sortValue: r => (r.documentType === 'NE' || r.documentType === 'RADIAN' ? null : r.validTo),
     },
     {
       key: 'default',
@@ -1323,8 +1347,24 @@ export default function ClientEdit() {
               </div>
 
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 mt-8">
+                <h2 className="text-xl font-bold text-slate-800">Consecutivos derivados de notas</h2>
+                <p className="text-slate-500 mt-1 text-sm">Cada resolución FE tiene consecutivos independientes para nota crédito y nota débito. El prefijo se hereda de la resolución.</p>
+                <div className="mt-5 space-y-3">
+                  {resolutions.filter((r: any) => r.documentType === 'FE').map((r: any) => {
+                    const value = resolutionNoteCounters[r.id];
+                    return <div key={r.id} className="rounded-2xl border border-slate-200 p-4 flex flex-wrap items-end gap-4">
+                      <div className="mr-auto min-w-40"><p className="font-bold text-slate-700">FE · {r.prefix || '—'}</p><p className="text-xs text-slate-500">Resolución {r.resolutionNumber}</p></div>
+                      <label className="text-xs font-semibold text-slate-600">Nota crédito<input type="number" min={1} className="block mt-1 w-28 rounded-lg border border-slate-200 px-2 py-2 font-mono" value={value?.nextCreditNoteNumber ?? 1} onChange={e => setResolutionNoteCounters(prev => ({ ...prev, [r.id]: { ...(prev[r.id] || { prefix: r.prefix }), nextCreditNoteNumber: Number(e.target.value) } }))} /></label>
+                      <label className="text-xs font-semibold text-slate-600">Nota débito<input type="number" min={1} className="block mt-1 w-28 rounded-lg border border-slate-200 px-2 py-2 font-mono" value={value?.nextDebitNoteNumber ?? 1} onChange={e => setResolutionNoteCounters(prev => ({ ...prev, [r.id]: { ...(prev[r.id] || { prefix: r.prefix }), nextDebitNoteNumber: Number(e.target.value) } }))} /></label>
+                      <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50" disabled={savingResolutionNotes === r.id} onClick={() => saveResolutionNoteCounters(r)}>{savingResolutionNotes === r.id ? 'Guardando…' : 'Guardar'}</button>
+                    </div>;
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 mt-8">
                 <div className="mb-6">
-                  <h2 className="text-xl font-bold text-slate-800">Consecutivos de Notas</h2>
+                  <h2 className="text-xl font-bold text-slate-800">Consecutivo de Nota de Ajuste</h2>
                   <p className="text-slate-500 mt-1 text-sm max-w-2xl">
                     Las Notas Crédito, Débito y de Ajuste no tienen un rango autorizado por la DIAN (no aplica una resolución) — este consecutivo es interno, y sirve solo para numerarlas de forma ordenada.
                   </p>
@@ -1339,7 +1379,7 @@ export default function ClientEdit() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(['credit', 'debit', 'adjustment'] as const).map(type => (
+                      {(['adjustment'] as const).map(type => (
                         <tr key={type} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                           <td className="py-4 px-4">
                             <span className={`px-2 py-1 rounded-md text-xs font-bold ${NOTE_COUNTER_BADGE[type]}`}>
@@ -1376,6 +1416,15 @@ export default function ClientEdit() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+              <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 mt-8">
+                <h2 className="text-xl font-bold text-slate-800">Consecutivo de eventos RADIAN</h2>
+                <p className="text-slate-500 mt-1 text-sm">Control interno para los eventos de recepción enviados automáticamente por Dataico. No es una resolución DIAN.</p>
+                <div className="mt-5 flex flex-wrap items-end gap-4">
+                  <label className="text-sm font-semibold text-slate-700">Prefijo<input maxLength={10} className="block mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 uppercase" disabled={!editingReception} value={editingReception ? receptionDraft.prefix : receptionNumbering?.prefix || 'EV'} onChange={e => setReceptionDraft({ ...receptionDraft, prefix: e.target.value.toUpperCase() })} /></label>
+                  <label className="text-sm font-semibold text-slate-700">Próximo consecutivo<input type="number" min={1} className="block mt-1 w-36 rounded-xl border border-slate-200 px-3 py-2" disabled={!editingReception} value={editingReception ? receptionDraft.nextNumber : receptionNumbering?.nextNumber || 1} onChange={e => setReceptionDraft({ ...receptionDraft, nextNumber: e.target.value })} /></label>
+                  {!editingReception ? <button className="rounded-xl border px-4 py-2" onClick={() => { setReceptionDraft({ prefix: receptionNumbering?.prefix || 'EV', nextNumber: String(receptionNumbering?.nextNumber || 1) }); setEditingReception(true); }}>Editar</button> : <><button className="rounded-xl bg-blue-600 px-4 py-2 text-white" onClick={async () => { try { const res = await api.put(`/tenant/clients/${id}/reception-numbering`, { prefix: receptionDraft.prefix, nextNumber: Number(receptionDraft.nextNumber) }); setReceptionNumbering(res.data); setEditingReception(false); toast.success('Consecutivo RADIAN actualizado'); } catch (err: any) { toast.error(err?.response?.data || 'Error al guardar el consecutivo'); } }}>Guardar</button><button className="rounded-xl border px-4 py-2" onClick={() => setEditingReception(false)}>Cancelar</button></>}
                 </div>
               </div>
               </>
@@ -1586,16 +1635,6 @@ export default function ClientEdit() {
                             Auth-token {docProvider.hasAuthToken && <span className="text-emerald-600 normal-case font-normal">(configurado)</span>}
                           </label>
                           <input {...lockedInputProps(docLock.unlocked)} type="password" placeholder={docProvider.hasAuthToken ? 'Dejar vacío para no cambiar' : ''} value={docProvider.dataicoAuthToken} onChange={e => setDocProvider({ ...docProvider, dataicoAuthToken: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm")} />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Prefijo de eventos de recepción</label>
-                          <input {...lockedInputProps(docLock.unlocked)} type="text" maxLength={10} value={docProvider.receptionEventPrefix} onChange={e => setDocProvider({ ...docProvider, receptionEventPrefix: e.target.value })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm")} />
-                          <p className="text-xs text-slate-400 mt-1">El de la numeración de eventos en Dataico (por defecto EV).</p>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Número inicial de eventos</label>
-                          <input {...lockedInputProps(docLock.unlocked)} type="number" min={1} value={docProvider.receptionEventStartNumber} onChange={e => setDocProvider({ ...docProvider, receptionEventStartNumber: Number(e.target.value) || 1 })} className={lockedInputClass(docLock.unlocked, "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm")} />
-                          <p className="text-xs text-slate-400 mt-1">Si ya enviaba eventos desde otra herramienta, el siguiente al último que usó. Nunca se baja de ahí.</p>
                         </div>
                       </div>
                     )}
@@ -2188,7 +2227,7 @@ export default function ClientEdit() {
                     </select>
                   )}
                 </div>
-                {newRes.documentType !== 'NE' && (
+                {newRes.documentType !== 'NE' && newRes.documentType !== 'RADIAN' && (
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Número de Resolución</label>
                     <input required type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.resolutionNumber} onChange={e => setNewRes({...newRes, resolutionNumber: e.target.value})} />
@@ -2196,22 +2235,28 @@ export default function ClientEdit() {
                 )}
               </div>
 
+              {newRes.documentType === 'RADIAN' && (
+                <p className="text-xs text-slate-500 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  Esta numeración corresponde a los eventos RADIAN enviados por Dataico. El prefijo y el número inicial se administran aquí; no corresponde a una resolución DIAN.
+                </p>
+              )}
+
               {newRes.documentType === 'NE' && (
                 <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3">
                   La nómina electrónica no tiene una resolución de numeración autorizada por la DIAN — el consecutivo lo administra libremente el cliente. Solo indica desde qué número quiere empezar.
                 </p>
               )}
 
-              <div className={`grid ${newRes.documentType === 'NE' ? 'grid-cols-2' : 'grid-cols-3'} gap-4`}>
+              <div className={`grid ${newRes.documentType === 'NE' || newRes.documentType === 'RADIAN' ? 'grid-cols-2' : 'grid-cols-3'} gap-4`}>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Prefijo (Opcional)</label>
                   <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase" value={newRes.prefix} onChange={e => setNewRes({...newRes, prefix: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">{newRes.documentType === 'NE' ? 'Número Inicial' : 'Rango Inicial'}</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">{newRes.documentType === 'NE' || newRes.documentType === 'RADIAN' ? 'Número inicial' : 'Rango inicial'}</label>
                   <input required type="number" min="1" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.numberStart || ''} onChange={e => setNewRes({...newRes, numberStart: parseInt(e.target.value) || 0})} />
                 </div>
-                {newRes.documentType !== 'NE' && (
+                {newRes.documentType !== 'NE' && newRes.documentType !== 'RADIAN' && (
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Rango Final</label>
                     <input required type="number" min="1" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={newRes.numberEnd || ''} onChange={e => setNewRes({...newRes, numberEnd: parseInt(e.target.value) || 0})} />
@@ -2219,7 +2264,7 @@ export default function ClientEdit() {
                 )}
               </div>
 
-              {newRes.documentType !== 'NE' && (
+              {newRes.documentType !== 'NE' && newRes.documentType !== 'RADIAN' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Válida Desde</label>
@@ -2232,7 +2277,7 @@ export default function ClientEdit() {
                 </div>
               )}
 
-              {newRes.documentType !== 'NE' && (
+              {newRes.documentType !== 'NE' && newRes.documentType !== 'RADIAN' && (
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Clave Técnica (Solo FE)</label>
                   <input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" value={newRes.technicalKey} onChange={e => setNewRes({...newRes, technicalKey: e.target.value})} />

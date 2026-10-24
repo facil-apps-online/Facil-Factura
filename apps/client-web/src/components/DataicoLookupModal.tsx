@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Loader2, Search } from 'lucide-react';
+import { Download, FilePlus2, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import Modal from './Modal';
@@ -24,12 +24,13 @@ interface DataicoLookupModalProps {
   placeholder: string;
   // Tipos de documento que se pueden consultar con este formulario (p. ej. nómina, eliminación y reemplazo). Sin lista, es un solo tipo.
   kinds?: Array<{ value: string; label: string }>;
+  onCreateNote?: (type: 'NC' | 'ND', number: string) => void;
   onClose: () => void;
 }
 
 // Consulta un documento ya emitido en Dataico por su número con prefijo (por ejemplo PE1, DS201 o ESP1) y deja bajar su XML y su representación gráfica.
 // Lo usan facturas, documento soporte y nómina. Solo lee: no guarda nada. Los archivos pasan por nuestro servidor para no exponer el token de la cuenta.
-export default function DataicoLookupModal({ endpoint, title, placeholder, kinds, onClose }: DataicoLookupModalProps) {
+export default function DataicoLookupModal({ endpoint, title, placeholder, kinds, onCreateNote, onClose }: DataicoLookupModalProps) {
   const [number, setNumber] = useState('');
   const [kind, setKind] = useState(kinds?.[0]?.value ?? '');
   const [searching, setSearching] = useState(false);
@@ -143,6 +144,16 @@ export default function DataicoLookupModal({ endpoint, title, placeholder, kinds
               </ul>
             )}
             <div className="flex flex-wrap gap-2">
+              {onCreateNote && (
+                <>
+                  <button onClick={() => onCreateNote('NC', searched?.number || result.number)} disabled={!result.hasXml} className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                    <FilePlus2 size={16} /> Nota crédito
+                  </button>
+                  <button onClick={() => onCreateNote('ND', searched?.number || result.number)} disabled={!result.hasXml} className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-bold text-orange-700 hover:bg-orange-100 disabled:opacity-50">
+                    <FilePlus2 size={16} /> Nota débito
+                  </button>
+                </>
+              )}
               <button onClick={() => download('pdf')} disabled={!result.hasPdf || downloading !== null} className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                 {downloading === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Representación gráfica
               </button>

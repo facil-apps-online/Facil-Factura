@@ -13,6 +13,7 @@ import DecimalInput from '../components/DecimalInput';
 import { useSession } from '../context/SessionContext';
 import { todayColombia } from '../lib/colombiaTime';
 import Modal from '../components/Modal';
+import IncludedIvaInfo from '../components/IncludedIvaInfo';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import { Button } from '../components/ui/button';
@@ -179,10 +180,15 @@ const MODES = {
 
 // Precio base de la línea al cargar un producto: si el producto se digitó con IVA incluido se extrae la base
 // (precio / (1 + tarifa)) con hasta 6 decimales, que es lo que admite la DIAN; el resto del cálculo no cambia.
-const baseUnitPrice = (p: any, isSupport: boolean) =>
-  !isSupport && p.priceIncludesIva && p.ivaTreatment === 'Gravado' && (p.ivaRate ?? 0) > 0
-    ? Math.round((p.unitPrice / (1 + p.ivaRate / 100)) * 1e6) / 1e6
-    : p.unitPrice;
+const isTaxedIva = (value: any) => value === 'Gravado' || value === 0 || value === '0';
+const hasIncludedIva = (value: any) => value === true || value === 1 || value === '1' || value === 'true';
+
+const baseUnitPrice = (p: any, isSupport: boolean) => {
+  const rate = Number(p.ivaRate) || 0;
+  return !isSupport && hasIncludedIva(p.priceIncludesIva) && isTaxedIva(p.ivaTreatment) && rate > 0
+    ? Math.round((Number(p.unitPrice) / (1 + rate / 100)) * 1e6) / 1e6
+    : Number(p.unitPrice) || 0;
+};
 
 const initialQuickProduct = {
   code: '', name: '', unitPrice: 0, unitOfMeasureId: '30000000-0000-0000-0000-000000000001', standardCode: '', ivaTreatment: 'Gravado', ivaRate: 19, priceIncludesIva: false, taxes: [] as any[]
@@ -318,7 +324,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   useEffect(() => {
     api.get('/client/resolutions')
-      .then(res => setResolutions(res.data.filter((r: any) => isSupport ? (r.documentType === 'DS' || r.documentType === 'POS') : r.documentType === cfg.resolutionType)))
+      .then(res => setResolutions(res.data.filter((r: any) => isSupport ? r.documentType === 'DS' : r.documentType === cfg.resolutionType)))
       .catch(() => {});
     api.get('/client/tax-catalog?kind=Retention')
       .then(res => setRetentionCatalog(res.data.filter((c: any) => !isSupport || c.category !== 'RET_IVA')))
@@ -413,7 +419,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       // Preselecciona la resolución marcada como default para Factura (FE); antes siempre
       // arrancaba vacía aunque el cliente ya tuviera una definida, y quedaba editable por si
       // hay que emitir con otra.
-      resolutionId: resolutions.find(r => (r.documentType === cfg.resolutionType || (isSupport && r.documentType === 'POS')) && r.isDefault)?.id || ''
+       resolutionId: resolutions.find(r => r.documentType === cfg.resolutionType && r.isDefault)?.id || ''
     });
     setView('create');
   };
@@ -429,11 +435,57 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     setFormData({
       ...initialForm,
       documentTypeId: creditNoteType.id,
+      resolutionId: resolutions.find(r => r.documentType === 'FE' && r.isDefault)?.id || resolutions.find(r => r.documentType === 'FE')?.id || '',
       referenceDocumentId: null,
       discrepancyResponseCode: '1',
       referenceConcept: reason?.name || 'Devolución parcial de los bienes y/o no aceptación parcial del servicio'
     });
     setView('create');
+  };
+
+  const handleCreateDataicoNote = async (type: 'NC' | 'ND', number: string) => {
+    setShowDataicoLookup(false);
+    try {
+      const res = await api.get('/client/invoices/dataico-lookup/note-draft', { params: { number } });
+      const draft = res.data;
+      const documentType = documentTypes.find(d => d.typeCode === type)
+        || documentTypes.find(d => d.code === (type === 'NC' ? '91' : '92'));
+      if (!documentType) { toast.error(`La ${type === 'NC' ? 'nota crédito' : 'nota débito'} no está habilitada para tu empresa.`); return; }
+      const customerNumber = String(draft.customerTaxId || '').replace(/\D/g, '');
+      const customer = customers.find(c => String(c.identificationNumber || '').replace(/\D/g, '') === customerNumber);
+      const defaultResolution = resolutions.find(r => r.documentType === 'FE' && r.isDefault) || resolutions.find(r => r.documentType === 'FE');
+      const reasonCatalog = type === 'NC' ? creditNoteReasonCatalog : debitNoteReasonCatalog;
+      const reason = reasonCatalog.find(c => c.category === '1');
+      setEditingId(null);
+      setPaymentTermCustom(false);
+      setFormData({
+        ...initialForm,
+        documentTypeId: documentType.id,
+        resolutionId: defaultResolution?.id || '',
+        customerId: customer?.id || '',
+        issueDate: todayIso(),
+        currency: draft.currency || 'COP',
+        paymentMeans: draft.paymentMeans || '',
+        paymentMeansType: draft.paymentMeansType || 'CONTADO',
+        paymentTermDays: draft.paymentTermDays ?? '',
+        referenceDocumentId: null,
+        referenceConcept: reason?.name || (type === 'NC' ? 'Devolución parcial de los bienes y/o no aceptación parcial del servicio' : 'Intereses'),
+        discrepancyResponseCode: '1',
+        sectorExtensionData: JSON.stringify({ dataicoExternalReference: { dataicoDocumentId: draft.dataicoDocumentId, number: draft.number, cufe: draft.cufe, issueDate: draft.issueDate } }),
+        items: (draft.items || []).map((i: any) => ({
+          productId: products.find(p => p.code && i.code && p.code === i.code)?.id || '',
+          code: i.code || '', name: i.name || '', quantity: i.quantity || 1, unitPrice: i.unitPrice || 0,
+          unitOfMeasureCode: i.unitOfMeasureCode || '94', unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA', unitOfMeasureDisplayFormat: 'Combined',
+          ivaTreatment: i.ivaTreatment || 'Gravado', taxRate: i.taxRate || 0, discountRate: i.discountRate || 0,
+          taxAmount: i.taxAmount || 0, totalAmount: i.totalAmount || 0, additionalTaxes: [], retentions: []
+        })),
+        subtotal: draft.subtotal || 0, taxAmount: draft.taxAmount || 0, totalAmount: draft.totalAmount || 0
+      });
+      if (!customer) toast.info('No encontramos el cliente por identificación; selecciónalo en el formulario.');
+      setView('create');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudo reconstruir la factura consultada en Dataico'));
+    }
   };
 
   const { previewingId, preview: handlePreviewPdf } = usePdfPreview(cfg.api);
@@ -504,6 +556,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           name: i.name,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
+           priceIncludesIva: !isSupport && hasIncludedIva(products.find((p: any) => p.id === i.productId)?.priceIncludesIva) && isTaxedIva(i.ivaTreatment) && Number(i.taxRate) > 0,
           unitOfMeasureCode: i.unitOfMeasureCode || '94',
           unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA',
           unitOfMeasureDisplayFormat: i.unitOfMeasureDisplayFormat || 'Combined',
@@ -582,6 +635,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       setFormData({
         ...initialForm,
         documentTypeId: documentTypes.find(d => d.code === '91')?.id || '',
+         resolutionId: fullInvoice.resolutionId || '',
         customerId: fullInvoice.customerId,
         // La nota hereda la moneda y la TRM de la factura que ajusta (el servidor también lo impone).
         currency: fullInvoice.currency || 'COP',
@@ -602,6 +656,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           name: i.name,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
+           priceIncludesIva: !isSupport && hasIncludedIva(products.find((p: any) => p.id === i.productId)?.priceIncludesIva) && isTaxedIva(i.ivaTreatment) && Number(i.taxRate) > 0,
           unitOfMeasureCode: i.unitOfMeasureCode || '94',
           unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA',
           unitOfMeasureDisplayFormat: i.unitOfMeasureDisplayFormat || 'Combined',
@@ -648,6 +703,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       setFormData({
         ...initialForm,
         documentTypeId: documentTypes.find(d => d.code === '92')?.id || '',
+         resolutionId: fullInvoice.resolutionId || '',
         customerId: fullInvoice.customerId,
         // La nota hereda la moneda y la TRM de la factura que ajusta (el servidor también lo impone).
         currency: fullInvoice.currency || 'COP',
@@ -856,7 +912,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { productId: '', code: '', name: '', quantity: 1, unitPrice: 0, unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined', ivaTreatment: isSupport ? 'Exento' : 'Gravado', taxRate: isSupport ? 0 : 19, discountRate: 0, taxAmount: 0, totalAmount: 0, additionalTaxes: [], retentions: [] }]
+       items: [...formData.items, { productId: '', code: '', name: '', quantity: 1, unitPrice: 0, priceIncludesIva: false, unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined', ivaTreatment: isSupport ? 'Exento' : 'Gravado', taxRate: isSupport ? 0 : 19, discountRate: 0, taxAmount: 0, totalAmount: 0, additionalTaxes: [], retentions: [] }]
     });
   };
 
@@ -869,6 +925,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const updateItem = (index: number, field: string, value: any) => {
     const newItems = [...formData.items];
     const item = { ...newItems[index], [field]: value };
+    if (!isSupport && item.productId && item.priceIncludesIva === undefined) {
+      item.priceIncludesIva = hasIncludedIva(products.find(p => p.id === item.productId)?.priceIncludesIva);
+    }
 
     // Si seleccionan un producto del catálogo, autocompletar
     if (field === 'productId' && value !== '') {
@@ -880,8 +939,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         item.unitOfMeasureCode = p.unitOfMeasure?.dianCode || '94';
         item.unitOfMeasureAbbreviation = p.unitOfMeasure?.abbreviation || 'EA';
         item.unitOfMeasureDisplayFormat = p.unitOfMeasure?.displayFormat || 'Combined';
-        item.ivaTreatment = isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado');
-        item.taxRate = isSupport ? 0 : (p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0);
+        item.ivaTreatment = isSupport ? 'Exento' : (isTaxedIva(p.ivaTreatment) ? 'Gravado' : (p.ivaTreatment || 'Gravado'));
+        item.taxRate = isSupport ? 0 : (isTaxedIva(p.ivaTreatment) ? (Number(p.ivaRate) || 0) : 0);
+         item.priceIncludesIva = !isSupport && hasIncludedIva(p.priceIncludesIva) && isTaxedIva(p.ivaTreatment) && (Number(p.ivaRate) || 0) > 0;
         item.additionalTaxes = isSupport ? [] : (p.taxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate }));
       }
     }
@@ -890,6 +950,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       item.taxRate = 0;
     }
 
+    // El valor mostrado en la línea sigue siendo la base gravable que espera el backend,
+    // pero cuando el producto tiene IVA incluido el valor digitado manualmente se interpreta
+    // como precio final y se convierte nuevamente a base. Así la marca "IVA incluido" no se
+    // pierde ni cambia la regla al editar el precio.
     recalcItem(item);
     newItems[index] = item;
     recalculateTotals(newItems);
@@ -898,11 +962,22 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   // Base gravable de la línea = cantidad*valorUnitario menos el descuento de esa línea; el
   // impuesto y el total de la línea se calculan sobre esa base, no sobre el valor bruto.
   const recalcItem = (item: any) => {
-    const effectiveRate = !isSupport && item.ivaTreatment === 'Gravado' ? item.taxRate : 0;
+    const effectiveRate = !isSupport && isTaxedIva(item.ivaTreatment) ? Number(item.taxRate) || 0 : 0;
     const lineBase = item.quantity * item.unitPrice * (1 - (item.discountRate || 0) / 100);
     item.taxAmount = lineBase * (effectiveRate / 100);
     item.additionalTaxes = (item.additionalTaxes || []).map((tax: any) => ({ ...tax, baseAmount: lineBase, amount: lineBase * (Number(tax.rate) || 0) / 100 }));
     item.totalAmount = lineBase + item.taxAmount + item.additionalTaxes.reduce((sum: number, tax: any) => sum + (tax.amount || 0), 0);
+  };
+
+  const commitIncludedUnitPrice = (index: number, grossPrice: number) => {
+    const newItems = [...formData.items];
+    const item = { ...newItems[index] };
+    if (item.priceIncludesIva && isTaxedIva(item.ivaTreatment) && Number(item.taxRate) > 0) {
+      item.unitPrice = Math.round((grossPrice / (1 + Number(item.taxRate) / 100)) * 1e6) / 1e6;
+      recalcItem(item);
+      newItems[index] = item;
+      recalculateTotals(newItems);
+    }
   };
 
   const updateAdditionalTax = (itemIndex: number, taxIndex: number, field: string, value: any) => {
@@ -1119,9 +1194,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       toast.success('Producto creado');
       setProducts(prev => [...prev, p]);
 
-      const rate = isSupport ? 0 : (p.ivaTreatment === 'Gravado' ? (p.ivaRate ?? 0) : 0);
+      const rate = isSupport ? 0 : (isTaxedIva(p.ivaTreatment) ? (Number(p.ivaRate) || 0) : 0);
       const newItems = [...formData.items];
-       const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: baseUnitPrice(p, isSupport), ivaTreatment: isSupport ? 'Exento' : (p.ivaTreatment || 'Gravado'), taxRate: rate, additionalTaxes: isSupport ? [] : (p.taxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate })) };
+        const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: baseUnitPrice(p, isSupport), priceIncludesIva: !isSupport && hasIncludedIva(p.priceIncludesIva) && isTaxedIva(p.ivaTreatment) && rate > 0, ivaTreatment: isSupport ? 'Exento' : (isTaxedIva(p.ivaTreatment) ? 'Gravado' : (p.ivaTreatment || 'Gravado')), taxRate: rate, additionalTaxes: isSupport ? [] : (p.taxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate })) };
       recalcItem(item);
       newItems[productModalForItemIndex] = item;
       recalculateTotals(newItems);
@@ -1137,7 +1212,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   const handleSaveDraft = async () => {
     if (savingDraft) return; // evita doble envío por doble clic mientras la petición está en curso
-    if (!isNote && !formData.resolutionId) {
+    if ((!isNote || isUnreferencedNote) && !formData.resolutionId) {
       toast.error(cfg.missingResolution);
       return;
     }
@@ -1272,7 +1347,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   };
 
   // Nota crédito sin factura de referencia: el tipo es "Nota crédito" y no hay documento original.
-  const isUnreferencedNote = !isSupport && selectedDocType?.typeCode === 'NC' && !formData.referenceDocumentId;
+  const isUnreferencedNote = !isSupport && (selectedDocType?.typeCode === 'NC' || selectedDocType?.typeCode === 'ND') && !formData.referenceDocumentId;
   const isNote = !!formData.referenceDocumentId || isUnreferencedNote;
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
@@ -1314,11 +1389,17 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         />
       ),
       unitPrice: (
-        <DecimalInput
-          value={item.unitPrice}
-          onValueChange={v => updateItem(index, 'unitPrice', v)}
-          className={`${table ? 'w-32' : 'w-full'} p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right`}
-        />
+        <div className="space-y-1">
+          <DecimalInput
+            value={item.unitPrice}
+            onValueChange={v => updateItem(index, 'unitPrice', v)}
+            onValueCommit={v => commitIncludedUnitPrice(index, v)}
+            className={`${table ? 'w-32' : 'w-full'} p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right`}
+          />
+          {item.priceIncludesIva && item.ivaTreatment === 'Gravado' && (
+            <IncludedIvaInfo taxRate={Number(item.taxRate) || undefined} />
+          )}
+        </div>
       ),
       discount: (
         <DecimalInput maxDecimals={2} value={item.discountRate || 0} onValueChange={v => updateItem(index, 'discountRate', Math.min(v, 100))} className={`${table ? 'w-20' : 'w-full'} p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono`} />
@@ -1329,7 +1410,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         </div>
       ) : item.productId ? (
         <div className="w-full p-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg" title="El IVA lo define el producto del catálogo">
-          {item.ivaTreatment === 'Gravado' ? `Gravado ${item.taxRate}%` : IVA_TREATMENTS.find(t => t.value === item.ivaTreatment)?.label || item.ivaTreatment}
+           {item.ivaTreatment === 'Gravado' ? (
+             <>{`Gravado ${item.taxRate}%`} {item.priceIncludesIva && <IncludedIvaInfo taxRate={Number(item.taxRate) || undefined} />}</>
+           ) : IVA_TREATMENTS.find(t => t.value === item.ivaTreatment)?.label || item.ivaTreatment}
         </div>
       ) : (
         <div className="flex gap-1">
@@ -1451,16 +1534,16 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               {/* Las Notas Crédito/Débito no tienen resolución autorizada propia ante la DIAN —
                   siempre reutilizan automáticamente la de Factura del emisor (ver
                   InvoiceController.Publish), así que este selector no aplica ni hace falta. */}
-              {!isNote && (
+              {(!isNote || isUnreferencedNote) && (
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Resolución</label>
                 <SearchableSelect
                   value={formData.resolutionId}
                   onChange={v => setFormData({ ...formData, resolutionId: v })}
                   placeholder="Buscar resolución por prefijo o número..."
-                  options={resolutions.map(r => ({
+               options={resolutions.filter(r => isSupport ? r.documentType === 'DS' : r.documentType === 'FE').map(r => ({
                     value: r.id,
-                    label: `${r.documentType === 'POS' ? 'DS' : r.documentType} · Prefijo ${r.prefix} · Res. ${r.resolutionNumber} (vence ${new Date(r.validTo).toLocaleDateString('es-CO')})`
+                    label: `${r.documentType} · Prefijo ${r.prefix} · Res. ${r.resolutionNumber} (vence ${new Date(r.validTo).toLocaleDateString('es-CO')})`
                   }))}
                 />
                 {resolutions.length === 0 && (
@@ -2323,7 +2406,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 { key: 'quantity', header: 'Cant.', cellClassName: 'text-sm', render: (row: any) => row.item.quantity },
                 { key: 'unitPrice', header: 'Precio unitario', cellClassName: 'text-sm font-mono', render: (row: any) => `$${fmt.number(row.item.unitPrice, 3)}` },
                 { key: 'discount', header: 'Descuento %', cellClassName: 'text-sm font-mono', render: (row: any) => `${row.item.discountRate || 0}%` },
-                { key: 'iva', header: 'IVA', cellClassName: 'text-sm', render: (row: any) => (row.item.ivaTreatment === 'Gravado' ? `${row.item.taxRate}%` : row.item.ivaTreatment) },
+                 { key: 'iva', header: 'IVA', cellClassName: 'text-sm', render: (row: any) => row.item.ivaTreatment === 'Gravado' ? <>{`${row.item.taxRate}%`} {(row.item.priceIncludesIva || hasIncludedIva(products.find((p: any) => p.id === row.item.productId)?.priceIncludesIva)) && <IncludedIvaInfo taxRate={Number(row.item.taxRate) || undefined} />}</> : row.item.ivaTreatment },
                 { key: 'total', header: 'Total', align: 'right', cellClassName: 'text-sm font-mono font-bold', render: (row: any) => `$${fmt.number(row.item.totalAmount, 3)}` },
               ]}
             />
@@ -2697,7 +2780,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             placeholder="Ej. DS201"
             kinds={[{ value: 'document', label: 'Documento soporte' }, { value: 'adjustment', label: 'Nota de ajuste' }]}
             onClose={() => setShowDataicoLookup(false)} />
-        : <DataicoLookupModal endpoint="/client/invoices" title="Consultar factura en Dataico" placeholder="Ej. FEG92010" onClose={() => setShowDataicoLookup(false)} />)}
+         : <DataicoLookupModal endpoint="/client/invoices" title="Consultar factura en Dataico" placeholder="Ej. FEG92010" onCreateNote={handleCreateDataicoNote} onClose={() => setShowDataicoLookup(false)} />)}
       {showBulkImport && (
         <BulkImportModal title="Carga masiva de facturas" entityLabel="facturas" endpoint="/client/invoices/bulk" addressOptions resolutionOptions onDone={loadData} onClose={() => setShowBulkImport(false)} />
       )}

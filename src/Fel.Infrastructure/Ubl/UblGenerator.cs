@@ -8,6 +8,14 @@ namespace Fel.Infrastructure.Ubl
 {
     public class UblGenerator : IUblGenerator
     {
+        // Valor del CUFE (ValImp1/2/3) de un tipo de impuesto: la suma de todas sus tarifas (IVA al 19 % y al 5 %, INC al 8 % y al 4 %...), no solo
+        // la primera; nulo si el documento no lleva ese impuesto.
+        private static decimal? SumTaxes(UblInvoiceData data, string taxId)
+        {
+            var taxes = data.Taxes.Where(t => t.TaxId == taxId).ToList();
+            return taxes.Count == 0 ? null : taxes.Sum(t => t.TaxAmount);
+        }
+
         private readonly ICryptoService _cryptoService;
 
         // Namespaces oficiales de la DIAN para UBL 2.1
@@ -79,18 +87,18 @@ namespace Fel.Infrastructure.Ubl
             // difiere de TaxInclusiveAmount.
             var valTol = data.PayableAmount.ToString("0.00").Replace(",", ".");
             
-            var iva = data.Taxes.FirstOrDefault(t => t.TaxId == "01");
-            var inc = data.Taxes.FirstOrDefault(t => t.TaxId == "04");
-            var ica = data.Taxes.FirstOrDefault(t => t.TaxId == "03");
+            var iva = SumTaxes(data, "01");
+            var inc = SumTaxes(data, "04");
+            var ica = SumTaxes(data, "03");
 
             var codImp1 = "01";
-            var valImp1 = iva?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp1 = iva?.ToString("0.00").Replace(",", ".") ?? "0.00";
             
             var codImp2 = "04";
-            var valImp2 = inc?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp2 = inc?.ToString("0.00").Replace(",", ".") ?? "0.00";
             
             var codImp3 = "03";
-            var valImp3 = ica?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp3 = ica?.ToString("0.00").Replace(",", ".") ?? "0.00";
 
             // FecFac/HorFac en hora de Bogotá (-05:00), no UTC — Anexo Técnico, regla FAD10 ("Debe
             // ser informada la hora en una zona horaria -5"). Mismo helper que usa la salida XML
@@ -119,13 +127,13 @@ namespace Fel.Infrastructure.Ubl
             // difiere de TaxInclusiveAmount.
             var valTol = data.PayableAmount.ToString("0.00").Replace(",", ".");
 
-            var iva = data.Taxes.FirstOrDefault(t => t.TaxId == "01");
-            var inc = data.Taxes.FirstOrDefault(t => t.TaxId == "04");
-            var ica = data.Taxes.FirstOrDefault(t => t.TaxId == "03");
+            var iva = SumTaxes(data, "01");
+            var inc = SumTaxes(data, "04");
+            var ica = SumTaxes(data, "03");
 
-            var valImp1 = iva?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
-            var valImp2 = inc?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
-            var valImp3 = ica?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp1 = iva?.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp2 = inc?.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp3 = ica?.ToString("0.00").Replace(",", ".") ?? "0.00";
 
             var issueDate = DianTimeFormat.IssueDate(data.IssueDate);
             var issueTime = DianTimeFormat.IssueTime(data.IssueTime);
@@ -176,13 +184,13 @@ namespace Fel.Infrastructure.Ubl
             var valFac = data.LineExtensionAmount.ToString("0.00").Replace(",", ".");
             var valTot = data.TaxInclusiveAmount.ToString("0.00").Replace(",", ".");
 
-            var iva = data.Taxes.FirstOrDefault(t => t.TaxId == "01");
-            var inc = data.Taxes.FirstOrDefault(t => t.TaxId == "04");
-            var ica = data.Taxes.FirstOrDefault(t => t.TaxId == "03");
+            var iva = SumTaxes(data, "01");
+            var inc = SumTaxes(data, "04");
+            var ica = SumTaxes(data, "03");
 
-            var valImp1 = iva?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
-            var valImp2 = inc?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
-            var valImp3 = ica?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp1 = iva?.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp2 = inc?.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var valImp3 = ica?.ToString("0.00").Replace(",", ".") ?? "0.00";
 
             var issueDate = DianTimeFormat.IssueDate(data.IssueDate);
             var issueTime = DianTimeFormat.IssueTime(data.IssueTime);
@@ -201,8 +209,8 @@ namespace Fel.Infrastructure.Ubl
         {
             var valDs = data.LineExtensionAmount.ToString("0.00").Replace(",", ".");
             var valTot = data.TaxInclusiveAmount.ToString("0.00").Replace(",", ".");
-            var iva = data.Taxes.FirstOrDefault(t => t.TaxId == "01");
-            var valImp = iva?.TaxAmount.ToString("0.00").Replace(",", ".") ?? "0.00";
+            var iva = SumTaxes(data, "01");
+            var valImp = iva?.ToString("0.00").Replace(",", ".") ?? "0.00";
 
             var issueDate = DianTimeFormat.IssueDate(data.IssueDate);
             var issueTime = DianTimeFormat.IssueTime(data.IssueTime);

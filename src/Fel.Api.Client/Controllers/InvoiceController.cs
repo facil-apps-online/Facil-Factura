@@ -26,7 +26,8 @@ namespace Fel.Api.Client.Controllers
         private static IQueryable<Document> InvoiceDocuments(IQueryable<Document> query, Guid clientId, Guid? branchScope) =>
             query.Where(d => d.ClientId == clientId &&
                 ((d.TypeCode.StartsWith("FE") && d.TypeCode != "FE-TEST") || d.TypeCode == "NC" || d.TypeCode == "ND")).ForBranch(branchScope)
-                .Include(d => d.Observations.OrderBy(o => o.Position));
+                .Include(d => d.Observations.OrderBy(o => o.Position))
+                .Include(d => d.DocumentType);
 
         // Editable/publicable/eliminable mientras no haya llegado exitosamente a Dataico/DIAN:
         // un DRAFT nunca se envió, y un REJECTED fue rechazado por Dataico, así que tampoco llegó.
@@ -257,6 +258,9 @@ namespace Fel.Api.Client.Controllers
 
         [HttpGet("dataico-lookup/file")]
         public Task<IActionResult> DataicoLookupFile([FromQuery] string? number, [FromQuery] string? type) => DataicoLookupFileAsync(DataicoLookupKind.Invoice, number, type);
+
+        [HttpGet("dataico-lookup/note-draft")]
+        public Task<IActionResult> DataicoNoteDraft([FromQuery] string? number) => DataicoInvoiceNoteDraftAsync(number);
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(Guid id)

@@ -31,9 +31,9 @@ namespace Fel.Infrastructure.Dataico
 
         private static string DataicoTaxCategory(string category) => category switch
         {
-            "IMP_CONSUMO" or "IMP_CONSUMO_LICOR" => "IC",
-            "IMP_BOLSA_PLASTICA" => "IBP",
-            _ => category
+            "IC" => "IMP_CONSUMO",
+            "IBP" => "IMP_BOLSA_PLASTICA",
+            _ => category.Trim().ToUpperInvariant()
         };
 
         private static void AddAdditionalTaxes(List<DataicoTax> target, IEnumerable<DocumentItemTax> taxes)

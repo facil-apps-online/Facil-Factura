@@ -93,6 +93,7 @@ namespace Fel.Api.Client.Controllers
 
                 var docs = await BranchDocuments
                     .Include(d => d.Customer)
+                    .Include(d => d.DocumentType)
                     .Include(d => d.Resolution)
                     .Where(d => d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode) && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
                     .OrderByDescending(d => d.IssueDate)
@@ -114,6 +115,7 @@ namespace Fel.Api.Client.Controllers
                 var clientId = GetCurrentClientId();
                 var document = await BranchDocuments
                     .Include(d => d.Customer)
+                    .Include(d => d.DocumentType)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
@@ -159,6 +161,7 @@ namespace Fel.Api.Client.Controllers
                 var clientId = GetCurrentClientId();
                 var document = await BranchDocuments
                     .Include(d => d.Customer)
+                    .Include(d => d.DocumentType)
                     .Include(d => d.Resolution)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
@@ -179,7 +182,7 @@ namespace Fel.Api.Client.Controllers
                 }
 
                 var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
-                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId), document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext));
+                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId), document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext), documentTypeTitle: document.DocumentType?.ReportTitle);
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {
@@ -316,6 +319,7 @@ namespace Fel.Api.Client.Controllers
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
                     .Include(d => d.Customer)
+                    .Include(d => d.DocumentType)
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode));
 
                 if (document == null) return NotFound("Documento soporte no encontrado.");
@@ -429,7 +433,7 @@ namespace Fel.Api.Client.Controllers
                     var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
-                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: pdfCurrencyWords),
+                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: pdfCurrencyWords, documentTypeTitle: document.DocumentType?.ReportTitle),
                         credentials);
                 }
 

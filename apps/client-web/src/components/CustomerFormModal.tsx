@@ -404,7 +404,32 @@ export default function CustomerFormModal({ open, editingCustomer, defaultPartyT
                 <button
                   key={pt}
                   type="button"
-                  onClick={() => setFormData({ ...formData, personType: pt, identificationType: pt === 'Juridica' ? '31' : '13' })}
+                  onClick={() => setFormData(prev => {
+                    if (pt === 'Juridica') {
+                      return {
+                        ...prev,
+                        personType: pt,
+                        identificationType: '31',
+                        // Una persona jurídica usa únicamente la razón social. Evita que los
+                        // nombres heredados hagan que al volver a abrirla se infiera como natural.
+                        name: prev.name || [prev.firstName, prev.secondName, prev.firstLastName, prev.secondLastName].filter(Boolean).join(' '),
+                        firstName: '', secondName: '', firstLastName: '', secondLastName: ''
+                      };
+                    }
+
+                    return {
+                      ...prev,
+                      personType: pt,
+                      identificationType: '13',
+                      // Al pasar a natural, conserva la razón social como Nombre 1 para que el
+                      // usuario pueda repartirla en nombres y apellidos antes de guardar.
+                      firstName: prev.firstName || prev.name,
+                      secondName: prev.secondName || '',
+                      firstLastName: prev.firstLastName || '',
+                      secondLastName: prev.secondLastName || '',
+                      name: [prev.firstName || prev.name, prev.secondName, prev.firstLastName, prev.secondLastName].filter(Boolean).join(' ')
+                    };
+                  })}
                   className={`px-3 py-2.5 rounded-xl font-bold text-sm transition-colors ${
                     formData.personType === pt ? 'bg-primary text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                   }`}

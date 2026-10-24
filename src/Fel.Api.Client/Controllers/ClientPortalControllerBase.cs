@@ -51,6 +51,14 @@ namespace Fel.Api.Client.Controllers
             return result.Ok ? File(result.Bytes!, result.ContentType!, result.FileName!) : StatusCode(result.Status, new { message = result.Error });
         }
 
+        protected async Task<IActionResult> DataicoInvoiceNoteDraftAsync(string? number)
+        {
+            var client = await LoadLookupClientAsync();
+            if (client == null) return NotFound(new { message = "Cliente no encontrado." });
+            var result = await HttpContext.RequestServices.GetRequiredService<Fel.Infrastructure.Dataico.DataicoLookupService>().GetInvoiceNoteDraftAsync(client, number);
+            return result.Draft != null ? Ok(result.Draft) : StatusCode(result.Status, new { message = result.Error });
+        }
+
         private Task<Fel.Core.Entities.Client?> LoadLookupClientAsync() =>
             HttpContext.RequestServices.GetRequiredService<FelDbContext>().Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == Branch.ClientId);
 

@@ -14,6 +14,7 @@ namespace Fel.Infrastructure.Dian
         public string IssuerName { get; set; } = string.Empty;
         public DateTime IssueDate { get; set; }
         public decimal TotalAmount { get; set; }
+        public bool IsCredit { get; set; }
     }
 
     // Datos del proveedor (emisor del documento recibido) con los valores que Dataico espera en el bloque
@@ -134,7 +135,14 @@ namespace Fel.Infrastructure.Dian
             var city = Find(address, "ID")?.Value.Trim();
             var line = Find(address, "AddressLine", "Line")?.Value.Trim();
             if (!string.IsNullOrEmpty(department)) issuer.Department = department;
-            if (!string.IsNullOrEmpty(city)) issuer.City = city;
+            if (!string.IsNullOrEmpty(city))
+            {
+                // UBL suele enviar el código DANE completo (ej. 11001), mientras que Dataico
+                // espera el código del municipio separado del departamento (ej. 001 + 11).
+                issuer.City = city.Length == 5 && city.StartsWith(issuer.Department, StringComparison.Ordinal)
+                    ? city[2..]
+                    : city;
+            }
             if (!string.IsNullOrEmpty(line)) issuer.Address = line;
 
             var contact = Find(party, "Contact");
@@ -155,6 +163,12 @@ namespace Fel.Infrastructure.Dian
                 "DebitNote" => "92",
                 _ => throw new NotSupportedException($"Tipo de documento no soportado para recepción: '{root.Name.LocalName}'. Se esperaba Invoice, CreditNote o DebitNote.")
             };
+
+            // Un Documento Soporte también usa raíz UBL Invoice, pero se identifica con
+            // InvoiceTypeCode=05 y no puede recibir eventos RADIAN de factura.
+            var invoiceTypeCode = root.Elements().FirstOrDefault(e => e.Name.LocalName == "InvoiceTypeCode")?.Value.Trim();
+            if (documentTypeCode == "01" && invoiceTypeCode == "05")
+                throw new NotSupportedException("El documento recibido es un Documento Soporte (InvoiceTypeCode 05); los eventos RADIAN solo aplican a facturas electrónicas.");
 
             string El(XElement parent, params string[] path)
             {
@@ -189,6 +203,11 @@ namespace Fel.Infrastructure.Dian
                 : string.Empty;
 
             var payableAmountStr = El(root, "LegalMonetaryTotal", "PayableAmount");
+            // Igual que el legado de C:\FEL: en UBL, PaymentMeans/cbc:ID = 2 significa crédito.
+            // Algunos proveedores agregan niveles o namespaces adicionales, por eso se busca el
+            // primer PaymentMeans real dentro de la factura y no solo un camino directo.
+            var paymentMeans = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "PaymentMeans");
+            var paymentMeansCode = paymentMeans?.Elements().FirstOrDefault(e => e.Name.LocalName == "ID")?.Value.Trim() ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(cufe))
                 throw new InvalidOperationException("El XML no trae un CUFE/CUDE (cbc:UUID) — no parece ser un documento electrónico válido de la DIAN.");
@@ -201,7 +220,8 @@ namespace Fel.Infrastructure.Dian
                 IssuerTaxId = issuerTaxId,
                 IssuerName = issuerName,
                 IssueDate = DateTime.TryParse(issueDateStr, out var issueDate) ? issueDate : Fel.Core.Models.ColombiaTime.Now,
-                TotalAmount = decimal.TryParse(payableAmountStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var total) ? total : 0m
+                TotalAmount = decimal.TryParse(payableAmountStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var total) ? total : 0m,
+                IsCredit = paymentMeansCode == "2"
             };
         }
     }

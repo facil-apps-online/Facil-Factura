@@ -153,7 +153,18 @@ namespace Fel.Infrastructure.Dataico
         }
 
         public Task<DataicoResult> SendReceptionEventAsync(DataicoReceptionEventEnvelope eventRequest, DataicoCredentials credentials)
-            => ExecuteAsync(HttpMethod.Post, $"{InvoicingBaseUrl}/reception_events", credentials, eventRequest, TimeSpan.FromSeconds(180));
+        {
+            // Validación final en la frontera: nunca enviar a RADIAN el tipo interno de Documento Soporte.
+            // Dataico solo acepta estos tipos para el documento referenciado por un evento.
+            eventRequest.reception_event.document_type = eventRequest.reception_event.document_type switch
+            {
+                "FACTURA_CONTINGENCIA" or "FACTURA_CONTINGENCIA_DIAN" or "FACTURA_EXPORTACION" or
+                "FACTURA_VENTA" or "NOTA_CREDITO" or "NOTA_DEBITO" => eventRequest.reception_event.document_type,
+                _ => "FACTURA_VENTA"
+            };
+
+            return ExecuteAsync(HttpMethod.Post, $"{InvoicingBaseUrl}/reception_events", credentials, eventRequest, TimeSpan.FromSeconds(180));
+        }
 
         public Task<DataicoResult> GetReceptionEventAsync(string number, DataicoCredentials credentials)
             => ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/reception_events?number={Uri.EscapeDataString(number)}", credentials, null);
@@ -304,6 +315,12 @@ namespace Fel.Infrastructure.Dataico
                 if (root.TryGetProperty("uuid", out var uuidVal) && uuidVal.ValueKind == JsonValueKind.String)
                 {
                     result.DataicoDocumentId = uuidVal.GetString();
+                }
+
+                if (root.TryGetProperty("customer", out var customer) && customer.ValueKind == JsonValueKind.Object &&
+                    customer.TryGetProperty("party_identification", out var customerId) && customerId.ValueKind == JsonValueKind.String)
+                {
+                    result.CustomerIdentification = customerId.GetString();
                 }
 
                 if (root.TryGetProperty("xml_url", out var xmlVal) && xmlVal.ValueKind == JsonValueKind.String)

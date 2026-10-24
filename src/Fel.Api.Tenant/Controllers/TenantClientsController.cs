@@ -586,8 +586,6 @@ namespace Fel.Api.Tenant.Controllers
                 dataicoApiUser = client.DataicoApiUser,
                 dataicoAccountId = client.DataicoAccountId,
                 dataicoEnvironment = client.DataicoEnvironment,
-                receptionEventPrefix = client.ReceptionEventPrefix,
-                receptionEventStartNumber = client.ReceptionEventStartNumber,
                 hasApiPassword = !string.IsNullOrEmpty(client.DataicoApiPasswordEncrypted),
                 hasAuthToken = !string.IsNullOrEmpty(client.DataicoAuthTokenEncrypted)
             });
@@ -635,18 +633,6 @@ namespace Fel.Api.Tenant.Controllers
             client.DataicoAccountId = request.DataicoAccountId ?? string.Empty;
             client.DataicoEnvironment = string.IsNullOrWhiteSpace(request.DataicoEnvironment) ? "PRUEBAS" : request.DataicoEnvironment;
 
-            if (request.ReceptionEventPrefix != null)
-            {
-                var prefix = request.ReceptionEventPrefix.Trim();
-                if (prefix.Length > 10) return BadRequest("El prefijo de los eventos de recepción no puede tener más de 10 caracteres.");
-                client.ReceptionEventPrefix = prefix.Length == 0 ? "EV" : prefix;
-            }
-            if (request.ReceptionEventStartNumber.HasValue)
-            {
-                if (request.ReceptionEventStartNumber.Value < 1) return BadRequest("El número inicial de los eventos de recepción debe ser 1 o mayor.");
-                client.ReceptionEventStartNumber = request.ReceptionEventStartNumber.Value;
-            }
-
             if (!string.IsNullOrEmpty(request.DataicoApiPassword))
             {
                 client.DataicoApiPasswordEncrypted = _cryptoService.Encrypt(request.DataicoApiPassword);
@@ -666,6 +652,32 @@ namespace Fel.Api.Tenant.Controllers
         // Resolution porque las notas no tienen rango autorizado propio ante la DIAN (ver
         // ResolutionNumbering.ClaimNextNoteAsync). Antes
         // no había forma de verlo ni ajustarlo salvo por SQL directo.
+        [HttpGet("{id}/reception-numbering")]
+        public async Task<IActionResult> GetReceptionNumbering(Guid id)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
+            var value = await ReceptionEventNumberingService.GetAsync(_dbContext, id);
+            return Ok(new { prefix = value.Prefix, nextNumber = value.NextNumber });
+        }
+
+        public class UpdateReceptionNumberingRequest
+        {
+            public string Prefix { get; set; } = string.Empty;
+            public long NextNumber { get; set; }
+        }
+
+        [HttpPut("{id}/reception-numbering")]
+        public async Task<IActionResult> UpdateReceptionNumbering(Guid id, [FromBody] UpdateReceptionNumberingRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
+            var error = await ReceptionEventNumberingService.UpdateAsync(_dbContext, id, request.Prefix, request.NextNumber);
+            if (error != null) return BadRequest(error);
+            await _dbContext.SaveChangesAsync();
+            return await GetReceptionNumbering(id);
+        }
+
         [HttpGet("{id}/note-counters")]
         public async Task<IActionResult> GetNoteCounters(Guid id)
         {
@@ -681,6 +693,36 @@ namespace Fel.Api.Tenant.Controllers
             nextDebitNoteNumber = counters.NextDebitNoteNumber,
             nextSupportAdjustmentNumber = counters.NextSupportAdjustmentNumber
         };
+
+        [HttpGet("{id}/resolutions/{resolutionId:guid}/note-numbering")]
+        public async Task<IActionResult> GetResolutionNoteNumbering(Guid id, Guid resolutionId)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
+            var resolution = await _dbContext.Resolutions.AsNoTracking().FirstOrDefaultAsync(r => r.Id == resolutionId && r.ClientId == id && r.IsActive && r.DocumentType == "FE");
+            if (resolution == null) return NotFound();
+            var counters = await NoteNumberingService.GetForResolutionAsync(_dbContext, id, resolutionId);
+            return Ok(new { resolutionId, prefix = resolution.Prefix, nextCreditNoteNumber = counters.NextCreditNoteNumber, nextDebitNoteNumber = counters.NextDebitNoteNumber });
+        }
+
+        public class UpdateResolutionNoteNumberingRequest
+        {
+            public long NextCreditNoteNumber { get; set; }
+            public long NextDebitNoteNumber { get; set; }
+        }
+
+        [HttpPut("{id}/resolutions/{resolutionId:guid}/note-numbering")]
+        public async Task<IActionResult> UpdateResolutionNoteNumbering(Guid id, Guid resolutionId, [FromBody] UpdateResolutionNoteNumberingRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == id && c.TenantId == tenantId)) return NotFound();
+            if (request.NextCreditNoteNumber < 1 || request.NextDebitNoteNumber < 1) return BadRequest("Los consecutivos de notas deben ser mayores a 0.");
+            var resolution = await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == resolutionId && r.ClientId == id && r.IsActive && r.DocumentType == "FE");
+            if (resolution == null) return NotFound();
+            await NoteNumberingService.UpdateForResolutionAsync(_dbContext, id, resolutionId, request.NextCreditNoteNumber, request.NextDebitNoteNumber);
+            await _dbContext.SaveChangesAsync();
+            return await GetResolutionNoteNumbering(id, resolutionId);
+        }
 
         [HttpPut("{id}/note-counters")]
         public async Task<IActionResult> UpdateNoteCounters(Guid id, [FromBody] UpdateNoteCountersRequest request)
@@ -888,8 +930,6 @@ namespace Fel.Api.Tenant.Controllers
         public string? DataicoAuthToken { get; set; }
         public string? DataicoAccountId { get; set; }
         public string? DataicoEnvironment { get; set; }
-        public string? ReceptionEventPrefix { get; set; }
-        public int? ReceptionEventStartNumber { get; set; }
     }
 
     public class UpdateNoteCountersRequest

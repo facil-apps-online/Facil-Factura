@@ -112,6 +112,31 @@ namespace Fel.Infrastructure.Dataico
             return new DataicoFileResult(200, null, bytes, isXml ? "application/xml" : "application/pdf", $"{safeNumber}.{(isXml ? "xml" : "pdf")}");
         }
 
+        // Obtiene la factura consultada y la convierte en el borrador que usa el formulario de notas.
+        // El UUID interno sale del response de Dataico; los datos de las líneas salen del XML.
+        public async Task<(int Status, string? Error, DataicoExternalInvoiceDraft? Draft)> GetInvoiceNoteDraftAsync(Client client, string? input)
+        {
+            var number = (input ?? string.Empty).Trim();
+            var (call, error) = await FetchAsync(client, DataicoLookupKind.Invoice, number, includePdf: false);
+            if (error != null) return (error.Value.Status, error.Value.Message, null);
+            var parsed = Parse(DataicoLookupKind.Invoice, call!.RawResponse);
+            if (parsed == null || string.IsNullOrWhiteSpace(parsed.Summary.Uuid))
+                return (404, $"Dataico no encontró la factura {number} o no devolvió su UUID.", null);
+
+            var xml = await DownloadAsync(client, DataicoLookupKind.Invoice, number, "xml");
+            if (!xml.Ok || xml.Bytes == null)
+                return (502, xml.Error ?? "Dataico no entregó el XML de la factura.", null);
+            try
+            {
+                var rawXml = System.Text.Encoding.UTF8.GetString(xml.Bytes);
+                return (200, null, DataicoExternalInvoiceParser.Parse(rawXml, parsed.Summary.Uuid));
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.Xml.XmlException)
+            {
+                return (422, $"No se pudo interpretar el XML de Dataico: {ex.Message}", null);
+            }
+        }
+
         private async Task<(Fel.Infrastructure.Dataico.Models.DataicoResult? Call, (int Status, string Message)? Error)> FetchAsync(
             Client client, DataicoLookupKind kind, string? input, bool includePdf)
         {

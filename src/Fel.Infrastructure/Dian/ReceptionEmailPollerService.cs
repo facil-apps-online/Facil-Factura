@@ -155,6 +155,7 @@ namespace Fel.Infrastructure.Dian
                     DocumentId = parsed.DocumentId,
                     IssueDate = parsed.IssueDate,
                     TotalAmount = parsed.TotalAmount,
+                    IsCredit = parsed.IsCredit,
                     ReceivedAt = DateTime.UtcNow
                 };
 

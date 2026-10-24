@@ -2532,6 +2532,10 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
+                    b.Property<string>("ReportTitle")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
@@ -2549,7 +2553,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Factura de Venta - Estándar",
-                            OperationType = "10"
+                            OperationType = "10",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2560,7 +2565,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Factura de Venta - Sector Salud",
-                            OperationType = "10"
+                            OperationType = "10",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2571,7 +2577,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Factura de Venta - AIU",
-                            OperationType = "09"
+                            OperationType = "09",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2582,7 +2589,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Factura de Venta - Mandatos",
-                            OperationType = "11"
+                            OperationType = "11",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2593,7 +2601,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Factura de Venta - Transporte",
-                            OperationType = "15"
+                            OperationType = "15",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2604,7 +2613,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Factura de Venta - Exportación",
-                            OperationType = "10"
+                            OperationType = "10",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2615,7 +2625,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Factura de Contingencia Facturador",
-                            OperationType = "10"
+                            OperationType = "10",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2626,7 +2637,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Factura de Contingencia DIAN",
-                            OperationType = "10"
+                            OperationType = "10",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2637,7 +2649,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Nota Crédito",
-                            OperationType = "20"
+                            OperationType = "20",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2648,7 +2661,8 @@ namespace Fel.Infrastructure.Migrations
                             GoverningEntity = "DIAN",
                             IsActive = true,
                             Name = "Nota Débito",
-                            OperationType = "30"
+                            OperationType = "30",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2658,7 +2672,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "20",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Tiquete POS"
+                            Name = "Doc. Equivalente - Tiquete POS",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2668,7 +2683,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "25",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Cine"
+                            Name = "Doc. Equivalente - Cine",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2678,7 +2694,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "35",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Transporte Pasajeros"
+                            Name = "Doc. Equivalente - Transporte Pasajeros",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2688,7 +2705,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "45",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Extracto"
+                            Name = "Doc. Equivalente - Extracto",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2698,7 +2716,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "50",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Transporte Aéreo"
+                            Name = "Doc. Equivalente - Transporte Aéreo",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2708,7 +2727,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "30",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Juegos Localizados"
+                            Name = "Doc. Equivalente - Juegos Localizados",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2718,7 +2738,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "30",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Suerte y Azar"
+                            Name = "Doc. Equivalente - Suerte y Azar",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2728,7 +2749,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "40",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Peajes"
+                            Name = "Doc. Equivalente - Peajes",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2738,7 +2760,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "55",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Bolsa de Valores"
+                            Name = "Doc. Equivalente - Bolsa de Valores",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2748,7 +2771,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "55",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Bolsa Agropecuaria"
+                            Name = "Doc. Equivalente - Bolsa Agropecuaria",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2758,7 +2782,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "60",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Servicios Públicos"
+                            Name = "Doc. Equivalente - Servicios Públicos",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2768,7 +2793,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "27",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Equivalente - Espectáculos Públicos"
+                            Name = "Doc. Equivalente - Espectáculos Públicos",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2778,7 +2804,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "94",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Nota de Ajuste (Crédito) - Doc. Equivalente"
+                            Name = "Nota de Ajuste (Crédito) - Doc. Equivalente",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2788,7 +2815,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "93",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Nota de Ajuste (Débito) - Doc. Equivalente"
+                            Name = "Nota de Ajuste (Débito) - Doc. Equivalente",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2798,7 +2826,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "05",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Doc. Soporte - Adquisiciones a No Obligados"
+                            Name = "Doc. Soporte - Adquisiciones a No Obligados",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2808,7 +2837,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "95",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Nota de Ajuste - Doc. Soporte"
+                            Name = "Nota de Ajuste - Doc. Soporte",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2818,7 +2848,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "102",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Nómina Electrónica"
+                            Name = "Nómina Electrónica",
+                            ReportTitle = ""
                         },
                         new
                         {
@@ -2828,7 +2859,8 @@ namespace Fel.Infrastructure.Migrations
                             DianCode = "103",
                             GoverningEntity = "DIAN",
                             IsActive = true,
-                            Name = "Nota de Ajuste - Nómina Electrónica"
+                            Name = "Nota de Ajuste - Nómina Electrónica",
+                            ReportTitle = ""
                         });
                 });
 
@@ -3051,16 +3083,17 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
+                    b.Property<Guid?>("ResolutionId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BranchId");
 
-                    b.HasIndex("ClientId", "BranchId", "Kind")
+                    b.HasIndex("ClientId", "ResolutionId", "BranchId", "Kind")
                         .IsUnique();
 
-                    b.HasIndex("ClientId", "Kind", "Prefix")
-                        .IsUnique()
-                        .HasFilter("[Prefix] IS NOT NULL");
+                    b.HasIndex("ResolutionId");
 
                     b.ToTable("NoteNumberings", (string)null);
                 });
@@ -3349,6 +3382,9 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("IsCredit")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("IssueDate")
                         .HasColumnType("datetime2");
 
@@ -3358,6 +3394,12 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<string>("IssuerTaxId")
                         .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("OriginalPdf")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("OriginalPdfFileName")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RawXml")
@@ -3403,7 +3445,16 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<int?>("EventNumber")
                         .HasColumnType("int");
 
+                    b.Property<string>("ProviderPdfUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProviderResponse")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ProviderUid")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProviderXmlUrl")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("ReceivedDocumentId")
@@ -3421,6 +3472,31 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("ReceivedDocumentId");
 
                     b.ToTable("ReceivedDocumentEvents");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceptionEventNumbering", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("NextNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.ToTable("ReceptionEventNumberings", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Resolution", b =>
@@ -6456,9 +6532,16 @@ namespace Fel.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Fel.Core.Entities.Resolution", "Resolution")
+                        .WithMany()
+                        .HasForeignKey("ResolutionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Branch");
 
                     b.Navigation("Client");
+
+                    b.Navigation("Resolution");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.PlanAlert", b =>
@@ -6552,6 +6635,17 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("ReceivedDocument");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.ReceptionEventNumbering", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Client");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.Resolution", b =>

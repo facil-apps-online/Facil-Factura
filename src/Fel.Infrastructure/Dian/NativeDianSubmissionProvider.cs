@@ -105,17 +105,16 @@ namespace Fel.Infrastructure.Dian
                 // y cada nota consumía un número que le correspondía a la siguiente factura real.
                 invoice.Number = invoice.ReferenceDocumentId.HasValue
                     ? (await (documentType?.Code == "ND"
-                        ? Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote)
-                        : Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote))).Number.ToString()
-                    : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
+                        ? Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote, resolution.Id)
+                        : Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote, resolution.Id))).Number.ToString()
+                    : (documentType?.Code is "NC" or "ND"
+                        ? (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, documentType.Code == "ND" ? Fel.Core.Entities.NoteKind.DebitNote : Fel.Core.Entities.NoteKind.CreditNote, resolution.Id)).Number.ToString()
+                        : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString());
             }
 
             // El prefijo queda guardado en el documento junto con su consecutivo.
             // Las notas pueden llevar el prefijo de su propia numeración (sucursal con contador propio); sin uno usan el de la resolución.
-            invoice.Prefix = invoice.ReferenceDocumentId.HasValue
-                ? await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, client.Id, invoice.BranchId,
-                    documentType?.Code == "ND" ? Fel.Core.Entities.NoteKind.DebitNote : Fel.Core.Entities.NoteKind.CreditNote) ?? resolution.Prefix
-                : resolution.Prefix;
+            invoice.Prefix = resolution.Prefix;
 
             // La DIAN exige que la fecha de emisión coincida con la fecha de firma (regla FAD09e) —
             // no se puede emitir con fecha anterior a hoy. Se refresca acá, en el momento real de

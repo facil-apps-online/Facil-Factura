@@ -117,6 +117,16 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
+                var isReceptionNumbering = string.Equals(request.DocumentType, "RADIAN", StringComparison.OrdinalIgnoreCase);
+                if (isReceptionNumbering)
+                {
+                    if (string.IsNullOrWhiteSpace(request.Prefix) || request.Prefix.Trim().Length > 10)
+                        return BadRequest("El prefijo de los eventos RADIAN es obligatorio y debe tener máximo 10 caracteres.");
+                    request.ResolutionNumber = "DATAICO";
+                    request.NumberEnd = request.NumberEnd < 1 ? int.MaxValue : request.NumberEnd;
+                    request.ValidFrom = request.ValidFrom == default ? new DateTime(2000, 1, 1) : request.ValidFrom;
+                    request.ValidTo = request.ValidTo == default ? new DateTime(2099, 12, 31) : request.ValidTo;
+                }
 
                 var (resolutionBranchIds, branchError) = await _resolutionBranches.ResolveForNewAsync(clientId, request.BranchIds, request.DocumentType, request.Prefix, CurrentBranchScope);
                 if (branchError != null) return BadRequest(branchError);
@@ -165,7 +175,7 @@ namespace Fel.Api.Client.Controllers
                 await _dbContext.SaveChangesAsync();
 
                 // Cliente Dataico: Dataico toma la resolución de la DIAN al sincronizar; se comprueba que ya la tenga.
-                var dataicoWarning = await _dataicoSync.CheckAfterCreateAsync(clientId, resolution);
+                var dataicoWarning = isReceptionNumbering ? null : await _dataicoSync.CheckAfterCreateAsync(clientId, resolution);
 
                 return Ok(new {
                     resolution.Id,
@@ -245,6 +255,38 @@ namespace Fel.Api.Client.Controllers
         public class SetNextNumberRequest
         {
             public long NextNumber { get; set; }
+        }
+
+        public class SetNoteNumbersRequest
+        {
+            public long? NextCreditNoteNumber { get; set; }
+            public long? NextDebitNoteNumber { get; set; }
+        }
+
+        [HttpGet("{id:guid}/note-numbering")]
+        public async Task<IActionResult> GetNoteNumbering(Guid id)
+        {
+            var clientId = GetCurrentClientId();
+            var resolution = await _dbContext.Resolutions.AsNoTracking()
+                .FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId && r.IsActive && r.DocumentType == "FE");
+            if (resolution == null) return NotFound();
+            var counters = await Fel.Infrastructure.Services.NoteNumberingService.GetForResolutionAsync(_dbContext, clientId, id);
+            return Ok(new { resolutionId = id, prefix = resolution.Prefix, nextCreditNoteNumber = counters.NextCreditNoteNumber, nextDebitNoteNumber = counters.NextDebitNoteNumber });
+        }
+
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpPut("{id:guid}/note-numbering")]
+        public async Task<IActionResult> SetNoteNumbering(Guid id, [FromBody] SetNoteNumbersRequest request)
+        {
+            var clientId = GetCurrentClientId();
+            if (request.NextCreditNoteNumber is < 1 || request.NextDebitNoteNumber is < 1)
+                return BadRequest("Los consecutivos de notas deben ser mayores a 0.");
+            var resolution = await _dbContext.Resolutions.FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId && r.IsActive && r.DocumentType == "FE");
+            if (resolution == null) return NotFound();
+            await Fel.Infrastructure.Services.NoteNumberingService.UpdateForResolutionAsync(_dbContext, clientId, id, request.NextCreditNoteNumber, request.NextDebitNoteNumber);
+            await _dbContext.SaveChangesAsync();
+            var counters = await Fel.Infrastructure.Services.NoteNumberingService.GetForResolutionAsync(_dbContext, clientId, id);
+            return Ok(new { resolutionId = id, prefix = resolution.Prefix, nextCreditNoteNumber = counters.NextCreditNoteNumber, nextDebitNoteNumber = counters.NextDebitNoteNumber });
         }
 
         // Permite fijar manualmente el próximo consecutivo a usar — ej. al migrar desde otro
@@ -373,6 +415,30 @@ namespace Fel.Api.Client.Controllers
             if (ids == null) return NotFound();
             if (error != null) return BadRequest(error);
             return Ok(new { branchIds = ids });
+        }
+
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpGet("reception-numbering")]
+        public async Task<IActionResult> GetReceptionNumbering()
+        {
+            var value = await ReceptionEventNumberingService.GetAsync(_dbContext, GetCurrentClientId());
+            return Ok(new { prefix = value.Prefix, nextNumber = value.NextNumber });
+        }
+
+        public class UpdateReceptionNumberingRequest
+        {
+            public string Prefix { get; set; } = string.Empty;
+            public long NextNumber { get; set; }
+        }
+
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpPut("reception-numbering")]
+        public async Task<IActionResult> UpdateReceptionNumbering([FromBody] UpdateReceptionNumberingRequest request)
+        {
+            var error = await ReceptionEventNumberingService.UpdateAsync(_dbContext, GetCurrentClientId(), request.Prefix, request.NextNumber);
+            if (error != null) return BadRequest(error);
+            await _dbContext.SaveChangesAsync();
+            return await GetReceptionNumbering();
         }
 
         [ClientRole(ClientUserRoles.Administrator)]

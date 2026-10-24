@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
@@ -12,6 +13,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Fel.Api.Security;
 using Fel.Infrastructure.Services;
+using Fel.Infrastructure.Dataico;
 
 namespace Fel.Api.Client.Controllers
 {
@@ -26,11 +28,15 @@ namespace Fel.Api.Client.Controllers
     {
         private readonly FelDbContext _dbContext;
         private readonly IReceptionEventService _eventService;
+        private readonly IDataicoApiService _dataicoApiService;
+        private readonly ICryptoService _cryptoService;
 
-        public ReceivedDocumentsController(FelDbContext dbContext, IReceptionEventService eventService)
+        public ReceivedDocumentsController(FelDbContext dbContext, IReceptionEventService eventService, IDataicoApiService dataicoApiService, ICryptoService cryptoService)
         {
             _dbContext = dbContext;
             _eventService = eventService;
+            _dataicoApiService = dataicoApiService;
+            _cryptoService = cryptoService;
         }
 
         [HttpGet]
@@ -56,14 +62,73 @@ namespace Fel.Api.Client.Controllers
                     d.DocumentId,
                     d.IssueDate,
                     d.TotalAmount,
+                    d.IsCredit,
+                    IsSupportDocument = IsSupportDocumentXml(d.RawXml) || d.DocumentTypeCode == "05",
                     d.ReceivedAt,
-                    Events = d.Events.Select(e => new { e.EventCode, e.Status, e.SentAt, e.DianResponseMessage })
+                     Events = d.Events.OrderByDescending(e => e.SentAt).Select(e => new { e.Id, e.EventCode, e.Status, e.SentAt, e.EventNumber, e.ProviderUid, e.Cude, e.DianResponseMessage, e.ProviderResponse, e.ProviderXmlUrl, e.ProviderPdfUrl })
                 }));
             }
             catch (UnauthorizedAccessException ex)
             {
                 return Unauthorized(ex.Message);
             }
+        }
+
+        private static bool IsSupportDocumentXml(string? xml)
+        {
+            if (string.IsNullOrWhiteSpace(xml)) return false;
+            try
+            {
+                var root = XDocument.Parse(xml).Root;
+                return root?.Descendants().FirstOrDefault(e => e.Name.LocalName == "InvoiceTypeCode")?.Value.Trim() == "05";
+            }
+            catch (System.Xml.XmlException)
+            {
+                return false;
+            }
+        }
+
+        [HttpGet("{id:guid}/events/{eventId:guid}/file")]
+        public async Task<IActionResult> DownloadEventFile(Guid id, Guid eventId, [FromQuery] string type)
+        {
+            var clientId = GetCurrentClientId();
+            var eventRow = await _dbContext.ReceivedDocumentEvents
+                .Include(e => e.ReceivedDocument)
+                .ThenInclude(d => d.Client)
+                .ThenInclude(c => c.Integrator)
+                .Where(e => e.Id == eventId && e.ReceivedDocumentId == id && e.ReceivedDocument.ClientId == clientId)
+                .FirstOrDefaultAsync();
+            if (eventRow == null) return NotFound();
+            if (!string.Equals(eventRow.ReceivedDocument.Client.Integrator?.Code, "DATAICO", StringComparison.OrdinalIgnoreCase)) return BadRequest("El archivo del evento solo está disponible para Dataico.");
+
+            var url = string.Equals(type, "xml", StringComparison.OrdinalIgnoreCase) ? eventRow.ProviderXmlUrl :
+                string.Equals(type, "pdf", StringComparison.OrdinalIgnoreCase) ? eventRow.ProviderPdfUrl : null;
+            if (string.IsNullOrWhiteSpace(url)) return NotFound(new { message = "Dataico no entregó este archivo." });
+            var file = await _dataicoApiService.DownloadFileAsync(url, DataicoDocumentMapper.ToCredentials(eventRow.ReceivedDocument.Client, _cryptoService));
+            if (file == null) return StatusCode(502, new { message = "Dataico no permitió descargar este archivo." });
+            var extension = string.Equals(type, "xml", StringComparison.OrdinalIgnoreCase) ? "xml" : "pdf";
+            return File(file.Value.Bytes, file.Value.ContentType, $"{eventRow.ReceivedDocument.DocumentId}-{eventRow.EventCode}.{extension}");
+        }
+
+        [HttpGet("{id:guid}/xml")]
+        public async Task<IActionResult> DownloadXml(Guid id)
+        {
+            var clientId = GetCurrentClientId();
+            var document = await _dbContext.ReceivedDocuments.ForBranch(CurrentBranchScope)
+                .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+            if (document == null) return NotFound();
+            return File(System.Text.Encoding.UTF8.GetBytes(document.RawXml), "application/xml", $"{document.DocumentId}.xml");
+        }
+
+        [HttpGet("{id:guid}/pdf")]
+        public async Task<IActionResult> DownloadPdf(Guid id)
+        {
+            var clientId = GetCurrentClientId();
+            var document = await _dbContext.ReceivedDocuments.ForBranch(CurrentBranchScope)
+                .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+            if (document == null) return NotFound();
+            if (document.OriginalPdf == null || document.OriginalPdf.Length == 0) return NotFound(new { message = "Este documento no tiene representación gráfica almacenada." });
+            return File(document.OriginalPdf, "application/pdf", document.OriginalPdfFileName ?? $"{document.DocumentId}.pdf");
         }
 
         /// <summary>
@@ -87,9 +152,14 @@ namespace Fel.Api.Client.Controllers
                 return BadRequest("No se proporcionó un archivo válido.");
 
             string xml;
+            byte[]? originalPdf = null;
+            string? originalPdfFileName = null;
             try
             {
-                xml = await ExtractXmlAsync(file);
+                var extracted = await ExtractFilesAsync(file);
+                xml = extracted.Xml;
+                originalPdf = extracted.Pdf;
+                originalPdfFileName = extracted.PdfFileName;
             }
             catch (Exception ex)
             {
@@ -122,6 +192,8 @@ namespace Fel.Api.Client.Controllers
                 BranchId = GetCurrentBranchId(),
                 SourceType = "Manual",
                 RawXml = xml,
+                OriginalPdf = originalPdf,
+                OriginalPdfFileName = originalPdfFileName,
                 Cufe = parsed.Cufe,
                 DocumentTypeCode = parsed.DocumentTypeCode,
                 IssuerTaxId = parsed.IssuerTaxId,
@@ -129,6 +201,7 @@ namespace Fel.Api.Client.Controllers
                 DocumentId = parsed.DocumentId,
                 IssueDate = parsed.IssueDate,
                 TotalAmount = parsed.TotalAmount,
+                IsCredit = parsed.IsCredit,
                 ReceivedAt = DateTime.UtcNow
             };
 
@@ -162,6 +235,7 @@ namespace Fel.Api.Client.Controllers
 
             var received = await _dbContext.ReceivedDocuments.ForBranch(CurrentBranchScope).FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
             if (received == null) return NotFound();
+            if (!received.IsCredit) return BadRequest("Los eventos RADIAN solo aplican a facturas a crédito.");
 
             var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);
             if (client == null) return Unauthorized(new { message = "Emisor no encontrado." });
@@ -170,7 +244,7 @@ namespace Fel.Api.Client.Controllers
             return Ok(new { evt.EventCode, evt.Status, evt.Cude, evt.DianResponseMessage });
         }
 
-        private static async Task<string> ExtractXmlAsync(IFormFile file)
+        private static async Task<(string Xml, byte[]? Pdf, string? PdfFileName)> ExtractFilesAsync(IFormFile file)
         {
             using var stream = new MemoryStream();
             await file.CopyToAsync(stream);
@@ -189,7 +263,7 @@ namespace Fel.Api.Client.Controllers
             if (!isZip)
             {
                 using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
-                return ReceivedDocumentXmlExtractor.Extract(await reader.ReadToEndAsync());
+                return (ReceivedDocumentXmlExtractor.Extract(await reader.ReadToEndAsync()), null, null);
             }
 
             using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
@@ -199,7 +273,18 @@ namespace Fel.Api.Client.Controllers
 
             using var entryStream = xmlEntry.Open();
             using var entryReader = new StreamReader(entryStream, System.Text.Encoding.UTF8);
-            return ReceivedDocumentXmlExtractor.Extract(await entryReader.ReadToEndAsync());
+            var pdfEntry = zip.Entries.FirstOrDefault(e => e.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase));
+            byte[]? pdf = null;
+            string? pdfName = null;
+            if (pdfEntry != null)
+            {
+                using var pdfStream = new MemoryStream();
+                using var pdfEntryStream = pdfEntry.Open();
+                await pdfEntryStream.CopyToAsync(pdfStream);
+                pdf = pdfStream.ToArray();
+                pdfName = Path.GetFileName(pdfEntry.Name);
+            }
+            return (ReceivedDocumentXmlExtractor.Extract(await entryReader.ReadToEndAsync()), pdf, pdfName);
         }
     }
 }

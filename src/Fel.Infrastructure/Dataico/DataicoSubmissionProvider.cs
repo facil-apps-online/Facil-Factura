@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
@@ -25,6 +26,19 @@ namespace Fel.Infrastructure.Dataico
         private readonly Fel.Infrastructure.Services.DocumentLegendService _legendService;
 
         public string IntegratorCode => "DATAICO";
+
+        private static string? ExternalOriginalId(Document invoice)
+        {
+            if (string.IsNullOrWhiteSpace(invoice.SectorExtensionData)) return null;
+            try
+            {
+                using var json = JsonDocument.Parse(invoice.SectorExtensionData);
+                return json.RootElement.TryGetProperty("dataicoExternalReference", out var reference)
+                    && reference.TryGetProperty("dataicoDocumentId", out var id)
+                    ? id.GetString() : null;
+            }
+            catch (JsonException) { return null; }
+        }
 
         public DataicoSubmissionProvider(
             IDataicoApiService dataicoApiService, ICryptoService cryptoService, FelDbContext dbContext,
@@ -72,15 +86,46 @@ namespace Fel.Infrastructure.Dataico
                 isExport = documentType?.Code == "FE-EXP";
             }
 
-            if (string.IsNullOrEmpty(invoice.Number))
+            var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
+
+            if (string.IsNullOrEmpty(invoice.Number) && invoice.TypeCode is not ("NC" or "ND"))
+            {
+                // Dataico puede devolver como exitosa la factura que ya existe cuando se repite el
+                // mismo prefijo y número. Verificamos antes de reclamarlo para no reutilizar una
+                // numeración que Dataico ya tiene ocupada.
+                for (var attempt = 0; attempt < 100; attempt++)
+                {
+                    var candidate = await Fel.Infrastructure.Services.ResolutionNumbering.PeekNextNumberAsync(_dbContext, resolution.Id);
+                    var existing = await _dataicoApiService.GetInvoiceByNumberAsync($"{resolution.Prefix}{candidate}", credentials);
+                    var existsInDataico = existing.Success &&
+                        (!string.IsNullOrWhiteSpace(existing.DataicoDocumentId) ||
+                         !string.IsNullOrWhiteSpace(existing.Cufe) ||
+                         !string.IsNullOrWhiteSpace(existing.DocumentNumber));
+                    if (existsInDataico)
+                    {
+                        await Fel.Infrastructure.Services.ResolutionNumbering.CommitNumberAsync(_dbContext, resolution.Id, candidate);
+                        continue;
+                    }
+
+                    var claimed = await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id);
+                    if (claimed == candidate)
+                    {
+                        invoice.Number = candidate.ToString();
+                        break;
+                    }
+                }
+                if (string.IsNullOrEmpty(invoice.Number))
+                    throw new InvalidOperationException("No se pudo encontrar un consecutivo disponible en Dataico.");
+            }
+            else if (string.IsNullOrEmpty(invoice.Number))
             {
                 // Las Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que
                 // no pueden compartir el NextNumber de la resolución de Factura — antes lo hacían,
                 // y cada nota consumía un número que le correspondía a la siguiente factura real.
                 invoice.Number = invoice.TypeCode switch
                 {
-                    "NC" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote)).Number.ToString(),
-                    "ND" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote)).Number.ToString(),
+                    "NC" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote, resolution.Id)).Number.ToString(),
+                    "ND" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote, resolution.Id)).Number.ToString(),
                     _ => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString()
                 };
             }
@@ -88,17 +133,16 @@ namespace Fel.Infrastructure.Dataico
             // Las notas pueden llevar el prefijo de su propia numeración (sucursal con contador propio); sin uno usan el de la resolución.
             invoice.Prefix = invoice.TypeCode switch
             {
-                "NC" => await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote) ?? resolution.Prefix,
-                "ND" => await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote) ?? resolution.Prefix,
+                "NC" => resolution.Prefix,
+                "ND" => resolution.Prefix,
                 _ => resolution.Prefix
             };
 
-            var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
-
             Fel.Infrastructure.Dataico.Models.DataicoResult result;
             Document? originalInvoiceForPdf = null;
+            var externalOriginalId = ExternalOriginalId(invoice);
 
-            if (invoice.TypeCode == "NC" && !invoice.ReferenceDocumentId.HasValue)
+            if (invoice.TypeCode == "NC" && !invoice.ReferenceDocumentId.HasValue && string.IsNullOrWhiteSpace(externalOriginalId))
             {
                 // Nota crédito sin factura de referencia: lleva su propio tercero, los ítems y el motivo; el período es el mes de la emisión.
                 if (customer == null) throw new NotSupportedException("La nota crédito sin factura debe indicar el tercero.");
@@ -122,9 +166,12 @@ namespace Fel.Infrastructure.Dataico
                     throw new NotSupportedException("Esta nota debe referenciar la factura que ajusta.");
                 }
 
-                var originalInvoice = await _dbContext.Documents.FindAsync(invoice.ReferenceDocumentId.Value);
+                var originalInvoice = invoice.ReferenceDocumentId.HasValue
+                    ? await _dbContext.Documents.FindAsync(invoice.ReferenceDocumentId.Value)
+                    : null;
                 originalInvoiceForPdf = originalInvoice;
-                if (originalInvoice == null || string.IsNullOrEmpty(originalInvoice.DataicoDocumentId))
+                var originalDataicoId = originalInvoice?.DataicoDocumentId ?? externalOriginalId;
+                if (string.IsNullOrEmpty(originalDataicoId))
                 {
                     throw new NotSupportedException("La factura original no tiene un identificador de Dataico registrado (puede no haberse emitido por Dataico, o haberse emitido antes de que empezáramos a guardarlo). No se puede generar la nota.");
                 }
@@ -136,10 +183,10 @@ namespace Fel.Infrastructure.Dataico
 
                 result = invoice.TypeCode == "NC"
                     ? await _dataicoApiService.SendCreditNoteAsync(
-                        DataicoDocumentMapper.BuildCreditNoteRequest(invoice, resolution, client, originalInvoice.DataicoDocumentId, items, reasonDianCodes),
+                        DataicoDocumentMapper.BuildCreditNoteRequest(invoice, resolution, client, originalDataicoId, items, reasonDianCodes),
                         credentials)
                     : await _dataicoApiService.SendDebitNoteAsync(
-                        DataicoDocumentMapper.BuildDebitNoteRequest(invoice, resolution, client, originalInvoice.DataicoDocumentId, items, reasonDianCodes),
+                        DataicoDocumentMapper.BuildDebitNoteRequest(invoice, resolution, client, originalDataicoId, items, reasonDianCodes),
                         credentials);
             }
             else
@@ -153,6 +200,15 @@ namespace Fel.Infrastructure.Dataico
 
                 var dataicoRequest = DataicoDocumentMapper.BuildInvoiceRequest(invoice, customer, items, resolution, client, paymentMeans, paymentMeansType, identificationTypeOverrides, isMandate, isExport, aiu);
                 result = await _dataicoApiService.SendInvoiceAsync(dataicoRequest, credentials);
+
+                // Una respuesta 2xx no basta: si Dataico devolviera el documento anterior,
+                // sus datos deben corresponder al adquirente de esta factura.
+                if (result.Success && !string.IsNullOrWhiteSpace(result.CustomerIdentification) &&
+                    !SameIdentification(result.CustomerIdentification, customer?.IdentificationNumber))
+                {
+                    result.Success = false;
+                    result.ErrorMessage = "Dataico devolvió una factura existente con un adquirente diferente al de esta factura.";
+                }
             }
 
             invoice.Status = result.Success ? "APPROVED" : "REJECTED";
@@ -183,5 +239,9 @@ namespace Fel.Infrastructure.Dataico
                 ResponseMessage = invoice.DianResponseMessage
             };
         }
+
+        private static bool SameIdentification(string? left, string? right) =>
+            new string((left ?? string.Empty).Where(char.IsDigit).ToArray()) ==
+            new string((right ?? string.Empty).Where(char.IsDigit).ToArray());
     }
 }

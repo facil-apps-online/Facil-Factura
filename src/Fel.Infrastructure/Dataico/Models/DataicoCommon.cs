@@ -88,6 +88,7 @@ namespace Fel.Infrastructure.Dataico.Models
         // Id interno que Dataico asigna a este documento (campo "uuid" de su respuesta) — lo
         // necesita cualquier Nota Crédito/Débito que lo referencie más adelante.
         public string? DataicoDocumentId { get; set; }
+        public string? CustomerIdentification { get; set; }
         public string? XmlUrl { get; set; }
         public string? PdfUrl { get; set; }
         public string? QrCode { get; set; }

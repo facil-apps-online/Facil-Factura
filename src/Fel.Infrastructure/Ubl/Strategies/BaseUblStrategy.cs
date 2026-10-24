@@ -287,23 +287,30 @@ namespace Fel.Infrastructure.Ubl.Strategies
             }
         }
 
-        protected XElement BuildTaxTotals(UblInvoiceData data)
+        // Un cac:TaxTotal por cada tipo de impuesto (IVA, INC...), con la suma de sus TaxSubtotal (una por tarifa): así lo piden la regla FAS01b y los
+        // XML de ejemplo de la DIAN (en cada uno el IVA y el INC van en TaxTotal distintos). Sirve para el encabezado y para cada línea.
+        protected IEnumerable<XElement> BuildTaxTotals(UblInvoiceData data) => BuildTaxTotals(data.Taxes, data.Currency);
+
+        protected IEnumerable<XElement> BuildTaxTotals(IEnumerable<TaxSubtotal> taxes, string currency)
         {
-            var taxTotals = new XElement(cac + "TaxTotal",
-                new XElement(cbc + "TaxAmount", new XAttribute("currencyID", data.Currency), data.Taxes.Sum(t => t.TaxAmount).ToString("0.00").Replace(",", "."))
-            );
-            foreach (var tax in data.Taxes)
+            foreach (var scheme in taxes.GroupBy(t => t.TaxId))
             {
-                taxTotals.Add(new XElement(cac + "TaxSubtotal",
-                    new XElement(cbc + "TaxableAmount", new XAttribute("currencyID", data.Currency), tax.TaxableAmount.ToString("0.00").Replace(",", ".")),
-                    new XElement(cbc + "TaxAmount", new XAttribute("currencyID", data.Currency), tax.TaxAmount.ToString("0.00").Replace(",", ".")),
-                    new XElement(cac + "TaxCategory",
-                        new XElement(cbc + "Percent", tax.Percent.ToString("0.00").Replace(",", ".")),
-                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", tax.TaxId), new XElement(cbc + "Name", tax.TaxName))
-                    )
-                ));
+                var taxTotal = new XElement(cac + "TaxTotal",
+                    new XElement(cbc + "TaxAmount", new XAttribute("currencyID", currency), scheme.Sum(t => t.TaxAmount).ToString("0.00").Replace(",", "."))
+                );
+                foreach (var tax in scheme)
+                {
+                    taxTotal.Add(new XElement(cac + "TaxSubtotal",
+                        new XElement(cbc + "TaxableAmount", new XAttribute("currencyID", currency), tax.TaxableAmount.ToString("0.00").Replace(",", ".")),
+                        new XElement(cbc + "TaxAmount", new XAttribute("currencyID", currency), tax.TaxAmount.ToString("0.00").Replace(",", ".")),
+                        new XElement(cac + "TaxCategory",
+                            new XElement(cbc + "Percent", tax.Percent.ToString("0.00").Replace(",", ".")),
+                            new XElement(cac + "TaxScheme", new XElement(cbc + "ID", tax.TaxId), new XElement(cbc + "Name", tax.TaxName))
+                        )
+                    ));
+                }
+                yield return taxTotal;
             }
-            return taxTotals;
         }
 
         // Descuentos y cargos a nivel de factura (FAQ01-FAQ09): los que NO afectan las bases gravables
@@ -484,24 +491,8 @@ namespace Fel.Infrastructure.Ubl.Strategies
             // por completo, la DIAN rechazaba con "Tributo IVA/INC informado no coincide... Debe
             // existir un TaxTotal a nivel del cabecera por cada tipo de impuesto que se informa a
             // nivel de línea".
-            if (line.Taxes.Count > 0)
-            {
-                var lineTaxTotal = new XElement(cac + "TaxTotal",
-                    new XElement(cbc + "TaxAmount", new XAttribute("currencyID", currency), line.Taxes.Sum(t => t.TaxAmount).ToString("0.00").Replace(",", "."))
-                );
-                foreach (var tax in line.Taxes)
-                {
-                    lineTaxTotal.Add(new XElement(cac + "TaxSubtotal",
-                        new XElement(cbc + "TaxableAmount", new XAttribute("currencyID", currency), tax.TaxableAmount.ToString("0.00").Replace(",", ".")),
-                        new XElement(cbc + "TaxAmount", new XAttribute("currencyID", currency), tax.TaxAmount.ToString("0.00").Replace(",", ".")),
-                        new XElement(cac + "TaxCategory",
-                            new XElement(cbc + "Percent", tax.Percent.ToString("0.00").Replace(",", ".")),
-                            new XElement(cac + "TaxScheme", new XElement(cbc + "ID", tax.TaxId), new XElement(cbc + "Name", tax.TaxName))
-                        )
-                    ));
-                }
-                lineElement.Add(lineTaxTotal);
-            }
+            // Igual que en el encabezado: un TaxTotal por tipo de impuesto de la línea.
+            foreach (var lineTaxTotal in BuildTaxTotals(line.Taxes, currency)) lineElement.Add(lineTaxTotal);
 
             lineElement.Add(
                 itemElement,

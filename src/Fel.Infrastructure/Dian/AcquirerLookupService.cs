@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Fel.Core.Interfaces;
+using Fel.Infrastructure.Dataico;
 using Fel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -39,13 +40,15 @@ namespace Fel.Infrastructure.Dian
         private readonly ICryptoVault _cryptoVault;
         private readonly IDianSoapClient _dianSoapClient;
         private readonly ILogger<AcquirerLookupService> _logger;
+        private readonly ICryptoService _crypto;
 
-        public AcquirerLookupService(FelDbContext dbContext, ICryptoVault cryptoVault, IDianSoapClient dianSoapClient, ILogger<AcquirerLookupService> logger)
+        public AcquirerLookupService(FelDbContext dbContext, ICryptoVault cryptoVault, IDianSoapClient dianSoapClient, ILogger<AcquirerLookupService> logger, ICryptoService crypto)
         {
             _dbContext = dbContext;
             _cryptoVault = cryptoVault;
             _dianSoapClient = dianSoapClient;
             _logger = logger;
+            _crypto = crypto;
         }
 
         /// <summary>
@@ -55,7 +58,10 @@ namespace Fel.Infrastructure.Dian
         public async Task<bool> IsAvailableAsync(Guid clientId)
         {
             var client = await _dbContext.Clients.AsNoTracking().Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
-            if (client == null || client.Integrator.Code != "NATIVE") return false;
+            if (client == null) return false;
+            // Con Dataico la consulta la hace Dataico con las credenciales de la cuenta del cliente.
+            if (client.Integrator.Code == "DATAICO") return client.IsDeveloperSandbox || HasDataicoCredentials(client);
+            if (client.Integrator.Code != "NATIVE") return false;
             return client.IsDeveloperSandbox || await _dbContext.Certificates.AnyAsync(c => c.ClientId == clientId && c.IsActive);
         }
 
@@ -73,14 +79,32 @@ namespace Fel.Infrastructure.Dian
             var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
             if (client == null) return new(AcquirerLookupStatus.ClientNotFound, type, number, "Emisor no encontrado.");
 
-            if (client.Integrator.Code != "NATIVE")
-                return new(AcquirerLookupStatus.NotNative, type, number, $"Este emisor tiene configurado el proveedor '{client.Integrator.Code}', no emisión directa a la DIAN (NATIVE); la consulta de adquirentes usa el certificado del emisor ante la DIAN.");
+            var isDataico = client.Integrator.Code == "DATAICO";
+            if (client.Integrator.Code != "NATIVE" && !isDataico)
+                return new(AcquirerLookupStatus.NotNative, type, number, $"Este emisor tiene configurado el proveedor '{client.Integrator.Code}', ni emisión directa a la DIAN (NATIVE) ni Dataico; la consulta de adquirentes usa el certificado del emisor ante la DIAN o la cuenta de Dataico.");
+            if (isDataico && !DataicoThirdPartyLookup.SupportedTypes.Contains(type))
+                return new(AcquirerLookupStatus.InvalidType, type, number, "Con Dataico solo se puede consultar cédula de ciudadanía (13) o NIT (31).");
 
             if (TooManyQueries(clientId))
                 return new(AcquirerLookupStatus.TooManyQueries, type, number, $"Se superó el límite de {MaxQueriesPerMinute} consultas por minuto. La DIAN permite esta consulta solo al momento de la venta.");
 
             if (simulate || client.IsDeveloperSandbox)
                 return new(AcquirerLookupStatus.Ok, type, number, Result: new DianAcquirerResult(true, "ADQUIRENTE DE PRUEBA", new[] { "adquirente.prueba@example.com" }, null, "Respuesta simulada (sandbox)"));
+
+            if (isDataico)
+            {
+                if (!HasDataicoCredentials(client))
+                    return new(AcquirerLookupStatus.NoCertificate, type, number, "Este emisor no tiene las credenciales de Dataico configuradas.");
+                var dataico = await DataicoThirdPartyLookup.LookupAsync(DataicoDocumentMapper.ToCredentials(client, _crypto), type, number);
+                if (dataico.Result == null)
+                {
+                    _logger.LogWarning("Consulta de tercero vía Dataico fallida para el emisor {ClientId}, tipo {Type}: {Error}", clientId, type, dataico.Error);
+                    return new(AcquirerLookupStatus.DianError, type, number, dataico.Error);
+                }
+                _logger.LogInformation("Consulta de tercero vía Dataico: emisor {ClientId}, tipo {Type}, número terminado en {Last}, encontrado {Found}.",
+                    clientId, type, number[^Math.Min(3, number.Length)..], dataico.Result.Found);
+                return new(AcquirerLookupStatus.Ok, type, number, Result: dataico.Result);
+            }
 
             var certificate = await _dbContext.Certificates.FirstOrDefaultAsync(c => c.ClientId == clientId && c.IsActive);
             if (certificate == null)
@@ -106,6 +130,9 @@ namespace Fel.Infrastructure.Dian
 
             return new(AcquirerLookupStatus.Ok, type, number, Result: result);
         }
+
+        private static bool HasDataicoCredentials(Fel.Core.Entities.Client client) =>
+            !string.IsNullOrEmpty(client.DataicoAuthTokenEncrypted) && !string.IsNullOrEmpty(client.DataicoAccountId);
 
         private static bool TooManyQueries(Guid clientId)
         {

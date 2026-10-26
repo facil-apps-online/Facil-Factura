@@ -240,7 +240,7 @@ namespace Fel.Infrastructure.Services
                         ? (esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO")
                         : documentTypeTitle,
                     ["DocumentoNumero"] = "DS 1",
-                    ["NotaReferencia"] = esAjuste ? "Motivo del ajuste: Corrección de valores — documento de ejemplo" : null,
+                    ["NotaReferencia"] = esAjuste ? $"Ajusta el documento soporte N° DS 1 del {DateTime.Now.AddDays(-3):dd/MM/yyyy} · Motivo: Corrección de valores\nCUDS 9f2c4e7a1b3d5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7 (ejemplo)" : null,
                     ["ResolucionTexto"] = "Resolución de facturación: 18760000002 vigente desde 01/01/2026 hasta: 31/12/2027. Del DS 1 al DS 100000.",
                     ["Leyenda"] = "Documento soporte de ejemplo.",
                     ["FechaGeneracion"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),

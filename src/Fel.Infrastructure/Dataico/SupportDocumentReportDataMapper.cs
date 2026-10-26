@@ -61,7 +61,19 @@ namespace Fel.Infrastructure.Dataico
             };
         }
 
-        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null)
+        // Referencia de la nota de ajuste, en dos líneas: el documento soporte que ajusta con su fecha y el motivo, y debajo su CUDS. Sin el
+        // documento original (aún no cargado) queda solo el motivo, como antes.
+        public static string? NotaReferenciaAjuste(Document nota, Document? original)
+        {
+            var motivo = string.IsNullOrWhiteSpace(nota.ReferenceConcept) ? null : nota.ReferenceConcept.Trim();
+            if (original == null) return motivo == null ? null : $"Motivo del ajuste: {motivo}";
+
+            var numero = $"{original.Prefix} {original.Number}".Trim();
+            var linea = $"Ajusta el documento soporte N° {numero} del {original.IssueDate:dd/MM/yyyy}" + (motivo == null ? "" : $" · Motivo: {motivo}");
+            return string.IsNullOrWhiteSpace(original.Cufe) ? linea : $"{linea}\nCUDS {original.Cufe}";
+        }
+
+        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null, Document? originalDocument = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -170,7 +182,7 @@ namespace Fel.Infrastructure.Dataico
                         ? (esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO")
                         : documentTypeTitle,
                     ["DocumentoNumero"] = $"{(string.IsNullOrWhiteSpace(document.Prefix) ? resolution?.Prefix : document.Prefix)} {document.Number}".Trim(),
-                    ["NotaReferencia"] = esAjuste && !string.IsNullOrWhiteSpace(document.ReferenceConcept) ? $"Motivo del ajuste: {document.ReferenceConcept}" : null,
+                    ["NotaReferencia"] = esAjuste ? NotaReferenciaAjuste(document, originalDocument) : null,
                     ["ResolucionTexto"] = resolution == null ? null :
                         $"Resolución de facturación: {resolution.ResolutionNumber} vigente desde {resolution.ValidFrom:dd/MM/yyyy} hasta: {resolution.ValidTo:dd/MM/yyyy}. Del {resolution.Prefix} {resolution.NumberStart} al {resolution.Prefix} {resolution.NumberEnd}.",
                     ["FechaGeneracion"] = Fel.Core.Models.ColombiaTime.FromUtc(document.CreatedAt).ToString("dd/MM/yyyy HH:mm:ss"),

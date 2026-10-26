@@ -182,7 +182,7 @@ namespace Fel.Api.Client.Controllers
                 }
 
                 var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
-                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId), document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext), documentTypeTitle: document.DocumentType?.ReportTitle);
+                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId), document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext), documentTypeTitle: document.DocumentType?.ReportTitle, originalDocument: await LoadAdjustedDocumentAsync(document));
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {
@@ -309,6 +309,12 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // El documento soporte que ajusta una nota de ajuste, para que su PDF diga cuál es y con qué CUDS. Null en el documento soporte.
+        private async Task<Document?> LoadAdjustedDocumentAsync(Document document) =>
+            document.TypeCode == AdjustmentTypeCode && document.ReferenceDocumentId.HasValue
+                ? await _dbContext.Documents.AsNoTracking().FirstOrDefaultAsync(d => d.Id == document.ReferenceDocumentId.Value)
+                : null;
+
         [HttpPost("{id}/publish")]
         public async Task<IActionResult> Publish(Guid id)
         {
@@ -400,6 +406,7 @@ namespace Fel.Api.Client.Controllers
                     : resolution.Prefix;
 
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
+                Document? adjustedDocument = null;
                 if (document.TypeCode == AdjustmentTypeCode)
                 {
                     if (!document.ReferenceDocumentId.HasValue)
@@ -412,6 +419,7 @@ namespace Fel.Api.Client.Controllers
                         return BadRequest("El documento soporte original no tiene un CUDS registrado (puede no haberse emitido por Dataico). No se puede generar la nota.");
                     }
 
+                    adjustedDocument = originalDocument;
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     var adjustmentRequest = DataicoDocumentMapper.BuildSupportDocAdjustmentRequest(
                         document, originalDocument, document.Customer!, resolution, client, document.PaymentMeans, document.PaymentMeansType, document.Items);
@@ -439,7 +447,7 @@ namespace Fel.Api.Client.Controllers
                     var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
-                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: pdfCurrencyWords, documentTypeTitle: document.DocumentType?.ReportTitle),
+                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: pdfCurrencyWords, documentTypeTitle: document.DocumentType?.ReportTitle, originalDocument: adjustedDocument),
                         credentials);
                 }
 

@@ -138,16 +138,37 @@ namespace Fel.Api.Superadmin.Controllers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] TaxParameterRequest request)
         {
+            var code = request.Code.Trim().ToUpperInvariant();
+            if (await _dbContext.TaxParameters.AnyAsync(p => p.Code == code && p.EffectiveFrom == request.EffectiveFrom))
+                return BadRequest($"Ya existe una vigencia de {code} con esa fecha. Edítela o use otra fecha.");
+
             var parameter = new TaxParameter
             {
                 Id = Guid.NewGuid(),
-                Code = request.Code.Trim().ToUpperInvariant(),
+                Code = code,
                 Value = request.Value,
                 EffectiveFrom = request.EffectiveFrom,
                 CreatedAt = DateTime.UtcNow
             };
 
             _dbContext.TaxParameters.Add(parameter);
+            await _dbContext.SaveChangesAsync();
+            return Ok(parameter);
+        }
+
+        // Corrige una vigencia en su lugar: el valor y la fecha. El código no cambia, porque los cálculos buscan por código.
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] TaxParameterRequest request)
+        {
+            var parameter = await _dbContext.TaxParameters.FindAsync(id);
+            if (parameter == null) return NotFound();
+
+            if (await _dbContext.TaxParameters.AnyAsync(p => p.Id != id && p.Code == parameter.Code && p.EffectiveFrom == request.EffectiveFrom))
+                return BadRequest($"Ya existe otra vigencia de {parameter.Code} con esa fecha.");
+
+            parameter.Value = request.Value;
+            parameter.EffectiveFrom = request.EffectiveFrom;
+
             await _dbContext.SaveChangesAsync();
             return Ok(parameter);
         }

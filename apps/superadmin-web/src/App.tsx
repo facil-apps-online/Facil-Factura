@@ -19,6 +19,7 @@ import { RetentionEngine } from './RetentionEngine';
 import { DocumentTemplates } from './DocumentTemplates';
 import { TemplateEditor } from './TemplateEditor';
 import { Billing } from './Billing';
+import { MonthlyComparison } from './MonthlyComparison';
 import { ForgotPassword } from './ForgotPassword';
 import { ResetPassword } from './ResetPassword';
 import { CertificateProviders } from './CertificateProviders';
@@ -42,7 +43,6 @@ function slugify(value: string) {
 interface DashboardMetrics {
   activeTenants: number;
   documentsThisMonth: number;
-  estimatedBilling: number;
 }
 
 interface Tenant {
@@ -188,8 +188,7 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
 const Dashboard = () => {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     activeTenants: 0,
-    documentsThisMonth: 0,
-    estimatedBilling: 0
+    documentsThisMonth: 0
   });
 
   useEffect(() => {
@@ -201,7 +200,7 @@ const Dashboard = () => {
   return (
     <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <h1 className="text-3xl font-extrabold text-white mb-8 tracking-tight">Resumen</h1>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="glass-panel p-6 rounded-2xl hover:shadow-[0_0_20px_rgba(37,99,235,0.2)] transition-all">
           <div className="flex items-center justify-between">
             <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Clientes activos</p>
@@ -216,16 +215,8 @@ const Dashboard = () => {
           </div>
           <p className="text-4xl font-extrabold text-white mt-4">{metrics.documentsThisMonth}</p>
         </div>
-        <div className="glass-panel p-6 rounded-2xl hover:shadow-[0_0_20px_rgba(99,102,241,0.2)] transition-all">
-          <div className="flex items-center justify-between">
-            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Proyección del mes</p>
-            <div className="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20"><span className="text-indigo-400 font-bold">$</span></div>
-          </div>
-          <p className="text-4xl font-extrabold text-indigo-400 mt-4">
-            ${metrics.estimatedBilling.toLocaleString('es-CO')}
-          </p>
-        </div>
       </div>
+      <MonthlyComparison />
     </div>
   );
 };

@@ -221,6 +221,19 @@ namespace Fel.Infrastructure.Services
             return (totalDue, consumptions);
         }
 
+        // Días del mes en que una sucursal cuenta para el cobro por usuario: [from, to). Una inactiva sin fecha de desactivación no cuenta;
+        // con fecha, cuenta hasta ella. Falso si se activó después del mes o se desactivó antes.
+        private static bool TryGetPerUserCoverage(Branch branch, DateTime startDate, DateTime endDate, out DateTime from, out DateTime to)
+        {
+            from = default;
+            to = default;
+            if (!branch.IsActive && branch.DeactivatedAt == null) return false;
+
+            from = branch.CreatedAt > startDate ? branch.CreatedAt.Date : startDate;
+            to = branch.DeactivatedAt.HasValue && branch.DeactivatedAt.Value.Date < endDate ? branch.DeactivatedAt.Value.Date : endDate;
+            return from < endDate && to > from;
+        }
+
         // --- 1b. Per-user (tenant de marca blanca) ---
         // Cobro diario prorrateado por SUCURSAL activa, en fracciones de "usuario-mes" (1.0 = 1 sucursal activa todo el mes). Cada sucursal
         // cuenta desde su fecha de creación y, si se desactivó, hasta su fecha de desactivación (si se reactiva vuelve a contar completa).
@@ -248,12 +261,7 @@ namespace Fel.Infrastructure.Services
             var rawFractionByBranch = new Dictionary<Guid, decimal>();
             foreach (var branch in branches)
             {
-                // Una sucursal inactiva sin fecha de desactivación no cuenta; con fecha, cuenta hasta ella.
-                if (!branch.IsActive && branch.DeactivatedAt == null) continue;
-
-                var coverageStart = branch.CreatedAt > startDate ? branch.CreatedAt.Date : startDate;
-                var coverageEnd = branch.DeactivatedAt.HasValue && branch.DeactivatedAt.Value.Date < endDate ? branch.DeactivatedAt.Value.Date : endDate;
-                if (coverageStart >= endDate || coverageEnd <= coverageStart) continue; // se activó después de este mes o se desactivó antes
+                if (!TryGetPerUserCoverage(branch, startDate, endDate, out var coverageStart, out var coverageEnd)) continue;
 
                 rawFractionByBranch[branch.Id] = (decimal)(coverageEnd - coverageStart).Days / daysInMonth;
             }
@@ -506,7 +514,71 @@ namespace Fel.Infrastructure.Services
                 TenantBreakdown = breakdown.OrderByDescending(x => x.DocumentsEmitted).ToList()
             };
         }
+
+        // --- 4. Superadmin: valor causado por día ---
+        // Por documento: cada tenant e integrador paga todo el mes a la tarifa de su volumen del mes (la misma de GetSuperadminMetricsAsync),
+        // así que cada documento aporta esa tarifa en su día y el último día coincide con el total del mes. Por usuario: el total del mes
+        // (ya con bolsas) se reparte según los días-sucursal que cuentan cada día, es decir, crece cuando se activa una sucursal.
+        public async Task<SuperadminDailyAccrual> GetSuperadminDailyAccrualAsync(int year, int month)
+        {
+            var startDate = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var endDate = startDate.AddMonths(1);
+            var daysInMonth = DateTime.DaysInMonth(year, month);
+
+            var perUserTenantIds = await _dbContext.Tenants.AsNoTracking()
+                .Where(t => t.BillingMode == TenantBillingMode.PerUser)
+                .Select(t => t.Id)
+                .ToListAsync();
+
+            var documentBased = new decimal[daysInMonth];
+            var rows = await _dbContext.Documents.AsNoTracking()
+                .Where(d => d.CreatedAt >= startDate && d.CreatedAt < endDate && d.Status == "APPROVED"
+                    && !perUserTenantIds.Contains(d.Client.TenantId)
+                    && !d.Client.IsDeveloperSandbox)
+                .Select(d => new { d.Client.TenantId, ClientDefaultIntegratorId = d.Client.IntegratorId, DocumentIntegratorId = d.IntegratorId, d.CreatedAt })
+                .ToListAsync();
+
+            foreach (var group in rows.GroupBy(r => new { r.TenantId, IntegratorId = r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId }))
+            {
+                var tariff = await GetSuperadminTariffForVolumeAsync(group.Count(), group.Key.IntegratorId);
+                foreach (var day in group.GroupBy(r => r.CreatedAt.Day))
+                    documentBased[day.Key - 1] += day.Count() * tariff;
+            }
+
+            var perUser = new decimal[daysInMonth];
+            if (perUserTenantIds.Count > 0)
+            {
+                var branches = await _dbContext.Branches.AsNoTracking()
+                    .Where(b => perUserTenantIds.Contains(b.Client.TenantId) && b.Client.IsActive)
+                    .Select(b => new { b.Client.TenantId, Branch = b })
+                    .ToListAsync();
+
+                foreach (var tenantBranches in branches.GroupBy(b => b.TenantId))
+                {
+                    var weight = new decimal[daysInMonth];
+                    foreach (var item in tenantBranches)
+                    {
+                        if (!TryGetPerUserCoverage(item.Branch, startDate, endDate, out var coverFrom, out var coverTo)) continue;
+                        for (var day = coverFrom.Day; day < coverFrom.Day + (coverTo - coverFrom).Days; day++)
+                            weight[day - 1] += 1m;
+                    }
+
+                    var totalWeight = weight.Sum();
+                    if (totalWeight == 0) continue;
+
+                    var total = (await GetTenantPerUserMetricsAsync(tenantBranches.Key, year, month)).AmountDueToSuperadmin;
+                    for (var i = 0; i < daysInMonth; i++)
+                        perUser[i] += total * weight[i] / totalWeight;
+                }
+            }
+
+            return new SuperadminDailyAccrual(documentBased, perUser);
+        }
     }
+
+    // Valor que el superadmin le cobra a los tenants repartido por día de un mes (índice 0 = día 1). Los dos arreglos suman el mismo total
+    // que GetSuperadminMetricsAsync del mismo mes.
+    public sealed record SuperadminDailyAccrual(decimal[] DocumentBased, decimal[] PerUser);
 
     // --- DTOs ---
     public class ClientBillingMetrics

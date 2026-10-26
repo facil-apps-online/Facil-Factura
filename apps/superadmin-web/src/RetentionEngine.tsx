@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Save, Trash2, Percent, ToggleLeft, ToggleRight, Calculator } from 'lucide-react';
+import { Plus, Save, Trash2, Pencil, Percent, ToggleLeft, ToggleRight, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import ConfirmAlert from '@shared/components/ConfirmAlert';
+import SearchableSelect from '@shared/components/SearchableSelect';
 
 interface RetentionConcept {
   id: string;
@@ -33,6 +35,21 @@ const initialConceptForm = {
   baseType: 'Subtotal', baseUvt: '0', rate: '', effectiveFrom: new Date().toISOString().slice(0, 10)
 };
 
+const PERSON_TYPE_OPTIONS = [
+  { value: 'Ambas', label: 'Ambas' },
+  { value: 'Natural', label: 'Natural' },
+  { value: 'Juridica', label: 'Jurídica' },
+];
+const TAX_CATEGORY_OPTIONS = [
+  { value: 'RET_FUENTE', label: 'RET_FUENTE' },
+  { value: 'RET_IVA', label: 'RET_IVA' },
+];
+const BASE_TYPE_OPTIONS = [
+  { value: 'Subtotal', label: BASE_TYPE_LABELS.Subtotal },
+  { value: 'IvaGenerado', label: BASE_TYPE_LABELS.IvaGenerado },
+];
+const SELECT_INPUT_CLASS = 'w-full px-4 py-3 pr-8 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none';
+
 const initialParameterForm = { code: 'UVT', value: '', effectiveFrom: new Date().toISOString().slice(0, 10) };
 
 const parameterColumns: DataTableColumn<TaxParameter>[] = [
@@ -49,6 +66,12 @@ export const RetentionEngine = () => {
   const [parameterForm, setParameterForm] = useState(initialParameterForm);
   const [showConceptModal, setShowConceptModal] = useState(false);
   const [showParameterModal, setShowParameterModal] = useState(false);
+  // Registro que se está editando; null = el formulario crea uno nuevo.
+  const [editingConceptId, setEditingConceptId] = useState<string | null>(null);
+  const [editingParameterId, setEditingParameterId] = useState<string | null>(null);
+  const [conceptToDelete, setConceptToDelete] = useState<RetentionConcept | null>(null);
+  const [parameterToDelete, setParameterToDelete] = useState<TaxParameter | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadConcepts = () => {
     api.get<RetentionConcept[]>('/retention-concepts')
@@ -67,16 +90,40 @@ export const RetentionEngine = () => {
     loadParameters();
   }, []);
 
-  const handleCreateConcept = async (e: React.FormEvent) => {
+  const openNewConcept = () => {
+    setEditingConceptId(null);
+    setConceptForm({ ...initialConceptForm, effectiveFrom: new Date().toISOString().slice(0, 10) });
+    setShowConceptModal(true);
+  };
+
+  const openEditConcept = (c: RetentionConcept) => {
+    setEditingConceptId(c.id);
+    setConceptForm({
+      groupKey: c.groupKey, groupLabel: c.groupLabel, name: c.name, personType: c.personType, taxCategory: c.taxCategory,
+      baseType: c.baseType, baseUvt: String(c.baseUvt), rate: String(c.rate), effectiveFrom: c.effectiveFrom.slice(0, 10)
+    });
+    setShowConceptModal(true);
+  };
+
+  const handleSaveConcept = async (e: React.FormEvent) => {
     e.preventDefault();
+    const payload = { ...conceptForm, baseUvt: parseFloat(conceptForm.baseUvt) || 0, rate: parseFloat(conceptForm.rate) || 0 };
     try {
-      await api.post('/retention-concepts', { ...conceptForm, baseUvt: parseFloat(conceptForm.baseUvt) || 0, rate: parseFloat(conceptForm.rate) || 0 });
-      toast.success('Concepto creado');
+      if (editingConceptId) {
+        // Editar no cambia si el concepto está activo: eso se maneja con el interruptor de la lista.
+        const current = concepts.find(c => c.id === editingConceptId);
+        await api.put(`/retention-concepts/${editingConceptId}`, { ...payload, isActive: current?.isActive ?? true });
+        toast.success('Concepto actualizado');
+      } else {
+        await api.post('/retention-concepts', payload);
+        toast.success('Concepto creado');
+      }
       setConceptForm(initialConceptForm);
+      setEditingConceptId(null);
       setShowConceptModal(false);
       loadConcepts();
     } catch (err: any) {
-      toast.error(err.response?.data || 'Error al crear el concepto');
+      toast.error(err.response?.data || (editingConceptId ? 'Error al actualizar el concepto' : 'Error al crear el concepto'));
     }
   };
 
@@ -89,38 +136,65 @@ export const RetentionEngine = () => {
     }
   };
 
-  const handleDeleteConcept = async (id: string) => {
-    if (!window.confirm('¿Seguro que deseas eliminar este concepto?')) return;
+  const handleDeleteConcept = async () => {
+    if (!conceptToDelete) return;
+    setDeleting(true);
     try {
-      await api.delete(`/retention-concepts/${id}`);
+      await api.delete(`/retention-concepts/${conceptToDelete.id}`);
       toast.success('Eliminado correctamente');
+      setConceptToDelete(null);
       loadConcepts();
     } catch {
       toast.error('No se pudo eliminar el concepto');
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const handleCreateParameter = async (e: React.FormEvent) => {
+  const openNewParameter = () => {
+    setEditingParameterId(null);
+    setParameterForm({ ...initialParameterForm, effectiveFrom: new Date().toISOString().slice(0, 10) });
+    setShowParameterModal(true);
+  };
+
+  const openEditParameter = (p: TaxParameter) => {
+    setEditingParameterId(p.id);
+    setParameterForm({ code: p.code, value: String(p.value), effectiveFrom: p.effectiveFrom.slice(0, 10) });
+    setShowParameterModal(true);
+  };
+
+  const handleSaveParameter = async (e: React.FormEvent) => {
     e.preventDefault();
+    const payload = { ...parameterForm, value: parseFloat(parameterForm.value) || 0 };
     try {
-      await api.post('/tax-parameters', { ...parameterForm, value: parseFloat(parameterForm.value) || 0 });
-      toast.success('Parámetro creado');
+      if (editingParameterId) {
+        await api.put(`/tax-parameters/${editingParameterId}`, payload);
+        toast.success('Parámetro actualizado');
+      } else {
+        await api.post('/tax-parameters', payload);
+        toast.success('Parámetro creado');
+      }
       setParameterForm(initialParameterForm);
+      setEditingParameterId(null);
       setShowParameterModal(false);
       loadParameters();
     } catch (err: any) {
-      toast.error(err.response?.data || 'Error al crear el parámetro');
+      toast.error(err.response?.data || (editingParameterId ? 'Error al actualizar el parámetro' : 'Error al crear el parámetro'));
     }
   };
 
-  const handleDeleteParameter = async (id: string) => {
-    if (!window.confirm('¿Seguro que deseas eliminar esta vigencia?')) return;
+  const handleDeleteParameter = async () => {
+    if (!parameterToDelete) return;
+    setDeleting(true);
     try {
-      await api.delete(`/tax-parameters/${id}`);
+      await api.delete(`/tax-parameters/${parameterToDelete.id}`);
       toast.success('Eliminada correctamente');
+      setParameterToDelete(null);
       loadParameters();
     } catch {
       toast.error('No se pudo eliminar la vigencia');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -170,7 +244,7 @@ export const RetentionEngine = () => {
           </p>
         </div>
         <button
-          onClick={() => tab === 'concepts' ? setShowConceptModal(true) : setShowParameterModal(true)}
+          onClick={() => tab === 'concepts' ? openNewConcept() : openNewParameter()}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-600/30 transition-all transform hover:-translate-y-1"
         >
           <Plus className="w-5 h-5 mr-2" />
@@ -199,9 +273,14 @@ export const RetentionEngine = () => {
             emptyMessage="No hay conceptos de retención registrados."
             columns={conceptColumns}
             actions={c => (
-              <button onClick={() => handleDeleteConcept(c.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${c.groupLabel}`}>
-                <Trash2 className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => openEditConcept(c)} className="p-2 text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-all" title="Editar" aria-label={`Editar ${c.name}`}>
+                  <Pencil className="w-5 h-5" />
+                </button>
+                <button onClick={() => setConceptToDelete(c)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${c.groupLabel}`}>
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
             )}
           />
         </div>
@@ -216,9 +295,14 @@ export const RetentionEngine = () => {
             emptyMessage="No hay parámetros registrados."
             columns={parameterColumns}
             actions={p => (
-              <button onClick={() => handleDeleteParameter(p.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${p.code}`}>
-                <Trash2 className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => openEditParameter(p)} className="p-2 text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-all" title="Editar" aria-label={`Editar ${p.code}`}>
+                  <Pencil className="w-5 h-5" />
+                </button>
+                <button onClick={() => setParameterToDelete(p)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-all" title="Eliminar" aria-label={`Eliminar ${p.code}`}>
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
             )}
           />
         </div>
@@ -227,8 +311,8 @@ export const RetentionEngine = () => {
       {showConceptModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-in zoom-in-95 duration-200 border-slate-700 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2"><Percent className="w-6 h-6 text-indigo-400" /> Nuevo Concepto de Retención</h2>
-            <form onSubmit={handleCreateConcept} className="space-y-4">
+            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2"><Percent className="w-6 h-6 text-indigo-400" /> {editingConceptId ? 'Editar Concepto de Retención' : 'Nuevo Concepto de Retención'}</h2>
+            <form onSubmit={handleSaveConcept} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-300 mb-2">Código interno</label>
@@ -236,11 +320,7 @@ export const RetentionEngine = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-300 mb-2">Tipo de persona</label>
-                  <select className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={conceptForm.personType} onChange={e => setConceptForm({ ...conceptForm, personType: e.target.value })}>
-                    <option value="Ambas">Ambas</option>
-                    <option value="Natural">Natural</option>
-                    <option value="Juridica">Jurídica</option>
-                  </select>
+                  <SearchableSelect options={PERSON_TYPE_OPTIONS} value={conceptForm.personType} onChange={v => setConceptForm({ ...conceptForm, personType: v })} inputClassName={SELECT_INPUT_CLASS} required />
                 </div>
               </div>
               <div>
@@ -254,17 +334,11 @@ export const RetentionEngine = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-300 mb-2">Categoría</label>
-                  <select className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={conceptForm.taxCategory} onChange={e => setConceptForm({ ...conceptForm, taxCategory: e.target.value })}>
-                    <option value="RET_FUENTE">RET_FUENTE</option>
-                    <option value="RET_IVA">RET_IVA</option>
-                  </select>
+                  <SearchableSelect options={TAX_CATEGORY_OPTIONS} value={conceptForm.taxCategory} onChange={v => setConceptForm({ ...conceptForm, taxCategory: v })} inputClassName={SELECT_INPUT_CLASS} required />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-300 mb-2">Base de cálculo</label>
-                  <select className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={conceptForm.baseType} onChange={e => setConceptForm({ ...conceptForm, baseType: e.target.value })}>
-                    <option value="Subtotal">{BASE_TYPE_LABELS.Subtotal}</option>
-                    <option value="IvaGenerado">{BASE_TYPE_LABELS.IvaGenerado}</option>
-                  </select>
+                  <SearchableSelect options={BASE_TYPE_OPTIONS} value={conceptForm.baseType} onChange={v => setConceptForm({ ...conceptForm, baseType: v })} inputClassName={SELECT_INPUT_CLASS} required />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4">
@@ -282,7 +356,7 @@ export const RetentionEngine = () => {
                 </div>
               </div>
               <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowConceptModal(false)} className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button type="button" onClick={() => { setShowConceptModal(false); setEditingConceptId(null); }} className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
                 <button type="submit" className="flex-1 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex justify-center items-center">
                   <Save className="w-5 h-5 mr-2" /> Guardar
                 </button>
@@ -295,12 +369,16 @@ export const RetentionEngine = () => {
       {showParameterModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-md animate-in zoom-in-95 duration-200 border-slate-700">
-            <h2 className="text-2xl font-bold text-white mb-6">Nueva Vigencia de Parámetro</h2>
-            <p className="text-sm text-slate-400 mb-4">Crea una nueva vigencia cuando cambie el valor. Así se conservan los cálculos de documentos anteriores.</p>
-            <form onSubmit={handleCreateParameter} className="space-y-5">
+            <h2 className="text-2xl font-bold text-white mb-6">{editingParameterId ? 'Editar Vigencia de Parámetro' : 'Nueva Vigencia de Parámetro'}</h2>
+            <p className="text-sm text-slate-400 mb-4">
+              {editingParameterId
+                ? 'Editar corrige esta vigencia en su lugar. Si el valor cambió por una norma nueva, mejor crea una vigencia nueva con su fecha para conservar la anterior.'
+                : 'Crea una nueva vigencia cuando cambie el valor. Así se conservan los cálculos de documentos anteriores.'}
+            </p>
+            <form onSubmit={handleSaveParameter} className="space-y-5">
               <div>
                 <label className="block text-sm font-bold text-slate-300 mb-2">Código</label>
-                <input type="text" required className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono placeholder:text-slate-500" value={parameterForm.code} onChange={e => setParameterForm({ ...parameterForm, code: e.target.value.toUpperCase() })} placeholder="UVT" />
+                <input type="text" required readOnly={!!editingParameterId} className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono placeholder:text-slate-500 read-only:opacity-60" value={parameterForm.code} onChange={e => setParameterForm({ ...parameterForm, code: e.target.value.toUpperCase() })} placeholder="UVT" />
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-300 mb-2">Valor ($)</label>
@@ -311,7 +389,7 @@ export const RetentionEngine = () => {
                 <input type="date" required className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500" value={parameterForm.effectiveFrom} onChange={e => setParameterForm({ ...parameterForm, effectiveFrom: e.target.value })} />
               </div>
               <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowParameterModal(false)} className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button type="button" onClick={() => { setShowParameterModal(false); setEditingParameterId(null); }} className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">Cancelar</button>
                 <button type="submit" className="flex-1 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex justify-center items-center">
                   <Save className="w-5 h-5 mr-2" /> Guardar
                 </button>
@@ -320,6 +398,27 @@ export const RetentionEngine = () => {
           </div>
         </div>
       )}
+
+      <ConfirmAlert
+        theme="dark"
+        open={conceptToDelete !== null}
+        onOpenChange={open => { if (!open) setConceptToDelete(null); }}
+        title="Eliminar concepto"
+        description={conceptToDelete ? `Se eliminará "${conceptToDelete.name}" del catálogo. Los clientes que lo tenían habilitado dejarán de verlo. Esta acción no se puede deshacer.` : ''}
+        confirmText="Eliminar"
+        busy={deleting}
+        onConfirm={handleDeleteConcept}
+      />
+      <ConfirmAlert
+        theme="dark"
+        open={parameterToDelete !== null}
+        onOpenChange={open => { if (!open) setParameterToDelete(null); }}
+        title="Eliminar vigencia"
+        description={parameterToDelete ? `Se eliminará la vigencia de ${parameterToDelete.code} desde el ${new Date(parameterToDelete.effectiveFrom).toLocaleDateString('es-CO')}. Esta acción no se puede deshacer.` : ''}
+        confirmText="Eliminar"
+        busy={deleting}
+        onConfirm={handleDeleteParameter}
+      />
     </div>
   );
 };

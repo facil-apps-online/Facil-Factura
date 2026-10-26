@@ -27,15 +27,115 @@ namespace Fel.Api.Superadmin.Controllers
             var activeTenants = await _dbContext.Tenants.CountAsync(t => t.IsActive);
             
             var today = DateTime.UtcNow;
-            
+
             var metrics = await _billingService.GetSuperadminMetricsAsync(today.Year, today.Month);
 
             return Ok(new
             {
                 ActiveTenants = activeTenants,
-                DocumentsThisMonth = metrics.TotalDocuments,
-                EstimatedBilling = metrics.TotalAmountDueFromTenants
+                DocumentsThisMonth = metrics.TotalDocuments
             });
+        }
+
+        // ----- Mes en curso contra el mes anterior -----
+        public record ComparisonPoint(int Day, decimal? Current, decimal? Projected, decimal? Previous);
+
+        public class MonthlyComparison
+        {
+            public int Day { get; set; }
+            public int DaysInMonth { get; set; }
+            public decimal GeneratedToDate { get; set; }
+            public decimal ProjectedLow { get; set; }
+            public decimal ProjectedHigh { get; set; }
+            public decimal ProjectedCentral { get; set; }
+            public decimal PreviousSameDay { get; set; }
+            public decimal PreviousMonthTotal { get; set; }
+            public decimal? VsPreviousSameDayPercent { get; set; }
+            public decimal? ProjectedVsPreviousTotalPercent { get; set; }
+            public string CurrentLabel { get; set; } = string.Empty;
+            public string PreviousLabel { get; set; } = string.Empty;
+            public List<ComparisonPoint> Series { get; set; } = new();
+        }
+
+        private static decimal? PercentChange(decimal value, decimal reference) => reference > 0 ? Math.Round((value / reference - 1m) * 100m, 1) : null;
+
+        // Lo causado a hoy es exacto. La proyección del cobro por usuario también (cada sucursal activa cuenta hasta fin de mes); la del
+        // cobro por documento suma al ritmo diario lo que falta del mes, y se da como rango entre el ritmo de los últimos 7 días completos y
+        // el del mes hasta ayer. El día de hoy se deja fuera del ritmo porque está a medias, y la proyección nunca baja de lo ya causado.
+        [HttpGet("monthly-comparison")]
+        public async Task<IActionResult> GetMonthlyComparison()
+        {
+            var now = DateTime.UtcNow;
+            var previousStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-1);
+            var day = now.Day;
+            var daysInMonth = DateTime.DaysInMonth(now.Year, now.Month);
+            var daysInPrevious = DateTime.DaysInMonth(previousStart.Year, previousStart.Month);
+
+            var current = await _billingService.GetSuperadminDailyAccrualAsync(now.Year, now.Month);
+            var previous = await _billingService.GetSuperadminDailyAccrualAsync(previousStart.Year, previousStart.Month);
+
+            var previousDaily = Enumerable.Range(0, daysInPrevious).Select(i => previous.DocumentBased[i] + previous.PerUser[i]).ToArray();
+            var previousCumulative = new decimal[daysInPrevious];
+            decimal running = 0;
+            for (var i = 0; i < daysInPrevious; i++) { running += previousDaily[i]; previousCumulative[i] = running; }
+
+            var currentCumulative = new decimal[day];
+            running = 0;
+            for (var i = 0; i < day; i++) { running += current.DocumentBased[i] + current.PerUser[i]; currentCumulative[i] = running; }
+            var generated = currentCumulative[day - 1];
+
+            // Ritmo diario del cobro por documento con días completos (hasta ayer). El día 1 aún no hay ninguno: se usa el del mes anterior.
+            decimal rateMonth, rateRecent;
+            if (day > 1)
+            {
+                var full = day - 1;
+                rateMonth = current.DocumentBased.Take(full).Sum() / full;
+                var recent = Math.Min(7, full);
+                rateRecent = current.DocumentBased.Skip(full - recent).Take(recent).Sum() / recent;
+            }
+            else
+            {
+                rateMonth = rateRecent = previous.DocumentBased.Sum() / daysInPrevious;
+            }
+
+            var documentsThroughYesterday = current.DocumentBased.Take(day - 1).Sum();
+            var documentsThroughToday = current.DocumentBased.Take(day).Sum();
+            var perUserFullMonth = current.PerUser.Sum();
+            decimal Project(decimal rate) => perUserFullMonth + Math.Max(documentsThroughToday, documentsThroughYesterday + rate * (daysInMonth - day + 1));
+
+            var projectedLow = Math.Min(Project(rateMonth), Project(rateRecent));
+            var projectedHigh = Math.Max(Project(rateMonth), Project(rateRecent));
+            var projectedCentral = Math.Round((projectedLow + projectedHigh) / 2m, 2);
+            var previousSameDay = previousCumulative[Math.Min(day, daysInPrevious) - 1];
+
+            var result = new MonthlyComparison
+            {
+                Day = day,
+                DaysInMonth = daysInMonth,
+                GeneratedToDate = Math.Round(generated, 2),
+                ProjectedLow = Math.Round(projectedLow, 2),
+                ProjectedHigh = Math.Round(projectedHigh, 2),
+                ProjectedCentral = projectedCentral,
+                PreviousSameDay = Math.Round(previousSameDay, 2),
+                PreviousMonthTotal = Math.Round(previousCumulative[daysInPrevious - 1], 2),
+                VsPreviousSameDayPercent = PercentChange(generated, previousSameDay),
+                ProjectedVsPreviousTotalPercent = PercentChange(projectedCentral, previousCumulative[daysInPrevious - 1]),
+                CurrentLabel = Fel.Infrastructure.Services.MonthRange.Label(now.Year, now.Month),
+                PreviousLabel = Fel.Infrastructure.Services.MonthRange.Label(previousStart.Year, previousStart.Month)
+            };
+
+            for (var d = 1; d <= Math.Max(daysInMonth, daysInPrevious); d++)
+            {
+                decimal? cur = d <= day ? Math.Round(currentCumulative[d - 1], 2) : null;
+                // La línea proyectada nace en el último punto real (hoy) y llega a la proyección el último día del mes.
+                decimal? projected = null;
+                if (d == day) projected = Math.Round(generated, 2);
+                else if (d > day && d <= daysInMonth) projected = Math.Round(generated + (projectedCentral - generated) * (d - day) / (daysInMonth - day), 2);
+                decimal? prev = d <= daysInPrevious ? Math.Round(previousCumulative[d - 1], 2) : null;
+                result.Series.Add(new ComparisonPoint(d, cur, projected, prev));
+            }
+
+            return Ok(result);
         }
 
         [HttpGet("billing-metrics")]

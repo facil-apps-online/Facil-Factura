@@ -98,7 +98,7 @@ namespace Fel.Api.Client.Imports
 
             string[][] examples =
             {
-                new[] { "1", "DEBITO", "TRANSFERENCIA", "", "", "Pago del mes de octubre", "CC", "1032456789", "JUAN CARLOS PEREZ GOMEZ", "PERSONA_NATURAL", "CALLE 10 # 20-30", "3109876543", "Bogota, D.C.", "BOGOTA",
+                new[] { "1", "DEBITO", "BANK_TRANSFER", "", "", "Pago del mes de octubre", "CC", "1032456789", "JUAN CARLOS PEREZ GOMEZ", "PERSONA_NATURAL", "CALLE 10 # 20-30", "3109876543", "Bogota, D.C.", "BOGOTA",
                     "juan.perez@correo.com", "NO_RESPONSABLE_DE_IVA", "ORDINARIO", "PENSION", "Pensión octubre", "1", "335000", "", "", "", "", "", "", "" },
                 new[] { "2", "CREDITO", "", "", "OC-100", "", "NIT", "900123456", "EJEMPLO COMERCIAL S.A.S.", "PERSONA_JURIDICA", "CARRERA 43A # 1-50", "3001234567", "Medellin", "ANTIOQUIA",
                     "facturacion@ejemplo.com", "RESPONSABLE_DE_IVA", "ORDINARIO", "SRV-001", "Servicio de asesoría", "2", "150000", "", "19", "", "", "", "", "" },
@@ -115,7 +115,7 @@ namespace Fel.Api.Client.Imports
                 }
 
             Dropdown(sheet, 2, "DEBITO", "CREDITO");
-            Dropdown(sheet, 3, "TRANSFERENCIA", "CASH", "DEBIT_CARD", "CREDIT_CARD", "MUTUAL_AGREEMENT");
+            Dropdown(sheet, 3, "BANK_TRANSFER", "CASH", "DEBIT_CARD", "CREDIT_CARD", "MUTUAL_AGREEMENT");
             Dropdown(sheet, 7, "CC", "NIT", "CE", "TI", "RC", "NUIP", "TE", "PEP", "PPT", "PASAPORTE", "IE");
             sheet.Columns().AdjustToContents();
             foreach (var col in new[] { 4, 8, 12 }) sheet.Column(col).Style.NumberFormat.Format = "@";
@@ -126,7 +126,7 @@ namespace Fel.Api.Client.Imports
                 {
                     new[] { "NUMERO", "No", "Agrupa las líneas de una misma factura", "No es el número de la factura: el consecutivo lo asigna el sistema al emitir. Sin NUMERO, cada fila es una factura." },
                     new[] { "TIPO_MEDIO_DE_PAGO", "Sí", "Forma de pago", "DEBITO (Contado) o CREDITO." },
-                    new[] { "MEDIO_DE_PAGO", "Contado", "Medio de pago", "TRANSFERENCIA (o BANK_TRANSFER), CASH (efectivo), DEBIT_CARD, CREDIT_CARD, MUTUAL_AGREEMENT. Si no se reconoce lo eliges en la vista previa. En crédito no se pide." },
+                    new[] { "MEDIO_DE_PAGO", "Contado", "Medio de pago", "BANK_TRANSFER (o TRANSFERENCIA), CASH (efectivo), DEBIT_CARD, CREDIT_CARD, MUTUAL_AGREEMENT. Si no se reconoce lo eliges en la vista previa. En crédito no se pide." },
                     new[] { "FECHA_VENCIMIENTO", "Crédito", "Vencimiento de la factura a crédito (dd/mm/aaaa)", "Debe ser posterior a hoy. De contado no se usa: vence el día de la emisión." },
                     new[] { "FECHA_EXPEDICION", "No", "Fecha de emisión del archivo", "Se ignora: las facturas se crean con la fecha de hoy (hora de Colombia)." },
                     new[] { "ORDEN_DE_COMPRA / OBSERVACIONES", "No", "Orden de compra del cliente y observaciones de la factura", "" },

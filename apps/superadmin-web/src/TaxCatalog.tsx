@@ -3,6 +3,7 @@ import { Plus, Save, Trash2, Percent, ToggleLeft, ToggleRight, Pencil } from 'lu
 import { toast } from 'sonner';
 import { api } from './api';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import ConfirmAlert from '@shared/components/ConfirmAlert';
 
 type TaxCatalogKind =
   | 'Retention' | 'OtherTax' | 'IvaRate' | 'PaymentTerm' | 'PaymentMeans'
@@ -15,6 +16,7 @@ interface TaxCatalogItem {
   kind: TaxCatalogKind;
   rate: number | null;
   wordsName: string | null;
+  dianCode: string | null;
   isActive: boolean;
 }
 
@@ -55,6 +57,9 @@ const CATEGORY_FIELD_LABEL: Record<string, string> = {
   Incoterm: 'Código Incoterm (CFR, FOB...)'
 };
 
+// Solo los medios de pago llevan código DIAN: es el que la emisión directa envía en el XML.
+const DIAN_CODE_KINDS: TaxCatalogKind[] = ['PaymentMeans'];
+
 const NUMERIC_KINDS: TaxCatalogKind[] = ['IvaRate', 'PaymentTerm'];
 
 const KIND_BADGE_CLASSES: Record<string, string> = {
@@ -78,12 +83,16 @@ const KIND_BADGE_CLASSES: Record<string, string> = {
 // Para filtrar la tabla dado el volumen creciente de catálogos (ej. 53 medios de pago de nómina).
 const KIND_FILTER_OPTIONS = Object.keys(KIND_LABELS) as TaxCatalogKind[];
 
+const EMPTY_FORM = { category: '', name: '', kind: 'Retention', rate: '', wordsName: '', dianCode: '' };
+
 export const TaxCatalog = () => {
   const [items, setItems] = useState<TaxCatalogItem[]>([]);
-  const [formData, setFormData] = useState({ category: '', name: '', kind: 'Retention', rate: '', wordsName: '' });
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<string>('');
+  const [deleteTarget, setDeleteTarget] = useState<TaxCatalogItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadItems = () => {
     api.get<TaxCatalogItem[]>('/tax-catalog')
@@ -98,12 +107,12 @@ export const TaxCatalog = () => {
   const closeModal = () => {
     setShowModal(false);
     setEditingId(null);
-    setFormData({ category: '', name: '', kind: 'Retention', rate: '', wordsName: '' });
+    setFormData(EMPTY_FORM);
   };
 
   const openCreateModal = () => {
     setEditingId(null);
-    setFormData({ category: '', name: '', kind: 'Retention', rate: '', wordsName: '' });
+    setFormData(EMPTY_FORM);
     setShowModal(true);
   };
 
@@ -114,14 +123,15 @@ export const TaxCatalog = () => {
       name: item.name,
       kind: item.kind,
       rate: item.rate != null ? String(item.rate) : '',
-      wordsName: item.wordsName ?? ''
+      wordsName: item.wordsName ?? '',
+      dianCode: item.dianCode ?? ''
     });
     setShowModal(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...formData, rate: formData.kind === 'Retention' && formData.rate !== '' ? parseFloat(formData.rate) : null, wordsName: formData.kind === 'Currency' ? formData.wordsName : null };
+    const payload = { ...formData, rate: formData.kind === 'Retention' && formData.rate !== '' ? parseFloat(formData.rate) : null, wordsName: formData.kind === 'Currency' ? formData.wordsName : null, dianCode: DIAN_CODE_KINDS.includes(formData.kind as TaxCatalogKind) ? formData.dianCode : null };
     try {
       if (editingId) {
         await api.put(`/tax-catalog/${editingId}`, { ...payload, isActive: items.find(i => i.id === editingId)?.isActive ?? true });
@@ -146,14 +156,18 @@ export const TaxCatalog = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('¿Seguro que deseas eliminar esta categoría?')) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await api.delete(`/tax-catalog/${id}`);
+      await api.delete(`/tax-catalog/${deleteTarget.id}`);
       toast.success('Eliminada correctamente');
+      setDeleteTarget(null);
       loadItems();
     } catch (err: any) {
       toast.error(err.response?.data || 'No se pudo eliminar la categoría');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -175,6 +189,13 @@ export const TaxCatalog = () => {
       render: item => <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-slate-800 text-slate-300 font-mono">{item.category}</span>,
       sortValue: item => item.category,
       searchValue: item => item.category,
+    },
+    {
+      key: 'dianCode',
+      header: 'Código DIAN',
+      render: item => (item.dianCode ? <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-slate-800 text-slate-300 font-mono">{item.dianCode}</span> : (item.kind === 'PaymentMeans' ? <span className="text-xs font-bold text-amber-400">Sin código</span> : '—')),
+      sortValue: item => item.dianCode ?? '',
+      searchValue: item => item.dianCode ?? '',
     },
     { key: 'rate', header: 'Tarifa', align: 'right', cellClassName: 'font-mono text-slate-300', render: item => (item.rate != null ? `${item.rate}%` : '—'), sortValue: item => item.rate },
     { key: 'name', header: 'Nombre', primary: true, cellClassName: 'font-bold text-white', render: item => item.name, sortValue: item => item.name, searchValue: item => item.name },
@@ -243,7 +264,7 @@ export const TaxCatalog = () => {
               <button onClick={() => startEdit(item)} className="p-2 text-slate-300 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl" title="Editar" aria-label={`Editar ${item.name}`}>
                 <Pencil className="w-5 h-5" />
               </button>
-              <button onClick={() => handleDelete(item.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl" title="Eliminar" aria-label={`Eliminar ${item.name}`}>
+              <button onClick={() => setDeleteTarget(item)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl" title="Eliminar" aria-label={`Eliminar ${item.name}`}>
                 <Trash2 className="w-5 h-5" />
               </button>
             </>
@@ -292,6 +313,21 @@ export const TaxCatalog = () => {
                   placeholder={formData.kind === 'IvaRate' ? '19' : formData.kind === 'PaymentTerm' ? '30' : 'RET_FUENTE'}
                 />
               </div>
+              {DIAN_CODE_KINDS.includes(formData.kind as TaxCatalogKind) && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-300 mb-2">Código DIAN</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={3}
+                    className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono placeholder:text-slate-500"
+                    value={formData.dianCode}
+                    onChange={e => setFormData({ ...formData, dianCode: e.target.value.toUpperCase() })}
+                    placeholder="45"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Código de la tabla de medios de pago del anexo técnico de la DIAN (10 efectivo, 48 tarjeta crédito, ZZZ acuerdo mutuo...). Lo usa la emisión directa en el XML.</p>
+                </div>
+              )}
               {formData.kind === 'Retention' && (
                 <div>
                   <label className="block text-sm font-bold text-slate-300 mb-2">Tarifa (%)</label>
@@ -344,6 +380,16 @@ export const TaxCatalog = () => {
           </div>
         </div>
       )}
+      <ConfirmAlert
+        theme="dark"
+        open={deleteTarget !== null}
+        onOpenChange={open => { if (!open) setDeleteTarget(null); }}
+        title="Eliminar categoría"
+        description={`¿Seguro que deseas eliminar "${deleteTarget?.name ?? ''}"? Esta acción no se puede deshacer.`}
+        confirmText="Eliminar"
+        busy={deleting}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 };

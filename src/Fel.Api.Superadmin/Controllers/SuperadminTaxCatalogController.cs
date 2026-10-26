@@ -27,7 +27,7 @@ namespace Fel.Api.Superadmin.Controllers
         {
             var items = await _dbContext.TaxCatalogItems
                 .OrderBy(i => i.Kind).ThenBy(i => i.Category).ThenBy(i => i.Rate)
-                .Select(i => new { i.Id, i.Category, i.Name, Kind = i.Kind.ToString(), i.Rate, i.WordsName, i.IsActive })
+                .Select(i => new { i.Id, i.Category, i.Name, Kind = i.Kind.ToString(), i.Rate, i.WordsName, i.DianCode, i.IsActive })
                 .ToListAsync();
 
             return Ok(items);
@@ -43,6 +43,9 @@ namespace Fel.Api.Superadmin.Controllers
 
             var wordsName = NormalizeWordsName(kind, request.WordsName, out var wordsError);
             if (wordsError != null) return BadRequest(wordsError);
+
+            var dianCode = NormalizeDianCode(kind, request.DianCode, out var dianCodeError);
+            if (dianCodeError != null) return BadRequest(dianCodeError);
 
             var category = request.Category.Trim().ToUpperInvariant();
             if (await _dbContext.TaxCatalogItems.AnyAsync(i => i.Category == category && i.Kind == kind && i.Rate == request.Rate))
@@ -60,6 +63,7 @@ namespace Fel.Api.Superadmin.Controllers
                 Kind = kind,
                 Rate = request.Rate,
                 WordsName = wordsName,
+                DianCode = dianCode,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -84,11 +88,16 @@ namespace Fel.Api.Superadmin.Controllers
             var wordsName = NormalizeWordsName(kind, request.WordsName, out var wordsError);
             if (wordsError != null) return BadRequest(wordsError);
 
+            var dianCode = NormalizeDianCode(kind, request.DianCode, out var dianCodeError);
+            if (dianCodeError != null) return BadRequest(dianCodeError);
+
             item.Category = request.Category.Trim().ToUpperInvariant();
             item.Name = request.Name.Trim();
             item.Kind = kind;
             item.Rate = request.Rate;
             item.WordsName = wordsName;
+            // En los demás tipos DianCode guarda otra cosa (p. ej. el motivo de Dataico de las notas) que esta pantalla no edita: se conserva.
+            if (kind == TaxCatalogKind.PaymentMeans) item.DianCode = dianCode;
             item.IsActive = request.IsActive;
 
             await _dbContext.SaveChangesAsync();
@@ -111,6 +120,22 @@ namespace Fel.Api.Superadmin.Controllers
             return name;
         }
 
+        // El código DIAN solo se captura en los medios de pago (tabla de medios de pago del anexo técnico: "10", "45", "ZZZ"). La emisión
+        // directa lo envía en el XML, así que no puede quedar vacío. En los demás tipos no se pide.
+        private static string? NormalizeDianCode(TaxCatalogKind kind, string? value, out string? error)
+        {
+            error = null;
+            if (kind != TaxCatalogKind.PaymentMeans) return null;
+            var code = value?.Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(code))
+            {
+                error = "El medio de pago necesita el código DIAN (tabla de medios de pago del anexo técnico, por ejemplo 10, 45 o ZZZ).";
+                return null;
+            }
+            if (code.Length > 3 || !code.All(char.IsLetterOrDigit)) error = "El código DIAN debe tener hasta 3 letras o números (por ejemplo 10, 45 o ZZZ).";
+            return code;
+        }
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)
         {
@@ -131,6 +156,7 @@ namespace Fel.Api.Superadmin.Controllers
         public string Kind { get; set; } = "Retention";
         public decimal? Rate { get; set; }
         public string? WordsName { get; set; }
+        public string? DianCode { get; set; }
         public bool IsActive { get; set; } = true;
     }
 }

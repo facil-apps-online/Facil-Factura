@@ -11,12 +11,15 @@ namespace Fel.Core.Entities
     {
         // Factura (FE-STD), Nota Crédito, Nota Débito — lo mismo que ya se ofrecía antes de que
         // existiera este mecanismo (InvoiceController.SupportedDianCodes), para no regresionar a
-        // los Clients existentes.
+        // los Clients existentes. Más el Documento Soporte y su Nota de Ajuste: sin tenerlos habilitados el cliente no los ve en
+        // "Diseño de mis Facturas" y no puede elegir su plantilla, que se exige para emitir por Dataico.
         public static readonly IReadOnlyList<Guid> StandardDocumentTypeIds = new[]
         {
             Guid.Parse("00000000-0000-0000-0000-000000000001"), // FE-STD
             Guid.Parse("00000000-0000-0000-0000-000000000009"), // NC
-            Guid.Parse("00000000-0000-0000-0000-000000000010")  // ND
+            Guid.Parse("00000000-0000-0000-0000-000000000010"), // ND
+            Guid.Parse("00000000-0000-0000-0000-000000000024"), // DS
+            Guid.Parse("00000000-0000-0000-0000-000000000025")  // DS-AJUSTE
         };
 
         // Compras generales, Servicios generales y Honorarios y comisiones (declarante + no

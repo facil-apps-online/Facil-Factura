@@ -89,7 +89,7 @@ namespace Fel.Api.Client.Imports
 
         private static readonly Dictionary<string, string> PaymentMeansByText = new()
         {
-            ["BANK TRANSFER"] = "TRANSFERENCIA", ["TRANSFERENCIA"] = "TRANSFERENCIA", ["TRANSFERENCIA BANCARIA"] = "TRANSFERENCIA", ["CONSIGNACION"] = "TRANSFERENCIA",
+            ["BANK TRANSFER"] = "BANK_TRANSFER", ["TRANSFERENCIA"] = "BANK_TRANSFER", ["TRANSFERENCIA BANCARIA"] = "BANK_TRANSFER", ["CONSIGNACION"] = "BANK_TRANSFER",
             ["CASH"] = "CASH", ["EFECTIVO"] = "CASH",
             ["CREDIT CARD"] = "CREDIT_CARD", ["TARJETA CREDITO"] = "CREDIT_CARD", ["TARJETA DE CREDITO"] = "CREDIT_CARD",
             ["DEBIT CARD"] = "DEBIT_CARD", ["TARJETA DEBITO"] = "DEBIT_CARD", ["TARJETA DE DEBITO"] = "DEBIT_CARD",

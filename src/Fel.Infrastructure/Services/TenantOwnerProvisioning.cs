@@ -90,6 +90,7 @@ namespace Fel.Infrastructure.Services
                     db.ClientEnabledDocumentTypes.Add(new ClientEnabledDocumentType { Id = Guid.NewGuid(), ClientId = owner.Id, DocumentTypeId = documentTypeId });
                 foreach (var retentionConceptId in DefaultCatalogSets.StandardRetentionConceptIds)
                     db.ClientEnabledRetentionConcepts.Add(new ClientEnabledRetentionConcept { Id = Guid.NewGuid(), ClientId = owner.Id, RetentionConceptId = retentionConceptId });
+                await DefaultTemplateAssigner.AddDefaultsAsync(db, owner.Id, tenant.Id, DefaultCatalogSets.StandardDocumentTypeIds);
                 result.Created = true;
             }
 

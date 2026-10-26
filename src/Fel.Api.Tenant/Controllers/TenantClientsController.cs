@@ -326,6 +326,8 @@ namespace Fel.Api.Tenant.Controllers
                     RetentionConceptId = retentionConceptId
                 });
             }
+            // Cada tipo habilitado nace con la plantilla principal elegida; el cliente puede cambiarla después.
+            await DefaultTemplateAssigner.AddDefaultsAsync(_dbContext, client.Id, tenantId, DefaultCatalogSets.StandardDocumentTypeIds);
 
             await _dbContext.SaveChangesAsync();
 
@@ -821,6 +823,8 @@ namespace Fel.Api.Tenant.Controllers
                     SendEmailToRecipient = ClientEnabledDocumentType.DefaultSendEmail(newCodes.GetValueOrDefault(documentTypeId))
                 });
             }
+            // Los tipos que se acaban de habilitar quedan con la plantilla principal elegida (si el cliente ya eligió otra, se respeta).
+            await DefaultTemplateAssigner.AddDefaultsAsync(_dbContext, id, tenantId, newIds);
 
             await _dbContext.SaveChangesAsync();
             return Ok(new { message = "Tipos de documento actualizados." });

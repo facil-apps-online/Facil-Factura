@@ -105,6 +105,7 @@ namespace Fel.Api.Client.Controllers
                     RetentionConceptId = retentionConceptId
                 });
             }
+            await DefaultTemplateAssigner.AddDefaultsAsync(_dbContext, sandboxClient.Id, SandboxTenantId, DefaultCatalogSets.StandardDocumentTypeIds);
 
             var developer = new DeveloperUser
             {

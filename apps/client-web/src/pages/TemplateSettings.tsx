@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Settings, FileText, CheckCircle2, ChevronRight, LayoutTemplate, Image, Copy, Upload, GitBranch, Pencil, Eye, Loader2, Trash2, Brush } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
@@ -61,7 +61,11 @@ export default function TemplateSettings() {
   const [branding, setBranding] = useState<BrandingData>({ invoiceLogoUrl: '', unitOfMeasureDisplayOverride: '' });
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [savingUnitFormat, setSavingUnitFormat] = useState(false);
-  const [activeTab, setActiveTab] = useState<'design' | 'reception'>('design');
+  // La pestaña vive en la dirección (?tab=reception): al cambiar de sucursal la pantalla se vuelve a montar y, con el estado local,
+  // volvía siempre a "Diseño de documentos".
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab: 'design' | 'reception' = searchParams.get('tab') === 'reception' ? 'reception' : 'design';
+  const setActiveTab = (tab: 'design' | 'reception') => setSearchParams(tab === 'reception' ? { tab } : {}, { replace: true });
 
   const loadBranding = () => {
     api.get<{ invoiceLogoUrl?: string, unitOfMeasureDisplayOverride?: string }>('/v1/branding/my-branding')

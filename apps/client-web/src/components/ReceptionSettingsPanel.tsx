@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Mail, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { ALL_BRANCHES, useSession } from '../context/SessionContext';
 import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 
@@ -13,6 +14,7 @@ const EVENT_INFO = [
 ] as const;
 
 export default function ReceptionSettingsPanel() {
+  const confirm = useConfirm();
   const { selectedBranchId, hasMultipleBranches } = useSession();
   const { unlocked, lock, toggle } = useCredentialLock();
   const editingMainByAll = selectedBranchId === ALL_BRANCHES;
@@ -56,13 +58,13 @@ export default function ReceptionSettingsPanel() {
   };
 
   const removeMailbox = async () => {
-    if (!window.confirm('¿Quitar el buzón propio de esta sucursal? Volverá a usar el de la principal.')) return;
+    if (!(await confirm('¿Quitar el buzón propio de esta sucursal? Volverá a usar el de la principal.', { title: 'Quitar buzón propio', confirmText: 'Quitar' }))) return;
     try { await api.delete('/client/reception-settings'); toast.success('La sucursal vuelve a usar el buzón principal'); loadSettings(); }
     catch (err: any) { toast.error(getErrorMessage(err, 'No se pudo quitar el buzón propio')); }
   };
 
   const removeEvents = async () => {
-    if (!window.confirm('¿Quitar los eventos propios de esta sucursal? Volverá a usar los de la principal.')) return;
+    if (!(await confirm('¿Quitar los eventos propios de esta sucursal? Volverá a usar los de la principal.', { title: 'Quitar eventos propios', confirmText: 'Quitar' }))) return;
     try { await api.delete('/client/reception-settings/events'); toast.success('La sucursal vuelve a usar los eventos principales'); loadSettings(); }
     catch (err: any) { toast.error(getErrorMessage(err, 'No se pudo quitar la configuración propia')); }
   };

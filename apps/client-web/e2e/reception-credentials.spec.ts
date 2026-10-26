@@ -55,7 +55,6 @@ test.describe('buzón de recepción', () => {
     await page.getByTestId('branch-selector').locator('input').click();
     await page.getByText('Sucursal Comercializadora', { exact: false }).first().click();
     await page.waitForLoadState('networkidle');
-    await openReceptionTab(page);
     await expect(page.getByText('Esta sucursal usa el buzón de la principal.')).toBeVisible();
     await expect(page.getByText('Esta sucursal usa los eventos de la principal.')).toBeVisible();
   });
@@ -67,7 +66,6 @@ test.describe('buzón de recepción', () => {
     await page.getByTestId('branch-selector').locator('input').click();
     await page.getByText('Todas las sucursales', { exact: true }).click();
     await page.waitForLoadState('networkidle');
-    await openReceptionTab(page);
     await expect(page.getByText(/se trabaja sobre la principal/)).toBeVisible();
   });
 
@@ -93,5 +91,34 @@ test.describe('buzón de recepción', () => {
     await expect.poll(() => bodies.length).toBe(2);
     expect(bodies[1].onlyAutoSend).toBe(true);
     expect(bodies[1].receptionEmailPassword).toBeUndefined();
+  });
+
+  test('quitar el buzón propio pide confirmar con un cuadro del sitio y se puede volver atrás', async ({ page }) => {
+    await signIn(page);
+    await mockApi(page);
+    const deletes: string[] = [];
+    await page.route('**/client/reception-settings', route => {
+      const method = route.request().method();
+      if (method === 'DELETE') { deletes.push(route.request().url()); return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }); }
+      if (method === 'GET') {
+        return route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify({ receptionEmailEnabled: true, receptionEmailHost: 'imap.gmail.com', receptionEmailPort: 993, receptionEmailUseSsl: true, receptionEmailUser: 'a@b.co', hasPassword: true, autoSendAcuseRecibo: false, autoSendReciboBien: false, autoSendAceptacion: false, autoSendReclamo: false, isMain: false, isBranchOwn: true, isEventsOwn: false }),
+        });
+      }
+      return route.fallback();
+    });
+    await open(page);
+
+    await page.getByRole('button', { name: 'Volver al buzón principal' }).click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toContainText('Volverá a usar el de la principal');
+    await dialog.getByRole('button', { name: 'Cancelar' }).click();
+    await expect(dialog).toBeHidden();
+    expect(deletes).toHaveLength(0);
+
+    await page.getByRole('button', { name: 'Volver al buzón principal' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Quitar' }).click();
+    await expect.poll(() => deletes.length).toBe(1);
   });
 });

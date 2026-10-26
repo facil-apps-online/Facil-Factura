@@ -22,6 +22,7 @@ import { Button } from '../components/ui/button';
 import { STATUS_FILTER_OPTIONS, STATUS_LABELS } from '../lib/documentStatus';
 import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
 import DianResponseDialog from '../components/DianResponseDialog';
+import ProductFormModal from '../components/ProductFormModal';
 import DataicoLookupModal from '../components/DataicoLookupModal';
 import { usePdfPreview } from '../lib/pdfPreview';
 import { isBatchEditable, useBatchRunner, useBatchSelection } from '../lib/batch';
@@ -192,10 +193,6 @@ const baseUnitPrice = (p: any, isSupport: boolean) => {
     : Number(p.unitPrice) || 0;
 };
 
-const initialQuickProduct = {
-  code: '', name: '', unitPrice: 0, unitOfMeasureId: '30000000-0000-0000-0000-000000000001', standardCode: '', ivaTreatment: 'Gravado', ivaRate: 19, priceIncludesIva: false, taxes: [] as any[]
-};
-
 export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const cfg = MODES[mode];
   const isSupport = mode === 'support';
@@ -308,9 +305,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   const [showCustomerModal, setShowCustomerModal] = useState(false);
 
-  const [productModalForItemIndex, setProductModalForItemIndex] = useState<number | null>(null);
-  const [quickProduct, setQuickProduct] = useState(initialQuickProduct);
-  const [savingProduct, setSavingProduct] = useState(false);
+  // Línea cuyo producto se crea o edita sin salir del documento (product null = producto nuevo con lo escrito en el buscador).
+  const [productModal, setProductModal] = useState<{ index: number; product: any | null; prefill?: { code?: string; name?: string } } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -1184,33 +1180,37 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     setShowCustomerModal(false);
   };
 
-  const handleSaveQuickProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (productModalForItemIndex === null) return;
-    setSavingProduct(true);
-    try {
-      const quickProductPayload = isSupport
-        ? { ...quickProduct, scope: 'Support', ivaTreatment: 'Exento', ivaRate: 0, taxes: [] }
-        : { ...quickProduct, scope: 'Invoice' };
-      const res = await api.post('/client/products', quickProductPayload);
-      const p = res.data;
-      toast.success('Producto creado');
+  // IVA e impuestos de una línea según su producto del catálogo. No toca el precio ni la descripción que se hayan escrito en la línea.
+  const productTaxFields = (p: any) => {
+    const rate = isSupport ? 0 : (isTaxedIva(p.ivaTreatment) ? (Number(p.ivaRate) || 0) : 0);
+    return {
+      priceIncludesIva: !isSupport && hasIncludedIva(p.priceIncludesIva) && isTaxedIva(p.ivaTreatment) && rate > 0,
+      ivaTreatment: isSupport ? 'Exento' : (isTaxedIva(p.ivaTreatment) ? 'Gravado' : (p.ivaTreatment || 'Gravado')),
+      taxRate: rate,
+      additionalTaxes: isSupport ? [] : (p.taxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate }))
+    };
+  };
+
+  const handleProductSaved = (p: any, created: boolean) => {
+    if (!productModal) return;
+    const newItems = [...formData.items];
+    if (created) {
       setProducts(prev => [...prev, p]);
-
-      const rate = isSupport ? 0 : (isTaxedIva(p.ivaTreatment) ? (Number(p.ivaRate) || 0) : 0);
-      const newItems = [...formData.items];
-        const item = { ...newItems[productModalForItemIndex], productId: p.id, code: p.code, name: p.name, unitPrice: baseUnitPrice(p, isSupport), priceIncludesIva: !isSupport && hasIncludedIva(p.priceIncludesIva) && isTaxedIva(p.ivaTreatment) && rate > 0, ivaTreatment: isSupport ? 'Exento' : (isTaxedIva(p.ivaTreatment) ? 'Gravado' : (p.ivaTreatment || 'Gravado')), taxRate: rate, additionalTaxes: isSupport ? [] : (p.taxes || []).map((t: any) => ({ taxCategory: t.taxCategory, rate: t.rate })) };
+      const item = { ...newItems[productModal.index], productId: p.id, code: p.code, name: p.name, unitPrice: baseUnitPrice(p, isSupport), ...productTaxFields(p) };
       recalcItem(item);
-      newItems[productModalForItemIndex] = item;
-      recalculateTotals(newItems);
-
-      setProductModalForItemIndex(null);
-      setQuickProduct({ ...initialQuickProduct, ivaTreatment: isSupport ? 'Exento' : 'Gravado', ivaRate: isSupport ? 0 : 19 });
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Error creando el producto'));
-    } finally {
-      setSavingProduct(false);
+      newItems[productModal.index] = item;
+    } else {
+      // Se editó el producto de una línea: todas las líneas del documento con ese producto toman el IVA e impuestos nuevos.
+      setProducts(prev => prev.map(x => (x.id === p.id ? p : x)));
+      newItems.forEach((line, i) => {
+        if (line.productId !== p.id) return;
+        const item = { ...line, ...productTaxFields(p) };
+        recalcItem(item);
+        newItems[i] = item;
+      });
     }
+    recalculateTotals(newItems);
+    setProductModal(null);
   };
 
   const handleSaveDraft = async () => {
@@ -1370,10 +1370,22 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             placeholder="Buscar por código o nombre..."
             options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}`, shortLabel: p.code }))}
             createOptions={q => [
-              { label: `Crear "${q}" como código`, onSelect: () => { setProductModalForItemIndex(index); setQuickProduct({ ...initialQuickProduct, code: q, ivaTreatment: isSupport ? 'Exento' : 'Gravado', ivaRate: isSupport ? 0 : 19 }); } },
-              { label: `Crear "${q}" como nombre`, onSelect: () => { setProductModalForItemIndex(index); setQuickProduct({ ...initialQuickProduct, name: q, ivaTreatment: isSupport ? 'Exento' : 'Gravado', ivaRate: isSupport ? 0 : 19 }); } },
+              { label: `Crear "${q}" como código`, onSelect: () => setProductModal({ index, product: null, prefill: { code: q } }) },
+              { label: `Crear "${q}" como nombre`, onSelect: () => setProductModal({ index, product: null, prefill: { name: q } }) },
             ]}
           />
+          {item.productId && (
+            <button
+              type="button"
+              onClick={() => setProductModal({ index, product: products.find(p => p.id === item.productId) ?? null })}
+              disabled={!products.some(p => p.id === item.productId)}
+              title="Editar el producto (IVA, precio, impuestos) sin salir del documento"
+              aria-label="Editar producto"
+              className="flex h-9 w-9 shrink-0 items-center justify-center self-start rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-primary disabled:opacity-40 lg:self-auto"
+            >
+              <Edit2 size={16} />
+            </button>
+          )}
           <input
             type="text"
             placeholder={item.productId ? 'Descripción de esta línea' : 'Nombre o descripción...'}
@@ -2191,69 +2203,15 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           onSaved={handleMandanteSaved}
         />
 
-        {productModalForItemIndex !== null && (
-          <Modal
-            open
-            onOpenChange={open => { if (!open) setProductModalForItemIndex(null); }}
-            title="Nuevo producto"
-            size="sm"
-            // Los SearchableSelect de IVA se pintan en un portal sobre <body>.
-            withFloatingPickers
-            footer={
-              <>
-                <Button type="button" variant="ghost" onClick={() => setProductModalForItemIndex(null)}>Cancelar</Button>
-                <Button type="submit" form="quick-product-form" disabled={savingProduct}>{savingProduct ? 'Creando...' : 'Crear Producto'}</Button>
-              </>
-            }
-          >
-            <form id="quick-product-form" onSubmit={handleSaveQuickProduct} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Código (SKU)</label>
-                  <input type="text" required value={quickProduct.code} onChange={e => setQuickProduct({ ...quickProduct, code: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Precio Base</label>
-                  <DecimalInput value={quickProduct.unitPrice} onValueChange={v => setQuickProduct({ ...quickProduct, unitPrice: v })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none font-mono" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Nombre o Descripción</label>
-                <input type="text" required value={quickProduct.name} onChange={e => setQuickProduct({ ...quickProduct, name: e.target.value })} className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none" />
-              </div>
-              {!isSupport && <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Tratamiento del IVA</label>
-                  <SearchableSelect
-                    value={quickProduct.ivaTreatment}
-                    onChange={v => setQuickProduct({ ...quickProduct, ivaTreatment: v, ivaRate: v === 'Gravado' ? 19 : 0, priceIncludesIva: v === 'Gravado' && quickProduct.priceIncludesIva })}
-                    placeholder="Buscar tratamiento IVA..."
-                    options={IVA_TREATMENTS}
-                  />
-                </div>
-                {quickProduct.ivaTreatment === 'Gravado' && (
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Tarifa IVA</label>
-                    <SearchableSelect
-                      value={String(quickProduct.ivaRate)}
-                      onChange={v => setQuickProduct({ ...quickProduct, ivaRate: parseFloat(v) || 0 })}
-                      placeholder="Buscar tarifa..."
-                      options={ivaRateCatalog.length === 0
-                        ? [{ value: String(quickProduct.ivaRate), label: `${quickProduct.ivaRate}%` }]
-                        : ivaRateCatalog.map(c => ({ value: c.category, label: c.name }))}
-                    />
-                  </div>
-                )}
-              </div>}
-              {!isSupport && quickProduct.ivaTreatment === 'Gravado' && (
-                <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                  <input type="checkbox" checked={quickProduct.priceIncludesIva} onChange={e => setQuickProduct({ ...quickProduct, priceIncludesIva: e.target.checked })} className="w-4 h-4 accent-primary" />
-                  El precio incluye IVA
-                </label>
-              )}
-            </form>
-          </Modal>
-        )}
+        <ProductFormModal
+          open={productModal !== null}
+          product={productModal?.product ?? null}
+          scope={isSupport ? 'Support' : 'Invoice'}
+          lockScope
+          prefill={productModal?.prefill}
+          onClose={() => setProductModal(null)}
+          onSaved={handleProductSaved}
+        />
       </div>
     );
   }

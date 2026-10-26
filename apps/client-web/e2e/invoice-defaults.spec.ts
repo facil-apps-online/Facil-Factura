@@ -24,7 +24,7 @@ test.describe('valores por defecto de factura', () => {
     const nav = page.getByLabel('Menú principal');
     await nav.getByRole('link', { name: 'Valores por defecto' }).click();
     await expect(page).toHaveURL(/\/invoice-defaults$/);
-    await expect(page.getByRole('heading', { name: 'Valores por defecto de factura' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Valores por defecto', exact: true })).toBeVisible();
     // Sin moneda extranjera habilitada no se ofrece la moneda.
     await expect(page.getByText('Moneda', { exact: true })).toHaveCount(0);
 
@@ -37,7 +37,12 @@ test.describe('valores por defecto de factura', () => {
     await page.getByPlaceholder('Texto que se precarga en cada factura nueva').fill('  Gracias por su compra  ');
     await page.getByRole('button', { name: 'Guardar' }).click();
     await expect(page.getByText('Valores por defecto guardados')).toBeVisible();
-    expect(saved).toEqual({ documentTypeId: null, paymentMeans: 'TRANSFER', paymentMeansType: 'CREDITO', paymentTermDays: 60, currency: null, notes: 'Gracias por su compra' });
+    // También viajan los datos del tercero nuevo (dirección, ciudad, país, régimen...), que aquí no se configuraron.
+    expect(saved).toEqual({
+      documentTypeId: null, paymentMeans: 'TRANSFER', paymentMeansType: 'CREDITO', paymentTermDays: 60, currency: null, notes: 'Gracias por su compra',
+      customerAddress: null, customerCityCode: null, customerCityName: null, customerCountryCode: null, customerPhone: null,
+      customerPostalCode: null, customerRegimen: null, customerTaxLevelCode: null,
+    });
   });
 
   test('contado: el plazo no se envía', async ({ page }) => {

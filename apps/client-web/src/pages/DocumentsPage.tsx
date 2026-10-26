@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, RotateCcw, X, UserPlus, Percent, Search, Download, Printer, Link2, Info, AlertCircle, Mail } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
+import { toastPublishError } from '../lib/publishError';
 import { useConfirm } from '@/components/ConfirmDialog';
 import BulkImportModal from '../components/BulkImportModal';
 import CustomerFormModal from '../components/CustomerFormModal';
@@ -202,6 +204,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const symOf = (doc: { currency?: string } | null | undefined) => (doc?.currency && doc.currency !== 'COP' ? `${doc.currency} ` : '$');
   const confirm = useConfirm();
   const { features } = useSession();
+  const navigate = useNavigate();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>('this-month');
   const [customFrom, setCustomFrom] = useState(() => getDateRangeForPreset('this-month')!.from);
@@ -1337,7 +1340,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       // El backend guarda el estado "RECHAZADA" y el motivo aunque la respuesta sea un error
       // (el rechazo del integrador no es una falla nuestra) — hay que refrescar igual, si no la
       // lista se queda mostrando el estado anterior hasta que el usuario recargue la página.
-      toast.error(getErrorMessage(err, 'Error al publicar'));
+      toastPublishError(err, 'Error al publicar', navigate);
     } finally {
       loadData();
       // Si se publicó desde la vista de detalle, refrescarla en vez de dejarla con el estado viejo.

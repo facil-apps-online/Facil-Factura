@@ -345,6 +345,15 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");
                 }
 
+                // La nómina no envía correo por defecto; si el cliente lo activó, sin plantilla elegida saldría con el diseño de Dataico.
+                // El tipo se asigna al emitir, así que acá se busca por su código.
+                var payrollTypeCode = document.TypeCode == TypeCode ? "NE-PAGO" : "NE-AJUSTE";
+                var payrollTypeId = await _dbContext.DocumentTypes.Where(t => t.Code == payrollTypeCode).Select(t => (Guid?)t.Id).FirstOrDefaultAsync();
+                if (await _customPdfService.IsPublishedTemplateMissingAsync(clientId, payrollTypeId, payrollTypeCode))
+                {
+                    return TemplateRequired();
+                }
+
                 var identificationTypes = await _dbContext.IdentificationTypes.AsNoTracking().ToListAsync();
 
                 // Dataico exige ciudad y departamento del empleado, y salen del código DANE. Se valida antes de reservar el consecutivo

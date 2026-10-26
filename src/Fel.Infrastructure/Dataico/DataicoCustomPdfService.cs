@@ -41,7 +41,7 @@ namespace Fel.Infrastructure.Dataico
         {
             if (string.IsNullOrEmpty(document.DataicoDocumentId) || !document.DocumentTypeId.HasValue) return;
             if (string.IsNullOrEmpty(recipientEmail)) return;
-            if (!await IsEmailEnabledAsync(client.Id, document)) return;
+            if (!await IsEmailEnabledAsync(client.Id, document.DocumentTypeId, document.TypeCode)) return;
 
             try
             {
@@ -66,13 +66,26 @@ namespace Fel.Infrastructure.Dataico
 
         // Interruptor por cliente y tipo de documento (ClientEnabledDocumentType.SendEmailToRecipient).
         // Si el tipo no está en la lista del cliente no hay interruptor guardado: aplica el valor por defecto del tipo.
-        private async Task<bool> IsEmailEnabledAsync(Guid clientId, Document document)
+        private async Task<bool> IsEmailEnabledAsync(Guid clientId, Guid? documentTypeId, string? typeCode)
         {
             var flag = await _dbContext.ClientEnabledDocumentTypes
-                .Where(e => e.ClientId == clientId && e.DocumentTypeId == document.DocumentTypeId)
+                .Where(e => e.ClientId == clientId && e.DocumentTypeId == documentTypeId)
                 .Select(e => (bool?)e.SendEmailToRecipient)
                 .FirstOrDefaultAsync();
-            return flag ?? ClientEnabledDocumentType.DefaultSendEmail(document.TypeCode);
+            return flag ?? ClientEnabledDocumentType.DefaultSendEmail(typeCode);
+        }
+
+        // Antes de emitir por Dataico el cliente debe haber elegido y publicado la plantilla de ese tipo de documento: sin ella el correo
+        // saldría con el diseño predeterminado de Dataico. No aplica si ese tipo no envía correo (la nómina, por defecto), porque
+        // entonces el PDF propio no se usa.
+        public async Task<bool> IsPublishedTemplateMissingAsync(Guid clientId, Guid? documentTypeId, string? typeCode)
+        {
+            if (!documentTypeId.HasValue) return false;
+            if (!await IsEmailEnabledAsync(clientId, documentTypeId, typeCode)) return false;
+            var hasTemplate = await _dbContext.ClientDocumentSettings
+                .AnyAsync(s => s.ClientId == clientId && s.DocumentTypeId == documentTypeId
+                    && s.SelectedTemplate != null && s.SelectedTemplate.Status == TemplateStatus.Published);
+            return !hasTemplate;
         }
 
         // Extraído para que el reenvío manual (InvoiceController.Resend) pueda decidir si manda un

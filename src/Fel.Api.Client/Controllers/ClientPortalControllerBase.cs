@@ -62,6 +62,16 @@ namespace Fel.Api.Client.Controllers
         private Task<Fel.Core.Entities.Client?> LoadLookupClientAsync() =>
             HttpContext.RequestServices.GetRequiredService<FelDbContext>().Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == Branch.ClientId);
 
+        // Respuesta cuando se intenta emitir por Dataico sin plantilla elegida; el portal reconoce el código para ofrecer ir a elegirla.
+        public const string TemplateRequiredCode = "TEMPLATE_REQUIRED";
+
+        protected IActionResult TemplateRequired() => BadRequest(new
+        {
+            message = "Falta seleccionar la plantilla.",
+            detail = "Antes de emitir debe seleccionar la plantilla de esta clase de documento en Diseño de mis Facturas.",
+            code = TemplateRequiredCode
+        });
+
         // Valida la lista de un lote y la deja sin repetidos. Devuelve null si es válida.
         protected IActionResult? ValidateBatch(BatchRequest? request, out List<Guid> ids)
         {

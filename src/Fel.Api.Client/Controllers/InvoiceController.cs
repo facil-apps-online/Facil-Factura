@@ -618,6 +618,12 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");
                 }
 
+                // Con Dataico, sin plantilla elegida el correo saldría con el diseño predeterminado de Dataico: se exige elegirla antes.
+                if (client.Integrator.Code == "DATAICO" && await _customPdfService.IsPublishedTemplateMissingAsync(clientId, invoice.DocumentTypeId, invoice.TypeCode))
+                {
+                    return TemplateRequired();
+                }
+
                 // El cliente puede tener varias resoluciones activas (una por prefijo); si no se
                 // eligió una explícitamente al crear el borrador, se usa la marcada como
                 // predeterminada para FE, y si ninguna lo está, se cae al comportamiento anterior

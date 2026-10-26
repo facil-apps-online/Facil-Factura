@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Loader2, ArrowLeft, Edit2, Send, AlertCircle, Info, Printer, RotateCcw, XCircle, Search, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
+import { toastPublishError } from '../lib/publishError';
 import { useConfirm } from '@/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
@@ -61,6 +63,7 @@ export default function PayrollPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { features } = useSession();
+  const navigate = useNavigate();
   const [showDataicoLookup, setShowDataicoLookup] = useState(false);
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list');
   const [submitting, setSubmitting] = useState(false);
@@ -244,7 +247,7 @@ export default function PayrollPage() {
         handleViewDetail({ id });
       }
     } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Error al emitir la nómina'));
+      toastPublishError(err, 'Error al emitir la nómina', navigate);
     } finally {
       setPublishingId(null);
     }

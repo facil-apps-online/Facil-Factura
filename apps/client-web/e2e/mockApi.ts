@@ -24,7 +24,7 @@ const item = (i: number) => ({
   unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined',
 });
 
-const document = (i: number, typeCode: string) => ({
+export const document = (i: number, typeCode: string) => ({
   id: `d${i}`, typeCode, number: String(500 + i), issueDate: '2026-10-01T00:00:00',
   status: ['DRAFT', 'APPROVED', 'REJECTED', 'PROCESSING'][i % 4], customer: customer(i), resolution: { id: 'r1', prefix: 'FEV', documentType: typeCode },
   subtotal: 1234567.89, taxAmount: 234567.89, totalAmount: 1469135.78, items: [item(0), item(1)], generalRetentions: [],

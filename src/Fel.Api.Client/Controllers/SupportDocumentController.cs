@@ -424,6 +424,7 @@ namespace Fel.Api.Client.Controllers
                     var adjustmentRequest = DataicoDocumentMapper.BuildSupportDocAdjustmentRequest(
                         document, originalDocument, document.Customer!, resolution, client, document.PaymentMeans, document.PaymentMeansType, document.Items);
                     result = await _dataicoApiService.SendSupportDocAdjustmentAsync(adjustmentRequest, credentials);
+                    DataicoDianOutcome.Apply(result, client);
 
                     document.Status = result.Success ? "APPROVED" : "REJECTED";
                     document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
@@ -462,7 +463,7 @@ namespace Fel.Api.Client.Controllers
                         try { sent = System.Text.Json.JsonDocument.Parse(result.RequestBody).RootElement.Clone(); }
                         catch (System.Text.Json.JsonException) { sent = result.RequestBody; }
                     }
-                    return BadRequest(new { message = "Dataico rechazó el documento soporte.", detail = document.DianResponseMessage, sent });
+                    return BadRequest(new { message = "Dataico rechazó el documento soporte.", detail = DataicoDianOutcome.Readable(document.DianResponseMessage), sent });
                 }
 
                 return Ok(new { message = "Documento soporte emitido correctamente.", document });
@@ -621,6 +622,7 @@ namespace Fel.Api.Client.Controllers
 
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
             var result = await _dataicoApiService.SendSupportDocAsync(dataicoRequest, credentials);
+            DataicoDianOutcome.Apply(result, client);
 
             document.Status = result.Success ? "APPROVED" : "REJECTED";
             document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);

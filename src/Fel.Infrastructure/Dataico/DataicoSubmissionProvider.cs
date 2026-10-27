@@ -232,6 +232,9 @@ namespace Fel.Infrastructure.Dataico
                 }
             }
 
+            // Dataico creó el documento pero la DIAN lo rechazó: queda rechazado y editable, con su número (Dataico lo reemplaza al reenviar).
+            DataicoDianOutcome.Apply(result, client);
+
             // El consecutivo de una factura solo se asigna cuando Dataico la crea; un rechazo no debe dejar el número tomado.
             if (invoice.TypeCode is not ("NC" or "ND") && !string.IsNullOrEmpty(invoice.Number))
             {

@@ -696,7 +696,7 @@ namespace Fel.Api.Client.Controllers
 
                 if (!result.Success)
                 {
-                    return BadRequest(new { message = "El proveedor de documentos electrónicos rechazó la factura.", detail = invoice.DianResponseMessage });
+                    return BadRequest(new { message = "El proveedor de documentos electrónicos rechazó la factura.", detail = Fel.Infrastructure.Dataico.DataicoDianOutcome.Readable(invoice.DianResponseMessage) });
                 }
 
                 return Ok(new { message = "Factura emitida correctamente.", invoice });

@@ -82,6 +82,15 @@ export default function DianResponseDialog({ doc, label, onClose }: {
                 </div>
               ))}
             </div>
+            {Array.isArray(parsedResponse.fields.dian_messages) && parsedResponse.fields.dian_messages.length > 0 && (
+              <div className="space-y-2 py-3 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-400 uppercase">Mensajes de la DIAN</p>
+                {[...new Set<string>(parsedResponse.fields.dian_messages.filter((m: unknown): m is string => typeof m === 'string' && m.trim() !== ''))].map(message => (
+                  // Una regla de rechazo detiene el documento; las notificaciones solo informan.
+                  <p key={message} className={`text-sm rounded-xl border px-3 py-2 break-words ${/Rechazo/i.test(message) ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-amber-50 border-amber-100 text-amber-800'}`}>{message}</p>
+                ))}
+              </div>
+            )}
             {parsedResponse.fields.cufe && (
               <div className="py-2 border-t border-slate-100">
                 <p className="text-slate-400 font-medium text-sm mb-1">CUFE</p>

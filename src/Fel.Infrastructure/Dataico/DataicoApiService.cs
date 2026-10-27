@@ -300,6 +300,8 @@ namespace Fel.Infrastructure.Dataico
                     result.DataicoDocumentId ??= fromNested.DataicoDocumentId;
                     result.QrCode ??= fromNested.QrCode;
                     result.DocumentNumber ??= fromNested.DocumentNumber;
+                    result.DianStatus ??= fromNested.DianStatus;
+                    if (result.DianMessages.Count == 0) result.DianMessages.AddRange(fromNested.DianMessages);
                 }
 
                 // La consulta de una factura por número (GET invoices?number=) devuelve el documento dentro de "invoice": sin leerlo, una factura que
@@ -315,6 +317,8 @@ namespace Fel.Infrastructure.Dataico
                     result.CustomerIdentification ??= fromInvoice.CustomerIdentification;
                     result.PdfUrl ??= fromInvoice.PdfUrl;
                     result.XmlUrl ??= fromInvoice.XmlUrl;
+                    result.DianStatus ??= fromInvoice.DianStatus;
+                    if (result.DianMessages.Count == 0) result.DianMessages.AddRange(fromInvoice.DianMessages);
                 }
             }
             catch (JsonException)
@@ -339,6 +343,17 @@ namespace Fel.Infrastructure.Dataico
                 if (root.TryGetProperty("uuid", out var uuidVal) && uuidVal.ValueKind == JsonValueKind.String)
                 {
                     result.DataicoDocumentId = uuidVal.GetString();
+                }
+
+                if (root.TryGetProperty("dian_status", out var dianStatus) && dianStatus.ValueKind == JsonValueKind.String)
+                {
+                    result.DianStatus = dianStatus.GetString();
+                }
+
+                if (root.TryGetProperty("dian_messages", out var dianMessages) && dianMessages.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var message in dianMessages.EnumerateArray())
+                        if (message.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(message.GetString())) result.DianMessages.Add(message.GetString()!);
                 }
 
                 if (root.TryGetProperty("customer", out var customer) && customer.ValueKind == JsonValueKind.Object &&

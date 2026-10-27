@@ -92,6 +92,12 @@ namespace Fel.Infrastructure.Dataico.Models
         public string? XmlUrl { get; set; }
         public string? PdfUrl { get; set; }
         public string? QrCode { get; set; }
+        // Estado que la DIAN le dio al documento dentro de la misma respuesta de Dataico (DIAN_ACEPTADO, DIAN_RECHAZADO, DIAN_NO_ENVIADO...) y sus
+        // mensajes (reglas de rechazo y notificaciones). Una respuesta 2xx solo dice que Dataico creó el documento, no que la DIAN lo aceptó.
+        public string? DianStatus { get; set; }
+        public List<string> DianMessages { get; } = new();
+        // La DIAN rechazó un documento que Dataico sí creó (ver DataicoDianOutcome): el resultado se da por no exitoso.
+        public bool DianRejected { get; set; }
         public string? ErrorMessage { get; set; }
         // Cuerpo JSON exacto que se envió a Dataico; sirve para diagnosticar rechazos poco claros.
         public string? RequestBody { get; set; }

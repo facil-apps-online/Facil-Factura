@@ -112,6 +112,7 @@ namespace Fel.Api.Tenant.Controllers
             var clientExists = await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId);
             if (!clientExists) return StatusCode(StatusCodes.Status403Forbidden);
 
+            request.Prefix = ResolutionPrefix.Normalize(request.Prefix);
             var isReceptionNumbering = string.Equals(request.DocumentType, "RADIAN", StringComparison.OrdinalIgnoreCase);
             if (isReceptionNumbering)
             {
@@ -211,7 +212,7 @@ namespace Fel.Api.Tenant.Controllers
             }
 
             resolution.ResolutionNumber = request.ResolutionNumber?.Trim() ?? "";
-            resolution.Prefix = request.Prefix?.Trim() ?? "";
+            resolution.Prefix = ResolutionPrefix.Normalize(request.Prefix);
             resolution.NumberStart = request.NumberStart;
             resolution.NumberEnd = request.NumberEnd;
             resolution.ValidFrom = request.ValidFrom;

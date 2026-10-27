@@ -43,7 +43,7 @@ namespace Fel.Infrastructure.Services
             public List<(string DocumentType, string Prefix, string Number)> Listed { get; } = new();
 
             public bool Lists(string documentType, string prefix, string number) =>
-                Listed.Any(l => l.DocumentType == documentType && l.Prefix == prefix.Trim() && l.Number == number.Trim());
+                Listed.Any(l => l.DocumentType == documentType && string.Equals(l.Prefix, ResolutionPrefix.Normalize(prefix), StringComparison.OrdinalIgnoreCase) && l.Number == number.Trim());
         }
 
         public async Task<bool> UsesDataicoAsync(Guid clientId) =>
@@ -121,6 +121,7 @@ namespace Fel.Infrastructure.Services
                         continue;
                     }
 
+                    synced.Prefix = ResolutionPrefix.Normalize(synced.Prefix);
                     report.Listed.Add((documentType, synced.Prefix, synced.Number));
                     if (synced.EndDate.Value.Date < today)
                     {

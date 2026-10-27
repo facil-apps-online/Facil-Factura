@@ -42,7 +42,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cbc + "LineCountNumeric", data.Lines.Count.ToString()),
 
                 BuildAccountingSupplierParty(data),
-                BuildAccountingCustomerParty(data),
+                BuildAccountingCustomerParty(data, omitEmptyAddress: true),
                 BuildDeliveryTerms(data),
                 BuildPaymentMeans(data),
                 BuildAllowanceCharges(data),

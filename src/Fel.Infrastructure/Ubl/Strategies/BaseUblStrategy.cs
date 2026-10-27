@@ -213,7 +213,9 @@ namespace Fel.Infrastructure.Ubl.Strategies
         // y no fijo; con NIT lleva el dígito de verificación como schemeID (reglas HD04b/HD05 del schematron). El tipo de organización
         // (AdditionalAccountID) es 1 para personas jurídicas (NIT y NIT de otro país) y 2 para las naturales. La dirección usa los códigos
         // DANE solo en Colombia; en otro país van la ciudad y el estado como texto, con el país del tercero.
-        protected XElement BuildAccountingCustomerParty(UblInvoiceData data)
+        // omitEmptyAddress: facturas y notas no llevan PhysicalLocation cuando el adquirente no tiene dirección (grupo opcional 0..1); el documento soporte
+        // sigue enviándolo siempre.
+        protected XElement BuildAccountingCustomerParty(UblInvoiceData data, bool omitEmptyAddress = false)
         {
             var customer = data.Customer;
             var identificationCode = string.IsNullOrWhiteSpace(customer.IdentificationCode) ? "13" : customer.IdentificationCode;
@@ -249,7 +251,9 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cac + "Party",
                     new XElement(cac + "PartyIdentification", CustomerId(cbc + "ID", false)),
                     new XElement(cac + "PartyName", new XElement(cbc + "Name", customer.Name)),
-                    new XElement(cac + "PhysicalLocation", address),
+                    omitEmptyAddress && Fel.Infrastructure.Dian.CustomerAddressRules.IsEmpty(customer.Address, customer.CityCode, customer.CityName, customer.DepartmentName)
+                        ? null
+                        : new XElement(cac + "PhysicalLocation", address),
                     new XElement(cac + "PartyTaxScheme",
                         new XElement(cbc + "RegistrationName", customer.Name),
                         CustomerId(cbc + "CompanyID", true),

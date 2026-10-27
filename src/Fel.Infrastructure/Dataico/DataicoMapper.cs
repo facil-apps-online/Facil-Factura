@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Dataico.Models;
+using Fel.Infrastructure.Dian;
 
 namespace Fel.Infrastructure.Dataico
 {
@@ -74,20 +75,25 @@ namespace Fel.Infrastructure.Dataico
                 firstName = customer.Name;
             }
 
+            // La dirección y el teléfono son opcionales en Dataico: sin dato no se envía la llave (un "" no equivale a omitirla). Un tercero colombiano sin
+            // ninguna dirección tampoco manda el país: Dataico asume Colombia.
+            static string? OrNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+            var hasAddress = !CustomerAddressRules.IsEmpty(customer.Address, customer.CityCode, customer.CityName, customer.StateName);
+
             return new DataicoParty
             {
                 email = customer.Email,
-                phone = customer.Phone,
+                phone = OrNull(customer.Phone),
                 party_identification_type = MapIdentificationType(customer.IdentificationType, identificationTypeOverrides),
                 party_identification = customer.IdentificationNumber,
                 party_type = MapPartyType(customer.IdentificationType),
                 tax_level_code = customer.DataicoTaxLevelCode,
                 // Régimen simple (47) manda SIMPLE aunque el catálogo de Dataico del tercero diga otra cosa.
                 regimen = customer.IncomeTaxRegime == "47" ? "SIMPLE" : customer.DataicoRegimen,
-                department = department,
-                city = city,
-                address_line = customer.Address,
-                country_code = isForeign ? customer.CountryCode : "CO",
+                department = OrNull(department),
+                city = OrNull(city),
+                address_line = OrNull(customer.Address),
+                country_code = isForeign ? customer.CountryCode : (hasAddress ? "CO" : null),
                 company_name = isJuridica ? customer.Name : string.Empty,
                 first_name = isJuridica ? string.Empty : firstName,
                 family_name = isJuridica ? string.Empty : familyName

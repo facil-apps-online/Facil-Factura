@@ -98,6 +98,11 @@ namespace Fel.Infrastructure.Dian
                     throw new NotSupportedException("La factura AIU debe llevar las líneas de Administración, Imprevistos y Utilidad.");
             }
 
+            // La dirección del adquirente es opcional, pero si viene sin ciudad válida la DIAN rechazaría el grupo (FAK09): se frena antes de reclamar consecutivo.
+            var cityMessage = Fel.Infrastructure.Dian.CustomerAddressRules.IncompleteCityMessage(
+                !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO", customer.Address, customer.CityCode, customer.CityName, customer.StateName);
+            if (cityMessage != null) throw new NotSupportedException(cityMessage);
+
             if (string.IsNullOrEmpty(invoice.Number))
             {
                 // Las Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que

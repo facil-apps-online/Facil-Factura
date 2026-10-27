@@ -55,6 +55,15 @@ namespace Fel.Infrastructure.Dataico
             Document invoice, Customer customer, ICollection<DocumentItem> items,
             Client client, Resolution resolution, string paymentMeans, string paymentMeansType)
         {
+            // La dirección del tercero es opcional, pero Dataico rechaza una dirección sin departamento y ciudad ("Departamento '' es inválido"):
+            // se avisa antes de gastar un consecutivo.
+            if (customer != null)
+            {
+                var cityMessage = Fel.Infrastructure.Dian.CustomerAddressRules.IncompleteCityMessage(
+                    !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO", customer.Address, customer.CityCode, customer.CityName, customer.StateName);
+                if (cityMessage != null) throw new NotSupportedException(cityMessage);
+            }
+
             // Con Dataico se emiten factura estándar, de mandato, de exportación, AIU y notas crédito/débito: los demás tipos de
             // factura (salud, transporte) llevan información propia que este envío no manda, y saldrían como
             // una venta común. Solo están disponibles con emisión directa a la DIAN.

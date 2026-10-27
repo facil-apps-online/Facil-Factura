@@ -61,7 +61,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                     : null,
 
                 BuildAccountingSupplierParty(data),
-                BuildAccountingCustomerParty(data),
+                BuildAccountingCustomerParty(data, omitEmptyAddress: true),
                 BuildPaymentMeans(data),
                 BuildAllowanceCharges(data),
                 BuildPaymentExchangeRate(data),

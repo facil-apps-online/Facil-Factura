@@ -28,7 +28,7 @@ namespace Fel.Infrastructure.Dataico.Models
         public string? address_line { get; set; }
 
         [JsonPropertyName("country_code")]
-        public string country_code { get; set; } = "CO";
+        public string? country_code { get; set; } = "CO";
 
         [JsonPropertyName("company_name")]
         public string? company_name { get; set; }

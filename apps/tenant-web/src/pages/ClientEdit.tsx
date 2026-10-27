@@ -14,6 +14,7 @@ import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import { MinSaludCard, IhceCard, ReceptionMailboxCard, ReceptionEventsCard } from '../components/BranchCredentials';
 import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
 import DataicoResolutionsDialog from '@shared/components/DataicoResolutionsDialog';
+import NoteNumberingsPanel from '../components/NoteNumberingsPanel';
 import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 
 // Consecutivos internos de notas: crédito y débito (facturas) y ajuste (documento soporte).
@@ -1353,9 +1354,11 @@ export default function ClientEdit() {
                 )}
               </div>
 
+              <NoteNumberingsPanel clientId={id!} />
+
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 mt-8">
                 <h2 className="text-xl font-bold text-slate-800">Consecutivos derivados de notas</h2>
-                <p className="text-slate-500 mt-1 text-sm">Cada resolución FE tiene consecutivos independientes para nota crédito y nota débito. El prefijo se hereda de la resolución.</p>
+                <p className="text-slate-500 mt-1 text-sm">Cada resolución FE tiene consecutivos independientes para nota crédito y nota débito. Las notas que no usan una numeración propia (arriba) llevan el prefijo de la resolución de su factura.</p>
                 <div className="mt-5 space-y-3">
                   {resolutions.filter((r: any) => r.documentType === 'FE').map((r: any) => {
                     const value = resolutionNoteCounters[r.id];

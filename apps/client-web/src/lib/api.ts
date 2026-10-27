@@ -90,6 +90,8 @@ export function getErrorMessage(err: any, fallback: string): string {
   if (!data) return fallback;
   if (typeof data === 'string') return data;
   if (typeof data.detail === 'string') return data.detail;
+  // Respuestas { message } de la API (consultas en Dataico, etc.): sin esto el usuario solo veía el texto genérico y la causa quedaba oculta.
+  if (typeof data.message === 'string' && data.message) return data.message;
   if (data.errors && typeof data.errors === 'object') {
     const firstError = Object.values(data.errors).flat()[0];
     if (typeof firstError === 'string') return firstError;

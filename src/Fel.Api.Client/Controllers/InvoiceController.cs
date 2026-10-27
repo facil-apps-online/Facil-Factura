@@ -259,7 +259,8 @@ namespace Fel.Api.Client.Controllers
         [HttpGet("dataico-lookup/file")]
         public Task<IActionResult> DataicoLookupFile([FromQuery] string? number, [FromQuery] string? type) => DataicoLookupFileAsync(DataicoLookupKind.Invoice, number, type);
 
-        [HttpGet("dataico-lookup/note-draft")]
+        // Arma el borrador de una nota sobre una factura que está en Dataico y crea en el sistema el tercero y los productos que falten (por eso es POST).
+        [HttpPost("dataico-lookup/note-draft")]
         public Task<IActionResult> DataicoNoteDraft([FromQuery] string? number) => DataicoInvoiceNoteDraftAsync(number);
 
         [HttpGet("{id}")]

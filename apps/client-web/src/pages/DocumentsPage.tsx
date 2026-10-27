@@ -454,13 +454,17 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const handleCreateDataicoNote = async (type: 'NC' | 'ND', number: string) => {
     setShowDataicoLookup(false);
     try {
-      const res = await api.get('/client/invoices/dataico-lookup/note-draft', { params: { number } });
-      const draft = res.data;
+      // El servidor crea en el sistema el tercero y los productos de la factura que todavía no existan, y devuelve sus ids.
+      const res = await api.post('/client/invoices/dataico-lookup/note-draft', null, { params: { number } });
+      const { draft, customerId: createdCustomerId, productIds } = res.data as { draft: any; customerId: string | null; productIds: (string | null)[]; createdProducts: string[]; notes: string[]; customerCreated: boolean };
+      if (res.data.customerCreated || (res.data.createdProducts?.length ?? 0) > 0) loadData({ quiet: true });
       const documentType = documentTypes.find(d => d.typeCode === type)
         || documentTypes.find(d => d.code === (type === 'NC' ? '91' : '92'));
       if (!documentType) { toast.error(`La ${type === 'NC' ? 'nota crédito' : 'nota débito'} no está habilitada para tu empresa.`); return; }
       const customerNumber = String(draft.customerTaxId || '').replace(/\D/g, '');
-      const customer = customers.find(c => String(c.identificationNumber || '').replace(/\D/g, '') === customerNumber);
+      const customer = createdCustomerId
+        ? { id: createdCustomerId }
+        : customers.find(c => String(c.identificationNumber || '').replace(/\D/g, '') === customerNumber);
       const defaultResolution = resolutions.find(r => r.documentType === 'FE' && r.isDefault) || resolutions.find(r => r.documentType === 'FE');
       const reasonCatalog = type === 'NC' ? creditNoteReasonCatalog : debitNoteReasonCatalog;
       const reason = reasonCatalog.find(c => c.category === '1');
@@ -480,8 +484,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         referenceConcept: reason?.name || (type === 'NC' ? 'Devolución parcial de los bienes y/o no aceptación parcial del servicio' : 'Intereses'),
         discrepancyResponseCode: '1',
         sectorExtensionData: JSON.stringify({ dataicoExternalReference: { dataicoDocumentId: draft.dataicoDocumentId, number: draft.number, cufe: draft.cufe, issueDate: draft.issueDate } }),
-        items: (draft.items || []).map((i: any) => ({
-          productId: products.find(p => p.code && i.code && p.code === i.code)?.id || '',
+        items: (draft.items || []).map((i: any, index: number) => ({
+          productId: productIds?.[index] || products.find(p => p.code && i.code && p.code === i.code)?.id || '',
           code: i.code || '', name: i.name || '', quantity: i.quantity || 1, unitPrice: i.unitPrice || 0,
           unitOfMeasureCode: i.unitOfMeasureCode || '94', unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA', unitOfMeasureDisplayFormat: 'Combined',
           ivaTreatment: i.ivaTreatment || 'Gravado', taxRate: i.taxRate || 0, discountRate: i.discountRate || 0,
@@ -489,7 +493,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         })),
         subtotal: draft.subtotal || 0, taxAmount: draft.taxAmount || 0, totalAmount: draft.totalAmount || 0
       });
-      if (!customer) toast.info('No encontramos el cliente por identificación; selecciónalo en el formulario.');
+      (res.data.notes as string[] | undefined)?.forEach(n => toast.info(n, { duration: 12000 }));
+      if (!customer && !(res.data.notes as string[] | undefined)?.length) toast.info('No encontramos el cliente por identificación; selecciónalo en el formulario.');
       setView('create');
     } catch (err) {
       toast.error(getErrorMessage(err, 'No se pudo reconstruir la factura consultada en Dataico'));

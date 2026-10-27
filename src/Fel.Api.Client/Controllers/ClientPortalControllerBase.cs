@@ -56,7 +56,20 @@ namespace Fel.Api.Client.Controllers
             var client = await LoadLookupClientAsync();
             if (client == null) return NotFound(new { message = "Cliente no encontrado." });
             var result = await HttpContext.RequestServices.GetRequiredService<Fel.Infrastructure.Dataico.DataicoLookupService>().GetInvoiceNoteDraftAsync(client, number);
-            return result.Draft != null ? Ok(result.Draft) : StatusCode(result.Status, new { message = result.Error });
+            if (result.Draft == null) return StatusCode(result.Status, new { message = result.Error });
+
+            // El tercero y los productos de la factura se crean en el sistema si el cliente todavía no los tiene.
+            var created = await Fel.Infrastructure.Dataico.DataicoExternalInvoiceMaterializer.EnsureAsync(
+                HttpContext.RequestServices.GetRequiredService<FelDbContext>(), client.Id, result.Draft);
+            return Ok(new
+            {
+                draft = result.Draft,
+                customerId = created.CustomerId,
+                customerCreated = created.CustomerCreated,
+                productIds = created.ProductIds,
+                createdProducts = created.CreatedProducts,
+                notes = created.Notes
+            });
         }
 
         private Task<Fel.Core.Entities.Client?> LoadLookupClientAsync() =>

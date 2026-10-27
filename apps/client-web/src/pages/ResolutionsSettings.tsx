@@ -9,6 +9,7 @@ import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import ResolutionBranchesModal from '../components/ResolutionBranchesModal';
 import BranchNoteNumberings from '../components/BranchNoteNumberings';
+import NoteNumberingsPanel from '../components/NoteNumberingsPanel';
 import { ALL_BRANCHES, useSession } from '../context/SessionContext';
 import { Button } from '../components/ui/button';
 import { todayColombia } from '../lib/colombiaTime';
@@ -787,10 +788,12 @@ export default function ResolutionsSettings() {
         )}
       </div>
 
+      <NoteNumberingsPanel />
+
       <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 shadow-sm border border-slate-100 mt-6 lg:mt-8">
         <div className="mb-6">
           <h2 className="text-xl font-bold text-slate-800">Consecutivos derivados de notas</h2>
-          <p className="text-slate-500 mt-1 text-sm max-w-2xl">Cada resolución de factura tiene consecutivos independientes para nota crédito y nota débito. Las notas usan el mismo prefijo de la resolución seleccionada.</p>
+          <p className="text-slate-500 mt-1 text-sm max-w-2xl">Cada resolución de factura tiene consecutivos independientes para nota crédito y nota débito. Las notas que no usan una numeración propia (arriba) llevan el mismo prefijo de la resolución de su factura.</p>
         </div>
         <div className="space-y-3">
           {resolutions.filter(r => r.documentType === 'FE').map(r => {

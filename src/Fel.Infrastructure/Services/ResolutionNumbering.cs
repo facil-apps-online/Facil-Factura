@@ -115,16 +115,53 @@ namespace Fel.Infrastructure.Services
             return ids;
         }
 
-        // Prefijo propio de la numeración de la nota (null = el documento usa el de su resolución).
-        public static async Task<string?> GetNotePrefixAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, Guid? resolutionId = null)
+        // Numeración propia del Client (con prefijo, sin sucursal ni resolución) que le toca a la nota: la que eligió, si es del Client y del tipo; sin elegir,
+        // la predeterminada, salvo que la sucursal tenga la suya. Null = ninguna: la nota usa el contador de su resolución como siempre.
+        private static async Task<Guid?> ClientLevelNumberingIdAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, Guid? noteNumberingId)
         {
+            if (kind == NoteKind.SupportAdjustment) return null;
+            var clientLevel = dbContext.NoteNumberings.AsNoTracking()
+                .Where(n => n.ClientId == clientId && n.Kind == kind && n.BranchId == null && n.ResolutionId == null && n.Prefix != null && n.Prefix != "");
+
+            if (noteNumberingId != null)
+            {
+                var chosen = await clientLevel.Where(n => n.Id == noteNumberingId).Select(n => (Guid?)n.Id).FirstOrDefaultAsync();
+                if (chosen != null) return chosen;
+            }
+
+            if (branchId != null && await dbContext.NoteNumberings.AsNoTracking().AnyAsync(n => n.ClientId == clientId && n.Kind == kind && n.BranchId == branchId))
+                return null;
+            return await clientLevel.Where(n => n.IsDefault).Select(n => (Guid?)n.Id).FirstOrDefaultAsync();
+        }
+
+        // Prefijo propio de la numeración de la nota (null = el documento usa el de su resolución).
+        public static async Task<string?> GetNotePrefixAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, Guid? resolutionId = null, Guid? noteNumberingId = null)
+        {
+            var clientLevelId = await ClientLevelNumberingIdAsync(dbContext, clientId, branchId, kind, noteNumberingId);
+            if (clientLevelId != null)
+                return await dbContext.NoteNumberings.AsNoTracking().Where(n => n.Id == clientLevelId).Select(n => n.Prefix).FirstOrDefaultAsync();
+
             var prefix = await EffectiveNumbering(dbContext, clientId, branchId, kind, await SamePrefixResolutionIdsAsync(dbContext, clientId, resolutionId)).Select(n => n.Prefix).FirstOrDefaultAsync();
             return string.IsNullOrWhiteSpace(prefix) ? null : prefix;
         }
 
         // Mismo patrón optimista que ClaimNextNumberAsync, pero sobre el contador de NoteNumbering.
-        public static async Task<NoteClaim> ClaimNextNoteAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, Guid? resolutionId = null)
+        public static async Task<NoteClaim> ClaimNextNoteAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, Guid? resolutionId = null, Guid? noteNumberingId = null)
         {
+            var clientLevelId = await ClientLevelNumberingIdAsync(dbContext, clientId, branchId, kind, noteNumberingId);
+            if (clientLevelId != null)
+            {
+                while (true)
+                {
+                    var own = await dbContext.NoteNumberings.AsNoTracking().Where(n => n.Id == clientLevelId).Select(n => new { n.Prefix, n.NextNumber }).FirstAsync();
+                    var ownCurrent = own.NextNumber ?? 1;
+                    var ownAffected = await dbContext.NoteNumberings
+                        .Where(n => n.Id == clientLevelId && n.NextNumber == own.NextNumber)
+                        .ExecuteUpdateAsync(s => s.SetProperty(n => n.NextNumber, ownCurrent + 1));
+                    if (ownAffected > 0) return new NoteClaim(ownCurrent, own.Prefix);
+                }
+            }
+
             var resolutionIds = await SamePrefixResolutionIdsAsync(dbContext, clientId, resolutionId);
             while (true)
             {

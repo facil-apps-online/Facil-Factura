@@ -126,26 +126,29 @@ namespace Fel.Infrastructure.Dataico
                 if (string.IsNullOrEmpty(invoice.Number))
                     throw new InvalidOperationException("No se pudo encontrar un consecutivo disponible en Dataico.");
             }
-            else if (string.IsNullOrEmpty(invoice.Number))
+            // Prefijo de la numeración de la nota que se acaba de reclamar (null = el de la resolución).
+            string? claimedNotePrefix = null;
+            var noteClaimedNow = false;
+            if (string.IsNullOrEmpty(invoice.Number) && invoice.TypeCode is "NC" or "ND")
             {
                 // Las Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que
                 // no pueden compartir el NextNumber de la resolución de Factura — antes lo hacían,
                 // y cada nota consumía un número que le correspondía a la siguiente factura real.
-                invoice.Number = invoice.TypeCode switch
-                {
-                    "NC" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote, resolution.Id)).Number.ToString(),
-                    "ND" => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote, resolution.Id)).Number.ToString(),
-                    _ => (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString()
-                };
+                var noteKind = invoice.TypeCode == "NC" ? Fel.Core.Entities.NoteKind.CreditNote : Fel.Core.Entities.NoteKind.DebitNote;
+                var noteClaim = await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, noteKind, resolution.Id, invoice.NoteNumberingId);
+                invoice.Number = noteClaim.Number.ToString();
+                claimedNotePrefix = noteClaim.Prefix;
+                noteClaimedNow = true;
             }
-            // El prefijo queda guardado en el documento junto con su consecutivo.
-            // Las notas pueden llevar el prefijo de su propia numeración (sucursal con contador propio); sin uno usan el de la resolución.
-            invoice.Prefix = invoice.TypeCode switch
+            else if (string.IsNullOrEmpty(invoice.Number))
             {
-                "NC" => resolution.Prefix,
-                "ND" => resolution.Prefix,
-                _ => resolution.Prefix
-            };
+                invoice.Number = (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
+            }
+            // El prefijo queda guardado en el documento junto con su consecutivo. Una nota usa el de su numeración (la elegida o la predeterminada del
+            // Client); sin una propia, el de su resolución. Al reintentar una nota ya numerada se conserva el prefijo con el que se numeró.
+            invoice.Prefix = invoice.TypeCode is "NC" or "ND"
+                ? (claimedNotePrefix ?? (!noteClaimedNow && !string.IsNullOrWhiteSpace(invoice.Prefix) ? invoice.Prefix : resolution.Prefix))
+                : resolution.Prefix;
 
             Fel.Infrastructure.Dataico.Models.DataicoResult result;
             Document? originalInvoiceForPdf = null;
@@ -221,7 +224,7 @@ namespace Fel.Infrastructure.Dataico
             }
 
             invoice.Status = result.Success ? "APPROVED" : "REJECTED";
-            invoice.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
+            invoice.DianResponseMessage = result.Success ? result.RawResponse : (MissingNoteNumberingMessage(invoice, result) ?? result.ErrorMessage ?? result.RawResponse);
             invoice.Cufe = result.Cufe;
             invoice.QrCode = result.QrCode;
             invoice.DataicoDocumentId = result.DataicoDocumentId;
@@ -247,6 +250,16 @@ namespace Fel.Infrastructure.Dataico
                 Cufe = result.Cufe,
                 ResponseMessage = invoice.DianResponseMessage
             };
+        }
+
+        // Dataico no crea solo la numeración de una nota con un prefijo nuevo ("No se encuentra numeración ... en la cuenta") y su API no permite crearla:
+        // se le indica al usuario cuál prefijo debe crear en Dataico.
+        private static string? MissingNoteNumberingMessage(Document invoice, Fel.Infrastructure.Dataico.Models.DataicoResult result)
+        {
+            if (invoice.TypeCode is not ("NC" or "ND") || string.IsNullOrWhiteSpace(result.RawResponse)) return null;
+            if (result.RawResponse.IndexOf("No se encuentra numeraci", StringComparison.OrdinalIgnoreCase) < 0) return null;
+            var where = invoice.TypeCode == "NC" ? "Ventas, Notas crédito, Numeraciones" : "Ventas, Notas débito, Numeraciones";
+            return $"Dataico no tiene una numeración de {(invoice.TypeCode == "NC" ? "notas crédito" : "notas débito")} con el prefijo {invoice.Prefix}. Créala en Dataico ({where}) con ese prefijo y vuelve a enviar la nota.";
         }
 
         private static bool SameIdentification(string? left, string? right) =>

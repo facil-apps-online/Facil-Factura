@@ -421,6 +421,7 @@ namespace Fel.Api.Client.Controllers
                     generalRetention.DocumentId = invoice.Id;
                 }
 
+                invoice.NoteNumberingId = await Fel.Infrastructure.Services.NoteNumberingAdminService.ValidChoiceAsync(_dbContext, clientId, invoice.TypeCode, invoice.NoteNumberingId);
                 var currencyError = await ApplyCurrencyAsync(invoice, invoice, clientId);
                 if (currencyError != null) return BadRequest(currencyError);
                 var exportError = await ApplyExportFieldsAsync(invoice, invoice, isExport);
@@ -474,6 +475,7 @@ namespace Fel.Api.Client.Controllers
                 invoice.CustomerId = invoiceData.CustomerId;
                 invoice.DocumentTypeId = invoiceData.DocumentTypeId;
                 invoice.ReferenceDocumentId = invoiceData.ReferenceDocumentId;
+                invoice.NoteNumberingId = await Fel.Infrastructure.Services.NoteNumberingAdminService.ValidChoiceAsync(_dbContext, clientId, invoice.TypeCode, invoiceData.NoteNumberingId);
                 var currencyError = await ApplyCurrencyAsync(invoice, invoiceData, clientId);
                 if (currencyError != null) return BadRequest(currencyError);
                 var isExport = invoiceData.DocumentTypeId.HasValue

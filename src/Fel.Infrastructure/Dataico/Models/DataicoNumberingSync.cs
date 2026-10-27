@@ -19,6 +19,41 @@ namespace Fel.Infrastructure.Dataico.Models
         public string? Message { get; set; }
     }
 
+    // Prefijos de las numeraciones de notas de la cuenta de Dataico, tal como los devuelve GET /v2/numberings/{credit-note|debit-note}.
+    public class DataicoNotePrefixesResult
+    {
+        public bool Success { get; set; }
+        public List<string> Prefixes { get; } = new();
+        public string? Error { get; set; }
+
+        public static DataicoNotePrefixesResult Parse(DataicoResult call)
+        {
+            var result = new DataicoNotePrefixesResult();
+            try
+            {
+                using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(call.RawResponse) ? "{}" : call.RawResponse);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("numberings", out var numberings) && numberings.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var numbering in numberings.EnumerateArray())
+                    {
+                        if (numbering.ValueKind != JsonValueKind.Object || !numbering.TryGetProperty("prefix", out var prefix)) continue;
+                        var text = (prefix.ValueKind == JsonValueKind.String ? prefix.GetString() : prefix.ToString())?.Trim();
+                        if (!string.IsNullOrEmpty(text)) result.Prefixes.Add(text);
+                    }
+                    result.Success = true;
+                    return result;
+                }
+            }
+            catch (JsonException)
+            {
+                // Respuesta que no es JSON: se informa abajo.
+            }
+            result.Error = call.ErrorMessage ?? $"Dataico respondió {call.StatusCode} sin la lista de numeraciones.";
+            return result;
+        }
+    }
+
     public class DataicoNumberingSyncResult
     {
         public bool Success { get; set; }

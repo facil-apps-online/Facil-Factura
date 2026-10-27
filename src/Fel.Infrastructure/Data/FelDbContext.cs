@@ -188,8 +188,9 @@ namespace Fel.Infrastructure.Data
                 entity.ToTable("NoteNumberings");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Prefix).HasMaxLength(10);
-                // Un contador por resolución, Client, sucursal (o compartido) y tipo de nota.
-                entity.HasIndex(e => new { e.ClientId, e.ResolutionId, e.BranchId, e.Kind }).IsUnique().HasFilter(null);
+                // Un contador por resolución, Client, sucursal (o compartido), tipo de nota y prefijo: el Client puede tener varias numeraciones propias
+                // por tipo (sin sucursal ni resolución) siempre que sus prefijos sean distintos.
+                entity.HasIndex(e => new { e.ClientId, e.ResolutionId, e.BranchId, e.Kind, e.Prefix }).IsUnique().HasFilter(null);
                 entity.HasOne(e => e.Resolution).WithMany().HasForeignKey(e => e.ResolutionId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(e => e.Client)
                       .WithMany()

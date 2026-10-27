@@ -103,23 +103,34 @@ namespace Fel.Infrastructure.Dian
                 !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO", customer.Address, customer.CityCode, customer.CityName, customer.StateName);
             if (cityMessage != null) throw new NotSupportedException(cityMessage);
 
+            // Prefijo de la numeración de la nota que se acaba de reclamar (null = el de la resolución).
+            string? claimedNotePrefix = null;
+            var noteClaimedNow = false;
+            var isNote = invoice.ReferenceDocumentId.HasValue || documentType?.Code is "NC" or "ND";
             if (string.IsNullOrEmpty(invoice.Number))
             {
                 // Las Notas Crédito/Débito no tienen rango autorizado propio ante la DIAN, así que
                 // no pueden compartir el NextNumber de la resolución de Factura — antes lo hacían,
                 // y cada nota consumía un número que le correspondía a la siguiente factura real.
-                invoice.Number = invoice.ReferenceDocumentId.HasValue
-                    ? (await (documentType?.Code == "ND"
-                        ? Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.DebitNote, resolution.Id)
-                        : Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, Fel.Core.Entities.NoteKind.CreditNote, resolution.Id))).Number.ToString()
-                    : (documentType?.Code is "NC" or "ND"
-                        ? (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, documentType.Code == "ND" ? Fel.Core.Entities.NoteKind.DebitNote : Fel.Core.Entities.NoteKind.CreditNote, resolution.Id)).Number.ToString()
-                        : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString());
+                if (isNote)
+                {
+                    var noteKind = documentType?.Code == "ND" ? Fel.Core.Entities.NoteKind.DebitNote : Fel.Core.Entities.NoteKind.CreditNote;
+                    var noteClaim = await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, client.Id, invoice.BranchId, noteKind, resolution.Id, invoice.NoteNumberingId);
+                    invoice.Number = noteClaim.Number.ToString();
+                    claimedNotePrefix = noteClaim.Prefix;
+                    noteClaimedNow = true;
+                }
+                else
+                {
+                    invoice.Number = (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
+                }
             }
 
-            // El prefijo queda guardado en el documento junto con su consecutivo.
-            // Las notas pueden llevar el prefijo de su propia numeración (sucursal con contador propio); sin uno usan el de la resolución.
-            invoice.Prefix = resolution.Prefix;
+            // El prefijo queda guardado en el documento junto con su consecutivo. Una nota usa el de su numeración (la elegida o la predeterminada del
+            // Client); sin una propia, el de su resolución. Al reintentar una nota ya numerada se conserva el prefijo con el que se numeró.
+            invoice.Prefix = isNote
+                ? (claimedNotePrefix ?? (!noteClaimedNow && !string.IsNullOrWhiteSpace(invoice.Prefix) ? invoice.Prefix : resolution.Prefix))
+                : resolution.Prefix;
 
             // La DIAN exige que la fecha de emisión coincida con la fecha de firma (regla FAD09e) —
             // no se puede emitir con fecha anterior a hoy. Se refresca acá, en el momento real de

@@ -96,6 +96,16 @@ const noteNumberings = [
   { branchId: 'b2', branchName: BRANCH_NORTH.name, kind: 'SupportAdjustment', kindLabel: 'Nota de ajuste', prefix: 'NAJN', nextNumber: 1 },
 ];
 
+// Numeraciones de notas: propias (NC y ND predeterminadas, más NCX), la del prefijo de la factura y una de sucursal.
+export const NOTE_NUMBERING_ITEMS = [
+  { id: 'nn1', kind: 'CreditNote', kindLabel: 'Nota crédito', prefix: 'NC', nextNumber: 7, source: 'own', branchName: null, isDefault: true, inUse: true },
+  { id: 'nn2', kind: 'CreditNote', kindLabel: 'Nota crédito', prefix: 'NCX', nextNumber: 1, source: 'own', branchName: null, isDefault: false, inUse: false },
+  { id: 'nn3', kind: 'DebitNote', kindLabel: 'Nota débito', prefix: 'ND', nextNumber: 3, source: 'own', branchName: null, isDefault: true, inUse: false },
+  { id: null, kind: 'CreditNote', kindLabel: 'Nota crédito', prefix: 'FEV', nextNumber: 12, source: 'invoice', branchName: null, isDefault: false, inUse: true },
+  { id: null, kind: 'DebitNote', kindLabel: 'Nota débito', prefix: 'FEV', nextNumber: 1, source: 'invoice', branchName: null, isDefault: false, inUse: false },
+  { id: null, kind: 'CreditNote', kindLabel: 'Nota crédito', prefix: 'NCN', nextNumber: 50, source: 'branch', branchName: 'Sucursal Norte', isDefault: false, inUse: false },
+];
+
 const list = <T,>(n: number, make: (i: number) => T) => Array.from({ length: n }, (_, i) => make(i));
 
 // Soporte aprobado con retenciones por ítem y generales, para probar que la nota de ajuste las copia.
@@ -110,6 +120,9 @@ function respond(pathname: string, search: string, session: MockSession): unknow
   if (pathname.endsWith('/client/session')) return { features: { payments: false }, companies: [], ...session, ...sessionCatalogs };
   if (pathname.endsWith('/client/users')) return users;
   if (pathname.endsWith('/client/note-numberings')) return noteNumberings;
+  if (pathname.endsWith('/client/note-numberings/overview')) return { usesDataico: true, items: NOTE_NUMBERING_ITEMS };
+  if (pathname.endsWith('/client/note-numberings/choices')) return NOTE_NUMBERING_ITEMS.filter(i => i.source === 'own').map(i => ({ id: i.id, kind: i.kind, prefix: i.prefix, nextNumber: i.nextNumber, isDefault: i.isDefault }));
+  if (pathname.endsWith('/client/note-numberings/dataico-prefixes')) return [{ kind: 'CreditNote', kindLabel: 'Nota crédito', prefix: 'NCAY' }];
   if (pathname.endsWith('/v1/branding/my-branding')) return branding;
   if (pathname.endsWith('/v1/dashboard/summary')) return summary;
   if (pathname.endsWith('/tenant/branding/demo')) return { commercialName: LONG_NAME, logoLightUrl: '', primaryColorLight: '#2563eb' };

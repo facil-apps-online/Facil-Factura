@@ -150,6 +150,9 @@ namespace Fel.Core.Entities
         // aplica cuando el documento es una nota (ReferenceDocumentId tiene valor).
         public string? DiscrepancyResponseCode { get; set; }
 
+        // Numeración de notas elegida para esta nota crédito/débito (ver NoteNumbering.IsClientLevel); sin valor usa la predeterminada.
+        public Guid? NoteNumberingId { get; set; }
+
         public ICollection<DocumentItem> Items { get; set; } = new List<DocumentItem>();
 
         // Observaciones de la factura o nota, en el orden en que se capturaron (ver DocumentObservation).

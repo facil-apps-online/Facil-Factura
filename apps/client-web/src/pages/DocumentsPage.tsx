@@ -228,6 +228,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [paymentTermCatalog, setPaymentTermCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [paymentMeansCatalog, setPaymentMeansCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [formaPagoCatalog, setFormaPagoCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
+  // Numeraciones propias de notas crédito y débito del cliente: si hay más de una por tipo, la nota elige con cuál se numera.
+  const [noteNumberingChoices, setNoteNumberingChoices] = useState<{ id: string; kind: 'CreditNote' | 'DebitNote'; prefix: string; nextNumber: number; isDefault: boolean }[]>([]);
   const [creditNoteReasonCatalog, setCreditNoteReasonCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   const [debitNoteReasonCatalog, setDebitNoteReasonCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   // Catálogo de conceptos de retención (RetefUENTE/ReteIVA) administrado en Superadmin — se ofrece
@@ -298,6 +300,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     referenceDocumentId: null as string | null,
     referenceConcept: '',
     discrepancyResponseCode: '',
+    // Numeración de notas elegida (vacío = la predeterminada del cliente).
+    noteNumberingId: '',
     aiu: null as AiuParams | null,
     sectorExtensionData: '{}'
   };
@@ -349,6 +353,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     api.get('/client/tax-catalog?kind=DebitNoteReason')
       .then(res => setDebitNoteReasonCatalog(res.data))
       .catch(() => {});
+    if (!isSupport) {
+      api.get('/client/note-numberings/choices')
+        .then(res => setNoteNumberingChoices(res.data))
+        .catch(() => {});
+    }
     api.get(`/client/retention-concepts/catalog?scope=${isSupport ? 'Support' : 'Invoice'}`)
       .then(res => setAutoRetentionCatalog((res.data.concepts || []).filter((c: any) => !isSupport || c.taxCategory !== 'RET_IVA')))
       .catch(() => {});
@@ -601,7 +610,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         totalAmount: full.totalAmount,
         referenceDocumentId: full.referenceDocumentId,
         referenceConcept: full.referenceConcept || '',
-        discrepancyResponseCode: full.discrepancyResponseCode || '',
+        discrepancyResponseCode: full.discrepancyResponseCode || '', noteNumberingId: full.noteNumberingId || '',
         aiu: parseAiu(full.sectorExtensionData),
         sectorExtensionData: full.sectorExtensionData || '{}'
       });
@@ -1273,6 +1282,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const { aiu: aiuParams, observations, ...formRest } = formData;
       const payload = {
         ...formRest,
+        // "" no es un Guid? válido para el servidor: sin elegir, la nota usa la numeración predeterminada.
+        noteNumberingId: isNote && !isSupport ? (formData.noteNumberingId || null) : null,
         // Facturas y notas mandan la lista de observaciones; el documento soporte sigue con el texto "notes".
         // Moneda: en COP no se envía TRM; "" no es un decimal válido para el servidor.
         currency: isSupport ? 'COP' : (formData.currency || 'COP'),
@@ -1714,6 +1725,24 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                       options={(isDebitNote ? debitNoteReasonCatalog : creditNoteReasonCatalog).map(c => ({ value: c.category, label: c.name }))}
                     />
                   </div>
+                  {(() => {
+                    // Con varias numeraciones propias del tipo, la nota elige con cuál se numera; sin elegir usa la predeterminada.
+                    const choices = noteNumberingChoices.filter(n => n.kind === (isDebitNote ? 'DebitNote' : 'CreditNote'));
+                    if (choices.length < 2) return null;
+                    const defaultChoice = choices.find(n => n.isDefault);
+                    return (
+                      <div className="mt-4">
+                        <label className="block text-sm font-bold text-amber-800 mb-2">Numeración de la nota</label>
+                        <SearchableSelect
+                          value={formData.noteNumberingId || defaultChoice?.id || ''}
+                          onChange={v => setFormData({ ...formData, noteNumberingId: v })}
+                          placeholder="Elige la numeración..."
+                          inputClassName="w-full px-4 py-2 pr-8 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none"
+                          options={choices.map(n => ({ value: n.id, label: `${n.prefix} · próximo ${n.nextNumber}${n.isDefault ? ' (predeterminada)' : ''}` }))}
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })()}

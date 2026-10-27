@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Fel.Api.Security;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,10 +19,119 @@ namespace Fel.Api.Client.Controllers
     public class ClientNoteNumberingsController : ClientPortalControllerBase
     {
         private readonly FelDbContext _dbContext;
+        private readonly NoteNumberingAdminService _numberings;
 
-        public ClientNoteNumberingsController(FelDbContext dbContext)
+        public ClientNoteNumberingsController(FelDbContext dbContext, NoteNumberingAdminService numberings)
         {
             _dbContext = dbContext;
+            _numberings = numberings;
+        }
+
+        public class SaveOwnNumberingRequest
+        {
+            public string Kind { get; set; } = string.Empty;
+            public string Prefix { get; set; } = string.Empty;
+            public long? NextNumber { get; set; }
+        }
+
+        private static object ToItem(NoteNumberingAdminService.Item i) => new
+        {
+            id = i.Id,
+            kind = i.Kind.ToString(),
+            kindLabel = NoteNumberingAdminService.KindLabel(i.Kind),
+            prefix = i.Prefix,
+            nextNumber = i.NextNumber,
+            source = i.Source,
+            branchName = i.BranchName,
+            isDefault = i.IsDefault,
+            inUse = i.InUse
+        };
+
+        private static object ToCheck(NoteNumberingAdminService.DataicoCheck? c) => c == null ? null! : new { @checked = c.Checked, exists = c.Exists, message = c.Message };
+
+        private object SavedResponse(NoteNumberingAdminService.SaveResult r) => new
+        {
+            id = r.Row!.Id,
+            kind = r.Row.Kind.ToString(),
+            prefix = r.Row.Prefix,
+            nextNumber = r.Row.NextNumber ?? 1,
+            isDefault = r.Row.IsDefault,
+            dataico = ToCheck(r.Dataico)
+        };
+
+        // Todas las numeraciones de notas del Client, para agruparlas por prefijo: las propias (con la predeterminada), las del prefijo de la factura y las de sucursal.
+        [HttpGet("overview")]
+        public async Task<IActionResult> Overview()
+        {
+            var overview = await _numberings.GetOverviewAsync(GetCurrentClientId());
+            return Ok(new { usesDataico = overview.UsesDataico, items = overview.Items.Select(ToItem) });
+        }
+
+        // Numeraciones propias para elegir al crear una nota (también las ve el facturador).
+        [ClientRole(ClientUserRoles.Administrator, ClientUserRoles.Invoicer)]
+        [HttpGet("choices")]
+        public async Task<IActionResult> Choices()
+        {
+            var overview = await _numberings.GetOverviewAsync(GetCurrentClientId());
+            return Ok(overview.Items.Where(i => i.Source == "own").Select(i => new { id = i.Id, kind = i.Kind.ToString(), prefix = i.Prefix, nextNumber = i.NextNumber, isDefault = i.IsDefault }));
+        }
+
+        // Prefijos que ya existen en la cuenta de Dataico del Client y no están todavía como numeraciones propias.
+        [HttpGet("dataico-prefixes")]
+        public async Task<IActionResult> DataicoPrefixes()
+        {
+            var (missing, error) = await _numberings.DataicoPrefixesNotInFacilFacturaAsync(GetCurrentClientId());
+            if (error != null) return BadRequest(error);
+            return Ok(missing.Select(m => new { kind = m.Kind.ToString(), kindLabel = NoteNumberingAdminService.KindLabel(m.Kind), prefix = m.Prefix }));
+        }
+
+        [HttpPost("own")]
+        public async Task<IActionResult> CreateOwn([FromBody] SaveOwnNumberingRequest request)
+        {
+            if (!Enum.TryParse<NoteKind>(request.Kind, ignoreCase: true, out var kind) || !Enum.IsDefined(kind))
+                return BadRequest("El tipo de nota no es válido.");
+            var result = await _numberings.CreateAsync(GetCurrentClientId(), kind, request.Prefix, request.NextNumber);
+            return result.Error != null ? BadRequest(result.Error) : Ok(SavedResponse(result));
+        }
+
+        [HttpPut("own/{id:guid}")]
+        public async Task<IActionResult> UpdateOwn(Guid id, [FromBody] SaveOwnNumberingRequest request)
+        {
+            var result = await _numberings.UpdateAsync(GetCurrentClientId(), id, request.Prefix, request.NextNumber);
+            return result.Error != null ? BadRequest(result.Error) : Ok(SavedResponse(result));
+        }
+
+        [HttpDelete("own/{id:guid}")]
+        public async Task<IActionResult> DeleteOwn(Guid id)
+        {
+            var error = await _numberings.DeleteAsync(GetCurrentClientId(), id);
+            return error != null ? BadRequest(error) : NoContent();
+        }
+
+        [HttpPost("own/{id:guid}/default")]
+        public async Task<IActionResult> SetDefault(Guid id)
+        {
+            var error = await _numberings.SetDefaultAsync(GetCurrentClientId(), id);
+            return error != null ? BadRequest(error) : NoContent();
+        }
+
+        // Sin predeterminada propia, las notas de ese tipo usan el prefijo de su factura.
+        [HttpPost("default/{kind}/clear")]
+        public async Task<IActionResult> ClearDefault(string kind)
+        {
+            if (!Enum.TryParse<NoteKind>(kind, ignoreCase: true, out var noteKind) || !Enum.IsDefined(noteKind))
+                return BadRequest("El tipo de nota no es válido.");
+            await _numberings.ClearDefaultAsync(GetCurrentClientId(), noteKind);
+            return NoContent();
+        }
+
+        [HttpGet("own/{id:guid}/dataico-check")]
+        public async Task<IActionResult> DataicoCheck(Guid id)
+        {
+            var clientId = GetCurrentClientId();
+            var row = await _dbContext.NoteNumberings.AsNoTracking().FirstOrDefaultAsync(n => n.Id == id && n.ClientId == clientId && n.BranchId == null && n.ResolutionId == null);
+            if (row == null || string.IsNullOrWhiteSpace(row.Prefix)) return NotFound();
+            return Ok(ToCheck(await _numberings.CheckDataicoAsync(clientId, row.Kind, row.Prefix)));
         }
 
         public class SaveNoteNumberingRequest

@@ -49,6 +49,12 @@ namespace Fel.Core.Entities
         // Próximo consecutivo a asignar. Null = aún no se emitió ninguna (arranca en 1).
         public long? NextNumber { get; set; }
 
+        // Numeración propia del Client para notas crédito/débito (sin sucursal ni resolución, con prefijo): el Client puede tener varias por
+        // tipo, con prefijos distintos. La predeterminada se usa cuando la nota no elige una y la sucursal no tiene la suya.
+        public bool IsDefault { get; set; }
+
+        public bool IsClientLevel => BranchId == null && ResolutionId == null && !string.IsNullOrWhiteSpace(Prefix) && Kind != NoteKind.SupportAdjustment;
+
         public static NoteNumbering Shared(Guid clientId, NoteKind kind, string? prefix = null, long? nextNumber = null, Guid? resolutionId = null) => new NoteNumbering
         {
             Id = Guid.NewGuid(),

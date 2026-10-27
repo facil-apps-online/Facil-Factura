@@ -2074,6 +2074,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<DateTime>("IssueDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<Guid?>("NoteNumberingId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Notes")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -3073,6 +3076,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
                     b.Property<int>("Kind")
                         .HasColumnType("int");
 
@@ -3090,10 +3096,10 @@ namespace Fel.Infrastructure.Migrations
 
                     b.HasIndex("BranchId");
 
-                    b.HasIndex("ClientId", "ResolutionId", "BranchId", "Kind")
-                        .IsUnique();
-
                     b.HasIndex("ResolutionId");
+
+                    b.HasIndex("ClientId", "ResolutionId", "BranchId", "Kind", "Prefix")
+                        .IsUnique();
 
                     b.ToTable("NoteNumberings", (string)null);
                 });

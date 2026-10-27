@@ -150,6 +150,7 @@ builder.Services.AddScoped<Fel.Infrastructure.Services.UnusedTemplateDraftServic
 builder.Services.AddScoped<Fel.Infrastructure.Services.ClientUserAdminService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ResolutionBranchService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.DataicoResolutionSyncService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.NoteNumberingAdminService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.BranchCredentialResolver>();
 // WCF SOAP Client
 builder.Services.AddScoped<Fel.Core.Interfaces.IDianSoapClient, Fel.Infrastructure.Dian.DianSoapClient>();

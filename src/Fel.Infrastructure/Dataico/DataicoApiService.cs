@@ -55,6 +55,9 @@ namespace Fel.Infrastructure.Dataico
         // Lista las numeraciones de la cuenta de Dataico (GET /numberings/{module}). module es "invoice" (facturas) o "support-doc"
         // (documento soporte); credit-note y debit-note existen en Dataico pero no llevan una resolución propia.
         Task<DataicoNumberingSyncResult> SyncNumberingsAsync(string module, DataicoCredentials credentials);
+
+        // Prefijos de las numeraciones de notas de la cuenta (GET /numberings/credit-note | debit-note). La API no permite crearlas: se crean en Dataico.
+        Task<DataicoNotePrefixesResult> ListNotePrefixesAsync(string module, DataicoCredentials credentials);
     }
 
     public class DataicoApiService : IDataicoApiService
@@ -212,6 +215,12 @@ namespace Fel.Infrastructure.Dataico
         {
             var call = await ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/numberings/{module}", credentials, null, TimeSpan.FromSeconds(120));
             return DataicoNumberingSyncResult.Parse(call);
+        }
+
+        public async Task<DataicoNotePrefixesResult> ListNotePrefixesAsync(string module, DataicoCredentials credentials)
+        {
+            var call = await ExecuteAsync(HttpMethod.Get, $"{InvoicingBaseUrl}/numberings/{module}", credentials, null, TimeSpan.FromSeconds(60));
+            return DataicoNotePrefixesResult.Parse(call);
         }
 
         // timeout: la pasarela de la DIAN a veces tarda; el legacy espera hasta 180 s en los eventos para no recibir 504.

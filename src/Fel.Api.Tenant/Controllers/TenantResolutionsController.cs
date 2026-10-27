@@ -169,6 +169,44 @@ namespace Fel.Api.Tenant.Controllers
             });
         }
 
+        public class LoadDataicoResolutionRequest
+        {
+            public string DocumentType { get; set; } = string.Empty;
+            public string Prefix { get; set; } = string.Empty;
+            public string Number { get; set; } = string.Empty;
+        }
+
+        // Las resoluciones que Dataico tiene vinculadas a la cuenta del cliente, con su estado en FacilFactura (cargada, eliminada, nueva...), para
+        // cargar o recargar las que falten.
+        [HttpGet("dataico-available")]
+        public async Task<IActionResult> DataicoAvailable(Guid clientId)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId)) return StatusCode(StatusCodes.Status403Forbidden);
+            if (!await _dataicoSync.UsesDataicoAsync(clientId)) return BadRequest("Este cliente no factura por Dataico.");
+            var result = await _dataicoSync.ListAvailableAsync(clientId);
+            return Ok(new
+            {
+                items = result.Items.Select(r => new
+                {
+                    documentType = r.DocumentType, prefix = r.Prefix, number = r.Number, start = r.Start, end = r.End,
+                    startDate = r.StartDate, endDate = r.EndDate, state = r.State, resolutionId = r.ResolutionId
+                }),
+                errors = result.Errors, notes = result.Notes
+            });
+        }
+
+        // Carga, actualiza o recarga (reactiva) una sola resolución de Dataico.
+        [HttpPost("dataico-load")]
+        public async Task<IActionResult> DataicoLoad(Guid clientId, [FromBody] LoadDataicoResolutionRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            if (!await _dbContext.Clients.AnyAsync(c => c.Id == clientId && c.TenantId == tenantId)) return StatusCode(StatusCodes.Status403Forbidden);
+            if (!await _dataicoSync.UsesDataicoAsync(clientId)) return BadRequest("Este cliente no factura por Dataico.");
+            var (message, error) = await _dataicoSync.LoadOneAsync(clientId, request.DocumentType, request.Prefix, request.Number);
+            return error != null ? BadRequest(error) : Ok(new { message });
+        }
+
         // Trae las resoluciones vigentes que Dataico tiene vinculadas al NIT del cliente (carga inicial y resoluciones nuevas que el
         // cliente habilitó en la DIAN). Solo para clientes que facturan por Dataico.
         [HttpPost("sync-dataico")]
@@ -179,7 +217,7 @@ namespace Fel.Api.Tenant.Controllers
             if (!await _dataicoSync.UsesDataicoAsync(clientId)) return BadRequest("Este cliente no factura por Dataico.");
 
             var report = await _dataicoSync.SyncAsync(clientId);
-            return Ok(new { report.Created, report.Updated, report.Unchanged, report.Notes, report.Errors });
+            return Ok(new { report.Created, report.Updated, report.Reactivated, report.Unchanged, report.Notes, report.Errors });
         }
 
         public class UpdateResolutionRequest

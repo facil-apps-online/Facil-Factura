@@ -301,6 +301,21 @@ namespace Fel.Infrastructure.Dataico
                     result.QrCode ??= fromNested.QrCode;
                     result.DocumentNumber ??= fromNested.DocumentNumber;
                 }
+
+                // La consulta de una factura por número (GET invoices?number=) devuelve el documento dentro de "invoice": sin leerlo, una factura que
+                // Dataico ya tiene parecía no existir y se le asignaba a otra su mismo número.
+                if (root.TryGetProperty("invoice", out var invoice) && invoice.ValueKind == JsonValueKind.Object)
+                {
+                    var fromInvoice = new DataicoResult { Success = result.Success };
+                    ExtractFrom(invoice, fromInvoice);
+                    result.Cufe ??= fromInvoice.Cufe;
+                    result.DataicoDocumentId ??= fromInvoice.DataicoDocumentId;
+                    result.QrCode ??= fromInvoice.QrCode;
+                    result.DocumentNumber ??= fromInvoice.DocumentNumber;
+                    result.CustomerIdentification ??= fromInvoice.CustomerIdentification;
+                    result.PdfUrl ??= fromInvoice.PdfUrl;
+                    result.XmlUrl ??= fromInvoice.XmlUrl;
+                }
             }
             catch (JsonException)
             {

@@ -13,6 +13,7 @@ import ClientUsersTab from '../components/ClientUsersTab';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import { MinSaludCard, IhceCard, ReceptionMailboxCard, ReceptionEventsCard } from '../components/BranchCredentials';
 import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
+import DataicoResolutionsDialog from '@shared/components/DataicoResolutionsDialog';
 import { CredentialLockButton, lockedInputClass, lockedInputProps, useCredentialLock } from '@shared/components/CredentialLock';
 
 // Consecutivos internos de notas: crédito y débito (facturas) y ajuste (documento soporte).
@@ -49,6 +50,7 @@ export default function ClientEdit() {
   const [showResModal, setShowResModal] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [syncingDataico, setSyncingDataico] = useState(false);
+  const [dataicoResolutionsOpen, setDataicoResolutionsOpen] = useState(false);
   const [newRes, setNewRes] = useState({
     resolutionNumber: '',
     prefix: '',
@@ -1300,6 +1302,11 @@ export default function ClientEdit() {
                         {syncingDataico ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} Sincronizar con Dataico
                       </button>
                     )}
+                    {effectiveProvider === 'Dataico' && (
+                      <button onClick={() => setDataicoResolutionsOpen(true)} title="Ve lo que Dataico tiene vinculado y carga o recarga una resolución, también las que se eliminaron" className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2 text-sm">
+                        Resoluciones en Dataico
+                      </button>
+                    )}
                     <button onClick={openCreateResolutionModal} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium shadow-md transition-colors flex items-center gap-2 text-sm">
                       <Plus size={16} /> Nueva Resolución
                     </button>
@@ -2372,6 +2379,14 @@ export default function ClientEdit() {
           </div>
         </div>
       )}
+
+      <DataicoResolutionsDialog
+        open={dataicoResolutionsOpen}
+        onOpenChange={setDataicoResolutionsOpen}
+        load={async () => (await api.get(`/tenant/clients/${id}/resolutions/dataico-available`)).data}
+        loadOne={async item => (await api.post(`/tenant/clients/${id}/resolutions/dataico-load`, { documentType: item.documentType, prefix: item.prefix, number: item.number })).data.message}
+        onChanged={loadResolutions}
+      />
     </div>
   );
 }

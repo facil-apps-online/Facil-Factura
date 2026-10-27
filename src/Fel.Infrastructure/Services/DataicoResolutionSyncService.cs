@@ -36,6 +36,7 @@ namespace Fel.Infrastructure.Services
         {
             public int Created { get; set; }
             public int Updated { get; set; }
+            public int Reactivated { get; set; }
             public int Unchanged { get; set; }
             public List<string> Notes { get; } = new();
             public List<string> Errors { get; } = new();
@@ -45,6 +46,22 @@ namespace Fel.Infrastructure.Services
             public bool Lists(string documentType, string prefix, string number) =>
                 Listed.Any(l => l.DocumentType == documentType && string.Equals(l.Prefix, ResolutionPrefix.Normalize(prefix), StringComparison.OrdinalIgnoreCase) && l.Number == number.Trim());
         }
+
+        // Estado de una resolución de Dataico frente a FacilFactura: loaded = ya activa y al día; outdated = activa pero con otro rango o vigencia en
+        // Dataico; removed = estaba cargada y se eliminó o reemplazó; new = nunca se cargó; expired = ya venció.
+        public static class States
+        {
+            public const string Loaded = "loaded";
+            public const string Outdated = "outdated";
+            public const string Removed = "removed";
+            public const string New = "new";
+            public const string Expired = "expired";
+        }
+
+        public sealed record AvailableResolution(
+            string DocumentType, string Prefix, string Number, long Start, long End, DateTime StartDate, DateTime EndDate, string State, Guid? ResolutionId);
+
+        public sealed record AvailableResult(List<AvailableResolution> Items, List<string> Errors, List<string> Notes);
 
         public async Task<bool> UsesDataicoAsync(Guid clientId) =>
             await _dbContext.Clients.AsNoTracking().Where(c => c.Id == clientId).Select(c => c.Integrator.Code).FirstOrDefaultAsync() == "DATAICO";
@@ -81,63 +98,134 @@ namespace Fel.Infrastructure.Services
             };
         }
 
-        public async Task<SyncReport> SyncAsync(Guid clientId)
+        // Cliente con sus credenciales de Dataico, o el motivo por el que no se puede consultar.
+        private async Task<(Client? Client, string? Error)> LoadClientAsync(Guid clientId)
         {
-            var report = new SyncReport();
             var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
-            if (client == null || client.Integrator?.Code != "DATAICO")
-            {
-                report.Errors.Add("Este cliente no factura por Dataico.");
-                return report;
-            }
+            if (client == null || client.Integrator?.Code != "DATAICO") return (null, "Este cliente no factura por Dataico.");
+            if (string.IsNullOrWhiteSpace(DataicoDocumentMapper.ToCredentials(client, _cryptoService).AuthToken)) return (null, "Este cliente no tiene configurado el token de Dataico.");
+            return (client, null);
+        }
 
+        // Lo que Dataico lista, ya clasificado por tipo de documento y con el prefijo normalizado. No escribe nada.
+        private async Task<(List<(string DocumentType, DataicoSyncedResolution Synced)> Listed, List<string> Errors, List<string> Notes)> FetchAsync(Client client)
+        {
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
-            if (string.IsNullOrWhiteSpace(credentials.AuthToken))
-            {
-                report.Errors.Add("Este cliente no tiene configurado el token de Dataico.");
-                return report;
-            }
-
-            var mainBranchId = await BranchProvisioning.MainBranchIdAsync(_dbContext, clientId);
-            var today = DateTime.Today;
+            var listed = new List<(string, DataicoSyncedResolution)>();
+            var errors = new List<string>();
+            var notes = new List<string>();
 
             foreach (var (module, label) in Modules)
             {
                 var sync = await _dataico.SyncNumberingsAsync(module, credentials);
                 foreach (var error in sync.Errors.Distinct())
-                    report.Errors.Add(Modules.Length > 1 ? $"{label}: {error}" : error);
+                    errors.Add(Modules.Length > 1 ? $"{label}: {error}" : error);
 
                 foreach (var synced in sync.Resolutions)
                 {
                     var documentType = DocumentTypeOf(module, synced.Subtype);
                     if (documentType == null)
                     {
-                        report.Notes.Add($"{synced.Prefix} {synced.Number}: tipo de numeración '{synced.Subtype}' no manejado.");
+                        notes.Add($"{synced.Prefix} {synced.Number}: tipo de numeración '{synced.Subtype}' no manejado.");
                         continue;
                     }
                     if (string.IsNullOrWhiteSpace(synced.Number) || synced.Start <= 0 || synced.End < synced.Start || synced.StartDate == null || synced.EndDate == null)
                     {
-                        report.Notes.Add($"{synced.Prefix} {synced.Number}: Dataico la devolvió incompleta.");
+                        notes.Add($"{synced.Prefix} {synced.Number}: Dataico la devolvió incompleta.");
                         continue;
                     }
-
                     synced.Prefix = ResolutionPrefix.Normalize(synced.Prefix);
-                    report.Listed.Add((documentType, synced.Prefix, synced.Number));
-                    if (synced.EndDate.Value.Date < today)
-                    {
-                        report.Notes.Add($"{synced.Prefix} {synced.Number}: vencida el {synced.EndDate.Value:dd/MM/yyyy}.");
-                        continue;
-                    }
-
-                    await ApplyAsync(report, client, mainBranchId, documentType, synced);
+                    listed.Add((documentType, synced));
                 }
+            }
+            return (listed, errors, notes);
+        }
+
+        public async Task<SyncReport> SyncAsync(Guid clientId)
+        {
+            var report = new SyncReport();
+            var (client, error) = await LoadClientAsync(clientId);
+            if (client == null)
+            {
+                report.Errors.Add(error!);
+                return report;
+            }
+
+            var mainBranchId = await BranchProvisioning.MainBranchIdAsync(_dbContext, clientId);
+            var today = DateTime.Today;
+            var (listed, errors, notes) = await FetchAsync(client);
+            report.Errors.AddRange(errors);
+            report.Notes.AddRange(notes);
+
+            foreach (var (documentType, synced) in listed)
+            {
+                report.Listed.Add((documentType, synced.Prefix, synced.Number));
+                if (synced.EndDate!.Value.Date < today)
+                {
+                    report.Notes.Add($"{synced.Prefix} {synced.Number}: vencida el {synced.EndDate.Value:dd/MM/yyyy}.");
+                    continue;
+                }
+
+                await ApplyAsync(report, client, mainBranchId, documentType, synced, reactivate: false);
             }
 
             await _dbContext.SaveChangesAsync();
             return report;
         }
 
-        private async Task ApplyAsync(SyncReport report, Client client, Guid mainBranchId, string documentType, DataicoSyncedResolution synced)
+        // Las resoluciones que Dataico tiene vinculadas, cada una con su estado frente a FacilFactura, para decidir cuáles cargar o recargar. No escribe.
+        public async Task<AvailableResult> ListAvailableAsync(Guid clientId)
+        {
+            var (client, error) = await LoadClientAsync(clientId);
+            if (client == null) return new AvailableResult(new(), new() { error! }, new());
+
+            var (listed, errors, notes) = await FetchAsync(client);
+            var today = DateTime.Today;
+            var existing = await _dbContext.Resolutions.AsNoTracking().Where(r => r.ClientId == clientId).ToListAsync();
+
+            var items = new List<AvailableResolution>();
+            foreach (var (documentType, synced) in listed)
+            {
+                var same = existing.Where(r => r.DocumentType == documentType && string.Equals(r.Prefix, synced.Prefix, StringComparison.OrdinalIgnoreCase) && r.ResolutionNumber == synced.Number).ToList();
+                var active = same.FirstOrDefault(r => r.IsActive);
+                string state;
+                Guid? resolutionId = (active ?? same.FirstOrDefault())?.Id;
+                if (synced.EndDate!.Value.Date < today) state = States.Expired;
+                else if (active != null)
+                    state = active.NumberStart == synced.Start && active.NumberEnd == synced.End && active.ValidFrom.Date == synced.StartDate!.Value.Date && active.ValidTo.Date == synced.EndDate.Value.Date
+                        ? States.Loaded : States.Outdated;
+                else state = same.Count > 0 ? States.Removed : States.New;
+
+                items.Add(new AvailableResolution(documentType, synced.Prefix, synced.Number, synced.Start, synced.End, synced.StartDate!.Value, synced.EndDate.Value, state, resolutionId));
+            }
+
+            return new AvailableResult(items.OrderBy(i => i.DocumentType).ThenBy(i => i.Prefix).ThenBy(i => i.Number).ToList(), errors, notes);
+        }
+
+        // Carga, actualiza o recarga (reactiva) una sola resolución de Dataico. Devuelve el mensaje de lo hecho o el error.
+        public async Task<(string? Message, string? Error)> LoadOneAsync(Guid clientId, string documentType, string prefix, string number)
+        {
+            var (client, error) = await LoadClientAsync(clientId);
+            if (client == null) return (null, error);
+
+            var normalized = ResolutionPrefix.Normalize(prefix);
+            var (listed, errors, _) = await FetchAsync(client);
+            var match = listed.FirstOrDefault(l => l.DocumentType == documentType && string.Equals(l.Synced.Prefix, normalized, StringComparison.OrdinalIgnoreCase) && l.Synced.Number == number.Trim());
+            if (match.Synced == null)
+                return (null, errors.Count > 0 ? string.Join(" ", errors) : "Dataico no tiene vinculada esa resolución a la cuenta.");
+            if (match.Synced.EndDate!.Value.Date < DateTime.Today)
+                return (null, $"La resolución venció el {match.Synced.EndDate.Value:dd/MM/yyyy}.");
+
+            var report = new SyncReport();
+            await ApplyAsync(report, client, await BranchProvisioning.MainBranchIdAsync(_dbContext, clientId), documentType, match.Synced, reactivate: true);
+            if (report.Notes.Count > 0 && report.Created + report.Updated + report.Reactivated == 0) return (null, string.Join(" ", report.Notes));
+            await _dbContext.SaveChangesAsync();
+
+            var what = report.Created > 0 ? "cargada" : report.Reactivated > 0 ? "recargada" : report.Updated > 0 ? "actualizada" : "sin cambios";
+            return ($"Resolución {normalized} {number.Trim()} {what}.", null);
+        }
+
+        private async Task ApplyAsync(SyncReport report, Client client, Guid mainBranchId, string documentType, DataicoSyncedResolution synced, bool reactivate)
         {
             var sameNumber = await _dbContext.Resolutions.Where(r => r.ClientId == client.Id && r.DocumentType == documentType && r.Prefix == synced.Prefix && r.ResolutionNumber == synced.Number).ToListAsync();
             var current = sameNumber.FirstOrDefault(r => r.IsActive);
@@ -161,10 +249,16 @@ namespace Fel.Infrastructure.Services
                 report.Updated++;
                 return;
             }
+
             if (sameNumber.Count > 0)
             {
-                // Eliminada o reemplazada en FacilFactura: Dataico la sigue listando mientras esté vigente, pero no se reactiva sola.
-                report.Notes.Add($"{synced.Prefix} {synced.Number}: ya se había eliminado o reemplazado en FacilFactura; no se reactivó.");
+                if (!reactivate)
+                {
+                    // Eliminada o reemplazada en FacilFactura: Dataico la sigue listando mientras esté vigente, pero no se reactiva sola.
+                    report.Notes.Add($"{synced.Prefix} {synced.Number}: ya se había eliminado o reemplazado en FacilFactura; no se reactivó. Recárgala desde \"Resoluciones en Dataico\".");
+                    return;
+                }
+                await ReactivateAsync(report, sameNumber, documentType, synced, mainBranchId);
                 return;
             }
 
@@ -202,6 +296,36 @@ namespace Fel.Infrastructure.Services
             foreach (var branchId in branchIds)
                 _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(resolution.Id, branchId));
             report.Created++;
+        }
+
+        // Recarga una resolución eliminada: se reactiva la misma fila (conserva su consecutivo y sus sucursales) con el rango y la vigencia de Dataico.
+        // Reemplaza a las activas del mismo tipo y prefijo y solo queda como predeterminada si no hay otra del tipo (o si reemplaza a la predeterminada).
+        private async Task ReactivateAsync(SyncReport report, List<Resolution> inactive, string documentType, DataicoSyncedResolution synced, Guid mainBranchId)
+        {
+            // La más reciente de las eliminadas con ese número (normalmente es una sola).
+            var row = inactive.OrderByDescending(r => r.ValidTo).First();
+            var next = row.NextNumber ?? row.NumberStart;
+            if (next < synced.Start || next > synced.End)
+            {
+                report.Notes.Add($"{synced.Prefix} {synced.Number}: el rango de Dataico ({synced.Start}-{synced.End}) no incluye el próximo número que tenía ({next}); no se recargó.");
+                return;
+            }
+
+            var replaced = await _dbContext.Resolutions.Where(r => r.ClientId == row.ClientId && r.DocumentType == documentType && r.Prefix == synced.Prefix && r.IsActive && r.Id != row.Id).ToListAsync();
+            var replacedIds = replaced.Select(r => r.Id).ToList();
+            var otherActiveOfType = await _dbContext.Resolutions.AnyAsync(r => r.ClientId == row.ClientId && r.DocumentType == documentType && r.IsActive && r.Id != row.Id && !replacedIds.Contains(r.Id));
+            foreach (var old in replaced) old.IsActive = false;
+
+            row.NumberStart = synced.Start;
+            row.NumberEnd = synced.End;
+            row.ValidFrom = synced.StartDate!.Value;
+            row.ValidTo = synced.EndDate!.Value;
+            row.IsActive = true;
+            row.IsDefault = !otherActiveOfType || replaced.Any(r => r.IsDefault);
+
+            if (!await _dbContext.ResolutionBranches.AnyAsync(rb => rb.ResolutionId == row.Id))
+                _dbContext.ResolutionBranches.Add(BranchProvisioning.LinkResolution(row.Id, mainBranchId));
+            report.Reactivated++;
         }
     }
 }

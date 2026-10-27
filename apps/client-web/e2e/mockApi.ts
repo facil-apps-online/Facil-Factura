@@ -120,6 +120,15 @@ function respond(pathname: string, search: string, session: MockSession): unknow
   if (pathname.endsWith('/client/session')) return { features: { payments: false }, companies: [], ...session, ...sessionCatalogs };
   if (pathname.endsWith('/client/users')) return users;
   if (pathname.endsWith('/client/note-numberings')) return noteNumberings;
+  if (pathname.endsWith('/client/resolutions/dataico-available')) return {
+    items: [
+      { documentType: 'FE', prefix: 'FELP', number: '111', start: 51, end: 1000, startDate: '2026-01-01T00:00:00', endDate: '2028-09-30T00:00:00', state: 'loaded', resolutionId: 'r1' },
+      { documentType: 'DS', prefix: 'DS', number: '222', start: 1, end: 100, startDate: '2026-01-01T00:00:00', endDate: '2027-12-11T00:00:00', state: 'removed', resolutionId: 'r2' },
+      { documentType: 'FE', prefix: 'NUEVA', number: '333', start: 1, end: 500, startDate: '2026-01-01T00:00:00', endDate: '2028-01-01T00:00:00', state: 'new', resolutionId: null },
+      { documentType: 'FE', prefix: 'VIEJA', number: '444', start: 1, end: 50, startDate: '2024-01-01T00:00:00', endDate: '2025-01-01T00:00:00', state: 'expired', resolutionId: 'r3' },
+    ],
+    errors: [], notes: [],
+  };
   if (pathname.endsWith('/client/note-numberings/overview')) return { usesDataico: true, items: NOTE_NUMBERING_ITEMS };
   if (pathname.endsWith('/client/note-numberings/choices')) return NOTE_NUMBERING_ITEMS.filter(i => i.source === 'own').map(i => ({ id: i.id, kind: i.kind, prefix: i.prefix, nextNumber: i.nextNumber, isDefault: i.isDefault }));
   if (pathname.endsWith('/client/note-numberings/dataico-prefixes')) return [{ kind: 'CreditNote', kindLabel: 'Nota crédito', prefix: 'NCAY' }];

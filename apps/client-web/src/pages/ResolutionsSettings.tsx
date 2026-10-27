@@ -10,6 +10,7 @@ import RowIconButton from '../components/RowIconButton';
 import ResolutionBranchesModal from '../components/ResolutionBranchesModal';
 import BranchNoteNumberings from '../components/BranchNoteNumberings';
 import NoteNumberingsPanel from '../components/NoteNumberingsPanel';
+import DataicoResolutionsDialog from '@shared/components/DataicoResolutionsDialog';
 import { ALL_BRANCHES, useSession } from '../context/SessionContext';
 import { Button } from '../components/ui/button';
 import { todayColombia } from '../lib/colombiaTime';
@@ -26,7 +27,8 @@ const NOTE_COUNTER_BADGE: Record<NoteCounterType, string> = {
 
 export default function ResolutionsSettings() {
   const confirm = useConfirm();
-  const { branches, hasMultipleBranches, selectedBranchId } = useSession();
+  const { branches, hasMultipleBranches, selectedBranchId, features } = useSession();
+  const [dataicoResolutionsOpen, setDataicoResolutionsOpen] = useState(false);
   const [branchesFor, setBranchesFor] = useState<any | null>(null);
   const branchNames = (ids: string[] = []) => ids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ');
   const [loading, setLoading] = useState(true);
@@ -68,8 +70,9 @@ export default function ResolutionsSettings() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [sendingTestDoc, setSendingTestDoc] = useState(false);
 
-  const loadResolutions = () => {
-    setLoading(true);
+  // quiet: recarga el listado sin la pantalla de carga (el cuadro de Dataico sigue abierto con lo que acaba de hacer).
+  const loadResolutions = (quiet = false) => {
+    if (!quiet) setLoading(true);
     api.get('/client/resolutions')
       .then(async res => {
         setResolutions(res.data);
@@ -553,9 +556,16 @@ export default function ResolutionsSettings() {
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Resoluciones DIAN</h1>
           <p className="text-slate-500 mt-2">Administra las autorizaciones de numeración para emitir facturas.</p>
         </div>
-        <button onClick={openCreateModal} className="bg-primary hover:bg-primary-hover text-white px-5 py-3 sm:py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/30 transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2">
-          <Plus size={18} /> Nueva Resolución
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {features.dataico && (
+            <button onClick={() => setDataicoResolutionsOpen(true)} title="Ve lo que Dataico tiene vinculado y carga o recarga una resolución, también las que se eliminaron" className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-3 sm:py-2.5 rounded-xl font-semibold shadow-sm transition-colors flex items-center justify-center gap-2">
+              Resoluciones en Dataico
+            </button>
+          )}
+          <button onClick={openCreateModal} className="bg-primary hover:bg-primary-hover text-white px-5 py-3 sm:py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/30 transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2">
+            <Plus size={18} /> Nueva Resolución
+          </button>
+        </div>
       </div>
 
       {/* Pantalla de progreso de la habilitación: bloquea a propósito (no se puede cerrar mientras la
@@ -1042,6 +1052,16 @@ export default function ResolutionsSettings() {
           resolution={branchesFor}
           onClose={() => setBranchesFor(null)}
           onSaved={() => { setBranchesFor(null); loadResolutions(); }}
+        />
+      )}
+
+      {features.dataico && (
+        <DataicoResolutionsDialog
+          open={dataicoResolutionsOpen}
+          onOpenChange={setDataicoResolutionsOpen}
+          load={async () => (await api.get('/client/resolutions/dataico-available')).data}
+          loadOne={async item => (await api.post('/client/resolutions/dataico-load', { documentType: item.documentType, prefix: item.prefix, number: item.number })).data.message}
+          onChanged={() => loadResolutions(true)}
         />
       )}
     </div>

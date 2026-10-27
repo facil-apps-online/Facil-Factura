@@ -97,11 +97,13 @@ namespace Fel.Infrastructure.Dataico
 
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
 
+            // Consecutivo de factura que se propone en este envío y todavía NO se ha consumido: solo se consume si Dataico crea el documento.
+            long? proposedNumber = null;
             if (string.IsNullOrEmpty(invoice.Number) && invoice.TypeCode is not ("NC" or "ND"))
             {
                 // Dataico puede devolver como exitosa la factura que ya existe cuando se repite el
-                // mismo prefijo y número. Verificamos antes de reclamarlo para no reutilizar una
-                // numeración que Dataico ya tiene ocupada.
+                // mismo prefijo y número. Se verifica antes de enviar para no reutilizar una
+                // numeración que Dataico ya tiene ocupada (p. ej. facturas emitidas directamente allá).
                 for (var attempt = 0; attempt < 100; attempt++)
                 {
                     var candidate = await Fel.Infrastructure.Services.ResolutionNumbering.PeekNextNumberAsync(_dbContext, resolution.Id);
@@ -116,12 +118,16 @@ namespace Fel.Infrastructure.Dataico
                         continue;
                     }
 
-                    var claimed = await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id);
-                    if (claimed == candidate)
-                    {
-                        invoice.Number = candidate.ToString();
-                        break;
-                    }
+                    // Un número fuera de lo autorizado no se envía ni se consume.
+                    if (resolution.NumberEnd > 0 && candidate > resolution.NumberEnd)
+                        throw new Fel.Infrastructure.Services.ResolutionExhaustedException(
+                            $"La resolución {resolution.Prefix} llegó a su último número autorizado ({resolution.NumberEnd}). " +
+                            "Solicita una nueva resolución a la DIAN o usa otra resolución activa.");
+
+                    // Se envía con este número sin reservarlo: si Dataico no crea el documento, el consecutivo queda libre.
+                    invoice.Number = candidate.ToString();
+                    proposedNumber = candidate;
+                    break;
                 }
                 if (string.IsNullOrEmpty(invoice.Number))
                     throw new InvalidOperationException("No se pudo encontrar un consecutivo disponible en Dataico.");
@@ -151,6 +157,8 @@ namespace Fel.Infrastructure.Dataico
                 : resolution.Prefix;
 
             Fel.Infrastructure.Dataico.Models.DataicoResult result;
+            // Dataico devolvió un documento que no es de esta factura (otro adquirente, o ya asociado a otra factura nuestra).
+            var foreignDocument = false;
             Document? originalInvoiceForPdf = null;
             var externalOriginalId = ExternalOriginalId(invoice);
 
@@ -220,6 +228,39 @@ namespace Fel.Infrastructure.Dataico
                 {
                     result.Success = false;
                     result.ErrorMessage = "Dataico devolvió una factura existente con un adquirente diferente al de esta factura.";
+                    foreignDocument = true;
+                }
+            }
+
+            // El consecutivo de una factura solo se asigna cuando Dataico la crea; un rechazo no debe dejar el número tomado.
+            if (invoice.TypeCode is not ("NC" or "ND") && !string.IsNullOrEmpty(invoice.Number))
+            {
+                if (!foreignDocument && !string.IsNullOrWhiteSpace(result.DataicoDocumentId)
+                    && await _dbContext.Documents.AnyAsync(d => d.ClientId == client.Id && d.Id != invoice.Id && d.DataicoDocumentId == result.DataicoDocumentId))
+                {
+                    result.Success = false;
+                    result.ErrorMessage = "Dataico devolvió una factura que ya está asociada a otra factura de FacilFactura con ese mismo número.";
+                    foreignDocument = true;
+                }
+
+                var createdInDataico = !foreignDocument && (result.Success || !string.IsNullOrWhiteSpace(result.DataicoDocumentId));
+                var noResponse = result.StatusCode == 0;
+                if (foreignDocument)
+                {
+                    // El número ya lo tiene otra factura en Dataico: se salta y la factura queda sin número (ni datos del documento ajeno).
+                    if (proposedNumber != null) await Fel.Infrastructure.Services.ResolutionNumbering.CommitNumberAsync(_dbContext, resolution.Id, proposedNumber.Value);
+                    invoice.Number = string.Empty;
+                    result.Cufe = null; result.DataicoDocumentId = null; result.QrCode = null; result.PdfUrl = null; result.XmlUrl = null;
+                }
+                else if (proposedNumber != null && (createdInDataico || noResponse))
+                {
+                    // Creada, o sin respuesta (corte de red): el número queda tomado y el reintento comprueba en Dataico antes de duplicar.
+                    await Fel.Infrastructure.Services.ResolutionNumbering.CommitNumberAsync(_dbContext, resolution.Id, proposedNumber.Value);
+                }
+                else if (proposedNumber != null)
+                {
+                    // Dataico respondió sin crear el documento (p. ej. datos inválidos): el consecutivo sigue libre.
+                    invoice.Number = string.Empty;
                 }
             }
 

@@ -31,6 +31,42 @@ namespace Fel.Api.Client.Controllers
             _dataicoSync = dataicoSync;
         }
 
+        public class LoadDataicoResolutionRequest
+        {
+            public string DocumentType { get; set; } = string.Empty;
+            public string Prefix { get; set; } = string.Empty;
+            public string Number { get; set; } = string.Empty;
+        }
+
+        private static object ToAvailable(DataicoResolutionSyncService.AvailableResolution r) => new
+        {
+            documentType = r.DocumentType, prefix = r.Prefix, number = r.Number, start = r.Start, end = r.End,
+            startDate = r.StartDate, endDate = r.EndDate, state = r.State, resolutionId = r.ResolutionId
+        };
+
+        // Las resoluciones que Dataico tiene vinculadas a la cuenta del cliente, con su estado en FacilFactura (cargada, eliminada, nueva...), para
+        // cargar o recargar las que falten. Solo clientes que facturan por Dataico.
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpGet("dataico-available")]
+        public async Task<IActionResult> DataicoAvailable()
+        {
+            var clientId = GetCurrentClientId();
+            if (!await _dataicoSync.UsesDataicoAsync(clientId)) return BadRequest("Este cliente no factura por Dataico.");
+            var result = await _dataicoSync.ListAvailableAsync(clientId);
+            return Ok(new { items = result.Items.Select(ToAvailable), errors = result.Errors, notes = result.Notes });
+        }
+
+        // Carga, actualiza o recarga (reactiva) una sola resolución de Dataico.
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpPost("dataico-load")]
+        public async Task<IActionResult> DataicoLoad([FromBody] LoadDataicoResolutionRequest request)
+        {
+            var clientId = GetCurrentClientId();
+            if (!await _dataicoSync.UsesDataicoAsync(clientId)) return BadRequest("Este cliente no factura por Dataico.");
+            var (message, error) = await _dataicoSync.LoadOneAsync(clientId, request.DocumentType, request.Prefix, request.Number);
+            return error != null ? BadRequest(error) : Ok(new { message });
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetResolutions()
         {

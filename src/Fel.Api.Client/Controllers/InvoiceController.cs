@@ -203,15 +203,13 @@ namespace Fel.Api.Client.Controllers
                 var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1)).Date;
                 var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
-                var invoices = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
-                    .Include(d => d.Customer)
-                    .Include(d => d.Resolution)
-                    .Include(d => d.ReferenceDocument)
-                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
-                    .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.AdditionalTaxes)
-                    .Include(d => d.GeneralRetentions)
-                    .Where(d => d.ClientId == clientId && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
-                    .OrderByDescending(d => d.IssueDate)
+                // Solo lo que se ve en cada fila (ver DocumentListItem): el detalle y la edición piden el documento completo por id.
+                var invoices = await Fel.Api.Client.Models.DocumentListQuery.Project(
+                        InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
+                            .AsNoTracking()
+                            .Where(d => d.ClientId == clientId && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
+                            .OrderByDescending(d => d.IssueDate),
+                        withReference: true)
                     .ToListAsync();
 
                 // Notas (NC/ND) que referencian alguna de estas facturas — una sola consulta extra
@@ -279,6 +277,28 @@ namespace Fel.Api.Client.Controllers
 
                 if (invoice == null) return NotFound("Factura no encontrada.");
                 return Ok(invoice);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Respuesta del integrador (Dataico o DIAN) tal como se guardó: el listado solo avisa que existe porque pesa hasta decenas de KB por documento.
+        [HttpGet("{id}/dian-response")]
+        public async Task<IActionResult> GetDianResponse(Guid id)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var message = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
+                    .AsNoTracking()
+                    .Where(d => d.Id == id)
+                    .Select(d => new { d.DianResponseMessage })
+                    .FirstOrDefaultAsync();
+
+                if (message == null) return NotFound("Factura no encontrada.");
+                return Ok(new { dianResponseMessage = message.DianResponseMessage });
             }
             catch (UnauthorizedAccessException ex)
             {

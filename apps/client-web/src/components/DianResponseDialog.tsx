@@ -31,8 +31,9 @@ const parseDianResponse = (raw: string): { errors?: { path?: string[]; error: st
 };
 
 // Un documento sobre el que se puede abrir el diálogo: rechazado, o aprobado con respuesta del integrador.
-export const hasDianResponse = (doc: { status: string; dianResponseMessage?: string | null }) =>
-  (doc.status === 'REJECTED' || doc.status === 'APPROVED') && !!doc.dianResponseMessage;
+// Los listados no traen el texto (pesa mucho) y avisan con hasDianResponse; el detalle sí trae dianResponseMessage.
+export const hasDianResponse = (doc: { status: string; dianResponseMessage?: string | null; hasDianResponse?: boolean }) =>
+  (doc.status === 'REJECTED' || doc.status === 'APPROVED') && (!!doc.dianResponseMessage || !!doc.hasDianResponse);
 
 // Diálogo con el motivo del rechazo o la respuesta de la DIAN. Lo comparten facturas, documentos soporte y nómina.
 // `label` es lo que identifica al documento bajo el título (ej. "Factura FE-12").

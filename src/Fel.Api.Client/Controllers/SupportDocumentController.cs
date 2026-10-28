@@ -91,15 +91,38 @@ namespace Fel.Api.Client.Controllers
                 var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1)).Date;
                 var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
-                var docs = await BranchDocuments
-                    .Include(d => d.Customer)
-                    .Include(d => d.DocumentType)
-                    .Include(d => d.Resolution)
-                    .Where(d => d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode) && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
-                    .OrderByDescending(d => d.IssueDate)
+                // Solo lo que se ve en cada fila (ver DocumentListItem): el detalle y la edición piden el documento completo por id.
+                var docs = await Fel.Api.Client.Models.DocumentListQuery.Project(
+                        BranchDocuments
+                            .AsNoTracking()
+                            .Where(d => d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode) && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
+                            .OrderByDescending(d => d.IssueDate),
+                        withReference: false)
                     .ToListAsync();
 
                 return Ok(docs);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Respuesta del integrador (Dataico o DIAN) tal como se guardó: el listado solo avisa que existe porque pesa hasta decenas de KB por documento.
+        [HttpGet("{id}/dian-response")]
+        public async Task<IActionResult> GetDianResponse(Guid id)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var message = await BranchDocuments
+                    .AsNoTracking()
+                    .Where(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode))
+                    .Select(d => new { d.DianResponseMessage })
+                    .FirstOrDefaultAsync();
+
+                if (message == null) return NotFound("Documento soporte no encontrado.");
+                return Ok(new { dianResponseMessage = message.DianResponseMessage });
             }
             catch (UnauthorizedAccessException ex)
             {

@@ -21,7 +21,7 @@ import RowIconButton from '../components/RowIconButton';
 import { Button } from '../components/ui/button';
 import { STATUS_FILTER_OPTIONS, STATUS_LABELS } from '../lib/documentStatus';
 import { BatchActionBar, BatchProgressDialog } from '../components/BatchActions';
-import DianResponseDialog from '../components/DianResponseDialog';
+import DianResponseDialog, { hasDianResponse } from '../components/DianResponseDialog';
 import ProductFormModal from '../components/ProductFormModal';
 import DataicoLookupModal from '../components/DataicoLookupModal';
 import { usePdfPreview } from '../lib/pdfPreview';
@@ -48,14 +48,19 @@ const retentionCategoryLabel = (taxCategory: string) => RETENTION_CATEGORY_LABEL
 // calculado y persistido al guardar (item.retentions[].amount), no se recalculan a partir de la
 // tarifa — las generales sí, porque DocumentGeneralRetentions solo guarda categoría+tarifa, no un
 // monto (se prorratean entre ítems recién al enviar al integrador).
-const invoiceRetentionsTotal = (inv: any) =>
-  (inv.items || []).reduce((sum: number, item: any) => sum + (item.retentions || []).reduce((s: number, r: any) => s + (r.amount || 0), 0), 0) +
-  (inv.generalRetentions || []).reduce((sum: number, r: any) => sum + (r.taxCategory === 'RET_IVA' ? inv.taxAmount * r.rate / 100 : inv.subtotal * r.rate / 100), 0);
+const invoiceRetentionsTotal = (inv: any): number =>
+  // Las filas del listado ya traen el total calculado por el servidor (no llevan ítems); el documento completo del detalle lo calcula aquí.
+  inv.retentionsTotal ?? (
+    (inv.items || []).reduce((sum: number, item: any) => sum + (item.retentions || []).reduce((s: number, r: any) => s + (r.amount || 0), 0), 0) +
+    (inv.generalRetentions || []).reduce((sum: number, r: any) => sum + (r.taxCategory === 'RET_IVA' ? inv.taxAmount * r.rate / 100 : inv.subtotal * r.rate / 100), 0)
+  );
 
 // Total neto de un documento: el bruto (subtotal + IVA) menos retenciones y descuento general,
 // más cargo general — misma fórmula que el "Total:" del formulario de creación/edición.
-const invoiceNetTotal = (inv: any) =>
-  (inv.totalAmount || 0) - invoiceRetentionsTotal(inv) - (inv.generalDiscountAmount || 0) - (inv.roundingAdjustmentAmount || 0) + (inv.generalChargeAmount || 0);
+const invoiceNetTotal = (inv: any): number =>
+  inv.netTotal ?? (
+    (inv.totalAmount || 0) - invoiceRetentionsTotal(inv) - (inv.generalDiscountAmount || 0) - (inv.roundingAdjustmentAmount || 0) + (inv.generalChargeAmount || 0)
+  );
 
 // Contrato AIU (Administración, Imprevistos, Utilidad) — factura con tipo de operación "09". El
 // formulario pide el valor del servicio y los porcentajes y genera cuatro líneas: Administración, Imprevistos, Utilidad y el propio
@@ -523,6 +528,18 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       toast.error(getErrorMessage(err, 'Error al reenviar el documento'));
     } finally {
       setResendingId(null);
+    }
+  };
+
+  // El listado solo avisa que hay respuesta del integrador (pesa hasta decenas de KB por documento): se pide al abrir el diálogo.
+  // El detalle ya trae el texto completo.
+  const openDianResponse = async (inv: any) => {
+    if (inv.dianResponseMessage) { setResponseModalInv(inv); return; }
+    try {
+      const res = await api.get(`${cfg.api}/${inv.id}/dian-response`);
+      setResponseModalInv({ ...inv, dianResponseMessage: res.data.dianResponseMessage });
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'No se pudo cargar la respuesta'));
     }
   };
 
@@ -2300,9 +2317,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               <button onClick={() => handlePreviewPdf(inv.id)} disabled={previewingId === inv.id} className="px-4 py-3 md:py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 disabled:opacity-50">
                 {previewingId === inv.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />} Vista Previa
               </button>
-              {(inv.status === 'REJECTED' || inv.status === 'APPROVED') && inv.dianResponseMessage && (
+              {hasDianResponse(inv) && (
                 <button
-                  onClick={() => setResponseModalInv(inv)}
+                  onClick={() => openDianResponse(inv)}
                   className={`px-4 py-3 md:py-2 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 ${inv.status === 'REJECTED' ? 'text-rose-700 bg-rose-50 hover:bg-rose-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
                 >
                   {inv.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
@@ -2729,9 +2746,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 <RowIconButton action="delete" label={`Eliminar ${cfg.singular} ${inv.number || 'borrador'}`} onClick={() => handleDeleteDraft(inv.id)} />
               </>
             )}
-            {(inv.status === 'REJECTED' || inv.status === 'APPROVED') && inv.dianResponseMessage && (
+            {hasDianResponse(inv) && (
               <button
-                onClick={() => setResponseModalInv(inv)}
+                onClick={() => openDianResponse(inv)}
                 title={inv.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
                 aria-label={inv.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
                 className={`${iconBtn} ${inv.status === 'REJECTED' ? 'text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-primary hover:bg-slate-100'}`}

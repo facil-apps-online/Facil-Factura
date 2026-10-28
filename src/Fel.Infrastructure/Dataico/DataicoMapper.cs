@@ -57,7 +57,9 @@ namespace Fel.Infrastructure.Dataico
             return (cityCode.Substring(0, 2), cityCode.Substring(2));
         }
 
-        public static DataicoParty ToDataicoParty(Customer customer, IReadOnlyDictionary<string, string>? identificationTypeOverrides = null)
+        // omitIncompleteAddress: el documento soporte sale sin dirección cuando el proveedor colombiano tiene dirección pero no ciudad DANE (Dataico rechaza
+        // el cliente con una dirección sin departamento y ciudad); el tercero conserva su dirección guardada.
+        public static DataicoParty ToDataicoParty(Customer customer, IReadOnlyDictionary<string, string>? identificationTypeOverrides = null, bool omitIncompleteAddress = false)
         {
             // Fuera de Colombia no hay código DANE: el departamento o estado y la ciudad viajan como texto, con el país del tercero.
             var isForeign = !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO";
@@ -79,6 +81,11 @@ namespace Fel.Infrastructure.Dataico
             // ninguna dirección tampoco manda el país: Dataico asume Colombia.
             static string? OrNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
             var hasAddress = !CustomerAddressRules.IsEmpty(customer.Address, customer.CityCode, customer.CityName, customer.StateName);
+            if (omitIncompleteAddress && CustomerAddressRules.IncompleteCityMessage(isForeign, customer.Address, customer.CityCode, customer.CityName, customer.StateName) != null)
+            {
+                hasAddress = false;
+                department = city = string.Empty;
+            }
 
             return new DataicoParty
             {
@@ -92,7 +99,7 @@ namespace Fel.Infrastructure.Dataico
                 regimen = customer.IncomeTaxRegime == "47" ? "SIMPLE" : customer.DataicoRegimen,
                 department = OrNull(department),
                 city = OrNull(city),
-                address_line = OrNull(customer.Address),
+                address_line = hasAddress || isForeign ? OrNull(customer.Address) : null,
                 country_code = isForeign ? customer.CountryCode : (hasAddress ? "CO" : null),
                 company_name = isJuridica ? customer.Name : string.Empty,
                 first_name = isJuridica ? string.Empty : firstName,

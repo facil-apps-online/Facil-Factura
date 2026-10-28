@@ -465,7 +465,13 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest(new { message = "Dataico rechazó el documento soporte.", detail = DataicoDianOutcome.Readable(document.DianResponseMessage), sent });
                 }
 
-                return Ok(new { message = "Documento soporte emitido correctamente.", document });
+                // La dirección del proveedor sin ciudad DANE no viaja (Dataico la rechaza): se avisa para que no desaparezca sin que se note.
+                var customer = document.Customer;
+                var warning = customer == null ? null : Fel.Infrastructure.Dian.CustomerAddressRules.IncompleteCityMessage(
+                    !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO", customer.Address, customer.CityCode, customer.CityName, customer.StateName) == null
+                    ? null
+                    : "El proveedor tiene dirección pero no ciudad (código DANE): el documento se emitió sin su dirección. Complétala en el tercero para incluirla.";
+                return Ok(new { message = "Documento soporte emitido correctamente.", warning, document });
             }
             catch (UnauthorizedAccessException ex)
             {

@@ -366,7 +366,7 @@ namespace Fel.Infrastructure.Dataico
                 source_document_cuds = originalDocument.Cufe ?? string.Empty,
                 source_document_issue_date = originalDocument.IssueDate.ToString("dd/MM/yyyy"),
                 source_document_number = originalDocument.Number,
-                customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides)
+                customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides, omitIncompleteAddress: true)
             };
 
             // La nota de ajuste es el reflejo del documento soporte que ajusta (como la nota crédito con la
@@ -426,7 +426,7 @@ namespace Fel.Infrastructure.Dataico
                     resolution_number = resolution.ResolutionNumber,
                     flexible = true
                 },
-                customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides)
+                customer = DataicoMapper.ToDataicoParty(provider, identificationTypeOverrides, omitIncompleteAddress: true)
             };
 
             var itemsList = items as IReadOnlyList<DocumentItem> ?? items.ToList();

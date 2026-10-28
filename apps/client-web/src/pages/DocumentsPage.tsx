@@ -1350,8 +1350,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     setPublishingId(inv.id);
     const wasViewingId = viewingInvoice?.id;
     try {
-      await api.post(`${cfg.api}/${inv.id}/publish`, {});
+      const res = await api.post(`${cfg.api}/${inv.id}/publish`, {});
       toast.success(`${cfg.singular} emitid${isSupport ? 'o' : 'a'} correctamente`);
+      // Aviso del servidor (p. ej. proveedor con dirección sin ciudad: salió sin dirección).
+      if (res?.data?.warning) toast.warning(res.data.warning, { duration: 15000 });
     } catch (err: any) {
       // El backend guarda el estado "RECHAZADA" y el motivo aunque la respuesta sea un error
       // (el rechazo del integrador no es una falla nuestra) — hay que refrescar igual, si no la

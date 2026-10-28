@@ -31,7 +31,10 @@ namespace Fel.Infrastructure.Dataico
         // acepten este mismo verbo PUT, así que el primer envío de cada uno debe validarse en
         // producción. pdfBytes es opcional: si es null, Dataico reenvía con su propio PDF ya
         // generado en vez de uno personalizado.
-        Task<DataicoResult> SendCustomDocumentPdfAsync(string documentId, string documentTypeCode, byte[]? pdfBytes, string recipientEmail, DataicoCredentials credentials);
+        // attachments: PDF que el cliente adjuntó al documento; solo los aceptan la factura, la nota crédito y la nota débito. Si la petición completa
+        // (PDF propio + adjuntos, en base64) pasa del tope de Dataico no se envía y el resultado explica por qué.
+        Task<DataicoResult> SendCustomDocumentPdfAsync(string documentId, string documentTypeCode, byte[]? pdfBytes, string recipientEmail, DataicoCredentials credentials,
+            IReadOnlyList<(string Name, byte[] Content)>? attachments = null);
 
         // Evento de recepción (RADIAN) sobre una factura recibida: Dataico lo firma y lo envía a la DIAN. El GET
         // recupera uno ya enviado por su número (prefijo + consecutivo), por ejemplo "EV58".
@@ -122,7 +125,8 @@ namespace Fel.Infrastructure.Dataico
             return ExecuteAsync(HttpMethod.Post, $"{PayrollBaseUrl}/payroll-deletions", credentials, deletion);
         }
 
-        public Task<DataicoResult> SendCustomDocumentPdfAsync(string documentId, string documentTypeCode, byte[]? pdfBytes, string recipientEmail, DataicoCredentials credentials)
+        public Task<DataicoResult> SendCustomDocumentPdfAsync(string documentId, string documentTypeCode, byte[]? pdfBytes, string recipientEmail, DataicoCredentials credentials,
+            IReadOnlyList<(string Name, byte[] Content)>? attachments = null)
         {
             var (baseUrl, resource) = documentTypeCode switch
             {
@@ -136,6 +140,25 @@ namespace Fel.Infrastructure.Dataico
                 _ => (InvoicingBaseUrl, "invoices")
             };
 
+            // Dataico recibe los adjuntos solo en facturas y notas (los demás tipos no los documentan).
+            var extra = documentTypeCode is "DS" or "DS-AJUSTE" || (documentTypeCode?.StartsWith("NE", StringComparison.OrdinalIgnoreCase) ?? false)
+                ? null
+                : attachments?.Where(a => a.Content.Length > 0).ToList();
+
+            if (extra is { Count: > 0 })
+            {
+                var requestBytes = Fel.Infrastructure.Services.DocumentAttachmentService.Base64Size(pdfBytes?.Length ?? 0)
+                    + extra.Sum(a => Fel.Infrastructure.Services.DocumentAttachmentService.Base64Size(a.Content.Length));
+                if (requestBytes > Fel.Core.Entities.DocumentAttachment.MaxRequestBytes)
+                {
+                    return Task.FromResult(new DataicoResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"El correo con el PDF del documento y los adjuntos pesa {requestBytes / 1024.0 / 1024.0:0.0} MB y Dataico acepta hasta {Fel.Core.Entities.DocumentAttachment.MaxRequestBytes / 1024 / 1024} MB. Quita o reemplaza algún adjunto."
+                    });
+                }
+            }
+
             var envelope = new DataicoCustomDocumentEnvelope
             {
                 actions = new DataicoCustomDocumentActions
@@ -143,7 +166,8 @@ namespace Fel.Infrastructure.Dataico
                     send_dian = false,
                     send_email = true,
                     email = recipientEmail,
-                    pdf = pdfBytes == null ? null : Convert.ToBase64String(pdfBytes)
+                    pdf = pdfBytes == null ? null : Convert.ToBase64String(pdfBytes),
+                    attachments = extra is { Count: > 0 } ? extra.Select(a => new DataicoAttachment { name = a.Name, data = Convert.ToBase64String(a.Content) }).ToList() : null
                 },
                 invoice = new DataicoCustomDocumentInvoiceRef
                 {

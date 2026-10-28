@@ -2185,6 +2185,42 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("Documents", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.DocumentAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.ToTable("DocumentAttachments", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.DocumentGeneralRetention", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6405,6 +6441,15 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Resolution");
 
                     b.Navigation("UsedTemplate");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentAttachment", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Document", null)
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentGeneralRetention", b =>

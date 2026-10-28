@@ -281,12 +281,13 @@ namespace Fel.Infrastructure.Dataico
             invoice.XmlUrl = result.XmlUrl;
             invoice.ProcessedAt = DateTime.UtcNow;
 
+            string? warning = null;
             if (result.Success)
             {
                 var leyenda = await _legendService.ResolveAsync(client, resolution, invoice.TypeCode);
                 var currencyWords = await CurrencyWords.LoadAsync(_dbContext);
                 var location = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
-                await _customPdfService.TrySendCustomPdfAsync(
+                warning = await _customPdfService.TrySendCustomPdfAsync(
                     invoice, customer?.Email, client,
                     template => InvoiceReportDataMapper.Build(invoice, customer, client, location, resolution, items.ToList(), originalInvoiceForPdf, template.MostrarRetenciones, leyenda: leyenda, currencyWords: currencyWords),
                     credentials);
@@ -297,7 +298,8 @@ namespace Fel.Infrastructure.Dataico
                 Success = result.Success,
                 Status = invoice.Status,
                 Cufe = result.Cufe,
-                ResponseMessage = invoice.DianResponseMessage
+                ResponseMessage = invoice.DianResponseMessage,
+                Warning = warning
             };
         }
 

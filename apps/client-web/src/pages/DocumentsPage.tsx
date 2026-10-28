@@ -8,6 +8,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import BulkImportModal from '../components/BulkImportModal';
 import CustomerFormModal from '../components/CustomerFormModal';
 import EditCustomerButton from '../components/EditCustomerButton';
+import DocumentAttachments, { uploadPendingAttachments } from '../components/DocumentAttachments';
 import SearchableSelect, { type SearchableSelectOption } from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
@@ -274,6 +275,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [viewingOriginal, setViewingOriginal] = useState<any>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // PDF elegidos en un documento nuevo: se suben apenas el borrador queda guardado y ya tiene id.
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
+  useEffect(() => { setPendingAttachments([]); }, [view, editingId]);
   const [expandedRetentions, setExpandedRetentions] = useState<Record<number, boolean>>({});
   // Monedas extranjeras disponibles (catálogo del superadmin); solo se cargan si el tenant habilitó al cliente.
   const [currencyCatalog, setCurrencyCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
@@ -1384,8 +1388,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         await api.put(`${cfg.api}/${editingId}/draft`, payload);
         toast.success('Borrador actualizado');
       } else {
-        await api.post(`${cfg.api}/draft`, payload);
+        const created = await api.post(`${cfg.api}/draft`, payload);
         toast.success('Borrador guardado');
+        if (pendingAttachments.length > 0) {
+          const failures = await uploadPendingAttachments(cfg.api, created.data.id, pendingAttachments);
+          failures.forEach(message => toast.error(`${message} Ábrelo en edición para volver a adjuntarlo.`));
+        }
       }
       setEditingId(null);
       setView('list');
@@ -2300,6 +2308,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               </div>
             </div>
             
+            {!isSupport && (
+              <div className="mt-8">
+                <DocumentAttachments apiBase={cfg.api} documentId={editingId} editable pending={pendingAttachments} onPendingChange={setPendingAttachments} />
+              </div>
+            )}
+
             <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-4">
               <button onClick={() => { setEditingId(null); setView('list'); }} className="px-6 py-3 font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
               <button onClick={handleSaveDraft} disabled={savingDraft} className="justify-center px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
@@ -2445,6 +2459,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Retenciones</p><p className="text-rose-600 font-medium font-mono">-{symOf(viewingInvoice)}{fmt.money(retentionsTotal)}</p></div>
               <div><p className="text-slate-400 font-bold uppercase text-xs mb-1">Total</p><p className="text-slate-800 font-bold font-mono">{symOf(viewingInvoice)}{fmt.money(invoiceNetTotal(inv))}</p></div>
             </div>
+
+            {!isSupport && <DocumentAttachments apiBase={cfg.api} documentId={inv.id} editable={false} />}
 
             {(inv.notes || (inv.observations || []).length > 0) && (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">

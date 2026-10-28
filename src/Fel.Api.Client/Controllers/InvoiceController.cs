@@ -306,6 +306,86 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // ---- Adjuntos (PDF) que se mandan por correo con la factura o la nota ----
+        private DocumentAttachmentService Attachments => HttpContext.RequestServices.GetRequiredService<DocumentAttachmentService>();
+
+        private Task<Document?> FindDocumentForAttachmentsAsync(Guid clientId, Guid id) =>
+            InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope).AsNoTracking().FirstOrDefaultAsync(d => d.Id == id);
+
+        // Datos de cada adjunto (sin el contenido): nombre, tamaño y fecha. El detalle y el formulario del documento los listan.
+        [HttpGet("{id}/attachments")]
+        public async Task<IActionResult> ListAttachments(Guid id)
+        {
+            try
+            {
+                var document = await FindDocumentForAttachmentsAsync(GetCurrentClientId(), id);
+                if (document == null) return NotFound("Documento no encontrado.");
+                return Ok(await Attachments.ListAsync(id));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        [HttpPost("{id}/attachments")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(DocumentAttachment.MaxTotalBytes + 1024 * 1024)]
+        public async Task<IActionResult> UploadAttachment(Guid id, [FromForm] IFormFile file)
+        {
+            try
+            {
+                var document = await FindDocumentForAttachmentsAsync(GetCurrentClientId(), id);
+                if (document == null) return NotFound("Documento no encontrado.");
+                if (file == null || file.Length == 0) return BadRequest(new { message = "Elige un archivo PDF." });
+                // Se rechaza antes de leerlo completo: un archivo mayor al tope por documento no entra nunca.
+                if (file.Length > DocumentAttachment.MaxTotalBytes)
+                    return BadRequest(new { message = $"«{file.FileName}» pesa más de {DocumentAttachment.MaxTotalBytes / 1024 / 1024} MB, el máximo por documento." });
+
+                using var ms = new MemoryStream((int)file.Length);
+                await file.CopyToAsync(ms);
+                var result = await Attachments.AddAsync(document, file.FileName, ms.ToArray());
+                return result.Success ? Ok(result.Attachment) : BadRequest(new { message = result.Error });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        [HttpGet("{id}/attachments/{attachmentId}")]
+        public async Task<IActionResult> DownloadAttachment(Guid id, Guid attachmentId)
+        {
+            try
+            {
+                var document = await FindDocumentForAttachmentsAsync(GetCurrentClientId(), id);
+                if (document == null) return NotFound("Documento no encontrado.");
+                var attachment = await Attachments.GetAsync(id, attachmentId);
+                if (attachment == null) return NotFound("Adjunto no encontrado.");
+                return File(attachment.Content, "application/pdf", attachment.FileName);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        [HttpDelete("{id}/attachments/{attachmentId}")]
+        public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId)
+        {
+            try
+            {
+                var document = await FindDocumentForAttachmentsAsync(GetCurrentClientId(), id);
+                if (document == null) return NotFound("Documento no encontrado.");
+                var error = await Attachments.RemoveAsync(document, attachmentId);
+                return error == null ? NoContent() : BadRequest(new { message = error });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
         // Notas crédito/débito que referencian este documento — para mostrar el vínculo en la
         // vista de detalle sin depender de que la nota caiga dentro del filtro de fechas actual
         // de la lista.
@@ -719,7 +799,8 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest(new { message = "El proveedor de documentos electrónicos rechazó la factura.", detail = Fel.Infrastructure.Dataico.DataicoDianOutcome.Readable(invoice.DianResponseMessage) });
                 }
 
-                return Ok(new { message = "Factura emitida correctamente.", invoice });
+                // warning: el documento se emitió pero algo secundario falló (p. ej. el correo con los adjuntos no salió); el portal lo muestra.
+                return Ok(new { message = "Factura emitida correctamente.", warning = result.Warning, invoice });
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -998,7 +1079,9 @@ namespace Fel.Api.Client.Controllers
 
                     var (pdfBytes, _) = await _customPdfService.ResolveCustomPdfAsync(invoice, client, BuildReportData);
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
-                    var result = await _dataicoApiService.SendCustomDocumentPdfAsync(invoice.DataicoDocumentId!, invoice.TypeCode, pdfBytes, request.Email, credentials);
+                    // Los adjuntos del documento viajan siempre con el reenvío.
+                    var resendAttachments = await Attachments.LoadForSendAsync(invoice.Id);
+                    var result = await _dataicoApiService.SendCustomDocumentPdfAsync(invoice.DataicoDocumentId!, invoice.TypeCode, pdfBytes, request.Email, credentials, resendAttachments);
 
                     if (!result.Success)
                     {

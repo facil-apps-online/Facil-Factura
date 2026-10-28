@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Dataico.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -35,33 +36,56 @@ namespace Fel.Infrastructure.Dataico
             _logger = logger;
         }
 
-        public async Task TrySendCustomPdfAsync(
+        // Devuelve un aviso solo cuando el documento lleva adjuntos y el correo no pudo salir (el documento ya está emitido: el fallo no lo tumba); sin
+        // adjuntos el comportamiento es el de siempre y devuelve null.
+        public async Task<string?> TrySendCustomPdfAsync(
             Document document, string? recipientEmail, Client client,
             Func<DocumentTemplate, Dictionary<string, object?>> buildReportData, DataicoCredentials credentials)
         {
-            if (string.IsNullOrEmpty(document.DataicoDocumentId) || !document.DocumentTypeId.HasValue) return;
-            if (string.IsNullOrEmpty(recipientEmail)) return;
-            if (!await IsEmailEnabledAsync(client.Id, document.DocumentTypeId, document.TypeCode)) return;
+            if (string.IsNullOrEmpty(document.DataicoDocumentId) || !document.DocumentTypeId.HasValue) return null;
+
+            // Solo la factura y sus notas llevan adjuntos (DS y nómina no los documentan en Dataico).
+            var attachmentService = new Fel.Infrastructure.Services.DocumentAttachmentService(_dbContext);
+            var attachments = document.TypeCode is "DS" or "DS-AJUSTE" || document.TypeCode.StartsWith("NE", StringComparison.OrdinalIgnoreCase)
+                ? new List<(string Name, byte[] Content)>()
+                : await attachmentService.LoadForSendAsync(document.Id);
+            var withAttachments = attachments.Count > 0;
+
+            if (string.IsNullOrEmpty(recipientEmail))
+                return withAttachments ? "El documento se emitió, pero no se envió el correo con los adjuntos porque el tercero no tiene correo. Agrégaselo y reenvía el documento." : null;
+            if (!await IsEmailEnabledAsync(client.Id, document.DocumentTypeId, document.TypeCode))
+                return withAttachments ? "El documento se emitió, pero no se envió el correo con los adjuntos porque el envío por correo está apagado para este tipo de documento." : null;
 
             try
             {
                 var (pdfBytes, template) = await ResolveCustomPdfAsync(document, client, buildReportData);
-                if (pdfBytes == null || template == null) return;
+                if (pdfBytes == null || template == null) return null;
 
-                var pdfResult = await _dataicoApiService.SendCustomDocumentPdfAsync(document.DataicoDocumentId!, document.TypeCode, pdfBytes, recipientEmail!, credentials);
+                var pdfResult = await _dataicoApiService.SendCustomDocumentPdfAsync(document.DataicoDocumentId!, document.TypeCode, pdfBytes, recipientEmail!, credentials, attachments);
                 if (pdfResult.Success)
                 {
                     document.UsedTemplateId = template.Id;
+                    return null;
                 }
-                else
-                {
-                    _logger.LogWarning("Dataico rechazó el PDF personalizado del documento {DocumentId} (CUFE {Cufe}): {Detail}", document.Id, document.Cufe, pdfResult.ErrorMessage ?? pdfResult.RawResponse);
-                }
+
+                _logger.LogWarning("Dataico rechazó el PDF personalizado del documento {DocumentId} (CUFE {Cufe}): {Detail}", document.Id, document.Cufe, pdfResult.ErrorMessage ?? pdfResult.RawResponse);
+                return withAttachments
+                    ? $"El documento se emitió, pero el correo con los adjuntos no salió: {DetailOf(pdfResult)}. Puedes reenviarlo desde el detalle."
+                    : null;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error generando/enviando el PDF personalizado del documento {DocumentId}.", document.Id);
+                return withAttachments ? "El documento se emitió, pero hubo un error al enviar el correo con los adjuntos. Puedes reenviarlo desde el detalle." : null;
             }
+        }
+
+        // Texto corto del motivo por el que Dataico no aceptó el correo (su mensaje si lo dio; si no, el estado).
+        private static string DetailOf(DataicoResult result)
+        {
+            var text = string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.RawResponse : result.ErrorMessage;
+            text = string.IsNullOrWhiteSpace(text) ? $"respuesta {result.StatusCode}" : text.Trim();
+            return text.Length > 300 ? text[..300] + "…" : text;
         }
 
         // Interruptor por cliente y tipo de documento (ClientEnabledDocumentType.SendEmailToRecipient).

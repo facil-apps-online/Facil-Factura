@@ -13,6 +13,14 @@ namespace Fel.Infrastructure.Dataico.Models
         public bool send_email { get; set; }
         public string? email { get; set; }
         public string? pdf { get; set; } // Base64 del PDF renderizado
+        // PDF adicionales que el cliente adjuntó al documento (factura, nota crédito y nota débito): nombre y contenido en base64.
+        public List<DataicoAttachment>? attachments { get; set; }
+    }
+
+    public class DataicoAttachment
+    {
+        public string name { get; set; } = string.Empty;
+        public string data { get; set; } = string.Empty;
     }
 
     public class DataicoCustomDocumentInvoiceRef

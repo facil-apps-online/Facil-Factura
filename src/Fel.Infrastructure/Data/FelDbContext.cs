@@ -50,6 +50,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<DocumentItemTax> DocumentItemTaxes => Set<DocumentItemTax>();
         public DbSet<DocumentGeneralRetention> DocumentGeneralRetentions => Set<DocumentGeneralRetention>();
         public DbSet<DocumentObservation> DocumentObservations => Set<DocumentObservation>();
+        public DbSet<DocumentAttachment> DocumentAttachments => Set<DocumentAttachment>();
         public DbSet<TenantUserPricing> TenantUserPricings => Set<TenantUserPricing>();
         public DbSet<PrepaidPackage> PrepaidPackages => Set<PrepaidPackage>();
         public DbSet<TenantPrepaidBag> TenantPrepaidBags => Set<TenantPrepaidBag>();
@@ -652,6 +653,22 @@ namespace Fel.Infrastructure.Data
 
                 entity.HasOne(e => e.Document)
                       .WithMany(d => d.Observations)
+                      .HasForeignKey(e => e.DocumentId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<DocumentAttachment>(entity =>
+            {
+                entity.ToTable("DocumentAttachments");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.FileName).IsRequired().HasMaxLength(DocumentAttachment.MaxFileNameLength);
+                entity.Property(e => e.ContentType).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Content).IsRequired();
+                entity.HasIndex(e => e.DocumentId);
+
+                // Sin navegación en Document: el contenido no se carga con el documento. Se borran con él.
+                entity.HasOne<Document>()
+                      .WithMany()
                       .HasForeignKey(e => e.DocumentId)
                       .OnDelete(DeleteBehavior.Cascade);
             });

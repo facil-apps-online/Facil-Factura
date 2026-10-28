@@ -203,10 +203,11 @@ namespace Fel.Infrastructure.Dataico
                     ["Descuento"] = Money(document.GeneralDiscountAmount ?? 0),
                     ["Cargo"] = Money(document.GeneralChargeAmount ?? 0),
                     ["TotalRetenciones"] = totalRetenciones > 0 ? Money(totalRetenciones) : null,
-                    ["NetoAPagar"] = totalRetenciones > 0 ? Money(totalNeto - totalRetenciones) : null,
+                    // El TOTAL ya descuenta las retenciones: la fila "Neto a pagar" de los formatos queda oculta (se muestra solo con valor).
+                    ["NetoAPagar"] = null,
                     // TotalAmount es el bruto (subtotal + IVA); el total a pagar aplica descuento y cargo general.
-                    ["Total"] = Money(totalNeto),
-                    ["TotalEnLetras"] = NumberToWordsEs.Convertir(totalNeto, CurrencyWords.Resolve(currencyWords, document.Currency)),
+                    ["Total"] = Money(totalNeto - totalRetenciones),
+                    ["TotalEnLetras"] = NumberToWordsEs.Convertir(totalNeto - totalRetenciones, CurrencyWords.Resolve(currencyWords, document.Currency)),
 
                     ["FabricanteSoftwareNombre"] = FabricanteSoftwareNombre,
                     ["FabricanteSoftwareNit"] = FabricanteSoftwareNit,

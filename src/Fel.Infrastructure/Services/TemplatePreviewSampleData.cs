@@ -10,9 +10,7 @@ namespace Fel.Infrastructure.Services
     // propias y necesitan la misma vista previa "con datos de muestra" sobre ellas.
     public static class TemplatePreviewSampleData
     {
-        // mostrarRetenciones: refleja DocumentTemplate.MostrarRetenciones de la plantilla que se
-        // está previsualizando, para que el diseñador vea exactamente el mismo comportamiento
-        // (filas de retención + "Neto a pagar" presentes o no) que tendrá un documento real.
+        // mostrarRetenciones: ya no tiene efecto (las retenciones se muestran siempre); sigue en la firma mientras se retira el interruptor de las plantillas.
         public static Dictionary<string, object?> BuildSampleData(string documentTypeCode, bool mostrarRetenciones = true, string? documentTypeTitle = null)
         {
             if (documentTypeCode.StartsWith("DS")) return SampleSupportDocumentData(documentTypeCode, documentTypeTitle);
@@ -133,10 +131,11 @@ namespace Fel.Infrastructure.Services
                     ["Iva"] = "31.920",
                     ["Descuento"] = "0",
                     ["Cargo"] = "0",
-                    ["TotalRetenciones"] = mostrarRetenciones ? "6.862" : null,
-                    ["NetoAPagar"] = mostrarRetenciones ? "223.058" : null,
-                    ["Total"] = "229.920",
-                    ["TotalEnLetras"] = "DOSCIENTOS VEINTINUEVE MIL NOVECIENTOS VEINTE PESOS",
+                    ["TotalRetenciones"] = "6.862",
+                    // Igual que un documento real: el TOTAL ya descuenta las retenciones y no hay fila "Neto a pagar".
+                    ["NetoAPagar"] = null,
+                    ["Total"] = "223.058",
+                    ["TotalEnLetras"] = "DOSCIENTOS VEINTITRÉS MIL CINCUENTA Y OCHO PESOS",
 
                     ["FabricanteSoftwareNombre"] = "SoFactory S.A.S.",
                     ["FabricanteSoftwareNit"] = "900.303.194-6",
@@ -187,20 +186,16 @@ namespace Fel.Infrastructure.Services
             return items;
         }
 
-        // Mismo criterio que InvoiceReportDataMapper.Build: IVA discriminado por tarifa siempre
-        // presente, retenciones (Tipo="Retencion", en rojo en el .repx) solo si la plantilla
-        // activa MostrarRetenciones.
+        // Mismo criterio que InvoiceReportDataMapper.Build: IVA discriminado por tarifa y retenciones
+        // (Tipo="Retencion", en rojo en el .repx) siempre presentes.
         private static List<Dictionary<string, object?>> BuildSampleImpuestos(bool mostrarRetenciones)
         {
             var impuestos = new List<Dictionary<string, object?>>
             {
                 new() { ["Concepto"] = "IVA 19%", ["Valor"] = "31.920", ["Tipo"] = "Iva" }
             };
-            if (mostrarRetenciones)
-            {
-                impuestos.Add(new() { ["Concepto"] = "RETE FUENTE 2.5%", ["Valor"] = "4.950", ["Tipo"] = "Retencion" });
-                impuestos.Add(new() { ["Concepto"] = "RETE ICA 0.966%", ["Valor"] = "1.912", ["Tipo"] = "Retencion" });
-            }
+            impuestos.Add(new() { ["Concepto"] = "RETE FUENTE 2.5%", ["Valor"] = "4.950", ["Tipo"] = "Retencion" });
+            impuestos.Add(new() { ["Concepto"] = "RETE ICA 0.966%", ["Valor"] = "1.912", ["Tipo"] = "Retencion" });
             return impuestos;
         }
 

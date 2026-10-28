@@ -83,10 +83,8 @@ namespace Fel.Infrastructure.Dataico
         // reutilizan el mismo .repx de Factura porque manejan casi la misma información; lo único
         // que cambia es el título (DocumentoTipo) y esta referencia al documento que ajustan.
         //
-        // mostrarRetenciones: viene de DocumentTemplate.MostrarRetenciones de la plantilla
-        // resuelta para este documento — decide si las filas de retención entran a "Impuestos" y
-        // si se calcula "NetoAPagar". El IVA discriminado se arma siempre, independiente de este
-        // flag.
+        // mostrarRetenciones: ya no tiene efecto. Las retenciones se imprimen siempre que las haya y el TOTAL las descuenta; el parámetro sigue
+        // en la firma mientras se retira el interruptor "Mostrar retenciones" de las plantillas.
         public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
@@ -140,9 +138,8 @@ namespace Fel.Infrastructure.Dataico
             // Agrupado por categoría+tarifa (ej. "RETE FUENTE 2.5%"), igual que el resumen que ya
             // ve el cliente en el portal — antes esta información no llegaba al PDF impreso en
             // absoluto porque el modelo de un solo DataSource no daba para una segunda tabla. El
-            // total de la factura (Total/ValTolFac) NO se descuenta por esto: la retención es una
-            // constancia informativa de lo que el adquirente debe declarar ante la DIAN a nombre
-            // del emisor, no una rebaja del valor legal del documento.
+            // TOTAL impreso sí las descuenta (ver totalAPagar), como el total del portal; el XML
+            // de la DIAN conserva el valor legal del documento sin descontarlas.
             var retencionesPorCategoria = new Dictionary<(string Categoria, decimal Tarifa), decimal>();
             foreach (var item in items)
             {
@@ -166,6 +163,9 @@ namespace Fel.Infrastructure.Dataico
             }
             var totalRetenciones = retencionesPorCategoria.Values.Sum();
             var totalNeto = invoice.TotalAmount - (invoice.GeneralDiscountAmount ?? 0) - (invoice.RoundingAdjustmentAmount ?? 0) + (invoice.GeneralChargeAmount ?? 0);
+            // Lo que se imprime como TOTAL (y en letras): el total de la factura menos las retenciones. El XML de la DIAN conserva el total legal sin
+            // descontarlas; este valor es solo el de la representación gráfica.
+            var totalAPagar = totalNeto - totalRetenciones;
 
             // IVA discriminado por tarifa, para la misma tabla de pie que las retenciones — solo
             // ítems Gravados con tarifa > 0 generan línea (un Excluido/Exento con 0% no aporta IVA
@@ -215,17 +215,15 @@ namespace Fel.Infrastructure.Dataico
                     ["Tipo"] = "Iva"
                 });
             }
-            if (mostrarRetenciones)
+            // Las retenciones se imprimen siempre que las haya, sea cual sea la plantilla.
+            foreach (var kv in retencionesPorCategoria)
             {
-                foreach (var kv in retencionesPorCategoria)
+                impuestos.Add(new Dictionary<string, object?>
                 {
-                    impuestos.Add(new Dictionary<string, object?>
-                    {
-                        ["Concepto"] = $"{RetentionLabel(kv.Key.Categoria)} {RetPct(kv.Key.Tarifa)}",
-                        ["Valor"] = Money(kv.Value),
-                        ["Tipo"] = "Retencion"
-                    });
-                }
+                    ["Concepto"] = $"{RetentionLabel(kv.Key.Categoria)} {RetPct(kv.Key.Tarifa)}",
+                    ["Valor"] = Money(kv.Value),
+                    ["Tipo"] = "Retencion"
+                });
             }
 
             // Descuento/Cargo general van en la misma tabla del pie, después de impuestos y
@@ -343,12 +341,13 @@ namespace Fel.Infrastructure.Dataico
                     ["Cargo"] = Money(invoice.GeneralChargeAmount ?? 0),
                     // Ambos null cuando la plantilla tiene MostrarRetenciones=false o el documento
                     // no tiene retenciones — así la plantilla oculta la línea sin más lógica.
-                    ["TotalRetenciones"] = mostrarRetenciones && totalRetenciones > 0 ? Money(totalRetenciones) : null,
+                    ["TotalRetenciones"] = totalRetenciones > 0 ? Money(totalRetenciones) : null,
                     // TotalAmount es el bruto (subtotal + IVA): el total de la factura aplica además el
                     // descuento y el cargo general, y el neto a pagar resta las retenciones a ese total.
-                    ["NetoAPagar"] = mostrarRetenciones && totalRetenciones > 0 ? Money(totalNeto - totalRetenciones) : null,
-                    ["Total"] = Money(totalNeto),
-                    ["TotalEnLetras"] = NumberToWordsEs.Convertir(totalNeto, CurrencyWords.Resolve(currencyWords, invoice.Currency)),
+                    // El TOTAL ya descuenta las retenciones: la fila "Neto a pagar" de los formatos queda oculta (se muestra solo con valor).
+                    ["NetoAPagar"] = null,
+                    ["Total"] = Money(totalAPagar),
+                    ["TotalEnLetras"] = NumberToWordsEs.Convertir(totalAPagar, CurrencyWords.Resolve(currencyWords, invoice.Currency)),
 
                     // Identificación de software (numeral 18, Art. 11 Res. 000165 de 2023) — el
                     // Proveedor Tecnológico solo aplica si el Client factura a través de un

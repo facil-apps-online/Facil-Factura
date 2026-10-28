@@ -75,8 +75,8 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
   const [chosen, setChosen] = useState<SearchableSelectOption | null>(null);
 
   const selectedOption: SearchableSelectOption | undefined = (loadOptions ? undefined : options.find(o => o.value === value))
-    ?? (chosen && chosen.value === value ? chosen : undefined)
     ?? (selected && selected.value === value ? selected : undefined)
+    ?? (chosen && chosen.value === value ? chosen : undefined)
     ?? (loadOptions ? results.find(o => o.value === value) : undefined);
 
   // Búsqueda asíncrona: al abrir (sin texto) trae lo primero; al escribir espera una pausa y descarta las respuestas que llegan tarde.
@@ -99,9 +99,11 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
     return () => { cancelled = true; clearTimeout(timer); };
   }, [isOpen, query]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // También cuando cambia el texto de la opción elegida sin cambiar su valor (p. ej. el tercero se editó y cambió de nombre).
+  const closedText = selectedOption ? closedValueOf(selectedOption) : '';
   useEffect(() => {
-    if (!isOpen) setQuery(selectedOption ? closedValueOf(selectedOption) : '');
-  }, [value, isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!isOpen) setQuery(closedText);
+  }, [value, isOpen, closedText]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

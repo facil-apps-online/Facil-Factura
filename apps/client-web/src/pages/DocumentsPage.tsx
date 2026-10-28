@@ -7,6 +7,7 @@ import { toastPublishError } from '../lib/publishError';
 import { useConfirm } from '@/components/ConfirmDialog';
 import BulkImportModal from '../components/BulkImportModal';
 import CustomerFormModal from '../components/CustomerFormModal';
+import EditCustomerButton from '../components/EditCustomerButton';
 import SearchableSelect, { type SearchableSelectOption } from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
@@ -1215,6 +1216,15 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     setMandanteModalForItemIndex(null);
   };
 
+  // Se editó un mandante desde una línea: todas las líneas que lo usan toman sus datos nuevos.
+  const handleMandanteEdited = (mandante: any) =>
+    setFormData(f => ({
+      ...f,
+      items: f.items.map(it => it.mandanteCustomerId === mandante.id
+        ? { ...it, mandanteIdentificationType: mandante.identificationType ?? null, mandanteIdentification: mandante.identificationNumber ?? null, mandanteName: mandante.name ?? null }
+        : it)
+    }));
+
   const handleCustomerSaved = (customer: any) => {
     setCustomerOption(customerToOption(customer));
     setFormData(f => ({ ...f, customerId: customer.id }));
@@ -1539,6 +1549,16 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           <button type="button" onClick={() => setMandanteModalForItemIndex(index)} title="Crear mandante" aria-label="Crear mandante" className="flex h-11 w-11 shrink-0 items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors lg:h-9 lg:w-9">
             <UserPlus size={16} />
           </button>
+          {item.mandanteCustomerId && (
+            <EditCustomerButton
+              customerId={item.mandanteCustomerId}
+              partyType="Mandante"
+              title="Editar mandante"
+              iconSize={16}
+              className="flex h-11 w-11 shrink-0 items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors disabled:opacity-50 lg:h-9 lg:w-9"
+              onSaved={handleMandanteEdited}
+            />
+          )}
         </div>
       ),
       retention: expandedRetentions[index] ? (
@@ -1628,6 +1648,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   <button type="button" onClick={() => setShowCustomerModal(true)} title={`Crear ${cfg.party.toLowerCase()} rápido`} className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors">
                     <UserPlus size={20} />
                   </button>
+                  {formData.customerId && (
+                    <EditCustomerButton
+                      customerId={formData.customerId}
+                      partyType={cfg.partyType}
+                      title={`Editar ${cfg.party.toLowerCase()}`}
+                      onSaved={customer => setCustomerOption(customerToOption(customer))}
+                    />
+                  )}
                 </div>
               </div>
             </div>

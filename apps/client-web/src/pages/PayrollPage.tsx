@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, ArrowLeft, Edit2, Send, AlertCircle, Info, Printer, RotateCcw, XCircle, Search, Download } from 'lucide-react';
+import { Plus, Trash2, Loader2, ArrowLeft, Edit2, Send, AlertCircle, Info, Printer, RotateCcw, XCircle, Search, Download, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
@@ -9,6 +9,8 @@ import ImportExcelButton from '../components/ImportExcelButton';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import SearchableSelect, { type SearchableSelectOption } from '@shared/components/SearchableSelect';
+import CustomerFormModal from '../components/CustomerFormModal';
+import EditCustomerButton from '../components/EditCustomerButton';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
 import { STATUS_FILTER_OPTIONS, statusLabel } from '../lib/documentStatus';
@@ -62,6 +64,7 @@ export default function PayrollPage() {
   const [entries, setEntries] = useState<any[]>([]);
   // Empleado elegido en el formulario (texto del selector): los empleados no se cargan en bloque, se buscan en el servidor al escribir.
   const [employeeOption, setEmployeeOption] = useState<SearchableSelectOption | null>(null);
+  const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const { features } = useSession();
   const navigate = useNavigate();
@@ -373,7 +376,9 @@ export default function PayrollPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-1">
                   <label className="block text-sm font-bold text-slate-700 mb-1">Empleado</label>
+                  <div className="flex gap-2">
                   <SearchableSelect
+                    className="flex-1"
                     required
                     value={formData.employeeId}
                     onChange={(v, option) => { setFormData({ ...formData, employeeId: v }); setEmployeeOption(option ?? null); }}
@@ -383,6 +388,32 @@ export default function PayrollPage() {
                     loadOptions={searchEmployees}
                     selected={employeeOption}
                   />
+                  <button type="button" onClick={() => setShowEmployeeModal(true)} title="Crear empleado rápido" aria-label="Crear empleado rápido" className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors">
+                    <UserPlus size={20} />
+                  </button>
+                  {formData.employeeId && (
+                    <EditCustomerButton
+                      customerId={formData.employeeId}
+                      partyType="Empleado"
+                      title="Editar empleado"
+                      onSaved={emp => setEmployeeOption({ value: emp.id, label: `${emp.name} (${emp.identificationNumber})` })}
+                    />
+                  )}
+                  </div>
+                  {/* El formulario del empleado va dentro del formulario de la nómina en el árbol de React: su envío no debe llegar al de la nómina. */}
+                  <span onSubmit={e => e.stopPropagation()}>
+                    <CustomerFormModal
+                      open={showEmployeeModal}
+                      editingCustomer={null}
+                      defaultPartyType="Empleado"
+                      onClose={() => setShowEmployeeModal(false)}
+                      onSaved={emp => {
+                        setShowEmployeeModal(false);
+                        setFormData(f => ({ ...f, employeeId: emp.id }));
+                        setEmployeeOption({ value: emp.id, label: `${emp.name} (${emp.identificationNumber})` });
+                      }}
+                    />
+                  </span>
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Inicio de Período</label>

@@ -75,6 +75,11 @@ namespace Fel.Core.Entities
         
         public decimal PriceCharged { get; set; } // Valor facturado por este documento
 
+        // El documento se envió al ambiente de pruebas (sandbox) de Dataico, o lo emitió un cliente de demostración o un sandbox de developers: no cuenta
+        // como emitido ni se cobra. Se fija en el momento del envío (ver SandboxRule), no se deriva después del cliente: un cliente puede pasar de
+        // pruebas a producción y sus documentos viejos no cambian.
+        public bool SentToSandbox { get; set; }
+
         public DateTime? ProcessedAt { get; set; }
 
         // Histórico de plantilla usada para garantizar inmutabilidad visual

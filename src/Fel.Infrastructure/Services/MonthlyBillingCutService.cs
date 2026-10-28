@@ -39,10 +39,10 @@ namespace Fel.Infrastructure.Services
                 return new MonthlyBillingCutResult { AlreadyExisted = true };
             }
 
-            // El corte siempre corre en el rango [día 1 00:00 UTC del mes, día 1 00:00 UTC del mes
-            // siguiente) — sin esto, la hora/zona de quien dispare el corte podía correrlo.
-            var startDate = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var endDate = startDate.AddMonths(1);
+            // El corte siempre corre sobre el mes de Colombia (ver DocumentCounting), con las mismas reglas que los tableros: documentos emitidos por su fecha de
+            // emisión, sin lo enviado al sandbox, y solo lo que se cobra (desde el "Cobro desde" de cada tenant y sin los exentos). La hora/zona de quien dispare
+            // el corte no cambia nada.
+            var (windowStart, windowEnd) = DocumentCounting.MonthWindowUtc(year, month);
 
             var perUserTenantIds = await _dbContext.Tenants
                 .Where(t => t.BillingMode == TenantBillingMode.PerUser)
@@ -51,12 +51,14 @@ namespace Fel.Infrastructure.Services
 
             // Obtener todos los documentos exitosos del mes (excluyendo tenants PerUser, que se calculan aparte)
             var consumedDocs = await _dbContext.Documents
-                .Where(d => d.Status == "APPROVED" && d.ProcessedAt >= startDate && d.ProcessedAt < endDate
-                    && !perUserTenantIds.Contains(d.Client.TenantId))
-                .Include(d => d.Client)
+                .Where(d => d.Status == "APPROVED" && !perUserTenantIds.Contains(d.Client.TenantId))
+                .Counted().EmittedBetween(windowStart, windowEnd)
+                .Include(d => d.Client).ThenInclude(c => c.Tenant)
                 .ToListAsync();
 
-            var docsByTenant = consumedDocs.GroupBy(d => d.Client.TenantId);
+            var docsByTenant = consumedDocs
+                .Where(d => DocumentCounting.IsBillable(d.ProcessedAt ?? d.CreatedAt, d.Client.Tenant.BillingStartsAt, d.Client.Tenant.IsBillingExempt))
+                .GroupBy(d => d.Client.TenantId);
             var tenantsBilled = 0;
 
             foreach (var group in docsByTenant)
@@ -92,7 +94,8 @@ namespace Fel.Infrastructure.Services
                 tenantsBilled++;
             }
 
-            foreach (var tenantId in perUserTenantIds)
+            var exemptTenantIds = await _dbContext.Tenants.Where(t => t.IsBillingExempt).Select(t => t.Id).ToListAsync();
+            foreach (var tenantId in perUserTenantIds.Where(id => !exemptTenantIds.Contains(id)))
             {
                 var metrics = await _billingMetrics.GetTenantPerUserMetricsAsync(tenantId, year, month);
                 if (metrics.TotalUsers is null or 0) continue;

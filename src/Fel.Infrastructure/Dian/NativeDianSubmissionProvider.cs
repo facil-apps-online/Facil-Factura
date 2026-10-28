@@ -48,6 +48,9 @@ namespace Fel.Infrastructure.Dian
             Document invoice, Customer customer, ICollection<DocumentItem> items,
             Client client, Resolution resolution, string paymentMeans, string paymentMeansType)
         {
+            // Con la emisión directa no hay ambiente de pruebas real: solo un cliente de demostración o un sandbox de developers es sandbox.
+            invoice.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForNative(client);
+
             var certificate = await _dbContext.Certificates
                 .FirstOrDefaultAsync(c => c.ClientId == client.Id && c.IsActive);
             if (certificate == null)

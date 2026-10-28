@@ -13,9 +13,10 @@ public static class DataicoDianOutcome
     // Usuario de la cuenta de demostración de Dataico: sus documentos llegan al sandbox y la DIAN los rechaza por diseño (NIT no autorizado).
     public const string DemoUser = "demo@dataico.com";
 
-    // Clientes de pruebas: la cuenta demo de Dataico y los clientes sandbox de developers. Ahí un rechazo de la DIAN es lo esperado y todo sigue como antes.
+    // Clientes de pruebas: la cuenta demo de Dataico, los clientes de demostración de un tenant y los sandbox de developers. Ahí un rechazo de la DIAN es lo
+    // esperado y todo sigue como antes.
     public static bool IsSandbox(Client client) =>
-        client.IsDeveloperSandbox || string.Equals(client.DataicoApiUser, DemoUser, StringComparison.OrdinalIgnoreCase);
+        client.IsDeveloperSandbox || client.IsDemo || string.Equals(client.DataicoApiUser, DemoUser, StringComparison.OrdinalIgnoreCase);
 
     // Solo para el envío de un documento (nunca para consultas). Devuelve true si el resultado pasó a rechazado.
     public static bool Apply(DataicoResult result, Client client)

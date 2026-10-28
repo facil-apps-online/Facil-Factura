@@ -31,8 +31,10 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
-                var y = year ?? DateTime.UtcNow.Year;
-                var m = month ?? DateTime.UtcNow.Month;
+                // El mes en curso es el de Colombia (ver DocumentCounting).
+                var localNow = DocumentCounting.ToColombia(DateTime.UtcNow);
+                var y = year ?? localNow.Year;
+                var m = month ?? localNow.Month;
 
                 var metrics = await _billingService.GetClientMetricsAsync(clientId, y, m);
                 return Ok(metrics);
@@ -43,10 +45,9 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
-        // Ancla el período en IssueDate (siempre lo fijamos nosotros, igual en ambos integradores) en
-        // vez de ProcessedAt/fecha de confirmación — evita que la agrupación mensual dependa de cuándo
-        // llega la respuesta de cada integrador (nativo: síncrono y bajo nuestro control; Dataico:
-        // también síncrono en el envío, pero no queremos atar el período a ese detalle de integración).
+        // Mismas reglas que los tableros del tenant y del superadmin (ver DocumentCounting): emitido = aprobado, rechazado = rechazado (también con la emisión
+        // directa), por fecha de emisión en el mes de Colombia y sin lo enviado al sandbox. Un borrador no cuenta; lo que está en validación no tiene fecha de
+        // emisión todavía y se mide por la de creación.
         [HttpGet("summary")]
         public async Task<IActionResult> GetSummary()
         {
@@ -54,14 +55,19 @@ namespace Fel.Api.Client.Controllers
             {
                 var clientId = GetCurrentClientId();
                 var now = DateTime.UtcNow;
-                var periodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                var local = DocumentCounting.ToColombia(now);
+                var periodStart = new DateTime(local.Year, local.Month, 1, 0, 0, 0, DateTimeKind.Utc);
                 var periodEnd = periodStart.AddMonths(1);
+                var (windowStart, windowEnd) = DocumentCounting.MonthWindowUtc(local.Year, local.Month);
 
-                var periodDocs = await _dbContext.Documents.AsNoTracking().ForBranch(CurrentBranchScope)
-                    .Where(d => d.ClientId == clientId && d.IssueDate >= periodStart && d.IssueDate < periodEnd)
+                var counted = DocumentCounting.Counted(_dbContext.Documents.AsNoTracking().ForBranch(CurrentBranchScope).Where(d => d.ClientId == clientId));
+                var emittedDocs = await DocumentCounting.EmittedBetween(DocumentCounting.Emitted(counted), windowStart, windowEnd)
                     // TotalAmount es el bruto (subtotal + IVA): el total del documento aplica además el descuento y el cargo general.
-                    .Select(d => new { d.Status, d.TypeCode, TotalAmount = d.TotalAmount - (d.GeneralDiscountAmount ?? 0) - (d.RoundingAdjustmentAmount ?? 0) + (d.GeneralChargeAmount ?? 0) })
+                    .Select(d => new { d.TypeCode, TotalAmount = d.TotalAmount - (d.GeneralDiscountAmount ?? 0) - (d.RoundingAdjustmentAmount ?? 0) + (d.GeneralChargeAmount ?? 0) })
                     .ToListAsync();
+                var totalRejected = await DocumentCounting.EmittedBetween(DocumentCounting.Rejected(counted), windowStart, windowEnd).CountAsync();
+                var totalPending = await counted.CountAsync(d => (d.Status == "PENDING" || d.Status == "PROCESSING") && d.CreatedAt >= windowStart && d.CreatedAt < windowEnd);
+                var isSandboxClient = await _dbContext.Clients.AsNoTracking().Where(c => c.Id == clientId).Select(c => c.IsDemo || c.IsDeveloperSandbox).FirstOrDefaultAsync();
 
                 var recentDocuments = await _dbContext.Documents.AsNoTracking().ForBranch(CurrentBranchScope)
                     .Where(d => d.ClientId == clientId && d.Status == "APPROVED")
@@ -119,13 +125,14 @@ namespace Fel.Api.Client.Controllers
                 return Ok(new
                 {
                     Period = new { Start = periodStart, End = periodEnd.AddDays(-1) },
-                    TotalIssued = periodDocs.Count,
-                    TotalAccepted = periodDocs.Count(d => d.Status == "APPROVED"),
-                    TotalPending = periodDocs.Count(d => d.Status == "PENDING" || d.Status == "PROCESSING"),
-                    TotalRejected = periodDocs.Count(d => d.Status == "REJECTED"),
+                    TotalIssued = emittedDocs.Count,
+                    TotalPending = totalPending,
+                    TotalRejected = totalRejected,
+                    // Un cliente de demostración o sandbox no cuenta lo que emite: el portal lo avisa.
+                    IsSandboxClient = isSandboxClient,
                     // Las notas crédito restan del total facturado (ajustan una factura previa);
-                    // el resto (facturas, notas débito) suma — mismo criterio que InvoicesPage.tsx.
-                    TotalBilled = periodDocs.Sum(d => (d.TypeCode == "NC" ? -1 : 1) * d.TotalAmount),
+                    // el resto (facturas, notas débito) suma — mismo criterio que InvoicesPage.tsx. Solo lo emitido.
+                    TotalBilled = emittedDocs.Sum(d => (d.TypeCode == "NC" ? -1 : 1) * d.TotalAmount),
                     RecentDocuments = recentDocuments,
                     Consumption = Branch.IsAdministrator ? consumption : null,
                     PendingSetupItems = pendingSetupItems

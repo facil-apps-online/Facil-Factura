@@ -18,7 +18,7 @@ const initialNewClient = {
   legalRepresentativeDocumentType: '', legalRepresentativeDocumentNumber: '', legalRepresentativeDocumentCountryCode: 'CO', legalRepresentativeEmail: '',
   legalRepresentativeRepresentationCode: '', legalRepresentativeStartDate: null as string | null,
   taxRegime: '', economicActivity: '', associateId: '' as string | null,
-  isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false, incomeTaxRegime: '', foreignCurrencyEnabled: false, roundingAdjustment: 'None', lineRetentionLabelStyle: 'Short', footerRetentionLabelStyle: 'Short', decimalSeparator: '.',
+  isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false, incomeTaxRegime: '', foreignCurrencyEnabled: false, roundingAdjustment: 'None', lineRetentionLabelStyle: 'Short', footerRetentionLabelStyle: 'Short', isDemo: false, decimalSeparator: '.',
   latitude: null as number | null, longitude: null as number | null,
   // "Native" o "Dataico"; vacío = el de por defecto (cuando el tenant tiene un solo proveedor habilitado no hay nada que elegir).
   documentProvider: '' as string
@@ -30,6 +30,8 @@ interface Client {
   taxId: string;
   email: string;
   isActive: boolean;
+  // Cliente de demostración: lo que emite es sandbox y no cuenta ni se cobra.
+  isDemo?: boolean;
   blocked: boolean;
   blockReason: string | null;
   createdAt: string;
@@ -189,10 +191,15 @@ export default function Clients() {
     {
       key: 'status',
       header: 'Estado',
-      render: c => c.isActive ? (
-        <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">Activo</span>
-      ) : (
-        <span className="px-3 py-1 rounded-full text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200">Archivado</span>
+      render: c => (
+        <span className="inline-flex flex-wrap items-center gap-1">
+          {c.isActive ? (
+            <span className="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200">Activo</span>
+          ) : (
+            <span className="px-3 py-1 rounded-full text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200">Archivado</span>
+          )}
+          {c.isDemo && <span title="Cliente de demostración: lo que emite es sandbox, no cuenta ni se cobra" className="px-3 py-1 rounded-full text-xs font-semibold text-violet-700 bg-violet-100 border border-violet-200">Demostración</span>}
+        </span>
       ),
       sortValue: c => (c.isActive ? 0 : 1),
     },

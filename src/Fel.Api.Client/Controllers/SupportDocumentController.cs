@@ -449,6 +449,7 @@ namespace Fel.Api.Client.Controllers
                     DataicoDianOutcome.Apply(result, client);
 
                     document.Status = result.Success ? "APPROVED" : "REJECTED";
+                    document.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForDataico(client);
                     document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
                     document.Cufe = result.Cufe;
                     document.QrCode = result.QrCode;
@@ -654,6 +655,7 @@ namespace Fel.Api.Client.Controllers
             DataicoDianOutcome.Apply(result, client);
 
             document.Status = result.Success ? "APPROVED" : "REJECTED";
+            document.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForDataico(client);
             document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
             document.Cufe = result.Cufe;
             document.QrCode = result.QrCode;

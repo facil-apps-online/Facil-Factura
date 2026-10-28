@@ -5,6 +5,7 @@ import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import MonthRangeBar, { currentMonthRange, downloadBlob, type MonthRangeValue } from '@shared/components/MonthRangeBar';
+import NativeComparison from '../components/NativeComparison';
 
 interface RangeMonth {
   year: number;
@@ -132,8 +133,8 @@ export default function Dashboard() {
   };
 
   const stats = [
-    { title: 'Facturas Emitidas', value: metrics.totalIssued, icon: <CheckCircle size={24} className="text-emerald-500" />, trend: 'Aprobadas por la DIAN · acumulado histórico' },
-    { title: 'Rechazadas DIAN', value: metrics.totalRejected, icon: <XCircle size={24} className="text-rose-500" />, trend: 'Revisión requerida' },
+    { title: 'Documentos emitidos', value: metrics.totalIssued, icon: <CheckCircle size={24} className="text-emerald-500" />, trend: 'Aprobados por la DIAN · acumulado, sin pruebas' },
+    { title: 'Documentos rechazados', value: metrics.totalRejected, icon: <XCircle size={24} className="text-rose-500" />, trend: 'Revisión requerida · acumulado, sin pruebas' },
     { title: 'En Proceso', value: metrics.totalProcessing, icon: <Clock size={24} className="text-amber-500" />, trend: 'Encoladas / Radian' },
   ];
 
@@ -252,6 +253,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Solo para el tenant que agrupa a otros: lo que costaría emitir con el servicio nativo lo que su grupo emite por Dataico. */}
+      <NativeComparison month={range.to} />
 
       {/* La lista de consumo por cliente siempre se ve; sus valores en dinero siguen la configuración del cobro. */}
       <div className={`mb-12 ${loadingRange ? 'opacity-60' : ''}`}>

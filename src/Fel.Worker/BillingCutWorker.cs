@@ -29,13 +29,15 @@ namespace Fel.Worker
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("BillingCutWorker iniciado: revisa cada hora si hay que generar el corte del mes anterior (día 1 00:00 UTC).");
+            _logger.LogInformation("BillingCutWorker iniciado: revisa cada hora si hay que generar el corte del mes anterior (día 1 00:00 hora de Colombia).");
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    var now = DateTime.UtcNow;
+                    // El mes se cierra a la medianoche de Colombia (UTC-5), no a la de UTC: el corte de octubre corre desde el 1 de noviembre 00:00 hora de
+                    // Colombia, cuando ya están todos los documentos del mes (ver DocumentCounting).
+                    var now = Fel.Infrastructure.Services.DocumentCounting.ToColombia(DateTime.UtcNow);
                     // El mes recién cerrado, el único que puede tener el corte pendiente en un
                     // momento dado — el mes en curso todavía no ha terminado.
                     var previousMonth = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-1);

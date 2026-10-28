@@ -191,6 +191,36 @@ namespace Fel.Api.Superadmin.Controllers
             return Ok(new { Message = "Configuración actualizada." });
         }
 
+        // 6b. Condiciones de cobro de un Tenant: desde cuándo se le cobra y si está exento. Antes de la fecha "Cobro desde" se cuentan sus documentos y sucursales
+        // pero no se cobra nada; un tenant exento (el dueño de la plataforma) no tiene corte ni valor a cobrar.
+        [HttpGet("tenant/{tenantId}/billing-terms")]
+        public async Task<IActionResult> GetTenantBillingTerms(Guid tenantId)
+        {
+            var tenant = await _dbContext.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId);
+            if (tenant == null) return NotFound();
+            return Ok(new { billingStartsAt = tenant.BillingStartsAt?.ToString("yyyy-MM-dd"), isBillingExempt = tenant.IsBillingExempt });
+        }
+
+        [HttpPut("tenant/{tenantId}/billing-terms")]
+        public async Task<IActionResult> SetTenantBillingTerms(Guid tenantId, [FromBody] SetBillingTermsRequest request)
+        {
+            var tenant = await _dbContext.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId);
+            if (tenant == null) return NotFound();
+
+            DateTime? startsAt = null;
+            if (!string.IsNullOrWhiteSpace(request.BillingStartsAt))
+            {
+                if (!DateTime.TryParseExact(request.BillingStartsAt, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed))
+                    return BadRequest("La fecha de \"Cobro desde\" no es válida (use AAAA-MM-DD).");
+                startsAt = parsed.Date;
+            }
+
+            tenant.BillingStartsAt = startsAt;
+            tenant.IsBillingExempt = request.IsBillingExempt;
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { billingStartsAt = tenant.BillingStartsAt?.ToString("yyyy-MM-dd"), isBillingExempt = tenant.IsBillingExempt });
+        }
+
         // 7. Catálogo de paquetes prepago de un Tenant
         [HttpGet("tenant/{tenantId}/prepaid-packages")]
         public async Task<IActionResult> GetPrepaidPackages(Guid tenantId)
@@ -307,6 +337,13 @@ namespace Fel.Api.Superadmin.Controllers
     {
         public string DocumentTypeCode { get; set; } = string.Empty;
         public decimal Price { get; set; }
+    }
+
+    public class SetBillingTermsRequest
+    {
+        // AAAA-MM-DD (fecha de Colombia) o vacío = se cobra desde siempre.
+        public string? BillingStartsAt { get; set; }
+        public bool IsBillingExempt { get; set; }
     }
 
     public class SetUserPricingRequest

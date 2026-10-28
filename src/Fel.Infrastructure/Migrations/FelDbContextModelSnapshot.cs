@@ -1138,6 +1138,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<bool>("IsAutorretenedorRenta")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsDemo")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsDeveloperSandbox")
                         .HasColumnType("bit");
 
@@ -2148,6 +2151,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("SectorExtensionData")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("SentToSandbox")
+                        .HasColumnType("bit");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -5154,6 +5160,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<int>("BillingMode")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("BillingStartsAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<bool>("CanViewPlatformBilling")
                         .HasColumnType("bit");
 
@@ -5232,6 +5241,9 @@ namespace Fel.Infrastructure.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsAutorretenedorRenta")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsBillingExempt")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsGranContribuyente")

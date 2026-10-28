@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Receipt, Settings, Plus, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, XCircle, Settings, Plus, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
 import { api } from './api';
@@ -42,7 +42,9 @@ function slugify(value: string) {
 // --- Types ---
 interface DashboardMetrics {
   activeTenants: number;
+  // Emitidos y rechazados del mes (de Colombia) de todos los tenants, sin lo enviado al sandbox.
   documentsThisMonth: number;
+  documentsRejectedThisMonth: number;
 }
 
 interface Tenant {
@@ -188,7 +190,8 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
 const Dashboard = () => {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     activeTenants: 0,
-    documentsThisMonth: 0
+    documentsThisMonth: 0,
+    documentsRejectedThisMonth: 0
   });
 
   useEffect(() => {
@@ -200,7 +203,7 @@ const Dashboard = () => {
   return (
     <div className="p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <h1 className="text-3xl font-extrabold text-white mb-8 tracking-tight">Resumen</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="glass-panel p-6 rounded-2xl hover:shadow-[0_0_20px_rgba(37,99,235,0.2)] transition-all">
           <div className="flex items-center justify-between">
             <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Clientes activos</p>
@@ -210,10 +213,19 @@ const Dashboard = () => {
         </div>
         <div className="glass-panel p-6 rounded-2xl hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all">
           <div className="flex items-center justify-between">
-            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Documentos procesados</p>
+            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Documentos emitidos del mes</p>
             <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20"><Receipt className="w-5 h-5 text-emerald-400" /></div>
           </div>
-          <p className="text-4xl font-extrabold text-white mt-4">{metrics.documentsThisMonth}</p>
+          <p className="text-4xl font-extrabold text-white mt-4" data-testid="documents-emitted">{metrics.documentsThisMonth}</p>
+          <p className="text-xs text-slate-500 mt-2">Todos los tenants, por fecha de emisión y sin pruebas (sandbox).</p>
+        </div>
+        <div className="glass-panel p-6 rounded-2xl hover:shadow-[0_0_20px_rgba(244,63,94,0.2)] transition-all">
+          <div className="flex items-center justify-between">
+            <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Documentos rechazados del mes</p>
+            <div className="bg-rose-500/10 p-2 rounded-lg border border-rose-500/20"><XCircle className="w-5 h-5 text-rose-400" /></div>
+          </div>
+          <p className="text-4xl font-extrabold text-white mt-4" data-testid="documents-rejected">{metrics.documentsRejectedThisMonth}</p>
+          <p className="text-xs text-slate-500 mt-2">No se cobran.</p>
         </div>
       </div>
       <MonthlyComparison />

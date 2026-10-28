@@ -38,9 +38,11 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var tenantId = GetCurrentTenantId();
 
+                // Acumulado del tenant, sin lo enviado al sandbox (ver DocumentCounting).
                 var query = _dbContext.Documents
                     .Include(d => d.Client)
                     .Where(d => d.Client.TenantId == tenantId);
+                query = Fel.Infrastructure.Services.DocumentCounting.Counted(query);
 
                 var totalApproved = await query.CountAsync(d => d.Status == "APPROVED");
                 // "Emitidas" son las aprobadas por la DIAN; los rechazados y los que están en proceso se cuentan aparte.
@@ -71,7 +73,9 @@ namespace Fel.Api.Tenant.Controllers
         {
             try
             {
-                return Ok(await BuildMonthAsync(GetCurrentTenantId(), year ?? DateTime.UtcNow.Year, month ?? DateTime.UtcNow.Month));
+                // El mes en curso es el de Colombia (ver DocumentCounting).
+                var localNow = Fel.Infrastructure.Services.DocumentCounting.ToColombia(DateTime.UtcNow);
+                return Ok(await BuildMonthAsync(GetCurrentTenantId(), year ?? localNow.Year, month ?? localNow.Month));
             }
             catch (Exception ex)
             {
@@ -87,16 +91,12 @@ namespace Fel.Api.Tenant.Controllers
                 var metrics = await _billingService.GetTenantMetricsAsync(tenantId, y, m);
 
                 // La lista de consumo trae los documentos aprobados (lo que se cobra); aquí se le suman los rechazados del mes por cliente y sucursal.
-                var periodStart = new DateTime(y, m, 1, 0, 0, 0, DateTimeKind.Utc);
-                var periodEnd = periodStart.AddMonths(1);
                 // Los emitidos (aprobados) también se cuentan aquí directamente: con el cobro por usuario el servicio de cobro no los trae (los deja en 0),
-                // y con el cobro por documento da lo mismo.
-                var counts = await _dbContext.Documents.AsNoTracking()
-                    .Where(d => d.Client.TenantId == tenantId && !d.Client.IsDeveloperSandbox && (d.Status == "REJECTED" || d.Status == "APPROVED")
-                        && d.CreatedAt >= periodStart && d.CreatedAt < periodEnd)
-                    .GroupBy(d => new { d.ClientId, d.BranchId, d.Status })
-                    .Select(g => new { g.Key.ClientId, g.Key.BranchId, g.Key.Status, Count = g.Count() })
-                    .ToListAsync();
+                // y con el cobro por documento da lo mismo. Por fecha de emisión (mes de Colombia) y sin lo enviado al sandbox.
+                var counts = (await Fel.Infrastructure.Services.DocumentCounting.MonthlyCountsAsync(_dbContext.Documents.Where(d => d.Client.TenantId == tenantId), y, m, y, m))
+                    .GroupBy(c => new { c.ClientId, c.BranchId, c.Status })
+                    .Select(g => new { g.Key.ClientId, g.Key.BranchId, g.Key.Status, Count = g.Sum(x => x.Count) })
+                    .ToList();
                 foreach (var r in counts)
                 {
                     var row = metrics.ClientBreakdown.FirstOrDefault(x => x.ClientId == r.ClientId && x.BranchId == r.BranchId);
@@ -301,15 +301,13 @@ namespace Fel.Api.Tenant.Controllers
                 .ToListAsync();
             var selfHidden = await IsPlatformBillingHiddenAsync(tenantId);
 
-            var rangeStart = new DateTime(months[0].Year, months[0].Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var rangeEnd = new DateTime(months[^1].Year, months[^1].Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
             var groupIds = tenants.Select(t => t.Id).ToList();
-            var counts = await _dbContext.Documents.AsNoTracking()
-                .Where(d => groupIds.Contains(d.Client.TenantId) && !d.Client.IsDeveloperSandbox && (d.Status == "APPROVED" || d.Status == "REJECTED")
-                    && d.CreatedAt >= rangeStart && d.CreatedAt < rangeEnd)
-                .GroupBy(d => new { d.Client.TenantId, d.CreatedAt.Year, d.CreatedAt.Month, d.Status })
-                .Select(g => new { g.Key.TenantId, g.Key.Year, g.Key.Month, g.Key.Status, Count = g.Count() })
-                .ToListAsync();
+            // Por fecha de emisión (mes de Colombia) y sin lo enviado al sandbox: las mismas reglas del resto de los tableros (ver DocumentCounting).
+            var counts = (await Fel.Infrastructure.Services.DocumentCounting.MonthlyCountsAsync(
+                    _dbContext.Documents.Where(d => groupIds.Contains(d.Client.TenantId)), months[0].Year, months[0].Month, months[^1].Year, months[^1].Month))
+                .GroupBy(c => new { c.TenantId, c.Year, c.Month, c.Status })
+                .Select(g => new { g.Key.TenantId, g.Key.Year, g.Key.Month, g.Key.Status, Count = g.Sum(x => x.Count) })
+                .ToList();
 
             // Meses con corte ya generado: se muestra lo que realmente se facturó (y si está pagado), no el cálculo en vivo.
             var startKey = months[0].Year * 100 + months[0].Month;
@@ -471,6 +469,84 @@ namespace Fel.Api.Tenant.Controllers
                     totalAmount = billings.Sum(b => b.TotalAmount),
                     currency = "COP",
                     byTenant
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Comparativo para el tenant que agrupa a otros (su grupo: él y sus aliados): cuántos documentos emitió el grupo por Dataico en el mes y desde su "Cobro desde",
+        // y cuánto costaría haberlos emitido con el servicio nativo. El precio es el que el superadmin le fijó a este tenant por documento (Tarifario por documento, por tipo
+        // de documento). Solo cuenta lo emitido, sin sandbox, por su fecha de emisión (ver DocumentCounting).
+        [HttpGet("native-comparison")]
+        public async Task<IActionResult> GetNativeComparison([FromQuery] int? year, [FromQuery] int? month)
+        {
+            try
+            {
+                var tenantId = GetCurrentTenantId();
+                var localNow = Fel.Infrastructure.Services.DocumentCounting.ToColombia(DateTime.UtcNow);
+                var y = year ?? localNow.Year;
+                var m = month ?? localNow.Month;
+                if (m < 1 || m > 12 || y < 2000 || y > 2100) return BadRequest(new { message = "El mes no es válido." });
+
+                var tenants = await _dbContext.Tenants.AsNoTracking()
+                    .Where(t => t.Id == tenantId || t.ParentTenantId == tenantId)
+                    .Select(t => new { t.Id, Name = !string.IsNullOrEmpty(t.CommercialName) ? t.CommercialName : t.Name, t.BillingStartsAt })
+                    .ToListAsync();
+                // Solo un tenant con aliados tiene grupo que comparar.
+                if (tenants.Count < 2) return Ok(new { isGroup = false });
+
+                var self = tenants.First(t => t.Id == tenantId);
+                var prices = await _dbContext.TenantPricings.AsNoTracking().Where(p => p.TenantId == tenantId)
+                    .ToDictionaryAsync(p => p.DocumentTypeId, p => p.PricePerDocument);
+                var typeCodes = await _dbContext.DocumentTypes.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Code);
+
+                var groupIds = tenants.Select(t => t.Id).ToList();
+                // Lo que se pasaría al nativo es lo que hoy sale por Dataico.
+                var dataico = Fel.Infrastructure.Services.DocumentCounting.Emitted(Fel.Infrastructure.Services.DocumentCounting.Counted(
+                        _dbContext.Documents.AsNoTracking().Where(d => groupIds.Contains(d.Client.TenantId))))
+                    .Where(d => (d.Integrator != null ? d.Integrator.Code : d.Client.Integrator.Code) == "DATAICO");
+
+                var (start, end) = Fel.Infrastructure.Services.DocumentCounting.MonthWindowUtc(y, m);
+                var monthRows = await Fel.Infrastructure.Services.DocumentCounting.EmittedBetween(dataico, start, end)
+                    .Select(d => new { d.Client.TenantId, d.DocumentTypeId }).ToListAsync();
+
+                // Acumulado desde el "Cobro desde" del tenant (o desde el primer documento si no tiene), hasta hoy.
+                var sinceUtc = self.BillingStartsAt.HasValue ? Fel.Infrastructure.Services.DocumentCounting.ColombiaDateToUtc(self.BillingStartsAt.Value) : DateTime.MinValue;
+                var accRows = await dataico.Where(d => (d.ProcessedAt ?? d.CreatedAt) >= sinceUtc)
+                    .Select(d => new { d.Client.TenantId, d.DocumentTypeId }).ToListAsync();
+
+                decimal PriceOf(Guid? typeId) => typeId.HasValue ? prices.GetValueOrDefault(typeId.Value) : 0m;
+
+                object Summarize<T>(List<T> rows, Func<T, Guid> tenantOf, Func<T, Guid?> typeOf) => new
+                {
+                    documents = rows.Count,
+                    amount = rows.Sum(r => PriceOf(typeOf(r))),
+                    tenants = tenants.Select(t =>
+                    {
+                        var own = rows.Where(r => tenantOf(r) == t.Id).ToList();
+                        return new { tenantId = t.Id, tenantName = t.Name, isSelf = t.Id == tenantId, documents = own.Count, amount = own.Sum(r => PriceOf(typeOf(r))) };
+                    }).OrderByDescending(t => t.isSelf).ThenByDescending(t => t.documents).ToList(),
+                    types = rows.GroupBy(r => typeOf(r))
+                        .Select(g => new { typeCode = g.Key.HasValue ? typeCodes.GetValueOrDefault(g.Key.Value, "?") : "?", documents = g.Count(), price = PriceOf(g.Key), amount = g.Count() * PriceOf(g.Key) })
+                        .OrderByDescending(t => t.documents).ToList()
+                };
+
+                var missing = monthRows.Concat(accRows).Where(r => PriceOf(r.DocumentTypeId) == 0m)
+                    .Select(r => r.DocumentTypeId.HasValue ? typeCodes.GetValueOrDefault(r.DocumentTypeId.Value, "?") : "?").Distinct().OrderBy(c => c).ToList();
+
+                return Ok(new
+                {
+                    isGroup = true,
+                    year = y,
+                    month = m,
+                    hasRates = prices.Values.Any(v => v > 0m),
+                    missingPriceTypes = missing,
+                    since = self.BillingStartsAt,
+                    period = Summarize(monthRows, r => r.TenantId, r => r.DocumentTypeId),
+                    accumulated = Summarize(accRows, r => r.TenantId, r => r.DocumentTypeId)
                 });
             }
             catch (UnauthorizedAccessException ex)

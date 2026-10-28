@@ -273,6 +273,8 @@ namespace Fel.Infrastructure.Dataico
             }
 
             invoice.Status = result.Success ? "APPROVED" : "REJECTED";
+            // Lo enviado al ambiente de pruebas de Dataico (o por un cliente de demostración) no cuenta como emitido ni se cobra.
+            invoice.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForDataico(client);
             invoice.DianResponseMessage = result.Success ? result.RawResponse : (MissingNoteNumberingMessage(invoice, result) ?? result.ErrorMessage ?? result.RawResponse);
             invoice.Cufe = result.Cufe;
             invoice.QrCode = result.QrCode;

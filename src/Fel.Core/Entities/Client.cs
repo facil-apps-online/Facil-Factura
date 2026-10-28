@@ -87,6 +87,10 @@ namespace Fel.Core.Entities
         // usar por si se retoma la automatización más adelante.
         public bool AppliesRetentions { get; set; } = true;
 
+        // Cliente de demostración del tenant: sirve para hacer pruebas de punta a punta (con las credenciales demo de Dataico o su ambiente de pruebas). Lo
+        // que emite es sandbox: no cuenta como emitido ni se cobra. Lo marca el tenant.
+        public bool IsDemo { get; set; }
+
         // Cómo se ven las retenciones en los selectores de los formularios (ver RetentionLabelStyle): las de cada línea y las del pie, por separado. Por defecto,
         // el nombre corto. Lo cambian el tenant (ficha del cliente) y el propio cliente; manda el último cambio.
         public string LineRetentionLabelStyle { get; set; } = Fel.Core.Models.RetentionLabelStyle.Short;

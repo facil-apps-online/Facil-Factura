@@ -113,7 +113,7 @@ namespace Fel.Infrastructure.Services
         // integrador si existe y está en modo PerDocument. Solo lectura: no descuenta las bolsas, eso lo hace el corte real.
         private async Task<Dictionary<Guid, decimal>> ComputeClientDocumentChargesAsync(
             Guid clientId,
-            IReadOnlyList<(Guid BranchId, Guid IntegratorId, DateTime CreatedAt)> documents,
+            IReadOnlyList<(Guid BranchId, Guid IntegratorId, DateTime EmittedAt)> documents,
             IReadOnlyDictionary<Guid, decimal> branchPrices)
         {
             var charges = new Dictionary<Guid, decimal>();
@@ -125,7 +125,7 @@ namespace Fel.Infrastructure.Services
 
             foreach (var group in documents.GroupBy(d => d.IntegratorId))
             {
-                var ordered = group.OrderBy(d => d.CreatedAt).ToList();
+                var ordered = group.OrderBy(d => d.EmittedAt).ToList();
                 var rates = ordered
                     .Select(d => overrides.FirstOrDefault(o => o.BranchId == d.BranchId && o.IntegratorId == group.Key)?.PricePerDocument
                                  ?? branchPrices.GetValueOrDefault(d.BranchId))
@@ -148,8 +148,8 @@ namespace Fel.Infrastructure.Services
         // --- 1. Client Level Metrics ---
         public async Task<ClientBillingMetrics> GetClientMetricsAsync(Guid clientId, int year, int month)
         {
-            var startDate = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var endDate = startDate.AddMonths(1);
+            // Los documentos se miden por su fecha de emisión en el mes de Colombia, sin los enviados al sandbox (ver DocumentCounting).
+            var (windowStart, windowEnd) = DocumentCounting.MonthWindowUtc(year, month);
 
             var client = await _dbContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == clientId);
             if (client == null) throw new Exception("Client not found");
@@ -160,16 +160,16 @@ namespace Fel.Infrastructure.Services
             // la DIAN: son respuestas simuladas para developers (ver SandboxSimulation), así que no
             // se cobran. Se guardan igual para que el developer los vea en su portal.
             var docs = await _dbContext.Documents.AsNoTracking()
-                .Where(d => d.ClientId == clientId && d.CreatedAt >= startDate && d.CreatedAt < endDate && d.Status == "APPROVED"
-                    && !d.Client.IsDeveloperSandbox)
-                .Select(d => new { d.BranchId, d.IntegratorId, d.CreatedAt })
+                .Where(d => d.ClientId == clientId && d.Status == "APPROVED")
+                .Counted().EmittedBetween(windowStart, windowEnd)
+                .Select(d => new { d.BranchId, d.IntegratorId, EmittedAt = d.ProcessedAt ?? d.CreatedAt })
                 .ToListAsync();
 
             // Documentos emitidos antes de la Fase 3a no tienen IntegratorId propio — se asumen del integrador
             // actual del Client, la mejor aproximación disponible.
             var charges = await ComputeClientDocumentChargesAsync(
                 clientId,
-                docs.Select(d => (d.BranchId, d.IntegratorId ?? client.IntegratorId, d.CreatedAt)).ToList(),
+                docs.Select(d => (d.BranchId, d.IntegratorId ?? client.IntegratorId, d.EmittedAt)).ToList(),
                 branches.ToDictionary(b => b.Id, b => b.PricePerDocument));
 
             // La cuota fija mensual la paga cada sucursal activa.
@@ -223,13 +223,15 @@ namespace Fel.Infrastructure.Services
 
         // Días del mes en que una sucursal cuenta para el cobro por usuario: [from, to). Una inactiva sin fecha de desactivación no cuenta;
         // con fecha, cuenta hasta ella. Falso si se activó después del mes o se desactivó antes.
-        private static bool TryGetPerUserCoverage(Branch branch, DateTime startDate, DateTime endDate, out DateTime from, out DateTime to)
+        // billingStartsAt: "Cobro desde" del tenant; los días anteriores se cuentan pero no se cobran.
+        private static bool TryGetPerUserCoverage(Branch branch, DateTime startDate, DateTime endDate, DateTime? billingStartsAt, out DateTime from, out DateTime to)
         {
             from = default;
             to = default;
             if (!branch.IsActive && branch.DeactivatedAt == null) return false;
 
             from = branch.CreatedAt > startDate ? branch.CreatedAt.Date : startDate;
+            if (billingStartsAt.HasValue && billingStartsAt.Value.Date > from) from = billingStartsAt.Value.Date;
             to = branch.DeactivatedAt.HasValue && branch.DeactivatedAt.Value.Date < endDate ? branch.DeactivatedAt.Value.Date : endDate;
             return from < endDate && to > from;
         }
@@ -249,6 +251,7 @@ namespace Fel.Infrastructure.Services
 
             var pricing = await _dbContext.TenantUserPricings.AsNoTracking().FirstOrDefaultAsync(p => p.TenantId == tenantId);
             var pricePerUser = pricing?.PricePerUser ?? 0m;
+            var billingTerms = await _dbContext.Tenants.AsNoTracking().Where(t => t.Id == tenantId).Select(t => new { t.BillingStartsAt, t.IsBillingExempt }).FirstOrDefaultAsync();
 
             var branches = await _dbContext.Branches.AsNoTracking()
                 .Include(b => b.Client)
@@ -261,12 +264,15 @@ namespace Fel.Infrastructure.Services
             var rawFractionByBranch = new Dictionary<Guid, decimal>();
             foreach (var branch in branches)
             {
-                if (!TryGetPerUserCoverage(branch, startDate, endDate, out var coverageStart, out var coverageEnd)) continue;
+                if (!TryGetPerUserCoverage(branch, startDate, endDate, billingTerms?.BillingStartsAt, out var coverageStart, out var coverageEnd)) continue;
 
                 rawFractionByBranch[branch.Id] = (decimal)(coverageEnd - coverageStart).Days / daysInMonth;
             }
 
-            var monthFractionNeeded = rawFractionByBranch.Values.Sum();
+            // Un tenant exento no paga: se cuentan sus sucursales, pero el valor a cobrar y la fracción para descontar bolsas quedan en cero.
+            var exempt = billingTerms?.IsBillingExempt == true;
+            var fractionForBreakdown = rawFractionByBranch.Values.Sum();
+            var monthFractionNeeded = exempt ? 0m : fractionForBreakdown;
 
             var bags = await _dbContext.TenantPrepaidBags.AsNoTracking()
                 .Where(b => b.TenantId == tenantId && b.Status == PrepaidBagStatus.Active && b.RemainingBalance > 0)
@@ -286,7 +292,7 @@ namespace Fel.Infrastructure.Services
             {
                 if (!rawFractionByBranch.TryGetValue(branch.Id, out var rawFraction)) continue;
 
-                var share = monthFractionNeeded > 0 ? rawFraction / monthFractionNeeded : 0m;
+                var share = monthFractionNeeded > 0 ? rawFraction / fractionForBreakdown : 0m;
                 var due = Math.Round(totalDue * share, 2);
 
                 breakdown.Add(new ClientUsageBreakdown
@@ -332,34 +338,35 @@ namespace Fel.Infrastructure.Services
                 return await GetTenantPerUserMetricsAsync(tenantId, year, month);
             }
 
-            var startDate = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var endDate = startDate.AddMonths(1);
+            var (windowStart, windowEnd) = DocumentCounting.MonthWindowUtc(year, month);
 
             // Documentos aprobados del período, con el integrador que realmente los procesó
             // (Document.IntegratorId, o el integrador actual del Client para documentos previos a
             // la Fase 3a que no quedaron marcados) y la sucursal que los emitió.
             var rows = await _dbContext.Documents.AsNoTracking()
-                // Sin los sandbox de developers: son documentos simulados, no se cobran.
-                .Where(d => d.Client.TenantId == tenantId && d.CreatedAt >= startDate && d.CreatedAt < endDate && d.Status == "APPROVED"
-                    && !d.Client.IsDeveloperSandbox)
+                // Sin lo enviado al sandbox ni los sandbox de developers: no se cuenta ni se cobra. Fecha de emisión, en el mes de Colombia.
+                .Where(d => d.Client.TenantId == tenantId && d.Status == "APPROVED")
+                .Counted().EmittedBetween(windowStart, windowEnd)
                 .Select(d => new
                 {
                     d.ClientId,
                     d.BranchId,
                     ClientDefaultIntegratorId = d.Client.IntegratorId,
                     DocumentIntegratorId = d.IntegratorId,
-                    d.CreatedAt
+                    EmittedAt = d.ProcessedAt ?? d.CreatedAt
                 })
                 .ToListAsync();
 
             var totalDocs = rows.Count;
+            // Lo que se le cobra al tenant: solo lo emitido desde su "Cobro desde" y nada si está exento; el volumen de su tarifa cuenta desde esa fecha.
+            var billableRows = rows.Where(r => DocumentCounting.IsBillable(r.EmittedAt, tenant?.BillingStartsAt, tenant?.IsBillingExempt ?? false)).ToList();
 
             // Cuánto le debe el tenant al superadmin: agrupado por integrador, porque cada uno
             // puede tener su propio tier de tarifa por volumen (TariffTier.IntegratorId) — el
             // prorrateo entre integradores sale de sumar cada grupo a su propia tarifa, no de
             // aplicar una sola tarifa al volumen total mezclado.
             decimal amountDueToSuperadmin = 0;
-            foreach (var integratorGroup in rows.GroupBy(r => r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId))
+            foreach (var integratorGroup in billableRows.GroupBy(r => r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId))
             {
                 var tariff = await GetSuperadminTariffForVolumeAsync(integratorGroup.Count(), integratorGroup.Key);
                 amountDueToSuperadmin += integratorGroup.Count() * tariff;
@@ -391,7 +398,7 @@ namespace Fel.Infrastructure.Services
 
                 var charges = await ComputeClientDocumentChargesAsync(
                     clientBranches.Key,
-                    clientRows.Select(r => (r.BranchId, r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId, r.CreatedAt)).ToList(),
+                    clientRows.Select(r => (r.BranchId, r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId, r.EmittedAt)).ToList(),
                     clientBranches.ToDictionary(b => b.Id, b => b.PricePerDocument));
 
                 foreach (var branch in clientBranches)
@@ -424,7 +431,7 @@ namespace Fel.Infrastructure.Services
                 AmountDueFromClients = amountDueFromClients,
                 // Ya no es una tarifa única: cada integrador puede tener la suya. Se deja como
                 // promedio ponderado del total, solo informativo.
-                SuperadminTariffApplied = totalDocs > 0 ? Math.Round(amountDueToSuperadmin / totalDocs, 2) : 0,
+                SuperadminTariffApplied = billableRows.Count > 0 ? Math.Round(amountDueToSuperadmin / billableRows.Count, 2) : 0,
                 ClientBreakdown = breakdown.OrderByDescending(x => x.DocumentsEmitted).ToList()
             };
         }
@@ -432,8 +439,7 @@ namespace Fel.Infrastructure.Services
         // --- 3. Superadmin Level Metrics ---
         public async Task<SuperadminBillingMetrics> GetSuperadminMetricsAsync(int year, int month)
         {
-            var startDate = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var endDate = startDate.AddMonths(1);
+            var (windowStart, windowEnd) = DocumentCounting.MonthWindowUtc(year, month);
 
             // Los tenants en modo PerUser no se facturan por volumen de documentos aquí
             // (se calculan aparte más abajo), aunque sí puedan tener Documents (vía Dataico).
@@ -447,16 +453,18 @@ namespace Fel.Infrastructure.Services
             var rows = await _dbContext.Documents.AsNoTracking()
                 .Include(d => d.Client)
                 .ThenInclude(c => c.Tenant)
-                // Sin los sandbox de developers: son documentos simulados, no se cobran.
-                .Where(d => d.CreatedAt >= startDate && d.CreatedAt < endDate && d.Status == "APPROVED"
-                    && !perUserTenantIds.Contains(d.Client.TenantId)
-                    && !d.Client.IsDeveloperSandbox)
+                // Sin lo enviado al sandbox ni los sandbox de developers: no se cuenta ni se cobra. Fecha de emisión, en el mes de Colombia.
+                .Where(d => d.Status == "APPROVED" && !perUserTenantIds.Contains(d.Client.TenantId))
+                .Counted().EmittedBetween(windowStart, windowEnd)
                 .Select(d => new
                 {
                     d.Client.TenantId,
                     TenantName = d.Client.Tenant.Name,
+                    d.Client.Tenant.BillingStartsAt,
+                    d.Client.Tenant.IsBillingExempt,
                     ClientDefaultIntegratorId = d.Client.IntegratorId,
-                    DocumentIntegratorId = d.IntegratorId
+                    DocumentIntegratorId = d.IntegratorId,
+                    EmittedAt = d.ProcessedAt ?? d.CreatedAt
                 })
                 .ToListAsync();
 
@@ -467,7 +475,9 @@ namespace Fel.Infrastructure.Services
             foreach (var tenantGroup in rows.GroupBy(r => new { r.TenantId, r.TenantName }))
             {
                 decimal tenantDue = 0;
-                foreach (var integratorGroup in tenantGroup.GroupBy(r => r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId))
+                // Cuentan todos los emitidos; se cobra solo lo emitido desde el "Cobro desde" del tenant y nada si está exento.
+                var billable = tenantGroup.Where(r => DocumentCounting.IsBillable(r.EmittedAt, r.BillingStartsAt, r.IsBillingExempt));
+                foreach (var integratorGroup in billable.GroupBy(r => r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId))
                 {
                     var tariff = await GetSuperadminTariffForVolumeAsync(integratorGroup.Count(), integratorGroup.Key);
                     tenantDue += integratorGroup.Count() * tariff;
@@ -523,6 +533,7 @@ namespace Fel.Infrastructure.Services
         {
             var startDate = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
             var endDate = startDate.AddMonths(1);
+            var (windowStart, windowEnd) = DocumentCounting.MonthWindowUtc(year, month);
             var daysInMonth = DateTime.DaysInMonth(year, month);
 
             var perUserTenantIds = await _dbContext.Tenants.AsNoTracking()
@@ -532,16 +543,17 @@ namespace Fel.Infrastructure.Services
 
             var documentBased = new decimal[daysInMonth];
             var rows = await _dbContext.Documents.AsNoTracking()
-                .Where(d => d.CreatedAt >= startDate && d.CreatedAt < endDate && d.Status == "APPROVED"
-                    && !perUserTenantIds.Contains(d.Client.TenantId)
-                    && !d.Client.IsDeveloperSandbox)
-                .Select(d => new { d.Client.TenantId, ClientDefaultIntegratorId = d.Client.IntegratorId, DocumentIntegratorId = d.IntegratorId, d.CreatedAt })
+                .Where(d => d.Status == "APPROVED" && !perUserTenantIds.Contains(d.Client.TenantId))
+                .Counted().EmittedBetween(windowStart, windowEnd)
+                .Select(d => new { d.Client.TenantId, d.Client.Tenant.BillingStartsAt, d.Client.Tenant.IsBillingExempt, ClientDefaultIntegratorId = d.Client.IntegratorId, DocumentIntegratorId = d.IntegratorId, EmittedAt = d.ProcessedAt ?? d.CreatedAt })
                 .ToListAsync();
 
-            foreach (var group in rows.GroupBy(r => new { r.TenantId, IntegratorId = r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId }))
+            // Solo lo que se cobra (desde el "Cobro desde" del tenant y sin los exentos); cada día es el de Colombia.
+            foreach (var group in rows.Where(r => DocumentCounting.IsBillable(r.EmittedAt, r.BillingStartsAt, r.IsBillingExempt))
+                         .GroupBy(r => new { r.TenantId, IntegratorId = r.DocumentIntegratorId ?? r.ClientDefaultIntegratorId }))
             {
                 var tariff = await GetSuperadminTariffForVolumeAsync(group.Count(), group.Key.IntegratorId);
-                foreach (var day in group.GroupBy(r => r.CreatedAt.Day))
+                foreach (var day in group.GroupBy(r => DocumentCounting.ToColombia(r.EmittedAt).Day))
                     documentBased[day.Key - 1] += day.Count() * tariff;
             }
 
@@ -550,15 +562,15 @@ namespace Fel.Infrastructure.Services
             {
                 var branches = await _dbContext.Branches.AsNoTracking()
                     .Where(b => perUserTenantIds.Contains(b.Client.TenantId) && b.Client.IsActive)
-                    .Select(b => new { b.Client.TenantId, Branch = b })
+                    .Select(b => new { b.Client.TenantId, b.Client.Tenant.BillingStartsAt, b.Client.Tenant.IsBillingExempt, Branch = b })
                     .ToListAsync();
 
-                foreach (var tenantBranches in branches.GroupBy(b => b.TenantId))
+                foreach (var tenantBranches in branches.Where(b => !b.IsBillingExempt).GroupBy(b => b.TenantId))
                 {
                     var weight = new decimal[daysInMonth];
                     foreach (var item in tenantBranches)
                     {
-                        if (!TryGetPerUserCoverage(item.Branch, startDate, endDate, out var coverFrom, out var coverTo)) continue;
+                        if (!TryGetPerUserCoverage(item.Branch, startDate, endDate, item.BillingStartsAt, out var coverFrom, out var coverTo)) continue;
                         for (var day = coverFrom.Day; day < coverFrom.Day + (coverTo - coverFrom).Days; day++)
                             weight[day - 1] += 1m;
                     }

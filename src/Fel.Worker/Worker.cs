@@ -143,6 +143,7 @@ namespace Fel.Worker
                         if (clienteSandbox != null)
                         {
                             newDoc.Status = "APPROVED";
+                            newDoc.SentToSandbox = true;
                             newDoc.DianResponseMessage = Fel.Infrastructure.Services.SandboxSimulation.Mensaje(
                                 usoClaveTecnicaDeRelleno: invoiceData.TechnicalKey == Fel.Infrastructure.Services.SandboxSimulation.ClaveTecnicaDeRelleno);
                             newDoc.ProcessedAt = DateTime.UtcNow;

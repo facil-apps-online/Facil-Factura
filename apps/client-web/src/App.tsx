@@ -301,10 +301,12 @@ function Layout({ children, onLogout }: { children: React.ReactNode, onLogout: (
 
 interface DashboardSummary {
   period: { start: string; end: string };
+  // Emitidos = aprobados del mes (por fecha de emisión); un borrador no cuenta. Rechazados se muestran siempre, pero no se cobran.
   totalIssued: number;
-  totalAccepted: number;
   totalPending: number;
   totalRejected: number;
+  // Cliente de demostración o sandbox: lo que emite no cuenta como emitido.
+  isSandboxClient?: boolean;
   totalBilled: number;
   recentDocuments: Array<{
     id: string;
@@ -419,21 +421,22 @@ const Dashboard = () => {
       ) : (
         <>
           {planUsage && <PlanUsageSummary usage={planUsage} />}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-100">
-              <h3 className="text-slate-400 font-bold uppercase tracking-wider text-xs mb-2">Emitidos</h3>
-              <p className="text-2xl sm:text-3xl font-black text-slate-800">{summary.totalIssued}</p>
+          {summary.isSandboxClient && (
+            <div className="mb-4 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
+              Esta es una cuenta de demostración: lo que emites aquí es de pruebas y no cuenta como documento emitido ni se cobra.
             </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-100">
-              <h3 className="text-emerald-600 font-bold uppercase tracking-wider text-xs mb-2 flex items-center gap-1"><CheckCircle2 size={14} /> Aceptados</h3>
-              <p className="text-2xl sm:text-3xl font-black text-slate-800">{summary.totalAccepted}</p>
+              <h3 className="text-emerald-600 font-bold uppercase tracking-wider text-xs mb-2 flex items-center gap-1"><CheckCircle2 size={14} /> Emitidos</h3>
+              <p className="text-2xl sm:text-3xl font-black text-slate-800">{summary.totalIssued}</p>
             </div>
             <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-100">
               <h3 className="text-amber-600 font-bold uppercase tracking-wider text-xs mb-2 flex items-center gap-1"><Clock size={14} /> En validación</h3>
               <p className="text-2xl sm:text-3xl font-black text-slate-800">{summary.totalPending}</p>
             </div>
             <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-100">
-              <h3 className="text-rose-600 font-bold uppercase tracking-wider text-xs mb-2 flex items-center gap-1"><AlertTriangle size={14} /> Requieren atención</h3>
+              <h3 className="text-rose-600 font-bold uppercase tracking-wider text-xs mb-2 flex items-center gap-1"><AlertTriangle size={14} /> Rechazados</h3>
               <p className="text-2xl sm:text-3xl font-black text-slate-800">{summary.totalRejected}</p>
             </div>
           </div>

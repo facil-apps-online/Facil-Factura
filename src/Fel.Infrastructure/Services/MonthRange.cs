@@ -14,7 +14,7 @@ namespace Fel.Infrastructure.Services
         public static string? Parse(string? from, string? to, out List<(int Year, int Month)> months)
         {
             months = new List<(int, int)>();
-            var now = DateTime.UtcNow;
+            var now = DocumentCounting.ToColombia(DateTime.UtcNow);
             var start = new DateTime(now.Year, now.Month, 1);
             var end = start;
             if (!string.IsNullOrWhiteSpace(from) && !DateTime.TryParseExact(from, "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out start))

@@ -26,14 +26,16 @@ namespace Fel.Api.Superadmin.Controllers
         {
             var activeTenants = await _dbContext.Tenants.CountAsync(t => t.IsActive);
             
-            var today = DateTime.UtcNow;
-
-            var metrics = await _billingService.GetSuperadminMetricsAsync(today.Year, today.Month);
+            // El mes de Colombia en curso. Emitidos y rechazados de todos los tenants (también los que se cobran por usuario), con las mismas reglas que el resto
+            // de los tableros: por fecha de emisión y sin lo enviado al sandbox.
+            var today = Fel.Infrastructure.Services.DocumentCounting.ToColombia(DateTime.UtcNow);
+            var counts = await Fel.Infrastructure.Services.DocumentCounting.CountMonthAsync(_dbContext, today.Year, today.Month);
 
             return Ok(new
             {
                 ActiveTenants = activeTenants,
-                DocumentsThisMonth = metrics.TotalDocuments
+                DocumentsThisMonth = counts.Emitted,
+                DocumentsRejectedThisMonth = counts.Rejected
             });
         }
 
@@ -65,7 +67,8 @@ namespace Fel.Api.Superadmin.Controllers
         [HttpGet("monthly-comparison")]
         public async Task<IActionResult> GetMonthlyComparison()
         {
-            var now = DateTime.UtcNow;
+            // Hoy y el mes en curso son los de Colombia: el cobro y los documentos se miden en su hora (ver DocumentCounting).
+            var now = Fel.Infrastructure.Services.DocumentCounting.ToColombia(DateTime.UtcNow);
             var previousStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-1);
             var day = now.Day;
             var daysInMonth = DateTime.DaysInMonth(now.Year, now.Month);
@@ -143,8 +146,10 @@ namespace Fel.Api.Superadmin.Controllers
         {
             try
             {
-                var y = year ?? DateTime.UtcNow.Year;
-                var m = month ?? DateTime.UtcNow.Month;
+                // El mes en curso es el de Colombia (ver DocumentCounting).
+                var localNow = Fel.Infrastructure.Services.DocumentCounting.ToColombia(DateTime.UtcNow);
+                var y = year ?? localNow.Year;
+                var m = month ?? localNow.Month;
 
                 var metrics = await _billingService.GetSuperadminMetricsAsync(y, m);
                 return Ok(metrics);
@@ -183,14 +188,11 @@ namespace Fel.Api.Superadmin.Controllers
 
         private async Task<RangeResult> BuildRangeAsync(List<(int Year, int Month)> months)
         {
-            var rangeStart = new DateTime(months[0].Year, months[0].Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var rangeEnd = new DateTime(months[^1].Year, months[^1].Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
-
-            var counts = await _dbContext.Documents.AsNoTracking()
-                .Where(d => !d.Client.IsDeveloperSandbox && (d.Status == "APPROVED" || d.Status == "REJECTED") && d.CreatedAt >= rangeStart && d.CreatedAt < rangeEnd)
-                .GroupBy(d => new { d.Client.TenantId, d.CreatedAt.Year, d.CreatedAt.Month, d.Status })
-                .Select(g => new { g.Key.TenantId, g.Key.Year, g.Key.Month, g.Key.Status, Count = g.Count() })
-                .ToListAsync();
+            // Por fecha de emisión (mes de Colombia) y sin lo enviado al sandbox: las mismas reglas del resto de los tableros (ver DocumentCounting).
+            var counts = (await Fel.Infrastructure.Services.DocumentCounting.MonthlyCountsAsync(_dbContext.Documents, months[0].Year, months[0].Month, months[^1].Year, months[^1].Month))
+                .GroupBy(c => new { c.TenantId, c.Year, c.Month, c.Status })
+                .Select(g => new { g.Key.TenantId, g.Key.Year, g.Key.Month, g.Key.Status, Count = g.Sum(x => x.Count) })
+                .ToList();
 
             var amounts = new Dictionary<(Guid TenantId, int Year, int Month), decimal>();
             var names = new Dictionary<Guid, string>();

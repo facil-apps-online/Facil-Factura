@@ -292,6 +292,16 @@ export default function ClientFormFields({ client, setClient, associates, showBi
 
           <div>
             <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={!!client.isDemo} onChange={e => setClient({ ...client, isDemo: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
+              <span>
+                <span className="font-semibold text-slate-700 text-sm">Cliente de demostración</span>
+                <span className="block text-xs text-slate-400 mt-0.5">Sirve para hacer pruebas de punta a punta: lo que emite es sandbox, no cuenta como documento emitido ni se cobra.</span>
+              </span>
+            </label>
+          </div>
+
+          <div>
+            <label className="flex items-start gap-3 cursor-pointer">
               <input type="checkbox" checked={!!client.foreignCurrencyEnabled} onChange={e => setClient({ ...client, foreignCurrencyEnabled: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
               <span>
                 <span className="font-semibold text-slate-700 text-sm">Factura también en moneda extranjera</span>

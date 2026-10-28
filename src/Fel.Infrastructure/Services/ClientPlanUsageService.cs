@@ -199,8 +199,11 @@ namespace Fel.Infrastructure.Services
             if (statuses.Count == 0) return new Dictionary<Guid, int>();
 
             var types = plan.CountedTypes;
+            // Mismas reglas que los tableros (ver DocumentCounting): por fecha de emisión (el día del ciclo es el de Colombia) y sin lo enviado al sandbox. Lo que
+            // está en proceso aún no tiene fecha de emisión y se mide por la de creación.
             var rows = await _dbContext.Documents.AsNoTracking()
-                .Where(d => d.ClientId == clientId && d.CreatedAt >= start && d.CreatedAt < endExclusive && statuses.Contains(d.Status))
+                .Where(d => d.ClientId == clientId && statuses.Contains(d.Status))
+                .Counted().EmittedBetween(DocumentCounting.ColombiaDateToUtc(start), DocumentCounting.ColombiaDateToUtc(endExclusive))
                 .Select(d => new { d.BranchId, d.TypeCode })
                 .ToListAsync();
 

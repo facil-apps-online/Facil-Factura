@@ -132,6 +132,7 @@ namespace Fel.Api.Tenant.Controllers
                         c.TaxId,
                         c.Email,
                         c.IsActive,
+                        c.IsDemo,
                         Blocked = c.BlockedAt != null,
                         c.BlockReason,
                         c.CreatedAt,
@@ -204,6 +205,7 @@ namespace Fel.Api.Tenant.Controllers
                 client.RoundingAdjustment,
                 client.LineRetentionLabelStyle,
                 client.FooterRetentionLabelStyle,
+                client.IsDemo,
                  client.DecimalSeparator,
                  client.ElectronicInvoiceLegend,
                  client.SupportDocumentLegend,
@@ -287,6 +289,7 @@ namespace Fel.Api.Tenant.Controllers
                 RoundingAdjustment = Fel.Core.Models.RoundingAdjustment.IsValid(request.RoundingAdjustment) ? request.RoundingAdjustment! : Fel.Core.Models.RoundingAdjustment.None,
                 LineRetentionLabelStyle = Fel.Core.Models.RetentionLabelStyle.IsValid(request.LineRetentionLabelStyle) ? request.LineRetentionLabelStyle! : Fel.Core.Models.RetentionLabelStyle.Short,
                 FooterRetentionLabelStyle = Fel.Core.Models.RetentionLabelStyle.IsValid(request.FooterRetentionLabelStyle) ? request.FooterRetentionLabelStyle! : Fel.Core.Models.RetentionLabelStyle.Short,
+                IsDemo = request.IsDemo ?? false,
                 DecimalSeparator = DecimalSeparators.IsValid(request.DecimalSeparator) ? request.DecimalSeparator! : DecimalSeparators.Point,
                 AssociateId = request.AssociateId,
                 Latitude = request.Latitude,
@@ -393,6 +396,8 @@ namespace Fel.Api.Tenant.Controllers
             // también lo cambia desde su portal; manda el último cambio.
             if (Fel.Core.Models.RetentionLabelStyle.IsValid(request.LineRetentionLabelStyle)) client.LineRetentionLabelStyle = request.LineRetentionLabelStyle!;
             if (Fel.Core.Models.RetentionLabelStyle.IsValid(request.FooterRetentionLabelStyle)) client.FooterRetentionLabelStyle = request.FooterRetentionLabelStyle!;
+            // Cliente de demostración: lo que emite es sandbox (no cuenta como emitido ni se cobra). Nulo = no se envió: no se cambia.
+            if (request.IsDemo.HasValue) client.IsDemo = request.IsDemo.Value;
             // Solo se cambia si viene un valor válido: un portal con una versión anterior del formulario no lo envía.
              if (DecimalSeparators.IsValid(request.DecimalSeparator)) client.DecimalSeparator = request.DecimalSeparator!;
              client.ElectronicInvoiceLegend = request.ElectronicInvoiceLegend?.Trim() ?? string.Empty;
@@ -928,6 +933,8 @@ namespace Fel.Api.Tenant.Controllers
         // Estilo de las retenciones en los selectores de los formularios del cliente: Short (nombre corto) o Full (nombre completo). Vacío = no se cambia.
         public string? LineRetentionLabelStyle { get; set; }
         public string? FooterRetentionLabelStyle { get; set; }
+        // Cliente de demostración del tenant para hacer pruebas: sus documentos son sandbox. Nulo = no se cambia.
+        public bool? IsDemo { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
          public string? DecimalSeparator { get; set; }
          public string? ElectronicInvoiceLegend { get; set; }
@@ -998,6 +1005,8 @@ namespace Fel.Api.Tenant.Controllers
         // Estilo de las retenciones en los selectores de los formularios del cliente: Short (nombre corto) o Full (nombre completo). Vacío = no se cambia.
         public string? LineRetentionLabelStyle { get; set; }
         public string? FooterRetentionLabelStyle { get; set; }
+        // Cliente de demostración del tenant para hacer pruebas: sus documentos son sandbox. Nulo = no se cambia.
+        public bool? IsDemo { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
         public string? DecimalSeparator { get; set; }
         public double? Latitude { get; set; }

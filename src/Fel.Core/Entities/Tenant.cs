@@ -81,6 +81,13 @@ namespace Fel.Core.Entities
 
         // --- Facturación ---
         public TenantBillingMode BillingMode { get; set; } = TenantBillingMode.PerDocument;
+
+        // Cobro desde (fecha de Colombia): antes de ese día se cuentan los documentos emitidos y las sucursales, pero no se cobra nada. Nulo = se cobra
+        // desde siempre. Lo define el superadmin (p. ej. las empresas migradas empiezan a cobrar el 1 de noviembre).
+        public DateTime? BillingStartsAt { get; set; }
+
+        // Exento de cobro: el dueño de la plataforma y otros tenants que no pagan. Sus documentos se cuentan igual, pero no hay corte ni valor a cobrar.
+        public bool IsBillingExempt { get; set; }
         // Controla si el portal del cliente final (client-web) puede mostrar información de
         // consumo/facturación de ese cliente. El tenant decide qué tanto expone a ese nivel.
         public bool ShowUsageToClients { get; set; } = false;

@@ -62,7 +62,7 @@ const branding = {
 };
 
 const summary = {
-  period: { start: '2026-10-01', end: '2026-10-31' }, totalIssued: 120, totalAccepted: 100, totalPending: 10, totalRejected: 10, totalBilled: 98765432.1,
+  period: { start: '2026-10-01', end: '2026-10-31' }, totalIssued: 120, totalPending: 10, totalRejected: 10, totalBilled: 98765432.1,
   recentDocuments: [0, 1, 2].map(i => ({ id: `d${i}`, typeCode: 'FV', number: String(500 + i), processedAt: '2026-10-01T12:00:00Z', customerName: i === 0 ? LONG_NAME : `Cliente ${i}`, totalAmount: 1469135.78 })),
   consumption: { mode: 'Standard', pricePerDocument: 450 }, pendingSetupItems: ['no-resolution'],
 };

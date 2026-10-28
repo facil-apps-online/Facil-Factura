@@ -72,6 +72,9 @@ export const TenantEdit = () => {
   const [pricings, setPricings] = useState<Record<string, number>>({});
   const [billingMode, setBillingMode] = useState<'PerDocument' | 'PerUser'>('PerDocument');
   const [pricePerUser, setPricePerUser] = useState(0);
+  // Condiciones de cobro: antes de "Cobro desde" se cuenta pero no se cobra; un tenant exento (el dueño de la plataforma) no paga.
+  const [billingStartsAt, setBillingStartsAt] = useState('');
+  const [isBillingExempt, setIsBillingExempt] = useState(false);
   const [packages, setPackages] = useState<any[]>([]);
   const [newPackage, setNewPackage] = useState({ name: '', discountedPricePerUser: 0, totalPrice: 0 });
   const [integratorBilling, setIntegratorBilling] = useState<any[]>([]);
@@ -230,6 +233,13 @@ export const TenantEdit = () => {
         setPricePerUser(res.data.pricePerUser);
       })
       .catch(() => toast.error("Error cargando el modo de facturación"));
+
+    api.get(`/billing/tenant/${id}/billing-terms`)
+      .then(res => {
+        setBillingStartsAt(res.data.billingStartsAt ?? '');
+        setIsBillingExempt(!!res.data.isBillingExempt);
+      })
+      .catch(() => toast.error("Error cargando las condiciones de cobro"));
 
     loadPackages();
     loadUsers();
@@ -423,6 +433,7 @@ export const TenantEdit = () => {
 
       // 3. Guardar Modo de Facturación
       await api.put(`/billing/tenant/${id}/user-pricing`, { billingMode, pricePerUser });
+      await api.put(`/billing/tenant/${id}/billing-terms`, { billingStartsAt: billingStartsAt || null, isBillingExempt });
 
       toast.success("Configuración y Tarifario guardados exitosamente.");
       navigate('/tenants');
@@ -939,6 +950,27 @@ export const TenantEdit = () => {
                 {mode === 'PerDocument' ? 'Por Documento' : 'Por Usuario'}
               </button>
             ))}
+          </div>
+
+          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="billing-terms">
+            <div>
+              <label htmlFor="billing-starts-at" className="block text-sm font-semibold text-slate-400 mb-1">Cobro desde</label>
+              <input
+                id="billing-starts-at"
+                type="date"
+                value={billingStartsAt}
+                onChange={e => setBillingStartsAt(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-emerald-500 font-semibold"
+              />
+              <p className="text-xs text-slate-500 mt-1">Antes de esta fecha (hora de Colombia) se cuentan sus documentos y usuarios, pero no se cobra nada. Vacío = se cobra desde siempre.</p>
+            </div>
+            <label className="flex items-start gap-3 cursor-pointer pt-6">
+              <input type="checkbox" checked={isBillingExempt} onChange={e => setIsBillingExempt(e.target.checked)} className="mt-1 h-5 w-5 rounded accent-emerald-500" />
+              <span>
+                <span className="block text-sm font-semibold text-slate-300">Exento de cobro</span>
+                <span className="block text-xs text-slate-500 mt-0.5">Para el dueño de la plataforma y quien no paga: se cuentan sus documentos, pero no hay corte ni valor a cobrar.</span>
+              </span>
+            </label>
           </div>
 
           {billingMode === 'PerUser' && (

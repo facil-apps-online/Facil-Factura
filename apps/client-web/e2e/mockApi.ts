@@ -169,7 +169,11 @@ function respond(pathname: string, search: string, session: MockSession): unknow
   if (pathname.endsWith('/client/support-documents/d1')) return supportWithRetentions;
   if (pathname.endsWith('/client/support-documents')) return list(6, i => document(i, 'DS'));
   if (pathname.endsWith('/client/payroll')) return list(5, payroll);
-  if (pathname.endsWith('/client/received-documents')) return list(4, received);
+  if (pathname.endsWith('/client/received-documents/events')) return [];
+  if (pathname.endsWith('/client/received-documents')) {
+    const items = list(4, received);
+    return { items, total: items.length };
+  }
   if (pathname.endsWith('/client/resolutions')) return list(3, resolution);
   if (pathname.endsWith('/client/invoice-defaults')) return { documentTypeId: null, paymentMeans: null, paymentMeansType: null, paymentTermDays: null, currency: null, notes: null };
   if (pathname.endsWith('/client/resolutions/note-counters')) return { nextCreditNoteNumber: 1, nextDebitNoteNumber: 1, nextSupportAdjustmentNumber: 1, supportAdjustmentPrefix: 'DSA' };

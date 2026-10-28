@@ -1,9 +1,9 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { Inbox, Upload, Loader2, CheckCircle2, XCircle, Send, Info, Download, FileWarning } from 'lucide-react';
 import { api, getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 import { useNumberFormat } from '../lib/numberFormat';
-import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import DataTable, { type DataTableColumn, type DataTableQuery } from '@shared/components/DataTable';
 import Modal from '../components/Modal';
 
 const EVENT_BUTTONS = [{ code: '030', label: 'Acuse' }, { code: '032', label: 'Recibo' }, { code: '033', label: 'Aceptación' }, { code: '031', label: 'Reclamo' }] as const;
@@ -12,7 +12,10 @@ const EVENT_STATUS_LABELS: Record<string, string> = { SENT: 'Enviado', DUPLICATE
 export default function ReceivedDocumentsPage() {
   const fmt = useNumberFormat();
   const [loading, setLoading] = useState(true);
-  const [documents, setDocuments] = useState<any[]>([]);
+  // La lista se pide por páginas al servidor: solo se tienen los documentos de la página que se ve.
+  const [pageData, setPageData] = useState<{ items: any[]; total: number }>({ items: [], total: 0 });
+  const lastQuery = useRef<DataTableQuery | null>(null);
+  const requestId = useRef(0);
   const [uploading, setUploading] = useState(false);
   const [sendingEvents, setSendingEvents] = useState<Set<string>>(() => new Set());
   const sendingEventsRef = useRef(new Set<string>());
@@ -26,8 +29,18 @@ export default function ReceivedDocumentsPage() {
     } catch (err) { toast.error(getErrorMessage(err, 'No se pudo cargar el historial del evento')); }
   };
   const [fileDownloading, setFileDownloading] = useState<'xml' | 'pdf' | null>(null);
-  const loadDocuments = () => { api.get('/client/received-documents').then(res => setDocuments(res.data)).catch(() => toast.error('Error al cargar los documentos recibidos')).finally(() => setLoading(false)); };
-  useEffect(() => { loadDocuments(); }, []);
+  // La tabla avisa qué página pide el usuario (búsqueda, orden, página, tamaño); las respuestas que llegan tarde, de una petición ya reemplazada, se descartan.
+  const fetchPage = (query: DataTableQuery) => {
+    lastQuery.current = query;
+    const id = ++requestId.current;
+    setLoading(true);
+    api.get('/client/received-documents', { params: { q: query.search || undefined, sort: query.sort?.key, dir: query.sort?.dir, page: query.page, pageSize: query.pageSize } })
+      .then(res => { if (id === requestId.current) setPageData(res.data); })
+      .catch(() => { if (id === requestId.current) toast.error('Error al cargar los documentos recibidos'); })
+      .finally(() => { if (id === requestId.current) setLoading(false); });
+  };
+  // Vuelve a pedir la página que se está viendo (después de cargar un documento o enviar un evento).
+  const loadDocuments = () => { if (lastQuery.current) fetchPage(lastQuery.current); };
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return; e.target.blur(); setUploading(true);
     const formData = new FormData(); formData.append('file', file);
@@ -57,8 +70,8 @@ export default function ReceivedDocumentsPage() {
     finally { setFileDownloading(null); }
   };
   const columns: DataTableColumn<any>[] = [
-    { key: 'issuer', header: 'Proveedor', primary: true, cellClassName: 'font-semibold text-slate-700', render: doc => doc.issuerName || doc.issuerTaxId, sortValue: doc => doc.issuerName || doc.issuerTaxId, searchValue: doc => `${doc.issuerName ?? ''} ${doc.issuerTaxId ?? ''}` },
-    { key: 'documentId', header: 'Documento', cellClassName: 'font-mono text-sm text-slate-600', render: doc => doc.documentId, sortValue: doc => doc.documentId, searchValue: doc => doc.documentId },
+    { key: 'issuer', header: 'Proveedor', primary: true, cellClassName: 'font-semibold text-slate-700', render: doc => doc.issuerName || doc.issuerTaxId, sortValue: doc => doc.issuerName || doc.issuerTaxId },
+    { key: 'documentId', header: 'Documento', cellClassName: 'font-mono text-sm text-slate-600', render: doc => doc.documentId, sortValue: doc => doc.documentId },
     { key: 'issueDate', header: 'Fecha', cellClassName: 'text-sm text-slate-500', render: doc => new Date(doc.issueDate).toLocaleDateString('es-CO'), sortValue: doc => doc.issueDate },
     { key: 'total', header: 'Total', align: 'right', cellClassName: 'font-mono text-sm', render: doc => fmt.number(Number(doc.totalAmount), 3), sortValue: doc => Number(doc.totalAmount) },
     { key: 'source', header: 'Origen', hideBelow: 'ultra', cellClassName: 'text-xs text-slate-400', render: doc => doc.sourceType === 'Email' ? 'Correo' : 'Manual', sortValue: doc => doc.sourceType === 'Email' ? 'Correo' : 'Manual' },
@@ -79,12 +92,11 @@ export default function ReceivedDocumentsPage() {
       })}</div>;
     } }
   ];
-  if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-blue-500" /></div>;
   return <div className="p-3 sm:p-4 space-y-6 lg:space-y-8">
     <div><h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Documentos recibidos</h1><p className="text-slate-500 mt-2">Consulta documentos de tus proveedores y revisa el resultado de sus eventos.</p></div>
     <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 shadow-sm border border-slate-100">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><Inbox className="text-primary" size={20} /><h2 className="text-xl font-bold text-slate-800">Documentos recibidos</h2></div><><button type="button" onClick={() => uploadInputRef.current?.click()} disabled={uploading} className="cursor-pointer bg-slate-900 hover:bg-black disabled:opacity-50 text-white px-5 py-3 rounded-xl text-sm font-bold shadow-sm flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-primary/40">{uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload size={16} />}{uploading ? 'Cargando...' : 'Cargar ZIP/XML'}</button><input ref={uploadInputRef} type="file" accept=".zip,.xml" className="hidden" onChange={handleUpload} disabled={uploading} /></></div>
-      {documents.length === 0 ? <div className="flex flex-col items-center justify-center text-center h-48 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><Inbox className="text-slate-300 mb-3" size={32} /><p className="text-slate-500">Aún no tienes documentos recibidos.</p></div> : <DataTable rows={documents} columns={columns} rowKey={doc => doc.id} tableFrom="2xl" search="Buscar por proveedor, NIT o número de documento..." defaultSort={{ key: 'issueDate', dir: 'desc' }} />}
+      <DataTable rows={pageData.items} server={{ total: pageData.total, onQueryChange: fetchPage }} loading={loading} columns={columns} rowKey={doc => doc.id} tableFrom="2xl" search="Buscar por proveedor, NIT o número de documento..." defaultSort={{ key: 'issueDate', dir: 'desc' }} emptyMessage="Aún no tienes documentos recibidos." />
     </div>
     {eventHistory && (() => {
       const latest = eventHistory.events.filter((item: any) => item.eventCode === eventHistory.code).sort((a: any, b: any) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())[0];

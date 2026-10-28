@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
+using Fel.Api.Client.Models;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
@@ -38,43 +39,16 @@ namespace Fel.Api.Client.Controllers
             _cryptoService = cryptoService;
         }
 
-        // Un documento soporte trae InvoiceTypeCode = 05. Se pregunta en la base de datos para no traer el XML completo de cada documento (decenas de KB).
-        private const string SupportDocumentXmlPattern = "%InvoiceTypeCode%>05</%InvoiceTypeCode>%";
-
-        // Solo lo que muestra la lista. El XML, el PDF original y las respuestas técnicas de los eventos no viajan: el historial de un evento se pide al abrirlo.
+        // Página de la lista de documentos recibidos: el servidor busca, ordena y corta, y solo manda lo que se ve (ver ReceivedDocumentListItem).
         [HttpGet]
-        public async Task<IActionResult> GetReceivedDocuments()
+        public async Task<IActionResult> GetReceivedDocuments([FromQuery] string? q, [FromQuery] string? sort, [FromQuery] string? dir, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             try
             {
                 var clientId = GetCurrentClientId();
-                var documents = await _dbContext.ReceivedDocuments.AsNoTracking().ForBranch(CurrentBranchScope)
-                    .Where(d => d.ClientId == clientId)
-                    .OrderByDescending(d => d.ReceivedAt)
-                    .Select(d => new
-                    {
-                        d.Id,
-                        d.SourceType,
-                        d.Cufe,
-                        d.DocumentTypeCode,
-                        d.IssuerTaxId,
-                        d.IssuerName,
-                        d.DocumentId,
-                        d.IssueDate,
-                        d.TotalAmount,
-                        d.IsCredit,
-                        IsSupportDocument = d.DocumentTypeCode == "05" || EF.Functions.Like(d.RawXml, SupportDocumentXmlPattern),
-                        d.ReceivedAt,
-                        // El mensaje se recorta: en la fila solo se ve como ayuda al pasar el cursor; completo está en el historial del evento.
-                        Events = d.Events.OrderByDescending(e => e.SentAt).Select(e => new
-                        {
-                            e.Id, e.EventCode, e.Status, e.SentAt, e.EventNumber,
-                            DianResponseMessage = e.DianResponseMessage == null ? null : e.DianResponseMessage.Substring(0, 300)
-                        })
-                    })
-                    .ToListAsync();
-
-                return Ok(documents);
+                var (items, total) = await ReceivedDocumentList.PageAsync(
+                    _dbContext.ReceivedDocuments.AsNoTracking().ForBranch(CurrentBranchScope).Where(d => d.ClientId == clientId), q, sort, dir, page, pageSize);
+                return Ok(new { items, total });
             }
             catch (UnauthorizedAccessException ex)
             {

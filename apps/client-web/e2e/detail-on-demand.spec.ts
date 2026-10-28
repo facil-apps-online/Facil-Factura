@@ -39,7 +39,7 @@ test('en documentos recibidos el historial de un evento se pide al abrirlo y tra
     // Como el servidor: en la lista el evento no trae la respuesta técnica ni los enlaces.
     events: [{ id: 'ev1', eventCode: '030', status: 'SENT', sentAt: '2026-10-02T10:00:00', eventNumber: 5, dianResponseMessage: 'Recibido' }],
   };
-  await page.route('**/api/client/received-documents', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([doc]) }));
+  await page.route('**/api/client/received-documents?*', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [doc], total: 1 }) }));
   let historyRequests = 0;
   await page.route('**/api/client/received-documents/rdx/events', route => {
     historyRequests++;
@@ -52,4 +52,35 @@ test('en documentos recibidos el historial de un evento se pide al abrirlo y tra
   await page.getByRole('button', { name: /Ver historial de/ }).first().click();
   await expect(page.getByRole('dialog')).toContainText('Respuesta técnica de Dataico');
   expect(historyRequests).toBe(1);
+});
+
+test('documentos recibidos se piden por páginas: búsqueda y página siguiente van al servidor', async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 900 });
+  await signIn(page);
+  await mockApi(page);
+  const requests: URLSearchParams[] = [];
+  const TOTAL = 60;
+  await page.route('**/api/client/received-documents?*', route => {
+    const params = new URL(route.request().url()).searchParams;
+    requests.push(params);
+    const q = (params.get('q') ?? '').toLowerCase();
+    const size = Number(params.get('pageSize'));
+    const pageNumber = Number(params.get('page'));
+    const all = Array.from({ length: TOTAL }, (_, i) => ({
+      id: `r${i}`, issuerName: `Proveedor ${String(i + 1).padStart(2, '0')}`, issuerTaxId: '900111222', documentId: `FE-${i + 1}`, issueDate: '2026-10-01T00:00:00', totalAmount: 1000, sourceType: 'Email', isCredit: false, isSupportDocument: false, events: [],
+    })).filter(d => !q || d.issuerName.toLowerCase().includes(q));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: all.slice((pageNumber - 1) * size, pageNumber * size), total: all.length }) });
+  });
+  await page.goto('/received-documents');
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByText(/Mostrando 1–25 de 60/)).toBeVisible();
+  expect(requests[requests.length - 1].get('page')).toBe('1');
+
+  await page.getByRole('button', { name: 'Página siguiente' }).click();
+  await expect(page.getByText(/Mostrando 26–50 de 60/)).toBeVisible();
+  expect(requests[requests.length - 1].get('page')).toBe('2');
+
+  await page.getByPlaceholder(/Buscar por proveedor/).fill('Proveedor 07');
+  await expect.poll(() => requests.some(r => r.get('q') === 'Proveedor 07')).toBe(true);
+  await expect(page.getByText(/de 1\b/)).toBeVisible();
 });

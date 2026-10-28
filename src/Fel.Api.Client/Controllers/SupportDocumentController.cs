@@ -374,11 +374,6 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Debes indicar el medio de pago.");
                 }
 
-                if (document.IssueDate.Date < Fel.Core.Models.ColombiaTime.Today)
-                {
-                    return BadRequest("La fecha de emisión ya pasó. Edita el documento y actualiza la fecha (de hoy en adelante).");
-                }
-
                 // Consecutivo real, reclamado recién ahora que ya pasaron todas las validaciones (un
                 // documento rechazado que se reintenta conserva el que ya tiene). El Documento Soporte
                 // usa el rango de su resolución; la Nota de Ajuste, su contador propio del Client.
@@ -404,6 +399,10 @@ namespace Fel.Api.Client.Controllers
                 document.Prefix = document.TypeCode == AdjustmentTypeCode
                     ? (await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, clientId, document.BranchId, NoteKind.SupportAdjustment) ?? document.Prefix ?? resolution.Prefix)
                     : resolution.Prefix;
+
+                // Como en las facturas: la DIAN exige que la fecha de emisión sea la de la firma (FAD09e), así que el documento se emite con la fecha de hoy
+                // aunque el borrador sea de días atrás o sea un rechazado que se reintenta.
+                document.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
                 Document? adjustedDocument = null;

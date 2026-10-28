@@ -156,6 +156,11 @@ namespace Fel.Infrastructure.Dataico
                 ? (claimedNotePrefix ?? (!noteClaimedNow && !string.IsNullOrWhiteSpace(invoice.Prefix) ? invoice.Prefix : resolution.Prefix))
                 : resolution.Prefix;
 
+            // La DIAN exige que la fecha de emisión sea la de la firma (regla FAD09e) y Dataico firma el día que recibe el documento. La fecha se refresca
+            // aquí, en el documento mismo (como en la emisión directa), para que el cuerpo enviado, el PDF, el listado y el vencimiento (emisión + plazo)
+            // lleven el día real de emisión y no el del borrador o el del envío fallido que se reintenta.
+            invoice.IssueDate = Fel.Core.Models.ColombiaTime.Now;
+
             Fel.Infrastructure.Dataico.Models.DataicoResult result;
             // Dataico devolvió un documento que no es de esta factura (otro adquirente, o ya asociado a otra factura nuestra).
             var foreignDocument = false;

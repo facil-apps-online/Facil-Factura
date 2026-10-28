@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Fel.Core.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Client.Models
 {
@@ -34,6 +35,42 @@ namespace Fel.Api.Client.Models
                     : query.Where(c => c.Name.Contains(t) || c.IdentificationNumber.Contains(digits));
             }
             return query;
+        }
+
+        // Una página de la lista de Terceros: filtra (tipo, origen, búsqueda), cuenta el total, ordena por la columna pedida y corta. `query` ya viene
+        // limitado al cliente. origin: "tenant" (clientes del tenant) o "incomplete" (les falta correo, dirección o ciudad DANE).
+        public static async Task<(List<Customer> Items, int Total)> PageAsync(IQueryable<Customer> query, PartyType? partyType, string? text, string? origin,
+            string? sort, string? dir, int page, int pageSize)
+        {
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(page, 1);
+            if (partyType.HasValue) query = query.Where(c => c.PartyType == partyType.Value);
+            if (origin == "tenant") query = query.Where(c => c.LinkedClientId != null);
+            else if (origin == "incomplete") query = query.Where(c => c.Email == "" || c.Address == "" || (c.CountryCode == "CO" && c.CityCode == ""));
+            query = Filter(query, text, includeContact: true);
+
+            var total = await query.CountAsync();
+            var desc = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
+            // Columnas ordenables de la tabla; el desempate por Id mantiene estable el orden entre páginas.
+            var ordered = (sort, desc) switch
+            {
+                ("identification", false) => query.OrderBy(c => c.IdentificationNumber),
+                ("identification", true) => query.OrderByDescending(c => c.IdentificationNumber),
+                ("contact", false) => query.OrderBy(c => c.Email),
+                ("contact", true) => query.OrderByDescending(c => c.Email),
+                ("contract", false) => query.OrderBy(c => c.ContractType),
+                ("contract", true) => query.OrderByDescending(c => c.ContractType),
+                ("baseSalary", false) => query.OrderBy(c => c.BaseSalary),
+                ("baseSalary", true) => query.OrderByDescending(c => c.BaseSalary),
+                ("municipality", false) => query.OrderBy(c => c.CityName),
+                ("municipality", true) => query.OrderByDescending(c => c.CityName),
+                ("regime", false) => query.OrderBy(c => c.TaxRegime),
+                ("regime", true) => query.OrderByDescending(c => c.TaxRegime),
+                (_, true) => query.OrderByDescending(c => c.Name),
+                _ => query.OrderBy(c => c.Name)
+            };
+            var items = await ordered.ThenBy(c => c.Id).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+            return (items, total);
         }
 
         public static IQueryable<CustomerSearchItem> Project(IQueryable<Customer> query) =>

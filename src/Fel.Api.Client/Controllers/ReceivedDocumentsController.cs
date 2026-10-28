@@ -3,7 +3,6 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Xml.Linq;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
@@ -39,34 +38,43 @@ namespace Fel.Api.Client.Controllers
             _cryptoService = cryptoService;
         }
 
+        // Un documento soporte trae InvoiceTypeCode = 05. Se pregunta en la base de datos para no traer el XML completo de cada documento (decenas de KB).
+        private const string SupportDocumentXmlPattern = "%InvoiceTypeCode%>05</%InvoiceTypeCode>%";
+
+        // Solo lo que muestra la lista. El XML, el PDF original y las respuestas técnicas de los eventos no viajan: el historial de un evento se pide al abrirlo.
         [HttpGet]
         public async Task<IActionResult> GetReceivedDocuments()
         {
             try
             {
                 var clientId = GetCurrentClientId();
-                var documents = await _dbContext.ReceivedDocuments.ForBranch(CurrentBranchScope)
+                var documents = await _dbContext.ReceivedDocuments.AsNoTracking().ForBranch(CurrentBranchScope)
                     .Where(d => d.ClientId == clientId)
-                    .Include(d => d.Events)
                     .OrderByDescending(d => d.ReceivedAt)
+                    .Select(d => new
+                    {
+                        d.Id,
+                        d.SourceType,
+                        d.Cufe,
+                        d.DocumentTypeCode,
+                        d.IssuerTaxId,
+                        d.IssuerName,
+                        d.DocumentId,
+                        d.IssueDate,
+                        d.TotalAmount,
+                        d.IsCredit,
+                        IsSupportDocument = d.DocumentTypeCode == "05" || EF.Functions.Like(d.RawXml, SupportDocumentXmlPattern),
+                        d.ReceivedAt,
+                        // El mensaje se recorta: en la fila solo se ve como ayuda al pasar el cursor; completo está en el historial del evento.
+                        Events = d.Events.OrderByDescending(e => e.SentAt).Select(e => new
+                        {
+                            e.Id, e.EventCode, e.Status, e.SentAt, e.EventNumber,
+                            DianResponseMessage = e.DianResponseMessage == null ? null : e.DianResponseMessage.Substring(0, 300)
+                        })
+                    })
                     .ToListAsync();
 
-                return Ok(documents.Select(d => new
-                {
-                    d.Id,
-                    d.SourceType,
-                    d.Cufe,
-                    d.DocumentTypeCode,
-                    d.IssuerTaxId,
-                    d.IssuerName,
-                    d.DocumentId,
-                    d.IssueDate,
-                    d.TotalAmount,
-                    d.IsCredit,
-                    IsSupportDocument = IsSupportDocumentXml(d.RawXml) || d.DocumentTypeCode == "05",
-                    d.ReceivedAt,
-                     Events = d.Events.OrderByDescending(e => e.SentAt).Select(e => new { e.Id, e.EventCode, e.Status, e.SentAt, e.EventNumber, e.ProviderUid, e.Cude, e.DianResponseMessage, e.ProviderResponse, e.ProviderXmlUrl, e.ProviderPdfUrl })
-                }));
+                return Ok(documents);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -74,17 +82,23 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
-        private static bool IsSupportDocumentXml(string? xml)
+        // Historial completo de los eventos de un documento recibido (respuestas técnicas y enlaces de Dataico): se pide al abrir el historial.
+        [HttpGet("{id:guid}/events")]
+        public async Task<IActionResult> GetEvents(Guid id)
         {
-            if (string.IsNullOrWhiteSpace(xml)) return false;
             try
             {
-                var root = XDocument.Parse(xml).Root;
-                return root?.Descendants().FirstOrDefault(e => e.Name.LocalName == "InvoiceTypeCode")?.Value.Trim() == "05";
+                var clientId = GetCurrentClientId();
+                var events = await _dbContext.ReceivedDocumentEvents.AsNoTracking()
+                    .Where(e => e.ReceivedDocumentId == id && e.ReceivedDocument.ClientId == clientId)
+                    .OrderByDescending(e => e.SentAt)
+                    .Select(e => new { e.Id, e.EventCode, e.Status, e.SentAt, e.EventNumber, e.ProviderUid, e.Cude, e.DianResponseMessage, e.ProviderResponse, e.ProviderXmlUrl, e.ProviderPdfUrl })
+                    .ToListAsync();
+                return Ok(events);
             }
-            catch (System.Xml.XmlException)
+            catch (UnauthorizedAccessException ex)
             {
-                return false;
+                return Unauthorized(ex.Message);
             }
         }
 

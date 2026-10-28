@@ -17,7 +17,14 @@ export default function ReceivedDocumentsPage() {
   const [sendingEvents, setSendingEvents] = useState<Set<string>>(() => new Set());
   const sendingEventsRef = useRef(new Set<string>());
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const [eventHistory, setEventHistory] = useState<{ document: any; code: string; label: string } | null>(null);
+  const [eventHistory, setEventHistory] = useState<{ document: any; code: string; label: string; events: any[] } | null>(null);
+  // La lista solo trae el estado de cada evento; sus respuestas técnicas y enlaces de Dataico se piden al abrir el historial.
+  const openHistory = async (document: any, code: string, label: string) => {
+    try {
+      const res = await api.get(`/client/received-documents/${document.id}/events`);
+      setEventHistory({ document, code, label, events: res.data });
+    } catch (err) { toast.error(getErrorMessage(err, 'No se pudo cargar el historial del evento')); }
+  };
   const [fileDownloading, setFileDownloading] = useState<'xml' | 'pdf' | null>(null);
   const loadDocuments = () => { api.get('/client/received-documents').then(res => setDocuments(res.data)).catch(() => toast.error('Error al cargar los documentos recibidos')).finally(() => setLoading(false)); };
   useEffect(() => { loadDocuments(); }, []);
@@ -61,7 +68,7 @@ export default function ReceivedDocumentsPage() {
         if (!doc.isCredit) return <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500">Eventos no aplican · contado</span>;
       return <div className="flex flex-wrap gap-2 md:gap-1.5">{EVENT_BUTTONS.map(({ code, label }) => {
         const event = latestByCode.get(code); const detail = event?.dianResponseMessage || '';
-        const historyButton = event ? <button type="button" title="Ver historial de envíos" onClick={() => setEventHistory({ document: doc, code, label })} className="inline-flex min-h-11 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-primary lg:min-h-0" aria-label={`Ver historial de ${label}`}><Info size={14} /></button> : null;
+        const historyButton = event ? <button type="button" title="Ver historial de envíos" onClick={() => openHistory(doc, code, label)} className="inline-flex min-h-11 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-primary lg:min-h-0" aria-label={`Ver historial de ${label}`}><Info size={14} /></button> : null;
         const withInfo = (content: React.ReactNode) => <div key={code} className="inline-flex items-center gap-0.5">{content}{historyButton}</div>;
         if (sendingEvents.has(`${doc.id}:${code}`)) return withInfo(<span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold"><Loader2 size={12} className="animate-spin" /> {label} · enviando</span>);
         if (event?.status === 'DUPLICATE') return withInfo(<span title={detail || 'Dataico confirmó que el evento ya estaba recibido'} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold"><CheckCircle2 size={12} /> {label}{event.eventNumber ? ` · ${event.eventNumber}` : ''}</span>);
@@ -80,7 +87,7 @@ export default function ReceivedDocumentsPage() {
       {documents.length === 0 ? <div className="flex flex-col items-center justify-center text-center h-48 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50"><Inbox className="text-slate-300 mb-3" size={32} /><p className="text-slate-500">Aún no tienes documentos recibidos.</p></div> : <DataTable rows={documents} columns={columns} rowKey={doc => doc.id} tableFrom="2xl" search="Buscar por proveedor, NIT o número de documento..." defaultSort={{ key: 'issueDate', dir: 'desc' }} />}
     </div>
     {eventHistory && (() => {
-      const latest = (eventHistory.document.events ?? []).filter((item: any) => item.eventCode === eventHistory.code).sort((a: any, b: any) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())[0];
+      const latest = eventHistory.events.filter((item: any) => item.eventCode === eventHistory.code).sort((a: any, b: any) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())[0];
       const downloadEventFile = async (item: any, type: 'xml' | 'pdf') => {
         setFileDownloading(type);
         try {

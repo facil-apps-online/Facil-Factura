@@ -25,19 +25,50 @@ namespace Fel.Api.Client.Controllers
             _dbContext = dbContext;
         }
 
+        // Página de la lista de Productos: el servidor busca, ordena y corta (hay clientes con miles), y avisa cuántos tienen los impuestos por completar.
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] ProductScope? scope = null)
+        public async Task<IActionResult> GetPage([FromQuery] ProductScope? scope, [FromQuery] string? q, [FromQuery] bool onlyPending,
+            [FromQuery] string? sort, [FromQuery] string? dir, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             try
             {
                 var clientId = GetCurrentClientId();
-                var products = await _dbContext.Products
-                    .Include(p => p.Taxes)
-                    .Include(p => p.UnitOfMeasure)
-                    .Where(p => p.ClientId == clientId && (!scope.HasValue || p.Scope == scope.Value))
-                    .OrderByDescending(p => p.CreatedAt)
-                    .ToListAsync();
+                var (items, total, pendingCount) = await ProductSearch.PageAsync(_dbContext.Products.AsNoTracking().Where(p => p.ClientId == clientId), scope, q, onlyPending, sort, dir, page, pageSize);
+                return Ok(new { items, total, pendingCount });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
 
+        // Búsqueda para el selector de producto de las líneas de un documento: las primeras coincidencias de lo escrito, con impuestos y unidad de medida.
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] ProductScope? scope, [FromQuery] string? q, [FromQuery] int limit = ProductSearch.DefaultLimit)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                return Ok(await ProductSearch.SearchAsync(_dbContext.Products.AsNoTracking().Where(p => p.ClientId == clientId), scope, q, limit));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Los productos de las líneas de un documento que se abre (borrador, nota, detalle): el formulario ya no trae todo el catálogo.
+        [HttpGet("by-ids")]
+        public async Task<IActionResult> GetByIds([FromQuery] List<Guid> ids)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var wanted = ids.Distinct().Take(ProductSearch.MaxByIds).ToList();
+                var products = await _dbContext.Products.AsNoTracking()
+                    .Include(p => p.Taxes).Include(p => p.UnitOfMeasure)
+                    .Where(p => p.ClientId == clientId && wanted.Contains(p.Id))
+                    .ToListAsync();
                 return Ok(products);
             }
             catch (UnauthorizedAccessException ex)

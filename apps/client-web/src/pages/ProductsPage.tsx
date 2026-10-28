@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getErrorMessage } from '../lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
 import BulkImportModal from '../components/BulkImportModal';
 import Modal from '../components/Modal';
-import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import DataTable, { type DataTableColumn, type DataTableQuery } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { useNumberFormat } from '../lib/numberFormat';
@@ -25,8 +25,11 @@ interface ProductTax {
 export default function ProductsPage() {
   const fmt = useNumberFormat();
   const confirm = useConfirm();
-  const [products, setProducts] = useState<any[]>([]);
+  // La lista se pide por páginas al servidor (hay clientes con miles de productos): solo se tienen los de la página que se ve.
+  const [pageData, setPageData] = useState<{ items: any[]; total: number; pendingCount: number }>({ items: [], total: 0, pendingCount: 0 });
   const [loading, setLoading] = useState(true);
+  const lastQuery = useRef<DataTableQuery | null>(null);
+  const requestId = useRef(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [ivaRateCatalog, setIvaRateCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
@@ -40,23 +43,27 @@ export default function ProductsPage() {
   const [bulkSaving, setBulkSaving] = useState(false);
 
   useEffect(() => {
-    loadProducts();
     api.get('/client/tax-catalog?kind=IvaRate')
       .then(res => setIvaRateCatalog(res.data))
       .catch(() => {});
-  }, [scope]);
+  }, []);
 
-  const loadProducts = () => {
-    api.get(`/client/products?scope=${scope}`)
-      .then(res => {
-        setProducts(res.data);
-        setLoading(false);
-      })
-      .catch(() => {
-        toast.error('Error al cargar productos');
-        setLoading(false);
-      });
+  // La tabla avisa qué página pide el usuario (búsqueda, orden, página, tamaño, pestaña o filtro de pendientes); las respuestas que llegan tarde,
+  // de una petición ya reemplazada, se descartan.
+  const fetchPage = (query: DataTableQuery) => {
+    lastQuery.current = query;
+    const id = ++requestId.current;
+    setLoading(true);
+    api.get('/client/products', {
+      params: { scope, q: query.search || undefined, onlyPending: onlyPending || undefined, sort: query.sort?.key, dir: query.sort?.dir, page: query.page, pageSize: query.pageSize }
+    })
+      .then(res => { if (id === requestId.current) setPageData(res.data); })
+      .catch(() => { if (id === requestId.current) toast.error('Error al cargar productos'); })
+      .finally(() => { if (id === requestId.current) setLoading(false); });
   };
+
+  // Vuelve a pedir la página que se está viendo (después de guardar, eliminar o importar).
+  const loadProducts = () => { if (lastQuery.current) fetchPage(lastQuery.current); };
 
   const handleOpenModal = (product?: any) => {
     setEditingProduct(product ?? null);
@@ -89,10 +96,7 @@ export default function ProductsPage() {
     }
   };
 
-  if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
-
-  const pendingCount = products.filter(p => p.taxesPending).length;
-  const visibleProducts = onlyPending ? products.filter(p => p.taxesPending) : products;
+  const pendingCount = pageData.pendingCount;
 
   const columns: DataTableColumn<any>[] = [
     {
@@ -100,8 +104,7 @@ export default function ProductsPage() {
       header: 'Código (SKU)',
       cellClassName: 'font-mono text-sm font-medium text-slate-500',
       render: p => p.code,
-      sortValue: p => p.code,
-      searchValue: p => `${p.code ?? ''} ${p.standardCode ?? ''}`
+      sortValue: p => p.code
     },
     {
       key: 'name',
@@ -109,8 +112,7 @@ export default function ProductsPage() {
       primary: true,
       cellClassName: 'font-bold text-slate-900',
       render: p => p.name,
-      sortValue: p => p.name,
-      searchValue: p => p.name
+      sortValue: p => p.name
     },
     {
       key: 'price',
@@ -185,7 +187,10 @@ export default function ProductsPage() {
       )}
 
       <DataTable
-        rows={visibleProducts}
+        rows={pageData.items}
+        server={{ total: pageData.total, onQueryChange: fetchPage }}
+        loading={loading}
+        resetKey={`${scope}|${onlyPending}`}
         columns={columns}
         rowKey={p => p.id}
         tableFrom="wide"

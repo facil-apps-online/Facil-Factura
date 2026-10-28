@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useNumberFormat } from '../lib/numberFormat';
 import BulkImportModal from '../components/BulkImportModal';
 import CustomerFormModal from '../components/CustomerFormModal';
-import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
+import DataTable, { type DataTableColumn, type DataTableQuery } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
 import { useConfirm } from '@/components/ConfirmDialog';
 import TenantSyncModal from '../components/TenantSyncModal';
@@ -26,8 +26,11 @@ export default function CustomersPage() {
   const [syncOpen, setSyncOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [originFilter, setOriginFilter] = useState<'' | 'tenant' | 'incomplete'>('');
-  const [customers, setCustomers] = useState<any[]>([]);
+  // La lista se pide por páginas al servidor (hay clientes con miles de terceros): solo se tienen los de la página que se ve.
+  const [pageData, setPageData] = useState<{ items: any[]; total: number }>({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
+  const lastQuery = useRef<DataTableQuery | null>(null);
+  const requestId = useRef(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any>(null);
   const [activeType, setActiveType] = useState('Cliente');
@@ -37,10 +40,6 @@ export default function CustomersPage() {
   // La pestaña de mandantes solo aparece si el tenant le habilitó al cliente el tipo de factura de mandato.
   const [hasMandates, setHasMandates] = useState(false);
   const fmt = useNumberFormat();
-
-  useEffect(() => {
-    loadCustomers();
-  }, [activeType]);
 
   useEffect(() => {
     api.get('/client/identification-types')
@@ -58,18 +57,22 @@ export default function CustomersPage() {
       .catch(() => {});
   }, []);
 
-  const loadCustomers = () => {
+  // La tabla avisa qué página pide el usuario (búsqueda, orden, página, tamaño, tipo de tercero o filtro de origen); las respuestas que llegan
+  // tarde, de una petición ya reemplazada, se descartan.
+  const fetchPage = (query: DataTableQuery) => {
+    lastQuery.current = query;
+    const id = ++requestId.current;
     setLoading(true);
-    api.get(`/client/customers?partyType=${activeType}`)
-      .then(res => {
-        setCustomers(res.data);
-        setLoading(false);
-      })
-      .catch(() => {
-        toast.error('Error al cargar clientes');
-        setLoading(false);
-      });
+    api.get('/client/customers', {
+      params: { partyType: activeType, q: query.search || undefined, origin: originFilter || undefined, sort: query.sort?.key, dir: query.sort?.dir, page: query.page, pageSize: query.pageSize }
+    })
+      .then(res => { if (id === requestId.current) setPageData(res.data); })
+      .catch(() => { if (id === requestId.current) toast.error('Error al cargar clientes'); })
+      .finally(() => { if (id === requestId.current) setLoading(false); });
   };
+
+  // Vuelve a pedir la página que se está viendo (después de guardar, eliminar, importar o sincronizar).
+  const loadCustomers = () => { if (lastQuery.current) fetchPage(lastQuery.current); };
 
   const handleOpenModal = (customer?: any) => {
     setEditingCustomer(customer || null);
@@ -92,13 +95,7 @@ export default function CustomersPage() {
     }
   };
 
-  if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
-
   const showTenantTools = features.tenantOwner && activeType === 'Cliente';
-  const visibleCustomers = customers.filter(c =>
-    originFilter === 'tenant' ? !!c.linkedClientId
-    : originFilter === 'incomplete' ? !c.email || !c.address || (c.countryCode === 'CO' && !c.cityCode)
-    : true);
 
   const columns: DataTableColumn<any>[] = [
     {
@@ -111,8 +108,7 @@ export default function CustomersPage() {
           {c.verificationDigit && `-${c.verificationDigit}`}
         </>
       ),
-      sortValue: c => c.identificationNumber,
-      searchValue: c => c.identificationNumber
+      sortValue: c => c.identificationNumber
     },
     {
       key: 'name',
@@ -125,8 +121,7 @@ export default function CustomersPage() {
           {c.linkedClientId && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700" title="Es un cliente de tu tenant, sincronizado desde su lista">Cliente del tenant</span>}
         </span>
       ),
-      sortValue: c => c.name,
-      searchValue: c => c.name
+      sortValue: c => c.name
     },
     {
       key: 'contact',
@@ -137,8 +132,7 @@ export default function CustomersPage() {
           {c.email}<br />{c.phone}
         </>
       ),
-      sortValue: c => c.email,
-      searchValue: c => `${c.email ?? ''} ${c.phone ?? ''}`
+      sortValue: c => c.email
     },
     ...(activeType === 'Empleado'
       ? [
@@ -177,8 +171,7 @@ export default function CustomersPage() {
               ) : (
                 <span className="font-bold text-red-600">Falta código DANE</span>
               ),
-            sortValue: (c: any) => c.cityName,
-            searchValue: (c: any) => c.cityName
+            sortValue: (c: any) => c.cityName
           }
         ]
       : [
@@ -241,7 +234,10 @@ export default function CustomersPage() {
       )}
 
       <DataTable
-        rows={visibleCustomers}
+        rows={pageData.items}
+        server={{ total: pageData.total, onQueryChange: fetchPage }}
+        loading={loading}
+        resetKey={`${activeType}|${originFilter}`}
         columns={columns}
         rowKey={c => c.id}
         tableFrom="wide"

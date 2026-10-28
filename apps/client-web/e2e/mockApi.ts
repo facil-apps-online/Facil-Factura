@@ -142,8 +142,29 @@ function respond(pathname: string, search: string, session: MockSession): unknow
       .map((c: any) => ({ id: c.id, name: c.name, identificationType: c.identificationType, identificationNumber: c.identificationNumber, verificationDigit: c.verificationDigit, email: c.email, partyType: c.partyType }));
   }
   if (/\/client\/customers\/c\d+$/.test(pathname)) return customer(Number(pathname.split('/c').pop()));
-  if (pathname.endsWith('/client/customers')) return list(4, customer);
-  if (pathname.endsWith('/client/products')) return list(4, product);
+  if (pathname.endsWith('/client/customers')) {
+    // Como el servidor: una página de los terceros que coinciden con la búsqueda, y cuántos hay en total.
+    const params = new URLSearchParams(search);
+    const q = (params.get('q') ?? '').toLowerCase();
+    const page = Number(params.get('page') ?? 1);
+    const size = Number(params.get('pageSize') ?? 25);
+    const all = list(4, customer).filter((c: any) => !q || c.name.toLowerCase().includes(q) || c.identificationNumber.includes(q));
+    return { items: all.slice((page - 1) * size, page * size), total: all.length };
+  }
+  if (pathname.endsWith('/client/products/search')) {
+    const q = (new URLSearchParams(search).get('q') ?? '').toLowerCase();
+    return list(4, product).filter((p: any) => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
+  }
+  if (pathname.endsWith('/client/products/by-ids')) return [];
+  if (pathname.endsWith('/client/products')) {
+    // Como el servidor: una página de los productos que coinciden con la búsqueda, el total y cuántos tienen impuestos por completar.
+    const params = new URLSearchParams(search);
+    const q = (params.get('q') ?? '').toLowerCase();
+    const page = Number(params.get('page') ?? 1);
+    const size = Number(params.get('pageSize') ?? 25);
+    const all = list(4, product).filter((p: any) => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
+    return { items: all.slice((page - 1) * size, page * size), total: all.length, pendingCount: 0 };
+  }
   if (pathname.endsWith('/client/invoices')) return list(6, i => document(i, ['FE', 'FE', 'NC', 'ND', 'FE', 'FE'][i]));
   if (pathname.endsWith('/client/support-documents/d1')) return supportWithRetentions;
   if (pathname.endsWith('/client/support-documents')) return list(6, i => document(i, 'DS'));

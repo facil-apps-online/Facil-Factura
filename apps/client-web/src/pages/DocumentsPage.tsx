@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, Send, FileText, Loader2, ArrowLeft, PlusCircle, RotateCcw, X, UserPlus, Percent, Search, Download, Printer, Link2, Info, AlertCircle, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -216,7 +216,29 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [appliedCustomTo, setAppliedCustomTo] = useState(() => getDateRangeForPreset('this-month')!.to);
   // Tercero elegido en el formulario (texto del selector): los terceros no se cargan en bloque, se buscan en el servidor al escribir.
   const [customerOption, setCustomerOption] = useState<SearchableSelectOption | null>(null);
-  const [products, setProducts] = useState<any[]>([]);
+  // Productos que ya se conocen (por id): los que trajo la búsqueda del selector y los de los documentos abiertos. El catálogo completo no se carga
+  // (hay clientes con miles de productos): el selector los busca en el servidor al escribir.
+  const productCache = useRef(new Map<string, any>());
+  const [, setProductCacheVersion] = useState(0);
+  const getProduct = (id?: string | null) => (id ? productCache.current.get(id) : undefined);
+  const rememberProducts = (list: any[]) => {
+    list.forEach(p => productCache.current.set(p.id, p));
+    setProductCacheVersion(v => v + 1);
+  };
+  // Trae los productos de las líneas de un documento que se abre (borrador, nota, detalle) que todavía no se conocen.
+  const ensureProducts = async (ids: (string | null | undefined)[]) => {
+    const missing = Array.from(new Set(ids.filter((id): id is string => !!id && !productCache.current.has(id))));
+    if (missing.length === 0) return;
+    try {
+      const res = await api.get(`/client/products/by-ids?${missing.map(id => `ids=${id}`).join('&')}`);
+      rememberProducts(res.data);
+    } catch { /* sin el producto la línea sigue funcionando con sus propios datos */ }
+  };
+  const searchProducts = async (q: string) => {
+    const res = await api.get('/client/products/search', { params: { scope: isSupport ? 'Support' : 'Invoice', q } });
+    rememberProducts(res.data);
+    return res.data.map((p: any): SearchableSelectOption => ({ value: p.id, label: `${p.code} - ${p.name}`, shortLabel: p.code, data: p }));
+  };
   const [documentTypes, setDocumentTypes] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -377,9 +399,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         ? { from: appliedCustomFrom, to: appliedCustomTo }
         : getDateRangeForPreset(datePreset)!;
       // Los terceros no se cargan aquí: los selectores del formulario los buscan en el servidor mientras se escribe.
-      const [invRes, prodRes, docTypesRes, currencyRes, incotermRes, defaultsRes] = await Promise.all([
+      const [invRes, docTypesRes, currencyRes, incotermRes, defaultsRes] = await Promise.all([
         api.get(`${cfg.api}?from=${range.from}&to=${range.to}`),
-        api.get(`/client/products?scope=${isSupport ? 'Support' : 'Invoice'}`),
         cfg.documentTypes ? api.get('/client/invoices/document-types') : Promise.resolve({ data: [] }),
         !isSupport && features.foreignCurrency ? api.get('/client/tax-catalog?kind=Currency') : Promise.resolve({ data: [] }),
         isSupport ? Promise.resolve({ data: [] }) : api.get('/client/tax-catalog?kind=Incoterm'),
@@ -389,7 +410,6 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       setIncotermCatalog(incotermRes.data);
       setInvoiceDefaults(defaultsRes.data);
       setInvoices(invRes.data);
-      setProducts(prodRes.data);
       setDocumentTypes(docTypesRes.data);
     } catch (err) {
       toast.error('Error cargando datos');
@@ -458,6 +478,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       // El servidor crea en el sistema el tercero y los productos de la factura que todavía no existan, y devuelve sus ids.
       const res = await api.post('/client/invoices/dataico-lookup/note-draft', null, { params: { number } });
       const { draft, customerId: createdCustomerId, productIds } = res.data as { draft: any; customerId: string | null; productIds: (string | null)[]; createdProducts: string[]; notes: string[]; customerCreated: boolean };
+      await ensureProducts(productIds ?? []);
       if (res.data.customerCreated || (res.data.createdProducts?.length ?? 0) > 0) loadData({ quiet: true });
       const documentType = documentTypes.find(d => d.typeCode === type)
         || documentTypes.find(d => d.code === (type === 'NC' ? '91' : '92'));
@@ -483,7 +504,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         discrepancyResponseCode: '1',
         sectorExtensionData: JSON.stringify({ dataicoExternalReference: { dataicoDocumentId: draft.dataicoDocumentId, number: draft.number, cufe: draft.cufe, issueDate: draft.issueDate } }),
         items: (draft.items || []).map((i: any, index: number) => ({
-          productId: productIds?.[index] || products.find(p => p.code && i.code && p.code === i.code)?.id || '',
+          productId: productIds?.[index] || '',
           code: i.code || '', name: i.name || '', quantity: i.quantity || 1, unitPrice: i.unitPrice || 0,
           unitOfMeasureCode: i.unitOfMeasureCode || '94', unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA', unitOfMeasureDisplayFormat: 'Combined',
           ivaTreatment: i.ivaTreatment || 'Gravado', taxRate: i.taxRate || 0, discountRate: i.discountRate || 0,
@@ -562,6 +583,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         api.get(`${cfg.api}/${invoice.id}`),
         api.get(`${cfg.api}/${invoice.id}/related`)
       ]);
+      await ensureProducts((fullRes.data.items ?? []).map((i: any) => i.productId));
       setViewingInvoice(fullRes.data);
       setViewingRelated(relatedRes.data);
       setViewingOriginal(null);
@@ -580,6 +602,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     try {
       const res = await api.get(`${cfg.api}/${invoice.id}`);
       const full = res.data;
+      await ensureProducts(full.items.map((i: any) => i.productId));
       setEditingId(full.id);
       setPaymentTermCustom(full.paymentTermDays != null && !paymentTermCatalog.some(c => c.category === String(full.paymentTermDays)));
       setFormData({
@@ -599,7 +622,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           name: i.name,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
-           priceIncludesIva: !isSupport && hasIncludedIva(products.find((p: any) => p.id === i.productId)?.priceIncludesIva) && isTaxedIva(i.ivaTreatment) && Number(i.taxRate) > 0,
+           priceIncludesIva: !isSupport && hasIncludedIva(getProduct(i.productId)?.priceIncludesIva) && isTaxedIva(i.ivaTreatment) && Number(i.taxRate) > 0,
           unitOfMeasureCode: i.unitOfMeasureCode || '94',
           unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA',
           unitOfMeasureDisplayFormat: i.unitOfMeasureDisplayFormat || 'Combined',
@@ -672,6 +695,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       // Necesitamos cargar los ítems originales si no vienen en la lista
       const res = await api.get(`/client/invoices/${originalInvoice.id}`);
       const fullInvoice = res.data;
+      await ensureProducts(fullInvoice.items.map((i: any) => i.productId));
 
       setEditingId(null);
       setPaymentTermCustom(false);
@@ -699,7 +723,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           name: i.name,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
-           priceIncludesIva: !isSupport && hasIncludedIva(products.find((p: any) => p.id === i.productId)?.priceIncludesIva) && isTaxedIva(i.ivaTreatment) && Number(i.taxRate) > 0,
+           priceIncludesIva: !isSupport && hasIncludedIva(getProduct(i.productId)?.priceIncludesIva) && isTaxedIva(i.ivaTreatment) && Number(i.taxRate) > 0,
           unitOfMeasureCode: i.unitOfMeasureCode || '94',
           unitOfMeasureAbbreviation: i.unitOfMeasureAbbreviation || 'EA',
           unitOfMeasureDisplayFormat: i.unitOfMeasureDisplayFormat || 'Combined',
@@ -740,6 +764,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       // Necesitamos cargar los ítems originales si no vienen en la lista
       const res = await api.get(`/client/invoices/${originalInvoice.id}`);
       const fullInvoice = res.data;
+      await ensureProducts(fullInvoice.items.map((i: any) => i.productId));
 
       setEditingId(null);
       setPaymentTermCustom(false);
@@ -808,6 +833,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     try {
       const res = await api.get(`${cfg.api}/${original.id}`);
       const full = res.data;
+      await ensureProducts(full.items.map((i: any) => i.productId));
       setEditingId(null);
       setPaymentTermCustom(false);
       setFormData({
@@ -968,12 +994,12 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     const newItems = [...formData.items];
     const item = { ...newItems[index], [field]: value };
     if (!isSupport && item.productId && item.priceIncludesIva === undefined) {
-      item.priceIncludesIva = hasIncludedIva(products.find(p => p.id === item.productId)?.priceIncludesIva);
+      item.priceIncludesIva = hasIncludedIva(getProduct(item.productId)?.priceIncludesIva);
     }
 
     // Si seleccionan un producto del catálogo, autocompletar
     if (field === 'productId' && value !== '') {
-      const p = products.find(prod => prod.id === value);
+      const p = getProduct(value);
       if (p) {
         item.code = p.code;
         item.name = p.name;
@@ -1246,13 +1272,13 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     if (!productModal) return;
     const newItems = [...formData.items];
     if (created) {
-      setProducts(prev => [...prev, p]);
+      rememberProducts([p]);
       const item = { ...newItems[productModal.index], productId: p.id, code: p.code, name: p.name, unitPrice: baseUnitPrice(p, isSupport), ...productTaxFields(p) };
       recalcItem(item);
       newItems[productModal.index] = item;
     } else {
       // Se editó el producto de una línea: todas las líneas del documento con ese producto toman el IVA e impuestos nuevos.
-      setProducts(prev => prev.map(x => (x.id === p.id ? p : x)));
+      rememberProducts([p]);
       newItems.forEach((line, i) => {
         if (line.productId !== p.id) return;
         const item = { ...line, ...productTaxFields(p) };
@@ -1423,7 +1449,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             value={item.productId}
             onChange={v => updateItem(index, 'productId', v)}
             placeholder="Buscar por código o nombre..."
-            options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}`, shortLabel: p.code }))}
+            options={[]}
+            loadOptions={searchProducts}
+            selected={item.productId ? { value: item.productId, label: item.code || '', shortLabel: item.code || '' } : null}
             createOptions={q => [
               { label: `Crear "${q}" como código`, onSelect: () => setProductModal({ index, product: null, prefill: { code: q } }) },
               { label: `Crear "${q}" como nombre`, onSelect: () => setProductModal({ index, product: null, prefill: { name: q } }) },
@@ -1432,8 +1460,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
           {item.productId && (
             <button
               type="button"
-              onClick={() => setProductModal({ index, product: products.find(p => p.id === item.productId) ?? null })}
-              disabled={!products.some(p => p.id === item.productId)}
+              onClick={() => setProductModal({ index, product: getProduct(item.productId) ?? null })}
+              disabled={!getProduct(item.productId)}
               title="Editar el producto (IVA, precio, impuestos) sin salir del documento"
               aria-label="Editar producto"
               className="flex h-9 w-9 shrink-0 items-center justify-center self-start rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-primary disabled:opacity-40 lg:self-auto"
@@ -2462,7 +2490,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 { key: 'quantity', header: 'Cant.', cellClassName: 'text-sm', render: (row: any) => row.item.quantity },
                 { key: 'unitPrice', header: 'Precio unitario', cellClassName: 'text-sm font-mono', render: (row: any) => `$${fmt.number(row.item.unitPrice, 3)}` },
                 { key: 'discount', header: 'Descuento %', cellClassName: 'text-sm font-mono', render: (row: any) => `${row.item.discountRate || 0}%` },
-                 { key: 'iva', header: 'IVA', cellClassName: 'text-sm', render: (row: any) => row.item.ivaTreatment === 'Gravado' ? <>{`${row.item.taxRate}%`} {(row.item.priceIncludesIva || hasIncludedIva(products.find((p: any) => p.id === row.item.productId)?.priceIncludesIva)) && <IncludedIvaInfo taxRate={Number(row.item.taxRate) || undefined} />}</> : row.item.ivaTreatment },
+                 { key: 'iva', header: 'IVA', cellClassName: 'text-sm', render: (row: any) => row.item.ivaTreatment === 'Gravado' ? <>{`${row.item.taxRate}%`} {(row.item.priceIncludesIva || hasIncludedIva(getProduct(row.item.productId)?.priceIncludesIva)) && <IncludedIvaInfo taxRate={Number(row.item.taxRate) || undefined} />}</> : row.item.ivaTreatment },
                 { key: 'total', header: 'Total', align: 'right', cellClassName: 'text-sm font-mono font-bold', render: (row: any) => `$${fmt.number(row.item.totalAmount, 3)}` },
               ]}
             />

@@ -88,34 +88,18 @@ namespace Fel.Api.Client.Controllers
             });
         }
 
+        // Página de la lista de Terceros: el servidor busca, filtra, ordena y corta (hay clientes con miles de terceros), y solo manda las filas que se ven.
+        // origin: "tenant" (los que son clientes del tenant) o "incomplete" (les falta correo, dirección o ciudad DANE).
         [HttpGet]
-        // lite=true: solo lo que necesita un selector de terceros en un formulario (id, nombre, identificación, correo y rol). Evita mandar al navegador
-        // todos los campos de miles de terceros cuando solo se va a elegir uno.
-        public async Task<IActionResult> GetAll([FromQuery] PartyType? partyType, [FromQuery] bool lite = false)
+        public async Task<IActionResult> GetPage([FromQuery] PartyType? partyType, [FromQuery] string? q, [FromQuery] string? origin,
+            [FromQuery] string? sort, [FromQuery] string? dir, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             try
             {
                 var clientId = GetCurrentClientId();
-                var query = _dbContext.Customers.AsNoTracking().Where(c => c.ClientId == clientId);
+                var (items, total) = await CustomerSearch.PageAsync(_dbContext.Customers.AsNoTracking().Where(c => c.ClientId == clientId), partyType, q, origin, sort, dir, page, pageSize);
 
-                if (partyType.HasValue)
-                {
-                    query = query.Where(c => c.PartyType == partyType.Value);
-                }
-
-                if (lite)
-                {
-                    return Ok(await query
-                        .OrderByDescending(c => c.CreatedAt)
-                        .Select(c => new { c.Id, c.Name, c.IdentificationType, c.IdentificationNumber, c.VerificationDigit, c.Email, c.PartyType })
-                        .ToListAsync());
-                }
-
-                var customers = await query
-                    .OrderByDescending(c => c.CreatedAt)
-                    .ToListAsync();
-
-                return Ok(customers);
+                return Ok(new { items, total });
             }
             catch (UnauthorizedAccessException ex)
             {

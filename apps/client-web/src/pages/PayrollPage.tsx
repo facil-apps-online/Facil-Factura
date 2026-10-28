@@ -203,6 +203,17 @@ export default function PayrollPage() {
     }
   };
 
+  // El listado solo avisa que hay respuesta del integrador (pesa decenas de KB por nómina): se pide al abrir el diálogo. El detalle ya trae el texto.
+  const openDianResponse = async (entry: any) => {
+    if (entry.dianResponseMessage) { setResponseEntry(entry); return; }
+    try {
+      const res = await api.get(`/client/payroll/${entry.id}/dian-response`);
+      setResponseEntry({ ...entry, dianResponseMessage: res.data.dianResponseMessage });
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'No se pudo cargar la respuesta'));
+    }
+  };
+
   const handleViewDetail = async (entry: any) => {
     try {
       const [fullRes, relatedRes] = await Promise.all([
@@ -492,7 +503,7 @@ export default function PayrollPage() {
               </button>
               {hasDianResponse(entry) && (
                 <button
-                  onClick={() => setResponseEntry(entry)}
+                  onClick={() => openDianResponse(entry)}
                   className={`${actionButton} ${entry.status === 'REJECTED' ? 'text-rose-700 bg-rose-50 hover:bg-rose-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
                 >
                   {entry.status === 'REJECTED' ? <AlertCircle size={16} /> : <Info size={16} />}
@@ -780,7 +791,7 @@ export default function PayrollPage() {
             )}
             {hasDianResponse(e) && (
               <button
-                onClick={() => setResponseEntry(e)}
+                onClick={() => openDianResponse(e)}
                 title={e.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
                 aria-label={e.status === 'REJECTED' ? 'Ver motivo del rechazo' : 'Ver respuesta de la DIAN'}
                 className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors md:h-9 md:w-9 ${e.status === 'REJECTED' ? 'text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-primary hover:bg-slate-100'}`}

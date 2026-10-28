@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronsUpDown, Search, X } from 'lucide-react';
 
 // `wide` = 1400 px y `ultra` = 1800 px: puntos intermedios para tablas anchas, que con el menú lateral
@@ -36,6 +36,14 @@ export interface DataTableColumn<T> {
 export interface DataTableSort {
   key: string;
   dir: 'asc' | 'desc';
+}
+
+// Lo que el servidor necesita para devolver la página que se ve (modo `server`).
+export interface DataTableQuery {
+  search: string;
+  sort: DataTableSort | null;
+  page: number;
+  pageSize: number;
 }
 
 interface DataTableProps<T> {
@@ -81,6 +89,11 @@ interface DataTableProps<T> {
   onFilteredChange?: (rows: T[]) => void;
   // Cuando cambia (filtros propios de la pantalla: estado, rango de fechas...), vuelve a la primera página.
   resetKey?: unknown;
+  // Modo servidor, para listas de miles de filas: `rows` trae solo la página visible y la tabla no busca, ordena ni corta en el navegador. Cada
+  // cambio (búsqueda, con una pausa breve; orden; página; filas por página; resetKey) y la primera vez se avisa en `onQueryChange` para que la
+  // pantalla pida esa página; `total` es la cantidad de filas que cumplen la búsqueda en todo el servidor. Las columnas ordenables siguen
+  // marcándose con `sortValue` (aquí solo indica que se puede ordenar; el orden lo hace el servidor por la `key` de la columna).
+  server?: { total: number; onQueryChange: (query: DataTableQuery) => void };
 }
 
 // Los nombres de clase completos deben estar en el código para que Tailwind los genere.
@@ -226,6 +239,7 @@ export default function DataTable<T>({
   theme = 'light',
   onFilteredChange,
   resetKey,
+  server,
 }: DataTableProps<T>) {
   const k = THEMES[theme];
   const [query, setQuery] = useState('');
@@ -233,7 +247,17 @@ export default function DataTable<T>({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(() => readPageSize(pageSizeKey, pageSizes, pageSizes.includes(defaultPageSize) ? defaultPageSize : pageSizes[0]));
 
+  const serverMode = !!server;
+  // En modo servidor la búsqueda se pide tras una pausa breve, no con cada tecla.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    if (!serverMode) return;
+    const timer = setTimeout(() => setDebouncedQuery(query), query.trim() === '' ? 0 : 300);
+    return () => clearTimeout(timer);
+  }, [serverMode, query]);
+
   const filtered = useMemo(() => {
+    if (serverMode) return rows;
     const terms = normalize(query).split(/\s+/).filter(Boolean);
     if (terms.length === 0) return rows;
     return rows.filter(row => {
@@ -243,11 +267,11 @@ export default function DataTable<T>({
       const haystack = normalize(text);
       return terms.every(t => haystack.includes(t));
     });
-  }, [rows, query, columns, searchText]);
+  }, [rows, query, columns, searchText, serverMode]);
 
   const sorted = useMemo(() => {
     const column = sort && columns.find(c => c.key === sort.key);
-    if (!sort || !column?.sortValue) return filtered;
+    if (serverMode || !sort || !column?.sortValue) return filtered;
     const sign = sort.dir === 'asc' ? 1 : -1;
     const get = column.sortValue;
     // Array.sort es estable: filas con igual valor conservan el orden en que llegaron.
@@ -259,19 +283,33 @@ export default function DataTable<T>({
       if (isEmpty(b)) return -1;
       return sign * compare(a, b);
     });
-  }, [filtered, sort, columns]);
+  }, [filtered, sort, columns, serverMode]);
 
   useEffect(() => { onFilteredChange?.(filtered); }, [filtered, onFilteredChange]);
 
-  const total = sorted.length;
+  const total = serverMode ? server!.total : sorted.length;
   const pageCount = paginate ? Math.max(1, Math.ceil(total / pageSize)) : 1;
-  const currentPage = Math.min(page, pageCount);
+  // En modo servidor la página va atada a la búsqueda, el orden, el tamaño y el filtro de la pantalla con los que se eligió: si alguno cambia,
+  // vuelve a la primera de una vez (sin pedir primero una página que ya no corresponde).
+  const filterToken = JSON.stringify([debouncedQuery.trim(), sort, pageSize, resetKey]);
+  const [serverPage, setServerPage] = useState({ page: 1, token: filterToken });
+  const requestedPage = serverMode ? (serverPage.token === filterToken ? serverPage.page : 1) : page;
+  const currentPage = Math.min(requestedPage, pageCount);
+  const goToPage = (n: number) => (serverMode ? setServerPage({ page: n, token: filterToken }) : setPage(n));
   const start = paginate ? (currentPage - 1) * pageSize : 0;
-  const visible = paginate ? sorted.slice(start, start + pageSize) : sorted;
+  const visible = serverMode ? rows : (paginate ? sorted.slice(start, start + pageSize) : sorted);
 
   // Buscar, ordenar o cambiar el tamaño devuelve a la primera página; si la lista se encoge, se ajusta sola.
   useEffect(() => { setPage(1); }, [query, sort, pageSize, resetKey]);
   useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
+
+  // Modo servidor: avisa a la pantalla qué página pedir (también la primera vez).
+  const onQueryChangeRef = useRef(server?.onQueryChange);
+  onQueryChangeRef.current = server?.onQueryChange;
+  useEffect(() => {
+    if (!serverMode) return;
+    onQueryChangeRef.current?.({ search: debouncedQuery.trim(), sort, page: currentPage, pageSize });
+  }, [serverMode, debouncedQuery, sort, currentPage, pageSize, resetKey]);
 
   const toggleSort = (key: string) => {
     setSort(prev => {
@@ -294,7 +332,7 @@ export default function DataTable<T>({
   const dataColumns = columns.filter(c => !c.primary && c.showInCard !== false);
   const sortable = columns.filter(c => c.sortValue);
   const showToolbar = !!search || !!toolbar || sortable.length > 0;
-  const searching = query.trim().length > 0;
+  const searching = (serverMode ? debouncedQuery : query).trim().length > 0;
   const showFooter = paginate && total > Math.min(...pageSizes);
   const ariaSort = (c: DataTableColumn<T>) => (sort?.key === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
 
@@ -353,7 +391,7 @@ export default function DataTable<T>({
       )}
 
       {rows.length === 0 ? (
-        emptyBox(loading ? 'Cargando…' : emptyMessage)
+        emptyBox(loading ? 'Cargando…' : serverMode && searching ? <>Ningún resultado coincide con «{debouncedQuery.trim()}».</> : emptyMessage)
       ) : total === 0 ? (
         emptyBox(<>Ningún resultado coincide con «{query.trim()}».</>)
       ) : (
@@ -456,8 +494,8 @@ export default function DataTable<T>({
         <div className={join('flex flex-wrap items-center justify-between gap-3 text-sm', k.muted)}>
           <span>
             {paginate
-              ? <>Mostrando {start + 1}–{start + visible.length} de {total}{searching && total !== rows.length ? <> (filtrados de {rows.length})</> : null}</>
-              : <>{total} registro{total === 1 ? '' : 's'}{searching && total !== rows.length ? <> (filtrados de {rows.length})</> : null}</>}
+              ? <>Mostrando {start + 1}–{start + visible.length} de {total}{!serverMode && searching && total !== rows.length ? <> (filtrados de {rows.length})</> : null}</>
+              : <>{total} registro{total === 1 ? '' : 's'}{!serverMode && searching && total !== rows.length ? <> (filtrados de {rows.length})</> : null}</>}
           </span>
           {showFooter && (
             <div className="flex flex-wrap items-center gap-3">
@@ -472,11 +510,11 @@ export default function DataTable<T>({
                 </select>
               </label>
               <nav className="flex items-center gap-1" aria-label="Paginación">
-                <button type="button" className={pagerButton(theme)} onClick={() => setPage(1)} disabled={currentPage === 1} aria-label="Primera página"><ChevronsLeft size={16} /></button>
-                <button type="button" className={pagerButton(theme)} onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1} aria-label="Página anterior"><ChevronLeft size={16} /></button>
+                <button type="button" className={pagerButton(theme)} onClick={() => goToPage(1)} disabled={currentPage === 1} aria-label="Primera página"><ChevronsLeft size={16} /></button>
+                <button type="button" className={pagerButton(theme)} onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} aria-label="Página anterior"><ChevronLeft size={16} /></button>
                 <span className={join('px-2', k.strong)}>Página <strong>{currentPage}</strong> de {pageCount}</span>
-                <button type="button" className={pagerButton(theme)} onClick={() => setPage(currentPage + 1)} disabled={currentPage === pageCount} aria-label="Página siguiente"><ChevronRight size={16} /></button>
-                <button type="button" className={pagerButton(theme)} onClick={() => setPage(pageCount)} disabled={currentPage === pageCount} aria-label="Última página"><ChevronsRight size={16} /></button>
+                <button type="button" className={pagerButton(theme)} onClick={() => goToPage(currentPage + 1)} disabled={currentPage === pageCount} aria-label="Página siguiente"><ChevronRight size={16} /></button>
+                <button type="button" className={pagerButton(theme)} onClick={() => goToPage(pageCount)} disabled={currentPage === pageCount} aria-label="Última página"><ChevronsRight size={16} /></button>
               </nav>
             </div>
           )}

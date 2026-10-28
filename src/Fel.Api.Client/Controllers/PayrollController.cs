@@ -72,10 +72,19 @@ namespace Fel.Api.Client.Controllers
                 var rangeStart = (from ?? new DateTime(Fel.Core.Models.ColombiaTime.Today.Year, Fel.Core.Models.ColombiaTime.Today.Month, 1).AddMonths(-1)).Date;
                 var rangeEnd = (to ?? Fel.Core.Models.ColombiaTime.Today).Date.AddDays(1).AddTicks(-1);
 
-                var entries = await BranchDocuments
-                    .Include(d => d.Customer)
+                // Solo lo que muestra la fila: la respuesta del integrador (decenas de KB por nómina) no viaja, solo se avisa que existe, y el tercero va
+                // resumido. El borrador (SectorExtensionData) se lee aquí para sacar el prefijo y las fechas, pero tampoco se envía.
+                var entries = await BranchDocuments.AsNoTracking()
                     .Where(d => d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode) && d.IssueDate >= rangeStart && d.IssueDate <= rangeEnd)
                     .OrderByDescending(d => d.IssueDate)
+                    .Select(d => new
+                    {
+                        d.Id, d.Status, d.TotalAmount, d.Subtotal, d.TaxAmount, d.IssueDate, d.TypeCode, d.Number, d.SectorExtensionData,
+                        HasDianResponse = d.DianResponseMessage != null && d.DianResponseMessage != "",
+                        d.CustomerId,
+                        CustomerName = d.Customer != null ? d.Customer.Name : null,
+                        CustomerIdentification = d.Customer != null ? d.Customer.IdentificationNumber : null
+                    })
                     .ToListAsync();
 
                 var annulments = await AnnulmentsAsync(clientId, entries.Select(d => d.Id).ToList());
@@ -96,8 +105,8 @@ namespace Fel.Api.Client.Controllers
                         d.IssueDate,
                         d.TypeCode,
                         AnnulledBy = annulments.TryGetValue(d.Id, out var annulledBy) ? annulledBy : null,
-                        d.DianResponseMessage,
-                        Customer = d.Customer,
+                        d.HasDianResponse,
+                        Customer = d.CustomerName == null ? null : new { Id = d.CustomerId, Name = d.CustomerName, IdentificationNumber = d.CustomerIdentification },
                         draft.Prefix,
                         ConsecutiveNumber = d.Status == "APPROVED" ? $"{draft.Prefix}-{d.Number}" : null,
                         draft.InitialSettlementDate,
@@ -106,6 +115,27 @@ namespace Fel.Api.Client.Controllers
                 });
 
                 return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Respuesta del integrador (Dataico o DIAN) tal como se guardó: el listado solo avisa que existe porque pesa hasta decenas de KB por nómina.
+        [HttpGet("{id}/dian-response")]
+        public async Task<IActionResult> GetDianResponse(Guid id)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var message = await BranchDocuments.AsNoTracking()
+                    .Where(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode))
+                    .Select(d => new { d.DianResponseMessage })
+                    .FirstOrDefaultAsync();
+
+                if (message == null) return NotFound("Nómina no encontrada.");
+                return Ok(new { dianResponseMessage = message.DianResponseMessage });
             }
             catch (UnauthorizedAccessException ex)
             {

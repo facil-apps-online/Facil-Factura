@@ -278,10 +278,10 @@ test.describe('formulario de empleados', () => {
     await page.setViewportSize({ width: 1500, height: 900 });
     await signIn(page);
     await mockApi(page);
-    await page.route('**/api/client/customers?partyType=Empleado', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+    await page.route('**/api/client/customers?*partyType=Empleado*', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ total: 2, items: [
       { id: 'e1', name: 'Ana Con Dane', identificationType: '13', identificationNumber: '1001', partyType: 'Empleado', contractType: 'TERMINO_INDEFINIDO', workerType: 'DEPENDIENTE', baseSalary: 1300000, cityName: 'Bogotá', cityCode: '11001' },
       { id: 'e2', name: 'Beto Sin Dane', identificationType: '13', identificationNumber: '1002', partyType: 'Empleado', contractType: 'TERMINO_INDEFINIDO', workerType: 'DEPENDIENTE', baseSalary: 1300000, cityName: '', cityCode: '' }
-    ]) }));
+    ] }) }));
     await page.goto('/customers');
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Empleados', exact: true }).click();

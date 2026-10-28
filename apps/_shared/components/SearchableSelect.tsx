@@ -15,6 +15,8 @@ export interface SearchableSelectOption {
   // desplegable sigue usando displayLabel/label) — útil para colapsar un detalle largo (ej.
   // "Retención de industria y comercio (ReteICA 1%)") a algo corto una vez elegido (ej. "1%").
   shortLabel?: string;
+  // Datos de la fila que la pantalla necesita al elegirla (en la búsqueda asíncrona no quedan en una lista local que consultar).
+  data?: unknown;
 }
 
 interface CreateOption {
@@ -25,7 +27,14 @@ interface CreateOption {
 interface SearchableSelectProps {
   options: SearchableSelectOption[];
   value: string;
-  onChange: (value: string) => void;
+  // Segundo argumento: la opción elegida (en modo asíncrono, para que la pantalla conserve su texto sin volver a pedirlo).
+  onChange: (value: string, option?: SearchableSelectOption) => void;
+  // Búsqueda en el servidor para listas que pueden tener miles de filas (terceros, productos): al abrir y al escribir (con una pausa breve) se piden
+  // las primeras coincidencias, y `options` se ignora. Con una fila ya elegida que no aparece en los resultados, `selected` aporta su texto.
+  loadOptions?: (query: string) => Promise<SearchableSelectOption[]>;
+  selected?: SearchableSelectOption | null;
+  // Cantidad de resultados con la que se avisa que hay más y conviene escribir para acotar.
+  searchLimit?: number;
   placeholder?: string;
   emptyLabel?: string;
   className?: string;
@@ -53,7 +62,7 @@ function rowValueOf(opt: SearchableSelectOption): string {
   return opt.displayLabel ?? opt.label;
 }
 
-export default function SearchableSelect({ options, value, onChange, placeholder, emptyLabel, className, inputClassName, required, disabled, createOptions }: SearchableSelectProps) {
+export default function SearchableSelect({ options, value, onChange, loadOptions, selected, searchLimit = 20, placeholder, emptyLabel, className, inputClassName, required, disabled, createOptions }: SearchableSelectProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
@@ -61,7 +70,34 @@ export default function SearchableSelect({ options, value, onChange, placeholder
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const selectedOption = options.find(o => o.value === value);
+  const [results, setResults] = useState<SearchableSelectOption[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [chosen, setChosen] = useState<SearchableSelectOption | null>(null);
+
+  const selectedOption: SearchableSelectOption | undefined = (loadOptions ? undefined : options.find(o => o.value === value))
+    ?? (chosen && chosen.value === value ? chosen : undefined)
+    ?? (selected && selected.value === value ? selected : undefined)
+    ?? (loadOptions ? results.find(o => o.value === value) : undefined);
+
+  // Búsqueda asíncrona: al abrir (sin texto) trae lo primero; al escribir espera una pausa y descarta las respuestas que llegan tarde.
+  useEffect(() => {
+    if (!loadOptions || !isOpen) return;
+    const text = query.trim();
+    const q = selectedOption && text === closedValueOf(selectedOption) ? '' : text;
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const found = await loadOptions(q);
+        if (!cancelled) setResults(found);
+      } catch {
+        if (!cancelled) setResults([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, q === '' ? 0 : 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isOpen, query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isOpen) setQuery(selectedOption ? closedValueOf(selectedOption) : '');
@@ -101,13 +137,15 @@ export default function SearchableSelect({ options, value, onChange, placeholder
   }, [isOpen]);
 
   const filtered = useMemo(() => {
+    if (loadOptions) return results;
     const q = query.trim().toLowerCase();
     if (!q || (selectedOption && q === closedValueOf(selectedOption).toLowerCase())) return options;
     return options.filter(o => o.label.toLowerCase().includes(q));
-  }, [options, query, selectedOption]);
+  }, [options, query, selectedOption, results, loadOptions]);
 
   const selectOption = (opt: SearchableSelectOption) => {
-    onChange(opt.value);
+    setChosen(opt);
+    onChange(opt.value, opt);
     setQuery(closedValueOf(opt));
     setIsOpen(false);
   };
@@ -159,7 +197,7 @@ export default function SearchableSelect({ options, value, onChange, placeholder
           className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg py-1"
         >
           {filtered.length === 0 && !showCreateNew && (
-            <div className="px-4 py-2 text-sm text-slate-400">{emptyLabel || 'Sin resultados'}</div>
+            <div className="px-4 py-2 text-sm text-slate-400">{loadOptions && searching ? 'Buscando…' : (emptyLabel || 'Sin resultados')}</div>
           )}
           {filtered.map((opt, idx) => (
             <div
@@ -171,6 +209,9 @@ export default function SearchableSelect({ options, value, onChange, placeholder
               {rowValueOf(opt)}
             </div>
           ))}
+          {loadOptions && filtered.length >= searchLimit && (
+            <div className="px-4 py-2 text-xs text-slate-400 border-t border-slate-100">Hay más resultados: escribe para acotar la búsqueda.</div>
+          )}
           {createOptionsList.map((createOpt, idx) => (
             <div
               key={`create-${idx}`}

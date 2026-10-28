@@ -7,7 +7,7 @@ import { toastPublishError } from '../lib/publishError';
 import { useConfirm } from '@/components/ConfirmDialog';
 import BulkImportModal from '../components/BulkImportModal';
 import CustomerFormModal from '../components/CustomerFormModal';
-import SearchableSelect from '@shared/components/SearchableSelect';
+import SearchableSelect, { type SearchableSelectOption } from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
 import { useNumberFormat } from '../lib/numberFormat';
@@ -213,7 +213,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [customTo, setCustomTo] = useState(() => getDateRangeForPreset('this-month')!.to);
   const [appliedCustomFrom, setAppliedCustomFrom] = useState(() => getDateRangeForPreset('this-month')!.from);
   const [appliedCustomTo, setAppliedCustomTo] = useState(() => getDateRangeForPreset('this-month')!.to);
-  const [customers, setCustomers] = useState<any[]>([]);
+  // Tercero elegido en el formulario (texto del selector): los terceros no se cargan en bloque, se buscan en el servidor al escribir.
+  const [customerOption, setCustomerOption] = useState<SearchableSelectOption | null>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [documentTypes, setDocumentTypes] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -251,7 +252,6 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedRetentions, setExpandedRetentions] = useState<Record<number, boolean>>({});
-  const [mandantes, setMandantes] = useState<any[]>([]);
   // Monedas extranjeras disponibles (catálogo del superadmin); solo se cargan si el tenant habilitó al cliente.
   const [currencyCatalog, setCurrencyCatalog] = useState<{ id: string, category: string, name: string }[]>([]);
   // Condiciones de entrega (Incoterms, tabla 13.3.7 de la DIAN) para la factura de exportación.
@@ -375,14 +375,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const range = datePreset === 'custom'
         ? { from: appliedCustomFrom, to: appliedCustomTo }
         : getDateRangeForPreset(datePreset)!;
-      const [invRes, custRes, prodRes, docTypesRes, mandantesRes, currencyRes, incotermRes, defaultsRes] = await Promise.all([
+      // Los terceros no se cargan aquí: los selectores del formulario los buscan en el servidor mientras se escribe.
+      const [invRes, prodRes, docTypesRes, currencyRes, incotermRes, defaultsRes] = await Promise.all([
         api.get(`${cfg.api}?from=${range.from}&to=${range.to}`),
-        // Lista liviana: el formulario solo muestra nombre e identificación; al emitir, el servidor carga el tercero completo por su id.
-        api.get(`/client/customers?partyType=${cfg.partyType}&lite=true`),
         api.get(`/client/products?scope=${isSupport ? 'Support' : 'Invoice'}`),
         cfg.documentTypes ? api.get('/client/invoices/document-types') : Promise.resolve({ data: [] }),
-        // Terceros marcados como mandante: los elige cada línea de una factura de mandato.
-        isSupport ? Promise.resolve({ data: [] }) : api.get('/client/customers?partyType=Mandante&lite=true'),
         !isSupport && features.foreignCurrency ? api.get('/client/tax-catalog?kind=Currency') : Promise.resolve({ data: [] }),
         isSupport ? Promise.resolve({ data: [] }) : api.get('/client/tax-catalog?kind=Incoterm'),
         isSupport ? Promise.resolve({ data: null }) : api.get('/client/invoice-defaults')
@@ -391,10 +388,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       setIncotermCatalog(incotermRes.data);
       setInvoiceDefaults(defaultsRes.data);
       setInvoices(invRes.data);
-      setCustomers(custRes.data);
       setProducts(prodRes.data);
       setDocumentTypes(docTypesRes.data);
-      setMandantes(mandantesRes.data);
     } catch (err) {
       toast.error('Error cargando datos');
     }
@@ -466,10 +461,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const documentType = documentTypes.find(d => d.typeCode === type)
         || documentTypes.find(d => d.code === (type === 'NC' ? '91' : '92'));
       if (!documentType) { toast.error(`La ${type === 'NC' ? 'nota crédito' : 'nota débito'} no está habilitada para tu empresa.`); return; }
-      const customerNumber = String(draft.customerTaxId || '').replace(/\D/g, '');
-      const customer = createdCustomerId
-        ? { id: createdCustomerId }
-        : customers.find(c => String(c.identificationNumber || '').replace(/\D/g, '') === customerNumber);
+      const customer = createdCustomerId ? { id: createdCustomerId } : undefined;
       const defaultResolution = resolutions.find(r => r.documentType === 'FE' && r.isDefault) || resolutions.find(r => r.documentType === 'FE');
       const reasonCatalog = type === 'NC' ? creditNoteReasonCatalog : debitNoteReasonCatalog;
       const reason = reasonCatalog.find(c => c.category === '1');
@@ -530,6 +522,26 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       setResendingId(null);
     }
   };
+
+  // Búsqueda de terceros en el servidor (los primeros resultados según lo escrito) para el selector del formulario y el de mandantes.
+  const customerToOption = (c: any): SearchableSelectOption => ({ value: c.id, label: `${c.name} (${c.identificationNumber})`, data: c });
+  const searchParties = async (q: string) =>
+    (await api.get('/client/customers/search', { params: { partyType: cfg.partyType, q } })).data.map(customerToOption);
+  const searchMandantes = async (q: string) =>
+    (await api.get('/client/customers/search', { params: { partyType: 'Mandante', q } })).data
+      .map((m: any): SearchableSelectOption => ({ value: m.id, label: `${m.name} - ${m.identificationNumber}`, shortLabel: m.name, data: m }));
+
+  // Un borrador, una nota o un tercero recién creado fijan el id del tercero sin pasar por el selector: se pide su nombre para mostrarlo.
+  useEffect(() => {
+    const id = formData.customerId;
+    if (!id) { setCustomerOption(null); return; }
+    if (customerOption?.value === id) return;
+    let cancelled = false;
+    api.get(`/client/customers/${id}`)
+      .then(res => { if (!cancelled) setCustomerOption(customerToOption(res.data)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [formData.customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // El listado solo avisa que hay respuesta del integrador (pesa hasta decenas de KB por documento): se pide al abrir el diálogo.
   // El detalle ya trae el texto completo.
@@ -863,8 +875,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   // Factura de exportación (tipo FE-EXP): condición de entrega y, por ítem, marca, modelo y subpartida arancelaria.
   const isExport = !isSupport && selectedDocType?.typeCode === 'FE-EXP' && !formData.referenceDocumentId;
 
-  const setItemMandante = (index: number, customerId: string) => {
-    const mandante = mandantes.find(m => m.id === customerId);
+  const setItemMandante = (index: number, customerId: string, mandante?: any) => {
     const newItems = [...formData.items];
     newItems[index] = {
       ...newItems[index],
@@ -1189,7 +1200,6 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   // Mandante creado desde la línea: se agrega a la lista y queda elegido en esa misma línea.
   const handleMandanteSaved = (mandante: any) => {
     const index = mandanteModalForItemIndex;
-    setMandantes(prev => [...prev.filter(m => m.id !== mandante.id), mandante]);
     setFormData(f => {
       if (index === null || !f.items[index]) return f;
       const items = [...f.items];
@@ -1206,7 +1216,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   };
 
   const handleCustomerSaved = (customer: any) => {
-    setCustomers(prev => [...prev, customer]);
+    setCustomerOption(customerToOption(customer));
     setFormData(f => ({ ...f, customerId: customer.id }));
     setShowCustomerModal(false);
   };
@@ -1520,9 +1530,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             className={table ? 'w-56' : 'flex-1'}
             inputClassName={`w-full p-2 border rounded-lg text-sm outline-none ${item.mandanteCustomerId ? 'border-slate-200' : 'border-amber-300'}`}
             value={item.mandanteCustomerId || ''}
-            onChange={v => setItemMandante(index, v)}
+            onChange={(v, option) => setItemMandante(index, v, option?.data)}
             placeholder="Buscar mandante..."
-            options={mandantes.map(m => ({ value: m.id, label: `${m.name} - ${m.identificationNumber}`, shortLabel: m.name }))}
+            options={[]}
+            loadOptions={searchMandantes}
+            selected={item.mandanteCustomerId ? { value: item.mandanteCustomerId, label: `${item.mandanteName} - ${item.mandanteIdentification}`, shortLabel: item.mandanteName } : null}
           />
           <button type="button" onClick={() => setMandanteModalForItemIndex(index)} title="Crear mandante" aria-label="Crear mandante" className="flex h-11 w-11 shrink-0 items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors lg:h-9 lg:w-9">
             <UserPlus size={16} />
@@ -1607,9 +1619,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   <SearchableSelect
                     className="flex-1"
                     value={formData.customerId}
-                    onChange={v => setFormData({...formData, customerId: v})}
+                    onChange={(v, option) => { setFormData({...formData, customerId: v}); setCustomerOption(option ?? null); }}
                     placeholder={cfg.partyPlaceholder}
-                    options={customers.map(c => ({ value: c.id, label: `${c.name} (${c.identificationNumber})` }))}
+                    options={[]}
+                    loadOptions={searchParties}
+                    selected={customerOption}
                   />
                   <button type="button" onClick={() => setShowCustomerModal(true)} title={`Crear ${cfg.party.toLowerCase()} rápido`} className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors">
                     <UserPlus size={20} />

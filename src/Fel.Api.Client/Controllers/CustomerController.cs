@@ -123,6 +123,34 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // Búsqueda para los selectores de terceros de los formularios: se escribe y el servidor devuelve las primeras coincidencias, en vez de mandar al
+        // navegador todos los terceros (hay clientes con miles). Sin texto devuelve los más recientes.
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] PartyType? partyType, [FromQuery] string? q, [FromQuery] int limit = CustomerSearch.DefaultLimit)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                limit = Math.Clamp(limit, 1, CustomerSearch.MaxLimit);
+                var query = _dbContext.Customers.AsNoTracking().Where(c => c.ClientId == clientId);
+                if (partyType.HasValue) query = query.Where(c => c.PartyType == partyType.Value);
+
+                var text = (q ?? string.Empty).Trim();
+                query = CustomerSearch.Filter(query, text);
+
+                // Con texto, primero los que empiezan por lo escrito (identificación o nombre); sin texto, los más recientes.
+                var ordered = text.Length == 0
+                    ? query.OrderByDescending(c => c.CreatedAt)
+                    : query.OrderBy(c => c.IdentificationNumber.StartsWith(text) || c.Name.StartsWith(text) ? 0 : 1).ThenBy(c => c.Name);
+
+                return Ok(await CustomerSearch.Project(ordered.Take(limit)).ToListAsync());
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(Guid id)
         {

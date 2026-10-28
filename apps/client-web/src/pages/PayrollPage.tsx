@@ -8,7 +8,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import ImportExcelButton from '../components/ImportExcelButton';
 import DataTable, { type DataTableColumn } from '@shared/components/DataTable';
 import RowIconButton from '../components/RowIconButton';
-import SearchableSelect from '@shared/components/SearchableSelect';
+import SearchableSelect, { type SearchableSelectOption } from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
 import { STATUS_FILTER_OPTIONS, statusLabel } from '../lib/documentStatus';
@@ -60,7 +60,8 @@ export default function PayrollPage() {
   const fmt = useNumberFormat();
   const confirm = useConfirm();
   const [entries, setEntries] = useState<any[]>([]);
-  const [employees, setEmployees] = useState<any[]>([]);
+  // Empleado elegido en el formulario (texto del selector): los empleados no se cargan en bloque, se buscan en el servidor al escribir.
+  const [employeeOption, setEmployeeOption] = useState<SearchableSelectOption | null>(null);
   const [loading, setLoading] = useState(true);
   const { features } = useSession();
   const navigate = useNavigate();
@@ -102,17 +103,29 @@ export default function PayrollPage() {
     loadData();
   }, [datePreset, appliedCustomFrom, appliedCustomTo]);
 
+  const searchEmployees = async (q: string) =>
+    (await api.get('/client/customers/search', { params: { partyType: 'Empleado', q } })).data
+      .map((emp: any): SearchableSelectOption => ({ value: emp.id, label: `${emp.name} (${emp.identificationNumber})` }));
+
+  // Un borrador que se edita fija el id del empleado sin pasar por el selector: se pide su nombre para mostrarlo.
+  useEffect(() => {
+    const id = formData.employeeId;
+    if (!id) { setEmployeeOption(null); return; }
+    if (employeeOption?.value === id) return;
+    let cancelled = false;
+    api.get(`/client/customers/${id}`)
+      .then(res => { if (!cancelled) setEmployeeOption({ value: id, label: `${res.data.name} (${res.data.identificationNumber})` }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [formData.employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadData = async ({ quiet = false } = {}) => {
     // quiet: refresca la lista sin el spinner de página completa (no desmonta el avance de un lote en curso).
     if (!quiet) setLoading(true);
     try {
       const range = datePreset === 'custom' ? { from: appliedCustomFrom, to: appliedCustomTo } : getDateRangeForPreset(datePreset)!;
-      const [entriesRes, empRes] = await Promise.all([
-        api.get(`/client/payroll?from=${range.from}&to=${range.to}`),
-        api.get('/client/customers?partyType=Empleado')
-      ]);
+      const entriesRes = await api.get(`/client/payroll?from=${range.from}&to=${range.to}`);
       setEntries(entriesRes.data);
-      setEmployees(empRes.data);
     } catch {
       toast.error('Error al cargar la nómina');
     } finally {
@@ -363,11 +376,13 @@ export default function PayrollPage() {
                   <SearchableSelect
                     required
                     value={formData.employeeId}
-                    onChange={v => setFormData({ ...formData, employeeId: v })}
+                    onChange={(v, option) => { setFormData({ ...formData, employeeId: v }); setEmployeeOption(option ?? null); }}
                     placeholder="Buscar empleado..."
-                    options={employees.map(emp => ({ value: emp.id, label: `${emp.name} (${emp.identificationNumber})` }))}
+                    emptyLabel="No hay empleados con ese dato. Créalos en Terceros."
+                    options={[]}
+                    loadOptions={searchEmployees}
+                    selected={employeeOption}
                   />
-                  {employees.length === 0 && <p className="text-xs text-amber-600 mt-1">No tienes empleados registrados. Créales un registro en Terceros.</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Inicio de Período</label>

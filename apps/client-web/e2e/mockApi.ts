@@ -135,6 +135,13 @@ function respond(pathname: string, search: string, session: MockSession): unknow
   if (pathname.endsWith('/v1/branding/my-branding')) return branding;
   if (pathname.endsWith('/v1/dashboard/summary')) return summary;
   if (pathname.endsWith('/tenant/branding/demo')) return { commercialName: LONG_NAME, logoLightUrl: '', primaryColorLight: '#2563eb' };
+  if (pathname.endsWith('/client/customers/search')) {
+    // Como el servidor: busca por nombre o identificación y devuelve pocos campos.
+    const q = (new URLSearchParams(search).get('q') ?? '').toLowerCase();
+    return list(4, customer).filter((c: any) => !q || c.name.toLowerCase().includes(q) || c.identificationNumber.includes(q))
+      .map((c: any) => ({ id: c.id, name: c.name, identificationType: c.identificationType, identificationNumber: c.identificationNumber, verificationDigit: c.verificationDigit, email: c.email, partyType: c.partyType }));
+  }
+  if (/\/client\/customers\/c\d+$/.test(pathname)) return customer(Number(pathname.split('/c').pop()));
   if (pathname.endsWith('/client/customers')) return list(4, customer);
   if (pathname.endsWith('/client/products')) return list(4, product);
   if (pathname.endsWith('/client/invoices')) return list(6, i => document(i, ['FE', 'FE', 'NC', 'ND', 'FE', 'FE'][i]));

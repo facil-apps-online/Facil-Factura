@@ -1,8 +1,11 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Fel.Api.Security;
 using Fel.Core.Entities;
+using Fel.Core.Models;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -58,5 +61,40 @@ namespace Fel.Api.Client.Controllers
 
             return Ok(new { concepts });
         }
+
+        // Nombre corto de cada categoría de retención (RETE FUENTE, RETE ICA, RETE IVA), que parametriza la administración de la plataforma. Con la tarifa
+        // arma el texto corto de la retención en los selectores del formulario.
+        [HttpGet("short-names")]
+        public async Task<IActionResult> GetShortNames()
+        {
+            GetCurrentClientId();
+            var names = await RetentionShortNameCatalog.LoadAsync(_dbContext);
+            return Ok(new[] { "RET_FUENTE", "RET_ICA", "RET_IVA" }.ToDictionary(c => c, c => RetentionShortNameCatalog.NameOf(names, c)));
+        }
+
+        // Cómo ve el cliente las retenciones en los selectores: las de cada línea y las del pie, por separado. Lo cambia el administrador del cliente y también
+        // el tenant desde la ficha del cliente; manda el último cambio.
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpPut("label-style")]
+        public async Task<IActionResult> SetLabelStyle([FromBody] RetentionLabelStyleRequest request)
+        {
+            if (!RetentionLabelStyle.IsValid(request.Line) || !RetentionLabelStyle.IsValid(request.Footer))
+                return BadRequest(new { message = "El estilo debe ser Short (nombre corto) o Full (nombre completo)." });
+
+            var clientId = GetCurrentClientId();
+            var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);
+            if (client == null) return NotFound(new { message = "Cliente no encontrado." });
+
+            client.LineRetentionLabelStyle = request.Line!;
+            client.FooterRetentionLabelStyle = request.Footer!;
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { line = client.LineRetentionLabelStyle, footer = client.FooterRetentionLabelStyle });
+        }
+    }
+
+    public class RetentionLabelStyleRequest
+    {
+        public string? Line { get; set; }
+        public string? Footer { get; set; }
     }
 }

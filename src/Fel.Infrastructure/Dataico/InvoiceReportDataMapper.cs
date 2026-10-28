@@ -28,13 +28,6 @@ namespace Fel.Infrastructure.Dataico
         private const string NombreSoftware = "Facil Factura";
 
 
-        private static readonly Dictionary<string, string> RetentionCategoryLabels = new()
-        {
-            ["RET_FUENTE"] = "RETE FUENTE",
-            ["RET_ICA"] = "RETE ICA",
-            ["RET_IVA"] = "RETE IVA"
-        };
-
         // client.TaxRegime guarda el código crudo de responsabilidad tributaria (RUT casilla 53:
         // 48 = responsable de IVA, 49 = no responsable) — la representación gráfica debe mostrar
         // la etiqueta legible, no el código, que sí se usa tal cual en el resto del sistema.
@@ -76,7 +69,6 @@ namespace Fel.Infrastructure.Dataico
             };
         }
 
-        private static string RetentionLabel(string category) => RetentionCategoryLabels.GetValueOrDefault(category, category);
 
         // originalDocument: el documento referenciado por una Nota Crédito/Débito
         // (invoice.ReferenceDocumentId) — null para una factura normal. Notas Crédito/Débito
@@ -85,7 +77,7 @@ namespace Fel.Infrastructure.Dataico
         //
         // mostrarRetenciones: ya no tiene efecto. Las retenciones se imprimen siempre que las haya y el TOTAL las descuenta; el parámetro sigue
         // en la firma mientras se retira el interruptor "Mostrar retenciones" de las plantillas.
-        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null)
+        public static Dictionary<string, object?> Build(Document invoice, Customer? customer, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, Document? originalDocument = null, bool mostrarRetenciones = true, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null, IReadOnlyDictionary<string, string>? retentionShortNames = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -220,7 +212,7 @@ namespace Fel.Infrastructure.Dataico
             {
                 impuestos.Add(new Dictionary<string, object?>
                 {
-                    ["Concepto"] = $"{RetentionLabel(kv.Key.Categoria)} {RetPct(kv.Key.Tarifa)}",
+                    ["Concepto"] = $"{Fel.Infrastructure.Services.RetentionShortNameCatalog.NameOf(retentionShortNames, kv.Key.Categoria)} {RetPct(kv.Key.Tarifa)}",
                     ["Valor"] = Money(kv.Value),
                     ["Tipo"] = "Retencion"
                 });

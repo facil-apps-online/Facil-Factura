@@ -50,6 +50,70 @@ const BASE_TYPE_OPTIONS = [
 ];
 const SELECT_INPUT_CLASS = 'w-full px-4 py-3 pr-8 bg-slate-800/50 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none';
 
+// Nombre corto de cada categoría de retención (RETE FUENTE, RETE ICA, RETE IVA). Con la tarifa arma el texto corto de la retención ("RETE FUENTE 2.5%") en los
+// selectores de los formularios de los clientes (según el estilo que elija cada cliente o su tenant) y en el PDF de la factura y del documento soporte.
+interface RetentionShortName { id: string; taxCategory: string; shortName: string }
+const SHORT_NAME_MAX = 30;
+const TAX_CATEGORY_LABELS: Record<string, string> = { RET_FUENTE: 'Retención en la fuente', RET_ICA: 'Retención de ICA', RET_IVA: 'Retención de IVA' };
+
+function ShortNamesPanel() {
+  const [items, setItems] = useState<RetentionShortName[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<RetentionShortName[]>('/retention-short-names')
+      .then(res => { setItems(res.data); setDrafts(Object.fromEntries(res.data.map(i => [i.id, i.shortName]))); })
+      .catch(() => toast.error('Error al cargar los nombres cortos'));
+  }, []);
+
+  const save = async (item: RetentionShortName) => {
+    setSavingId(item.id);
+    try {
+      const res = await api.put<RetentionShortName>(`/retention-short-names/${item.id}`, { shortName: drafts[item.id] });
+      setItems(prev => prev.map(i => (i.id === item.id ? res.data : i)));
+      setDrafts(prev => ({ ...prev, [item.id]: res.data.shortName }));
+      toast.success('Nombre corto guardado');
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'No se pudo guardar el nombre corto');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  return (
+    <div className="mt-8 max-w-3xl space-y-4">
+      <p className="text-sm text-slate-400">Con la tarifa forman el texto corto de cada retención (por ejemplo <span className="font-mono text-slate-200">RETE FUENTE 2.5%</span>). Se ven en los selectores de los formularios de los clientes que usan el nombre corto y en el PDF de la factura y del documento soporte.</p>
+      {items.map(item => {
+        const changed = (drafts[item.id] ?? '').trim() !== item.shortName;
+        return (
+          <div key={item.id} className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4">
+            <div className="min-w-0 flex-1">
+              <label htmlFor={`short-${item.taxCategory}`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-400">{TAX_CATEGORY_LABELS[item.taxCategory] || item.taxCategory} <span className="font-mono normal-case text-slate-500">({item.taxCategory})</span></label>
+              <input
+                id={`short-${item.taxCategory}`}
+                type="text"
+                maxLength={SHORT_NAME_MAX}
+                value={drafts[item.id] ?? ''}
+                onChange={e => setDrafts({ ...drafts, [item.id]: e.target.value })}
+                className={SELECT_INPUT_CLASS}
+              />
+            </div>
+            <span className="pb-3 font-mono text-sm text-slate-400">{(drafts[item.id] ?? '').trim() || '…'} 2.5%</span>
+            <button
+              onClick={() => save(item)}
+              disabled={!changed || savingId === item.id || !(drafts[item.id] ?? '').trim()}
+              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-indigo-700 disabled:opacity-40"
+            >
+              <Save className="h-4 w-4" /> Guardar
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const initialParameterForm = { code: 'UVT', value: '', effectiveFrom: new Date().toISOString().slice(0, 10) };
 
 const parameterColumns: DataTableColumn<TaxParameter>[] = [
@@ -59,7 +123,7 @@ const parameterColumns: DataTableColumn<TaxParameter>[] = [
 ];
 
 export const RetentionEngine = () => {
-  const [tab, setTab] = useState<'concepts' | 'parameters'>('concepts');
+  const [tab, setTab] = useState<'concepts' | 'parameters' | 'shortNames'>('concepts');
   const [concepts, setConcepts] = useState<RetentionConcept[]>([]);
   const [parameters, setParameters] = useState<TaxParameter[]>([]);
   const [conceptForm, setConceptForm] = useState(initialConceptForm);
@@ -243,13 +307,13 @@ export const RetentionEngine = () => {
             Conceptos de retención en la fuente/IVA (con vigencia) y parámetros tributarios (UVT) que usan los clientes para calcular automáticamente sus facturas.
           </p>
         </div>
-        <button
+        {tab !== 'shortNames' && <button
           onClick={() => tab === 'concepts' ? openNewConcept() : openNewParameter()}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-600/30 transition-all transform hover:-translate-y-1"
         >
           <Plus className="w-5 h-5 mr-2" />
           {tab === 'concepts' ? 'Nuevo Concepto' : 'Nueva Vigencia'}
-        </button>
+        </button>}
       </div>
 
       <div className="flex gap-2 mb-6">
@@ -259,9 +323,14 @@ export const RetentionEngine = () => {
         <button onClick={() => setTab('parameters')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${tab === 'parameters' ? 'bg-indigo-600 text-white' : 'bg-slate-800/50 text-slate-400 hover:text-white'}`}>
           Parámetros / UVT ({parameters.length})
         </button>
+        <button onClick={() => setTab('shortNames')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${tab === 'shortNames' ? 'bg-indigo-600 text-white' : 'bg-slate-800/50 text-slate-400 hover:text-white'}`}>
+          Nombres cortos
+        </button>
       </div>
 
-      {tab === 'concepts' ? (
+      {tab === 'shortNames' ? (
+        <ShortNamesPanel />
+      ) : tab === 'concepts' ? (
         <div className="mt-8">
           <DataTable
             theme="dark"

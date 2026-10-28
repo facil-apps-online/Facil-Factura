@@ -1110,6 +1110,13 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("FooterRetentionLabelStyle")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Short");
+
                     b.Property<bool>("ForeignCurrencyEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -1181,6 +1188,13 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<DateTime?>("LegalRepresentativeStartDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("LineRetentionLabelStyle")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Short");
 
                     b.Property<string>("LogoDarkUrl")
                         .IsRequired()
@@ -3655,6 +3669,50 @@ namespace Fel.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("RetentionConcepts");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.RetentionShortName", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ShortName")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaxCategory")
+                        .IsUnique();
+
+                    b.ToTable("RetentionShortNames", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("5c1f0001-0000-4000-8000-000000000001"),
+                            ShortName = "RETE FUENTE",
+                            TaxCategory = "RET_FUENTE"
+                        },
+                        new
+                        {
+                            Id = new Guid("5c1f0001-0000-4000-8000-000000000002"),
+                            ShortName = "RETE ICA",
+                            TaxCategory = "RET_ICA"
+                        },
+                        new
+                        {
+                            Id = new Guid("5c1f0001-0000-4000-8000-000000000003"),
+                            ShortName = "RETE IVA",
+                            TaxCategory = "RET_IVA"
+                        });
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.RipsCie10Rule", b =>

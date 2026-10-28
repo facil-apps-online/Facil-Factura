@@ -30,15 +30,6 @@ namespace Fel.Infrastructure.Dataico
             ["49"] = "No responsable de IVA"
         };
 
-        private static readonly Dictionary<string, string> RetentionCategoryLabels = new()
-        {
-            ["RET_FUENTE"] = "RETE FUENTE",
-            ["RET_ICA"] = "RETE ICA",
-            ["RET_IVA"] = "RETE IVA"
-        };
-
-        private static string RetentionLabel(string category) => RetentionCategoryLabels.GetValueOrDefault(category, category);
-
         private static string CalidadTributaria(string? code) =>
             code != null && CalidadTributariaLabels.TryGetValue(code, out var label) ? label : code ?? string.Empty;
 
@@ -73,7 +64,7 @@ namespace Fel.Infrastructure.Dataico
             return string.IsNullOrWhiteSpace(original.Cufe) ? linea : $"{linea}\nCUDS {original.Cufe}";
         }
 
-        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null, Document? originalDocument = null)
+        public static Dictionary<string, object?> Build(Document document, Customer? proveedor, Client client, EmitterLocation location, Resolution? resolution, IReadOnlyList<DocumentItem> items, IReadOnlyDictionary<string, string>? paymentMeansCatalog = null, IReadOnlyDictionary<string, string>? formaPagoCatalog = null, string? leyenda = null, IReadOnlyDictionary<string, string>? currencyWords = null, string? documentTypeTitle = null, Document? originalDocument = null, IReadOnlyDictionary<string, string>? retentionShortNames = null)
         {
             // Separadores del cliente (Client.DecimalSeparator): punto decimal y coma de miles por defecto.
             var nf = ReportNumberFormat.For(client.DecimalSeparator);
@@ -118,7 +109,7 @@ namespace Fel.Infrastructure.Dataico
             foreach (var kv in retencionesPorCategoria)
                 impuestos.Add(new Dictionary<string, object?>
                 {
-                    ["Concepto"] = $"{RetentionLabel(kv.Key.Categoria)} {kv.Key.Tarifa.ToString("0.###", nf)}%",
+                    ["Concepto"] = $"{Fel.Infrastructure.Services.RetentionShortNameCatalog.NameOf(retentionShortNames, kv.Key.Categoria)} {kv.Key.Tarifa.ToString("0.###", nf)}%",
                     ["Valor"] = Money(kv.Value),
                     ["Tipo"] = "Retencion"
                 });

@@ -9,6 +9,7 @@ import BulkImportModal from '../components/BulkImportModal';
 import CustomerFormModal from '../components/CustomerFormModal';
 import EditCustomerButton from '../components/EditCustomerButton';
 import DocumentAttachments, { uploadPendingAttachments } from '../components/DocumentAttachments';
+import { DEFAULT_RETENTION_STYLES, retentionOption, shortRetentionText, type RetentionShortNames } from '../lib/retentionLabel';
 import SearchableSelect, { type SearchableSelectOption } from '@shared/components/SearchableSelect';
 import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
 import { exportToCsv } from '../lib/exportCsv';
@@ -35,16 +36,6 @@ const IVA_TREATMENTS = [
   { value: 'Exento', label: 'Exento' },
   { value: 'Excluido', label: 'Excluido' }
 ];
-
-// Rótulo del resumen de retenciones: el tipo de impuesto, no el nombre del concepto específico
-// del catálogo (ej. "Compras generales (declarantes)") — para que RET_FUENTE al 2.5% y al 3.5%
-// aparezcan como "RETE FUENTE 2.5%" / "RETE FUENTE 3.5%" sin importar qué concepto se usó.
-const RETENTION_CATEGORY_LABELS: Record<string, string> = {
-  RET_FUENTE: 'RETE FUENTE',
-  RET_ICA: 'RETE ICA',
-  RET_IVA: 'RETE IVA'
-};
-const retentionCategoryLabel = (taxCategory: string) => RETENTION_CATEGORY_LABELS[taxCategory] || taxCategory;
 
 // Total de retenciones de un documento ya guardado: las de ítem usan el monto que quedó
 // calculado y persistido al guardar (item.retentions[].amount), no se recalculan a partir de la
@@ -208,6 +199,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const symOf = (doc: { currency?: string } | null | undefined) => (doc?.currency && doc.currency !== 'COP' ? `${doc.currency} ` : '$');
   const confirm = useConfirm();
   const { features } = useSession();
+  // Cómo se ven las retenciones en los selectores (nombre corto o completo, las de cada línea y las del pie) y los nombres cortos que parametriza la plataforma.
+  const retentionStyles = features.retentionLabelStyles ?? DEFAULT_RETENTION_STYLES;
+  const [retentionShortNames, setRetentionShortNames] = useState<RetentionShortNames>({});
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>('this-month');
@@ -390,6 +384,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         .then(res => setNoteNumberingChoices(res.data))
         .catch(() => {});
     }
+    api.get('/client/retention-concepts/short-names')
+      .then(res => setRetentionShortNames(res.data))
+      .catch(() => {});
     api.get(`/client/retention-concepts/catalog?scope=${isSupport ? 'Support' : 'Invoice'}`)
       .then(res => setAutoRetentionCatalog((res.data.concepts || []).filter((c: any) => !isSupport || c.taxCategory !== 'RET_IVA')))
       .catch(() => {});
@@ -1179,14 +1176,14 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       (item.retentions || []).forEach((r: any) => {
         const key = `${r.taxCategory}|${r.rate}`;
         const prev = map.get(key)?.amount || 0;
-        const label = `${retentionCategoryLabel(r.taxCategory)} ${r.rate}%`;
+        const label = shortRetentionText(retentionShortNames, r.taxCategory, r.rate);
         map.set(key, { label, amount: prev + itemRetentionEntryAmount(item, r) });
       });
     });
     formData.generalRetentions.forEach(r => {
       const key = `${r.taxCategory}|${r.rate}`;
       const prev = map.get(key)?.amount || 0;
-      const label = `${retentionCategoryLabel(r.taxCategory)} ${r.rate}%`;
+      const label = shortRetentionText(retentionShortNames, r.taxCategory, r.rate);
       map.set(key, { label, amount: prev + generalRetentionAmount(r) });
     });
     return Array.from(map.values());
@@ -1605,7 +1602,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             value={item.retentions?.[0]?.conceptId || ''}
             onChange={v => setItemRetention(index, v)}
             placeholder="Buscar retención..."
-            options={autoRetentionCatalog.map((c: any) => ({ value: c.id, label: `${c.name} (${c.taxCategory} ${c.rate}%)`, shortLabel: `${c.rate}%` }))}
+            options={autoRetentionCatalog.map((c: any) => retentionOption(c.id, c.name, c.taxCategory, c.rate, retentionStyles.line, retentionShortNames))}
           />
           <button type="button" onClick={() => clearItemRetention(index)} title="Quitar retención" aria-label="Quitar retención" className="flex h-11 w-11 shrink-0 items-center justify-center text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors lg:h-9 lg:w-9">
             <X size={16} />
@@ -1614,7 +1611,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       ) : (
         <button type="button" onClick={() => toggleItemRetentions(index)} title="Retención de esta línea" className={`w-full flex min-h-11 items-center gap-1 p-2 rounded-lg text-sm transition-colors border lg:min-h-0 ${item.retentions?.[0] ? 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100' : 'text-slate-400 border-slate-200 hover:bg-slate-100'}`}>
           <Percent size={14} />
-          <span className="truncate">{item.retentions?.[0] ? `${item.retentions[0].rate}%` : 'Ninguna'}</span>
+          <span className="truncate">{item.retentions?.[0] ? (retentionStyles.line === 'Short' ? shortRetentionText(retentionShortNames, item.retentions[0].taxCategory, item.retentions[0].rate) : `${item.retentions[0].rate}%`) : 'Ninguna'}</span>
         </button>
       ),
       remove: (
@@ -2116,11 +2113,11 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                             value={r.catalogId}
                             onChange={v => updateGeneralRetention(idx, v)}
                             placeholder="Buscar retención..."
-                            options={availableRetentionOptions(formData.generalRetentions.map(rr => rr.catalogId), r.catalogId).map(c => ({ value: c.id, label: `${c.name} (${c.category} ${c.rate}%)`, shortLabel: `${c.rate}%` }))}
+                            options={availableRetentionOptions(formData.generalRetentions.map(rr => rr.catalogId), r.catalogId).map(c => retentionOption(c.id, c.name, c.category, c.rate, retentionStyles.footer, retentionShortNames))}
                           />
                         ) : (
                           <div className="flex items-center gap-2">
-                            <span className="flex-1 p-2 text-sm text-slate-700">{catalogEntry ? `${catalogEntry.rate}%` : `${r.rate}%`}</span>
+                            <span className="flex-1 p-2 text-sm text-slate-700">{retentionStyles.footer === 'Short' ? shortRetentionText(retentionShortNames, catalogEntry?.category ?? r.taxCategory, catalogEntry?.rate ?? r.rate) : (catalogEntry ? `${catalogEntry.rate}%` : `${r.rate}%`)}</span>
                             <button type="button" onClick={() => setEditingGeneralRetentionIdx(idx)} title="Editar" aria-label="Editar retención" className="flex h-11 w-11 items-center justify-center text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors md:h-9 md:w-9">
                               <Edit2 size={16} />
                             </button>

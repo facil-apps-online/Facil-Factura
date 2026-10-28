@@ -8,6 +8,12 @@ import SearchableSelect from '@shared/components/SearchableSelect';
 const libraries: "places"[] = ['places'];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSy_TU_LLAVE_DE_PRUEBA_AQUI";
 
+// Cómo ve el cliente las retenciones al elegirlas en sus formularios (las de cada línea y las del pie, por separado). Por defecto, el nombre corto.
+const RETENTION_LABEL_STYLE_OPTIONS = [
+  { value: 'Short', label: 'Nombre corto (RETE FUENTE 2.5%)' },
+  { value: 'Full', label: 'Nombre completo del concepto' }
+];
+
 const ROUNDING_ADJUSTMENT_OPTIONS = [
   { value: 'None', label: 'Sin ajuste' },
   { value: 'Peso', label: 'Ajuste al peso (quita los centavos)' },
@@ -303,6 +309,28 @@ export default function ClientFormFields({ client, setClient, associates, showBi
               inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
             <p className="text-xs text-slate-400 mt-1">Para clientes que facturan a entidades que no manejan centavos. A cada factura en pesos se le crea un descuento general con lo que sobre del valor a pagar (siempre hacia abajo). No cambia el IVA y se informa en el XML.</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Retenciones de cada línea (cómo se ven)</label>
+              <SearchableSelect
+                options={RETENTION_LABEL_STYLE_OPTIONS}
+                value={client.lineRetentionLabelStyle || 'Short'}
+                onChange={v => setClient({ ...client, lineRetentionLabelStyle: v || 'Short' })}
+                inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Retenciones del pie (cómo se ven)</label>
+              <SearchableSelect
+                options={RETENTION_LABEL_STYLE_OPTIONS}
+                value={client.footerRetentionLabelStyle || 'Short'}
+                onChange={v => setClient({ ...client, footerRetentionLabelStyle: v || 'Short' })}
+                inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
+            </div>
+            <p className="text-xs text-slate-400 md:col-span-2 -mt-2">En los formularios de factura y documento soporte del cliente. El propio cliente también lo puede cambiar en "Valores por defecto"; manda el último cambio. Los nombres cortos los define la administración de la plataforma.</p>
           </div>
 
           <div>

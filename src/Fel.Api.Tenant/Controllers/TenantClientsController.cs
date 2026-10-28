@@ -202,6 +202,8 @@ namespace Fel.Api.Tenant.Controllers
                 client.IncomeTaxRegime,
                 client.ForeignCurrencyEnabled,
                 client.RoundingAdjustment,
+                client.LineRetentionLabelStyle,
+                client.FooterRetentionLabelStyle,
                  client.DecimalSeparator,
                  client.ElectronicInvoiceLegend,
                  client.SupportDocumentLegend,
@@ -283,6 +285,8 @@ namespace Fel.Api.Tenant.Controllers
                 IncomeTaxRegime = string.IsNullOrEmpty(request.IncomeTaxRegime) ? null : request.IncomeTaxRegime,
                 ForeignCurrencyEnabled = request.ForeignCurrencyEnabled ?? false,
                 RoundingAdjustment = Fel.Core.Models.RoundingAdjustment.IsValid(request.RoundingAdjustment) ? request.RoundingAdjustment! : Fel.Core.Models.RoundingAdjustment.None,
+                LineRetentionLabelStyle = Fel.Core.Models.RetentionLabelStyle.IsValid(request.LineRetentionLabelStyle) ? request.LineRetentionLabelStyle! : Fel.Core.Models.RetentionLabelStyle.Short,
+                FooterRetentionLabelStyle = Fel.Core.Models.RetentionLabelStyle.IsValid(request.FooterRetentionLabelStyle) ? request.FooterRetentionLabelStyle! : Fel.Core.Models.RetentionLabelStyle.Short,
                 DecimalSeparator = DecimalSeparators.IsValid(request.DecimalSeparator) ? request.DecimalSeparator! : DecimalSeparators.Point,
                 AssociateId = request.AssociateId,
                 Latitude = request.Latitude,
@@ -385,6 +389,10 @@ namespace Fel.Api.Tenant.Controllers
             if (request.ForeignCurrencyEnabled.HasValue) client.ForeignCurrencyEnabled = request.ForeignCurrencyEnabled.Value;
             // Igual: solo cambia si viene un valor válido.
             if (Fel.Core.Models.RoundingAdjustment.IsValid(request.RoundingAdjustment)) client.RoundingAdjustment = request.RoundingAdjustment!;
+            // Estilo de las retenciones en los selectores de los formularios (nombre corto o completo): solo cambia si viene un valor válido. El propio cliente
+            // también lo cambia desde su portal; manda el último cambio.
+            if (Fel.Core.Models.RetentionLabelStyle.IsValid(request.LineRetentionLabelStyle)) client.LineRetentionLabelStyle = request.LineRetentionLabelStyle!;
+            if (Fel.Core.Models.RetentionLabelStyle.IsValid(request.FooterRetentionLabelStyle)) client.FooterRetentionLabelStyle = request.FooterRetentionLabelStyle!;
             // Solo se cambia si viene un valor válido: un portal con una versión anterior del formulario no lo envía.
              if (DecimalSeparators.IsValid(request.DecimalSeparator)) client.DecimalSeparator = request.DecimalSeparator!;
              client.ElectronicInvoiceLegend = request.ElectronicInvoiceLegend?.Trim() ?? string.Empty;
@@ -917,6 +925,9 @@ namespace Fel.Api.Tenant.Controllers
         public bool? ForeignCurrencyEnabled { get; set; }
         // Ajuste de centavos de las facturas: None, Peso, Decena o Centena. Vacío = no se envió: no se cambia.
         public string? RoundingAdjustment { get; set; }
+        // Estilo de las retenciones en los selectores de los formularios del cliente: Short (nombre corto) o Full (nombre completo). Vacío = no se cambia.
+        public string? LineRetentionLabelStyle { get; set; }
+        public string? FooterRetentionLabelStyle { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
          public string? DecimalSeparator { get; set; }
          public string? ElectronicInvoiceLegend { get; set; }
@@ -984,6 +995,9 @@ namespace Fel.Api.Tenant.Controllers
         public bool? ForeignCurrencyEnabled { get; set; }
         // Ajuste de centavos de las facturas: None, Peso, Decena o Centena. Vacío = no se envió: no se cambia.
         public string? RoundingAdjustment { get; set; }
+        // Estilo de las retenciones en los selectores de los formularios del cliente: Short (nombre corto) o Full (nombre completo). Vacío = no se cambia.
+        public string? LineRetentionLabelStyle { get; set; }
+        public string? FooterRetentionLabelStyle { get; set; }
         // "." = punto decimal y coma de miles (por defecto); "," = coma decimal y punto de miles.
         public string? DecimalSeparator { get; set; }
         public double? Latitude { get; set; }

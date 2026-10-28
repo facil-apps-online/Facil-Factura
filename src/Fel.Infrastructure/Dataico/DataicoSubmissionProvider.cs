@@ -286,10 +286,11 @@ namespace Fel.Infrastructure.Dataico
             {
                 var leyenda = await _legendService.ResolveAsync(client, resolution, invoice.TypeCode);
                 var currencyWords = await CurrencyWords.LoadAsync(_dbContext);
+                var retentionNames = await RetentionShortNameCatalog.LoadAsync(_dbContext);
                 var location = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
                 warning = await _customPdfService.TrySendCustomPdfAsync(
                     invoice, customer?.Email, client,
-                    template => InvoiceReportDataMapper.Build(invoice, customer, client, location, resolution, items.ToList(), originalInvoiceForPdf, template.MostrarRetenciones, leyenda: leyenda, currencyWords: currencyWords),
+                    template => InvoiceReportDataMapper.Build(invoice, customer, client, location, resolution, items.ToList(), originalInvoiceForPdf, template.MostrarRetenciones, leyenda: leyenda, currencyWords: currencyWords, retentionShortNames: retentionNames),
                     credentials);
             }
 

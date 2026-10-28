@@ -445,7 +445,7 @@ namespace Fel.Api.Client.Controllers
 
                 var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
                 var previewLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
-                var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, previewLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext));
+                var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, previewLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext), retentionShortNames: await RetentionShortNameCatalog.LoadAsync(_dbContext));
                 if (await InvoiceAnnulment.IsAnnulledAsync(_dbContext, invoice)) data[InvoiceAnnulment.WatermarkKey] = InvoiceAnnulment.WatermarkText;
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
@@ -1067,12 +1067,13 @@ namespace Fel.Api.Client.Controllers
 
                     var (resendPaymentMeansCatalog, resendFormaPagoCatalog) = await GetPaymentCatalogsAsync();
                     var resendCurrencyWords = await CurrencyWords.LoadAsync(_dbContext);
+                    var resendRetentionNames = await RetentionShortNameCatalog.LoadAsync(_dbContext);
                     var resendLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
                     var leyenda = await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode);
                     var resendAnnulled = await InvoiceAnnulment.IsAnnulledAsync(_dbContext, invoice);
                     Dictionary<string, object?> BuildReportData(DocumentTemplate template)
                     {
-                        var reportData = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, resendLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, resendPaymentMeansCatalog, resendFormaPagoCatalog, leyenda, currencyWords: resendCurrencyWords);
+                        var reportData = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, resendLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, resendPaymentMeansCatalog, resendFormaPagoCatalog, leyenda, currencyWords: resendCurrencyWords, retentionShortNames: resendRetentionNames);
                         if (resendAnnulled) reportData[InvoiceAnnulment.WatermarkKey] = InvoiceAnnulment.WatermarkText;
                         return reportData;
                     }
@@ -1150,7 +1151,7 @@ namespace Fel.Api.Client.Controllers
 
                     var (publishPaymentMeansCatalog, publishFormaPagoCatalog) = await GetPaymentCatalogsAsync();
                     var publishLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
-                    var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, publishLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, publishPaymentMeansCatalog, publishFormaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext));
+                    var data = InvoiceReportDataMapper.Build(invoice, invoice.Customer, client, publishLocation, invoice.Resolution, invoice.Items.ToList(), originalDocument, template.MostrarRetenciones, publishPaymentMeansCatalog, publishFormaPagoCatalog, await _legendService.ResolveAsync(client, invoice.Resolution, invoice.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext), retentionShortNames: await RetentionShortNameCatalog.LoadAsync(_dbContext));
                     if (await InvoiceAnnulment.IsAnnulledAsync(_dbContext, invoice)) data[InvoiceAnnulment.WatermarkKey] = InvoiceAnnulment.WatermarkText;
                     var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                     if (pdfBytes == null)

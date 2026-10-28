@@ -5,6 +5,7 @@ import { api, getErrorMessage } from '../lib/api';
 import { Button } from '../components/ui/button';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { useSession } from '../context/SessionContext';
+import { DEFAULT_RETENTION_STYLES, type RetentionLabelStyle } from '../lib/retentionLabel';
 
 interface CatalogItem { id: string; category: string; name: string }
 interface DocumentTypeOption { id: string; name: string }
@@ -31,11 +32,18 @@ const EMPTY: DefaultsForm = { documentTypeId: '', paymentMeans: '', paymentMeans
   customerRegimen: '', customerTaxLevelCode: '', customerCountryCode: '' };
 const NOTES_MAX = 500;
 
+const RETENTION_STYLE_OPTIONS = [
+  { value: 'Short', label: 'Nombre corto (RETE FUENTE 2.5%)' },
+  { value: 'Full', label: 'Nombre completo del concepto' }
+];
+
 const labelClass = 'block text-sm font-bold text-slate-700 mb-2';
 
 // Valores con los que arranca "Nueva factura". Vacío = sin valor por defecto. El usuario puede cambiarlos en cada factura.
 export default function InvoiceDefaultsSettings() {
-  const { features } = useSession();
+  const { features, setRetentionLabelStyles } = useSession();
+  // Cómo se ven las retenciones en los selectores de los formularios: las de cada línea y las del pie, por separado.
+  const [retentionStyles, setRetentionStyles] = useState<{ line: RetentionLabelStyle; footer: RetentionLabelStyle }>(features.retentionLabelStyles ?? DEFAULT_RETENTION_STYLES);
   const [form, setForm] = useState<DefaultsForm>(EMPTY);
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeOption[]>([]);
   const [paymentMeans, setPaymentMeans] = useState<CatalogItem[]>([]);
@@ -131,6 +139,8 @@ export default function InvoiceDefaultsSettings() {
         customerPostalCode: form.customerPostalCode.trim() || null,
         customerPhone: form.customerPhone.trim() || null,
       });
+      const styles = await api.put('/client/retention-concepts/label-style', retentionStyles);
+      setRetentionLabelStyles(styles.data);
       toast.success('Valores por defecto guardados');
     } catch (err) {
       toast.error(getErrorMessage(err, 'No se pudieron guardar los valores por defecto'));
@@ -307,6 +317,33 @@ export default function InvoiceDefaultsSettings() {
                 <label className={labelClass}>Teléfono</label>
                 <input type="text" value={form.customerPhone} maxLength={50} onChange={e => setForm({ ...form, customerPhone: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="md:col-span-2 xl:col-span-3 border-t border-slate-100 pt-5">
+          <h2 className="text-lg font-extrabold text-slate-800">Retenciones en los formularios</h2>
+          <p className="mb-4 mt-1 text-sm text-slate-500">Cómo se ven las retenciones al elegirlas: con el nombre corto y la tarifa (RETE FUENTE 2.5%) o con el nombre completo del concepto. Se configura por separado para las retenciones de cada línea y para las del pie del documento.</p>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <label className={labelClass}>Retenciones de cada línea</label>
+              <SearchableSelect
+                value={retentionStyles.line}
+                onChange={v => setRetentionStyles({ ...retentionStyles, line: (v || 'Short') as RetentionLabelStyle })}
+                options={RETENTION_STYLE_OPTIONS}
+                placeholder="Estilo"
+                inputClassName="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Retenciones del pie</label>
+              <SearchableSelect
+                value={retentionStyles.footer}
+                onChange={v => setRetentionStyles({ ...retentionStyles, footer: (v || 'Short') as RetentionLabelStyle })}
+                options={RETENTION_STYLE_OPTIONS}
+                placeholder="Estilo"
+                inputClassName="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500"
+              />
             </div>
           </div>
         </div>

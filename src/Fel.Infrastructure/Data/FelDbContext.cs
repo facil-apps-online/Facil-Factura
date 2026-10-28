@@ -51,6 +51,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<DocumentGeneralRetention> DocumentGeneralRetentions => Set<DocumentGeneralRetention>();
         public DbSet<DocumentObservation> DocumentObservations => Set<DocumentObservation>();
         public DbSet<DocumentAttachment> DocumentAttachments => Set<DocumentAttachment>();
+        public DbSet<RetentionShortName> RetentionShortNames => Set<RetentionShortName>();
         public DbSet<TenantUserPricing> TenantUserPricings => Set<TenantUserPricing>();
         public DbSet<PrepaidPackage> PrepaidPackages => Set<PrepaidPackage>();
         public DbSet<TenantPrepaidBag> TenantPrepaidBags => Set<TenantPrepaidBag>();
@@ -134,6 +135,9 @@ namespace Fel.Infrastructure.Data
                 entity.ToTable("Clients");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.CompanyName).IsRequired().HasMaxLength(150);
+                // Los clientes que ya existían quedan con el nombre corto, el predeterminado.
+                entity.Property(e => e.LineRetentionLabelStyle).IsRequired().HasMaxLength(10).HasDefaultValue(Fel.Core.Models.RetentionLabelStyle.Short);
+                entity.Property(e => e.FooterRetentionLabelStyle).IsRequired().HasMaxLength(10).HasDefaultValue(Fel.Core.Models.RetentionLabelStyle.Short);
                 entity.Property(e => e.TaxId).IsRequired().HasMaxLength(50);
                 entity.Property(e => e.BlockReason).HasMaxLength(500);
                 entity.Property(e => e.BlockedBy).HasMaxLength(200);
@@ -655,6 +659,19 @@ namespace Fel.Infrastructure.Data
                       .WithMany(d => d.Observations)
                       .HasForeignKey(e => e.DocumentId)
                       .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<RetentionShortName>(entity =>
+            {
+                entity.ToTable("RetentionShortNames");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.TaxCategory).IsRequired().HasMaxLength(30);
+                entity.Property(e => e.ShortName).IsRequired().HasMaxLength(RetentionShortName.MaxLength);
+                entity.HasIndex(e => e.TaxCategory).IsUnique();
+                entity.HasData(
+                    new RetentionShortName { Id = new Guid("5c1f0001-0000-4000-8000-000000000001"), TaxCategory = "RET_FUENTE", ShortName = "RETE FUENTE" },
+                    new RetentionShortName { Id = new Guid("5c1f0001-0000-4000-8000-000000000002"), TaxCategory = "RET_ICA", ShortName = "RETE ICA" },
+                    new RetentionShortName { Id = new Guid("5c1f0001-0000-4000-8000-000000000003"), TaxCategory = "RET_IVA", ShortName = "RETE IVA" });
             });
 
             modelBuilder.Entity<DocumentAttachment>(entity =>

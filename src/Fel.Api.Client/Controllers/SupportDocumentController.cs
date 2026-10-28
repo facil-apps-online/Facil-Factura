@@ -205,7 +205,7 @@ namespace Fel.Api.Client.Controllers
                 }
 
                 var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
-                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId), document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext), documentTypeTitle: document.DocumentType?.ReportTitle, originalDocument: await LoadAdjustedDocumentAsync(document));
+                var data = SupportDocumentReportDataMapper.Build(document, document.Customer, client, await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId), document.Resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, await _legendService.ResolveAsync(client, document.Resolution, document.TypeCode), currencyWords: await CurrencyWords.LoadAsync(_dbContext), documentTypeTitle: document.DocumentType?.ReportTitle, originalDocument: await LoadAdjustedDocumentAsync(document), retentionShortNames: await RetentionShortNameCatalog.LoadAsync(_dbContext));
                 var pdfBytes = await _facilReportsClient.GenerateReportAsync(template.RepxTemplateKey, data);
                 if (pdfBytes == null)
                 {
@@ -466,11 +466,12 @@ namespace Fel.Api.Client.Controllers
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
                     var pdfCurrencyWords = await CurrencyWords.LoadAsync(_dbContext);
+                    var pdfRetentionNames = await RetentionShortNameCatalog.LoadAsync(_dbContext);
                     var leyenda = await _legendService.ResolveAsync(client, resolution, document.TypeCode);
                     var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
-                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: pdfCurrencyWords, documentTypeTitle: document.DocumentType?.ReportTitle, originalDocument: adjustedDocument),
+                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: pdfCurrencyWords, documentTypeTitle: document.DocumentType?.ReportTitle, originalDocument: adjustedDocument, retentionShortNames: pdfRetentionNames),
                         credentials);
                 }
 

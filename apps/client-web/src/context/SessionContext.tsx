@@ -35,7 +35,8 @@ interface SessionData {
   // tenantOwner: esta empresa es la propietaria de su tenant (la que factura a los demás): puede sincronizar los clientes del tenant como terceros.
   // dataico: la empresa emite con Dataico, así que puede consultar una factura en Dataico por su número.
   // roundingAdjustment: ajuste de centavos de las facturas (None, Peso, Decena o Centena).
-  features: { payments: boolean; foreignCurrency: boolean; roundingAdjustment?: string; dianLookup: boolean; tenantOwner: boolean; dataico: boolean };
+  // retentionLabelStyles: cómo se ven las retenciones en los selectores (Short = nombre corto, Full = completo), las de cada línea y las del pie.
+  features: { payments: boolean; foreignCurrency: boolean; roundingAdjustment?: string; retentionLabelStyles?: { line: 'Full' | 'Short'; footer: 'Full' | 'Short' }; dianLookup: boolean; tenantOwner: boolean; dataico: boolean };
   roles: CatalogItem[];
   noteKinds: CatalogItem[];
 }
@@ -45,6 +46,8 @@ interface SessionContextValue extends SessionData {
   selectedBranchId: string;
   selectBranch: (id: string) => void;
   hasMultipleBranches: boolean;
+  // Refleja en la sesión el estilo de las retenciones que el administrador acaba de guardar, sin recargar el portal.
+  setRetentionLabelStyles: (styles: { line: 'Full' | 'Short'; footer: 'Full' | 'Short' }) => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -78,9 +81,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSelected(id);
   }, []);
 
+  const setRetentionLabelStyles = useCallback((styles: { line: 'Full' | 'Short'; footer: 'Full' | 'Short' }) => {
+    setData(prev => (prev ? { ...prev, features: { ...prev.features, retentionLabelStyles: styles } } : prev));
+  }, []);
+
   const value = useMemo<SessionContextValue | null>(
-    () => (data ? { ...data, selectedBranchId: selected, selectBranch, hasMultipleBranches: data.branches.length > 1 } : null),
-    [data, selected, selectBranch],
+    () => (data ? { ...data, selectedBranchId: selected, selectBranch, hasMultipleBranches: data.branches.length > 1, setRetentionLabelStyles } : null),
+    [data, selected, selectBranch, setRetentionLabelStyles],
   );
 
   if (failed) {

@@ -18,7 +18,7 @@ const initialNewClient = {
   legalRepresentativeDocumentType: '', legalRepresentativeDocumentNumber: '', legalRepresentativeDocumentCountryCode: 'CO', legalRepresentativeEmail: '',
   legalRepresentativeRepresentationCode: '', legalRepresentativeStartDate: null as string | null,
   taxRegime: '', economicActivity: '', associateId: '' as string | null,
-  isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false, incomeTaxRegime: '', foreignCurrencyEnabled: false, roundingAdjustment: 'None', decimalSeparator: '.',
+  isGranContribuyente: false, isAgenteRetenedorIva: false, isAutorretenedorRenta: false, incomeTaxRegime: '', foreignCurrencyEnabled: false, roundingAdjustment: 'None', lineRetentionLabelStyle: 'Short', footerRetentionLabelStyle: 'Short', decimalSeparator: '.',
   latitude: null as number | null, longitude: null as number | null,
   // "Native" o "Dataico"; vacío = el de por defecto (cuando el tenant tiene un solo proveedor habilitado no hay nada que elegir).
   documentProvider: '' as string

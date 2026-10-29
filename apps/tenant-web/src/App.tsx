@@ -110,11 +110,22 @@ function TenantSwitcher({ currentTenantId, currentName }: { currentTenantId: str
   );
 }
 
+// Los miembros de un grupo que no son su cuenta principal no ven Asociados, Aliados ni Facturación del grupo. null = aún no se sabe.
+const GroupMenusContext = React.createContext<boolean | null>(null);
+
+function GroupOnly({ children }: { children: React.ReactElement }) {
+  const hidden = React.useContext(GroupMenusContext);
+  if (hidden === null) return null;
+  return hidden ? <Navigate to="/" replace /> : children;
+}
+
 function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBranding: TenantBranding | null, collapsed: boolean, onToggleCollapsed: () => void }) {
+  const hideGroupMenus = React.useContext(GroupMenusContext) !== false;
   const location = useLocation();
   const tenantName = tenantBranding?.commercialName || 'Tenant';
 
-  const links = [
+  const groupPaths = ['/associates', '/group-billing', '/allies'];
+  const allLinks = [
     { to: "/", icon: <Home size={20} />, label: "Dashboard" },
     { to: "/clients", icon: <Users size={20} />, label: "Clientes" },
     { to: "/associates", icon: <Briefcase size={20} />, label: "Asociados" },
@@ -126,6 +137,7 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
     { to: "/templates", icon: <FileText size={20} />, label: "Modelos de Documentos" },
     { to: "/developers", icon: <Code2 size={20} />, label: "Desarrolladores" },
   ];
+  const links = allLinks.filter(l => !groupPaths.includes(l.to) || !hideGroupMenus);
 
   const selfBillingLinks = [
     { to: "/resolutions", icon: <FileSignature size={20} />, label: "Mis Resoluciones" },
@@ -236,6 +248,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   // Suspensión de la plataforma (p. ej. por mora): el portal funciona en solo lectura y se avisa con una barra fija.
   const [readOnly, setReadOnly] = useState<{ reason: string | null } | null>(null);
+  const [hideGroupMenus, setHideGroupMenus] = useState<boolean | null>(null);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('fel_tenant_sidebar_collapsed') === '1');
 
   const toggleCollapsed = () => {
@@ -258,13 +271,17 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       });
     }).catch(err => console.error("No se pudo cargar el branding", err));
 
-    api.get('/tenant/auth/block-status').then(res => setReadOnly(res.data.readOnly ? { reason: res.data.reason ?? null } : null)).catch(() => {});
+    api.get('/tenant/auth/block-status').then(res => {
+      setReadOnly(res.data.readOnly ? { reason: res.data.reason ?? null } : null);
+      setHideGroupMenus(!!res.data.hideGroupMenus);
+    }).catch(() => {});
 
     const name = localStorage.getItem('fel_tenant_name') || 'Tenant';
     setTenantName(name);
   }, []);
 
   return (
+    <GroupMenusContext.Provider value={hideGroupMenus}>
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
       <Sidebar tenantBranding={tenantBranding} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
       <main className="flex-1 flex flex-col min-w-0 relative z-10">
@@ -291,6 +308,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         </div>
       </main>
     </div>
+    </GroupMenusContext.Provider>
   );
 }
 
@@ -318,9 +336,9 @@ function App() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/clients" element={<Clients />} />
                   <Route path="/clients/edit/:id" element={<ClientEdit />} />
-                  <Route path="/associates" element={<Associates />} />
-                  <Route path="/group-billing" element={<GroupBilling />} />
-                  <Route path="/allies" element={<Allies />} />
+                  <Route path="/associates" element={<GroupOnly><Associates /></GroupOnly>} />
+                  <Route path="/group-billing" element={<GroupOnly><GroupBilling /></GroupOnly>} />
+                  <Route path="/allies" element={<GroupOnly><Allies /></GroupOnly>} />
                   <Route path="/plans" element={<Plans />} />
                   <Route path="/charges" element={<Charges />} />
                   <Route path="/certificates" element={<Certificates />} />

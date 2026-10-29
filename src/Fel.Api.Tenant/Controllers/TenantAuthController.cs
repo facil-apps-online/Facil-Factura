@@ -35,7 +35,12 @@ namespace Fel.Api.Tenant.Controllers
         {
             if (!Guid.TryParse(User.FindFirst("TenantId")?.Value, out var tenantId)) return Unauthorized();
             var block = await Fel.Infrastructure.Security.TenantBlocks.GetAsync(_dbContext, tenantId);
-            return Ok(new { readOnly = block.Level == Fel.Infrastructure.Security.TenantBlockLevel.ReadOnly, reason = block.Reason });
+            // Un miembro de un grupo que no es su cuenta principal (tiene padre y no tiene aliados propios) no ve Asociados, Aliados ni Facturación del grupo.
+            var hideGroupMenus = await _dbContext.Tenants.AsNoTracking()
+                .Where(t => t.Id == tenantId)
+                .Select(t => t.ParentTenantId != null && !t.ChildTenants.Any())
+                .FirstOrDefaultAsync();
+            return Ok(new { readOnly = block.Level == Fel.Infrastructure.Security.TenantBlockLevel.ReadOnly, reason = block.Reason, hideGroupMenus });
         }
 
         private static string BlockedMessage(string? reason) =>

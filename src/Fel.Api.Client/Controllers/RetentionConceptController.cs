@@ -11,12 +11,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Client.Controllers
 {
-    // Lectura del catálogo de conceptos de retención (RetefUENTE/ReteIVA), administrado por
-    // Superadmin, filtrado a lo que el Tenant habilitó para ESTE Client (ver
-    // ClientEnabledRetentionConcept) — antes se ofrecía el catálogo completo (42 variantes,
-    // incluida ReteIVA) a cualquier Client. El formulario de factura lo usa para que el cliente
-    // elija manualmente, por línea, cuál retención aplica (no hay resolución automática por tipo
-    // de persona ni mínimo en UVT).
+    // Lectura del catálogo de conceptos de retención administrado por Superadmin. El formulario de
+    // los documentos lo usa para que el cliente elija manualmente, por línea, cuál retención aplica
+    // (no hay resolución automática por tipo de persona ni mínimo en UVT); se ofrece solo la
+    // categoría "Retenciones Generales", igual para todos los clientes.
     [ApiController]
     [Route("api/client/retention-concepts")]
     public class RetentionConceptController : ClientPortalControllerBase
@@ -28,23 +26,20 @@ namespace Fel.Api.Client.Controllers
             _dbContext = dbContext;
         }
 
-        // Solo las variantes habilitadas para este Client, para que el cliente elija manualmente
-        // por línea de factura cuál retención aplica — sin ninguna resolución automática (ver
-        // InvoicesPage.tsx).
+        // Categoría del catálogo que se ofrece en las líneas de los documentos: la misma para todos los clientes, de menor a mayor tarifa.
+        private const string LineRetentionGroupLabel = "Retenciones Generales";
+
+        // Las retenciones que el cliente elige manualmente por línea de documento — sin ninguna resolución automática (ver
+        // DocumentsPage.tsx). Son las activas de "Retenciones Generales", iguales para todos los clientes: ya no se filtra por lo
+        // que el tenant habilitó (ClientEnabledRetentionConcept), y el alcance (factura o documento soporte) no cambia la lista.
         [HttpGet("catalog")]
         public async Task<IActionResult> GetCatalog([FromQuery] ProductScope scope = ProductScope.Invoice)
         {
-            var clientId = GetCurrentClientId();
-
-            var enabledIds = await _dbContext.ClientEnabledRetentionConcepts
-                .Where(e => e.ClientId == clientId)
-                .Where(e => e.Scope == scope)
-                .Select(e => e.RetentionConceptId)
-                .ToListAsync();
+            GetCurrentClientId();
 
             var concepts = await _dbContext.RetentionConcepts
-                .Where(c => c.IsActive && enabledIds.Contains(c.Id))
-                .OrderBy(c => c.GroupLabel).ThenBy(c => c.Name)
+                .Where(c => c.IsActive && c.GroupLabel == LineRetentionGroupLabel)
+                .OrderBy(c => c.Rate).ThenBy(c => c.Name)
                 .Select(c => new
                 {
                     c.Id,

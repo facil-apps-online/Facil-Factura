@@ -23,12 +23,46 @@ namespace Fel.Api.Client.Controllers
         // un DRAFT nunca se envió, y un REJECTED fue rechazado por Dataico, así que tampoco llegó.
         private static bool IsEditable(string status) => status == "DRAFT" || status == "REJECTED";
 
-        // La fecha de emisión se maneja en hora de Colombia y, igual que en facturas, no puede ser
-        // anterior a hoy (de hoy en adelante). Sin fecha en el request se usa la de hoy.
+        // Documento Soporte permite fechas anteriores, pero solo dentro de la vigencia de su resolución
+        // y nunca posteriores al día actual. Las Notas de Ajuste agregan el límite del documento original.
         private static string? ValidateIssueDate(DateTime? issueDate) =>
-            issueDate.HasValue && issueDate.Value.Date < Fel.Core.Models.ColombiaTime.Today
-                ? "La fecha de emisión no puede ser anterior a hoy."
+            !issueDate.HasValue
+                ? "Debes indicar la fecha de emisión."
                 : null;
+
+        private async Task<string?> ValidateSupportDatesAsync(
+            Guid clientId, Guid branchId, Guid? resolutionId, DateTime? issueDate,
+            Guid? referenceDocumentId, bool requireCurrentResolution)
+        {
+            var dateError = ValidateIssueDate(issueDate);
+            if (dateError != null) return dateError;
+            if (!resolutionId.HasValue) return "Debes seleccionar la resolución de documento soporte.";
+
+            var resolution = await _dbContext.Resolutions.ForBranch(_dbContext, branchId)
+                .FirstOrDefaultAsync(r => r.Id == resolutionId.Value && r.ClientId == clientId && r.IsActive && (r.DocumentType == TypeCode || r.DocumentType == "POS"));
+            if (resolution == null) return "La resolución seleccionada no es válida para este documento soporte o esta sucursal.";
+
+            var today = Fel.Core.Models.ColombiaTime.Today;
+            var minimumDate = resolution.ValidFrom.Date;
+            if (referenceDocumentId.HasValue)
+            {
+                var original = await BranchDocuments
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(d => d.Id == referenceDocumentId.Value && d.ClientId == clientId && d.BranchId == branchId && d.TypeCode == TypeCode);
+                if (original == null) return "El documento soporte original no existe o no pertenece a esta sucursal.";
+                if (original.IssueDate.Date > minimumDate) minimumDate = original.IssueDate.Date;
+            }
+
+            if (issueDate!.Value.Date < minimumDate || issueDate.Value.Date > today)
+                return referenceDocumentId.HasValue
+                    ? "La fecha de la nota debe estar entre la fecha del documento soporte original y hoy, dentro de la vigencia de la resolución."
+                    : "La fecha del documento debe estar dentro de la vigencia de la resolución y no puede ser futura.";
+            if (issueDate.Value.Date > resolution.ValidTo.Date)
+                return "La fecha del documento está fuera de la vigencia de la resolución.";
+            if (requireCurrentResolution && (today < resolution.ValidFrom.Date || today > resolution.ValidTo.Date))
+                return "La resolución está vencida o todavía no está vigente; no se puede emitir este documento.";
+            return null;
+        }
 
         // Antes de usar el consecutivo de la resolución, el borrador se numeraba con DateTime.Ticks
         // (18 dígitos). Esos borradores/rechazados viejos se renumeran al publicar.
@@ -235,7 +269,9 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Debes agregar al menos un ítem.");
                 }
 
-                var dateError = ValidateIssueDate(request.IssueDate);
+                var dateError = await ValidateSupportDatesAsync(
+                    clientId, GetCurrentBranchId(), request.ResolutionId, request.IssueDate,
+                    request.ReferenceDocumentId, requireCurrentResolution: false);
                 if (dateError != null) return BadRequest(dateError);
 
                 var document = BuildDocument(clientId, GetCurrentBranchId(), provider.Id, request);
@@ -274,7 +310,9 @@ namespace Fel.Api.Client.Controllers
                 var provider = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == request.CustomerId && c.ClientId == clientId);
                 if (provider == null) return BadRequest("El proveedor/tercero seleccionado no existe.");
 
-                var dateError = ValidateIssueDate(request.IssueDate);
+                var dateError = await ValidateSupportDatesAsync(
+                    clientId, GetCurrentBranchId(), request.ResolutionId, request.IssueDate,
+                    request.ReferenceDocumentId, requireCurrentResolution: false);
                 if (dateError != null) return BadRequest(dateError);
 
                 var updated = BuildDocument(clientId, GetCurrentBranchId(), provider.Id, request);
@@ -385,6 +423,11 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("No hay una resolución de documento soporte activa registrada para este emisor.");
                 }
 
+                var publicationDateError = await ValidateSupportDatesAsync(
+                    clientId, document.BranchId, resolution.Id, document.IssueDate,
+                    document.ReferenceDocumentId, requireCurrentResolution: true);
+                if (publicationDateError != null) return BadRequest(publicationDateError);
+
                 if (string.IsNullOrWhiteSpace(document.PaymentMeansType))
                 {
                     return BadRequest("Debes indicar la forma de pago (Contado/Crédito).");
@@ -422,10 +465,6 @@ namespace Fel.Api.Client.Controllers
                 document.Prefix = document.TypeCode == AdjustmentTypeCode
                     ? (await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, clientId, document.BranchId, NoteKind.SupportAdjustment) ?? document.Prefix ?? resolution.Prefix)
                     : resolution.Prefix;
-
-                // Como en las facturas: la DIAN exige que la fecha de emisión sea la de la firma (FAD09e), así que el documento se emite con la fecha de hoy
-                // aunque el borrador sea de días atrás o sea un rechazado que se reintenta.
-                document.IssueDate = Fel.Core.Models.ColombiaTime.Now;
 
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
                 Document? adjustedDocument = null;

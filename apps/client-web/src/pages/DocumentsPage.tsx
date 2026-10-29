@@ -324,6 +324,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     taxAmount: 0,
     totalAmount: 0,
     referenceDocumentId: null as string | null,
+    referenceDocumentIssueDate: '',
     referenceConcept: '',
     discrepancyResponseCode: '',
     // Numeración de notas elegida (vacío = la predeterminada del cliente).
@@ -604,6 +605,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       const res = await api.get(`${cfg.api}/${invoice.id}`);
       const full = res.data;
       await ensureProducts(full.items.map((i: any) => i.productId));
+      const referenceDocumentIssueDate = full.referenceDocumentId
+        ? String((await api.get(`${cfg.api}/${full.referenceDocumentId}`)).data.issueDate || '').slice(0, 10)
+        : '';
       setEditingId(full.id);
       setPaymentTermCustom(full.paymentTermDays != null && !paymentTermCatalog.some(c => c.category === String(full.paymentTermDays)));
       setFormData({
@@ -668,6 +672,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         taxAmount: full.taxAmount,
         totalAmount: full.totalAmount,
         referenceDocumentId: full.referenceDocumentId,
+        referenceDocumentIssueDate,
         referenceConcept: full.referenceConcept || '',
         discrepancyResponseCode: full.discrepancyResponseCode || '', noteNumberingId: full.noteNumberingId || '',
         aiu: parseAiu(full.sectorExtensionData),
@@ -844,6 +849,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         resolutionId: full.resolutionId || '',
         notes: full.notes || '',
         referenceDocumentId: full.id,
+         referenceDocumentIssueDate: full.issueDate ? String(full.issueDate).slice(0, 10) : '',
         referenceConcept: 'Ajuste de precio',
         paymentMeans: full.paymentMeans || '',
         paymentMeansType: full.paymentMeansType || '',
@@ -1341,14 +1347,27 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       return;
     }
     // Hora de Colombia: la fecha de emisión no puede ser anterior a hoy (de hoy en adelante).
-    if (formData.issueDate && formData.issueDate < todayColombia()) {
+    if (isSupport) {
+      if (!selectedSupportResolution) {
+        toast.error(cfg.missingResolution);
+        return;
+      }
+      const minDate = supportNoteIssueDateMin;
+      const maxDate = supportIssueDateMax!;
+      if ((minDate && formData.issueDate < minDate) || formData.issueDate > maxDate) {
+        toast.error(formData.referenceDocumentId
+          ? 'La fecha de la nota debe estar entre la fecha del documento original y hoy, dentro de la vigencia de la resolución.'
+          : 'La fecha debe estar dentro de la vigencia de la resolución y no puede ser futura.');
+        return;
+      }
+    } else if (formData.issueDate && formData.issueDate < todayColombia()) {
       toast.error('La fecha de emisión no puede ser anterior a hoy.');
       return;
     }
 
     setSavingDraft(true);
     try {
-      const { aiu: aiuParams, observations, ...formRest } = formData;
+       const { aiu: aiuParams, observations, referenceDocumentIssueDate: _referenceDocumentIssueDate, ...formRest } = formData;
       const payload = {
         ...formRest,
         // "" no es un Guid? válido para el servidor: sin elegir, la nota usa la numeración predeterminada.
@@ -1438,6 +1457,16 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   // Nota crédito sin factura de referencia: el tipo es "Nota crédito" y no hay documento original.
   const isUnreferencedNote = !isSupport && (selectedDocType?.typeCode === 'NC' || selectedDocType?.typeCode === 'ND') && !formData.referenceDocumentId;
   const isNote = !!formData.referenceDocumentId || isUnreferencedNote;
+  const selectedSupportResolution = isSupport
+    ? resolutions.find(r => r.id === formData.resolutionId && (r.documentType === 'DS' || r.documentType === 'POS'))
+    : null;
+  const supportIssueDateMin = isSupport && selectedSupportResolution?.validFrom
+    ? String(selectedSupportResolution.validFrom).slice(0, 10)
+    : undefined;
+  const supportIssueDateMax = isSupport ? todayColombia() : undefined;
+  const supportNoteIssueDateMin = isSupport && formData.referenceDocumentId && formData.referenceDocumentIssueDate
+    ? [supportIssueDateMin, formData.referenceDocumentIssueDate].filter(Boolean).sort().slice(-1)[0]
+    : supportIssueDateMin;
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
@@ -1654,7 +1683,17 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 <label className="block text-sm font-bold text-slate-700 mb-2">Resolución</label>
                 <SearchableSelect
                   value={formData.resolutionId}
-                  onChange={v => setFormData({ ...formData, resolutionId: v })}
+                   onChange={v => {
+                     const nextResolution = resolutions.find(r => r.id === v);
+                     const nextMin = nextResolution?.validFrom ? String(nextResolution.validFrom).slice(0, 10) : '';
+                     const noteMin = formData.referenceDocumentId && formData.referenceDocumentIssueDate
+                       ? [nextMin, formData.referenceDocumentIssueDate].filter(Boolean).sort().slice(-1)[0] || ''
+                       : nextMin;
+                     const nextDate = noteMin && formData.issueDate < noteMin
+                       ? noteMin
+                       : formData.issueDate > todayColombia() ? todayColombia() : formData.issueDate;
+                     setFormData({ ...formData, resolutionId: v, issueDate: nextDate });
+                   }}
                   placeholder="Buscar resolución por prefijo o número..."
                options={resolutions.filter(r => isSupport ? r.documentType === 'DS' : r.documentType === 'FE').map(r => ({
                     value: r.id,
@@ -1698,7 +1737,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                 <label className="block text-sm font-bold text-slate-700 mb-2">Fecha de emisión</label>
                 <input
                   type="date"
-                  min={todayColombia()}
+                  min={isSupport ? supportNoteIssueDateMin : todayColombia()}
+                  max={isSupport ? supportIssueDateMax : undefined}
                   value={formData.issueDate}
                   onChange={e => setFormData({ ...formData, issueDate: e.target.value })}
                   className="w-full px-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary outline-none"

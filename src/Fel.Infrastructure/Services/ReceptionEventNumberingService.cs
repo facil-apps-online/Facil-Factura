@@ -54,10 +54,11 @@ namespace Fel.Infrastructure.Services
             return row.NextNumber;
         }
 
-        public static Task<int> AdvanceIfCurrentAsync(FelDbContext db, Guid clientId, long number) =>
+        // Deja el siguiente después de un número que ya quedó usado (no retrocede si la numeración ya va más adelante).
+        public static Task<int> AdvancePastAsync(FelDbContext db, Guid clientId, long number) =>
             db.ReceptionEventNumberings
-                .Where(x => x.ClientId == clientId && x.NextNumber == number)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.NextNumber, x => x.NextNumber + 1L));
+                .Where(x => x.ClientId == clientId && x.NextNumber <= number)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.NextNumber, number + 1L));
 
         public static Task<int> MoveBackIfAheadAsync(FelDbContext db, Guid clientId, long number) =>
             db.ReceptionEventNumberings

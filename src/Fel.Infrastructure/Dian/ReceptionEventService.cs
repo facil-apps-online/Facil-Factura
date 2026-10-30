@@ -80,6 +80,22 @@ namespace Fel.Infrastructure.Dian
             if (existing?.Status == "DUPLICATE")
                 return existing;
 
+            // Un evento fuera de orden lo rechaza la DIAN, pero Dataico lo deja registrado como el evento de esa compra y ya no deja
+            // reenviarlo. Por eso se valida antes de llamar al proveedor; no se guarda ni consume consecutivo.
+            var missing = await MissingPrerequisiteAsync(document.Id, eventCode);
+            if (missing != null)
+            {
+                return new ReceivedDocumentEvent
+                {
+                    Id = Guid.NewGuid(),
+                    ReceivedDocumentId = document.Id,
+                    EventCode = eventCode,
+                    Status = "REJECTED",
+                    SentAt = DateTime.UtcNow,
+                    DianResponseMessage = missing
+                };
+            }
+
             // Con el lock tomado nadie más está enviando este evento: un PENDING es una operación que se
             // cayó antes de recibir respuesta (el consecutivo no alcanzó a guardarse). Se cierra y se
             // intenta de nuevo; si Dataico ya lo había registrado, responderá que el evento ya existe.
@@ -184,10 +200,48 @@ namespace Fel.Infrastructure.Dian
             foreach (var code in new[] { (events.AcuseRecibo, "030"), (events.ReciboBien, "032"), (events.Aceptacion, "033"), (events.Reclamo, "031") })
             {
                 if (!code.Item1) continue;
-                await TriggerEventAsync(document, client, code.Item2);
+                var result = await TriggerEventAsync(document, client, code.Item2);
+                // Como el legacy: si un evento no queda registrado, los siguientes no se envían (dependen de él).
+                if (result.Status is not ("SENT" or "DUPLICATE")) break;
                 // Dataico rechaza peticiones paralelas o muy seguidas ("Demasiadas peticiones paralelas"): una pausa entre eventos, como el legacy.
                 if (viaDataico) await Task.Delay(1200);
             }
+        }
+
+        private static string EventName(string eventCode) => eventCode switch
+        {
+            "030" => "acuse de recibo (030)",
+            "031" => "reclamo (031)",
+            "032" => "recibo del bien o servicio (032)",
+            "033" => "aceptación expresa (033)",
+            _ => eventCode
+        };
+
+        // Orden que exige la DIAN: el recibo del bien (032) después del acuse (030); la aceptación expresa (033) y el reclamo (031)
+        // después de ambos, y son excluyentes entre sí. Un DUPLICATE cuenta como hecho: Dataico ya tiene ese evento para la compra.
+        private async Task<string?> MissingPrerequisiteAsync(Guid documentId, string eventCode)
+        {
+            var done = await _dbContext.ReceivedDocumentEvents
+                .Where(e => e.ReceivedDocumentId == documentId && (e.Status == "SENT" || e.Status == "DUPLICATE"))
+                .Select(e => e.EventCode)
+                .Distinct()
+                .ToListAsync();
+
+            string[] required = eventCode switch
+            {
+                "032" => new[] { "030" },
+                "031" or "033" => new[] { "030", "032" },
+                _ => Array.Empty<string>()
+            };
+            var pending = required.FirstOrDefault(code => !done.Contains(code));
+            if (pending != null)
+                return $"Primero debe quedar registrado el {EventName(pending)}. No se envió el {EventName(eventCode)} ni se usó consecutivo.";
+
+            var exclusive = eventCode switch { "031" => "033", "033" => "031", _ => null };
+            if (exclusive != null && done.Contains(exclusive))
+                return $"La factura ya tiene {EventName(exclusive)}; no admite también {EventName(eventCode)}.";
+
+            return null;
         }
 
         // Nombre que Dataico usa para cada código de evento.
@@ -408,7 +462,8 @@ namespace Fel.Infrastructure.Dian
             if (result.Success)
             {
                 evt.EventNumber = number;
-                await Fel.Infrastructure.Services.ReceptionEventNumberingService.AdvanceIfCurrentAsync(_dbContext, client.Id, number);
+                // AdvancePast y no "si es el actual": si se saltaron números ocupados en Dataico, el control local también los salta.
+                await Fel.Infrastructure.Services.ReceptionEventNumberingService.AdvancePastAsync(_dbContext, client.Id, number);
                 evt.ProviderUid = result.DataicoDocumentId;
                 evt.Cude = result.Cufe ?? string.Empty;
                 evt.ProviderResponse = result.RawResponse;
@@ -441,16 +496,21 @@ namespace Fel.Infrastructure.Dian
             if (IsEventAlreadyRegistered(result.RawResponse))
             {
                 evt.ProviderResponse = result.RawResponse;
-                return await Finish("DUPLICATE", "Dataico ya tiene registrado este evento para la compra; no se volvió a enviar. No hay comprobante local (CUDE).");
-            }
-
-            if (IsEventNumberTaken(result.RawResponse))
-            {
-                evt.ProviderResponse = result.RawResponse;
-                return await Finish("REJECTED", $"El consecutivo {eventPrefix}{number} ya lo usa otro evento en Dataico; este evento no quedó registrado. Puedes reintentarlo.");
+                return await Finish("DUPLICATE", "Dataico ya tiene un evento de este tipo para la compra y no deja reenviarlo. No hay comprobante local (CUDE): verifica en Dataico si la DIAN lo aceptó.");
             }
 
             var detail = string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.RawResponse : result.ErrorMessage;
+            evt.ProviderResponse = result.RawResponse;
+
+            // Un rechazo de la DIAN también deja el número ocupado en Dataico (queda como DIAN_RECHAZADO), igual que el choque de
+            // consecutivo: se comprueba y, si existe, la numeración local lo salta para no volver a probarlo en el siguiente envío.
+            var occupied = await _dataicoApiService.GetReceptionEventAsync($"{eventPrefix}{number}", credentials);
+            if (occupied.Success)
+                await Fel.Infrastructure.Services.ReceptionEventNumberingService.AdvancePastAsync(_dbContext, client.Id, number);
+
+            if (IsEventNumberTaken(result.RawResponse))
+                return await Finish("REJECTED", $"El consecutivo {eventPrefix}{number} ya lo usa otro evento en Dataico; este evento no quedó registrado. Puedes reintentarlo. Respuesta de Dataico: {detail}");
+
             return await Finish("REJECTED", $"Dataico rechazó el evento ({result.StatusCode}): {detail}");
         }
     }

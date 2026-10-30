@@ -113,7 +113,7 @@ function Sidebar({ onLogout, collapsed, onToggleCollapsed, isDesktop, mobileOpen
     { to: "/invoices", icon: <FileText size={20} />, label: "Mis Facturas" },
     { to: "/support-documents", icon: <Receipt size={20} />, label: "Documentos Soporte" },
     { to: "/payroll", icon: <Banknote size={20} />, label: "Nómina electrónica" },
-    { to: "/received-documents", icon: <Inbox size={20} />, label: "Documentos recibidos", adminOnly: true },
+    { to: "/radian", icon: <Inbox size={20} />, label: "RADIAN", adminOnly: true },
     { to: "/customers", icon: <Users size={20} />, label: "Terceros" },
     { to: "/products", icon: <Package size={20} />, label: "Productos y servicios" },
     { to: "/payments", icon: <CreditCard size={20} />, label: "Pagos", adminOnly: true, feature: "payments" },
@@ -595,7 +595,9 @@ function App() {
                         <Route path="/invoices" element={<InvoicesPage />} />
                         <Route path="/support-documents" element={<SupportDocumentsPage />} />
                         <Route path="/payroll" element={<PayrollPage />} />
-                        <Route path="/received-documents" element={<RequireAdmin><ReceivedDocumentsPage /></RequireAdmin>} />
+                        <Route path="/radian" element={<RequireAdmin><ReceivedDocumentsPage /></RequireAdmin>} />
+                        {/* Ruta anterior: los marcadores y enlaces guardados siguen llegando. */}
+                        <Route path="/received-documents" element={<Navigate to="/radian" replace />} />
                         <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
                         <Route path="/profile" element={<ProfilePage api={api} basePath="/client/auth" tokenKey="fel_client_auth" />} />
                         {/* Rutas ficticias para completar el sidebar */}

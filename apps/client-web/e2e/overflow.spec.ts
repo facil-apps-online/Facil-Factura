@@ -15,7 +15,7 @@ const VIEWPORTS = [
 ];
 
 const PUBLIC_ROUTES = ['/login?tenant=demo', '/forgot-password?tenant=demo', '/reset-password?token=abc'];
-const PORTAL_ROUTES = ['/', '/invoices', '/support-documents', '/payroll', '/received-documents', '/customers', '/products', '/payments', '/resolutions', '/invoice-defaults', '/settings', '/users'];
+const PORTAL_ROUTES = ['/', '/invoices', '/support-documents', '/payroll', '/radian', '/customers', '/products', '/payments', '/resolutions', '/invoice-defaults', '/settings', '/users'];
 
 // Falla si la página (o el contenedor con scroll del shell) es más ancha que la pantalla. El scroll
 // horizontal solo se admite dentro de tablas o del lienzo del diseñador, nunca en la página.

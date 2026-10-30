@@ -45,7 +45,7 @@ test('en documentos recibidos el historial de un evento se pide al abrirlo y tra
     historyRequests++;
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ ...doc.events[0], cude: 'k', providerUid: 'u', providerResponse: '{"detalle":"respuesta técnica completa"}', providerXmlUrl: 'https://x/xml', providerPdfUrl: null }]) });
   });
-  await page.goto('/received-documents');
+  await page.goto('/radian');
   await page.waitForLoadState('networkidle');
   expect(historyRequests).toBe(0);
 
@@ -71,7 +71,7 @@ test('documentos recibidos se piden por páginas: búsqueda y página siguiente 
     })).filter(d => !q || d.issuerName.toLowerCase().includes(q));
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: all.slice((pageNumber - 1) * size, pageNumber * size), total: all.length }) });
   });
-  await page.goto('/received-documents');
+  await page.goto('/radian');
   await page.waitForLoadState('networkidle');
   await expect(page.getByText(/Mostrando 1–25 de 60/)).toBeVisible();
   expect(requests[requests.length - 1].get('page')).toBe('1');

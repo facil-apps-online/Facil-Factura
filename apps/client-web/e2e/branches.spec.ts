@@ -71,7 +71,7 @@ test.describe('rol Facturador', () => {
   });
 
   test('entrar por la URL a una pantalla de administración devuelve al inicio', async ({ page }) => {
-    for (const path of ['/users', '/resolutions', '/settings', '/received-documents', '/payments']) {
+    for (const path of ['/users', '/resolutions', '/settings', '/radian', '/payments']) {
       await open(page, path);
       await expect(page, path).toHaveURL(/\/$/);
     }

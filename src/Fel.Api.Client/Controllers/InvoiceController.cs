@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
@@ -1095,12 +1097,19 @@ namespace Fel.Api.Client.Controllers
                     var resendAttachments = await Attachments.LoadForSendAsync(invoice.Id);
                     var result = await _dataicoApiService.SendCustomDocumentPdfAsync(invoice.DataicoDocumentId!, invoice.TypeCode, pdfBytes, request.Email, credentials, resendAttachments);
 
+                    // Un 2xx de Dataico no dice a quién salió el correo: se registra lo que contestó y se le muestra al usuario
+                    // el estado del correo y el destinatario que Dataico tiene, en vez de dar el reenvío por hecho.
+                    var (emailStatus, dataicoEmail) = DataicoEmailOutcome(result.RawResponse);
+                    HttpContext.RequestServices.GetRequiredService<ILogger<InvoiceController>>().LogInformation(
+                        "Reenvío por Dataico del documento {DocumentId} ({Number}) a {Email}: HTTP {StatusCode}, email_status={EmailStatus}, correo del cliente en Dataico={DataicoEmail}. Respuesta: {Response}",
+                        invoice.Id, $"{invoice.Prefix}{invoice.Number}", request.Email, result.StatusCode, emailStatus, dataicoEmail, SanitizedDataicoResponse(result.RawResponse));
+
                     if (!result.Success)
                     {
                         return BadRequest(new { message = "Dataico rechazó el reenvío.", detail = result.ErrorMessage ?? result.RawResponse });
                     }
 
-                    return Ok(new { message = "Documento reenviado correctamente." });
+                    return Ok(new { message = $"Dataico aceptó el reenvío. Estado del correo: {emailStatus ?? "sin informar"}. Correo del cliente en Dataico: {dataicoEmail ?? "sin informar"}." });
                 }
                 else
                 {
@@ -1194,6 +1203,48 @@ namespace Fel.Api.Client.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 return Unauthorized(ex.Message);
+            }
+        }
+
+        // Estado del correo y destinatario que Dataico informa en la respuesta del documento (plana o dentro de "invoice").
+        private static (string? EmailStatus, string? CustomerEmail) DataicoEmailOutcome(string? rawResponse)
+        {
+            try
+            {
+                if (System.Text.Json.Nodes.JsonNode.Parse(rawResponse ?? string.Empty) is not System.Text.Json.Nodes.JsonObject root) return (null, null);
+                var doc = root["invoice"] as System.Text.Json.Nodes.JsonObject ?? root;
+                return (doc["email_status"]?.ToString(), doc["customer"]?["email"]?.ToString());
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return (null, null);
+            }
+        }
+
+        // La respuesta de Dataico sin los valores largos (XML y PDF en base64), para el log.
+        private static string SanitizedDataicoResponse(string? rawResponse)
+        {
+            try
+            {
+                var node = System.Text.Json.Nodes.JsonNode.Parse(rawResponse ?? string.Empty);
+                void Trim(System.Text.Json.Nodes.JsonNode? n)
+                {
+                    if (n is System.Text.Json.Nodes.JsonObject obj)
+                        foreach (var key in obj.Select(p => p.Key).ToList())
+                        {
+                            if (obj[key] is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 300) obj[key] = $"<{s.Length} caracteres>";
+                            else Trim(obj[key]);
+                        }
+                    else if (n is System.Text.Json.Nodes.JsonArray arr)
+                        foreach (var item in arr) Trim(item);
+                }
+                Trim(node);
+                return node?.ToJsonString() ?? string.Empty;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                var text = rawResponse ?? string.Empty;
+                return text.Length > 2000 ? text[..2000] + "…" : text;
             }
         }
     }

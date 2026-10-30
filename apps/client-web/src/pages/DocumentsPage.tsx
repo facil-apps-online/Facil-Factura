@@ -540,8 +540,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     }
     setResendingId(resendModalInv.id);
     try {
-      await api.post(`/client/invoices/${resendModalInv.id}/resend`, { email: resendEmailDraft.trim() });
-      toast.success('Documento reenviado correctamente.');
+      const res = await api.post(`/client/invoices/${resendModalInv.id}/resend`, { email: resendEmailDraft.trim() });
+      toast.success(res.data?.message || 'Documento reenviado correctamente.');
       setResendModalInv(null);
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Error al reenviar el documento'));

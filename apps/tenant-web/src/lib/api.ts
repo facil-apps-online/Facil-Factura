@@ -7,7 +7,13 @@ export const api = axios.create({
 // x-tenant-id sigue viajando (el backend lo sigue leyendo así en cada controlador), pero ya no
 // basta por sí solo: el backend ahora exige que coincida con la claim TenantId del JWT
 // (Authorization: Bearer) — sin el JWT, el header se rechaza con 401 aunque tenga el GUID correcto.
+// Rutas sin sesión (entrar, pedir y usar el enlace de contraseña): no llevan la sesión guardada, que puede estar vencida o ser de otra
+// persona y haría que el servidor rechazara la petición con 401; y su 401 es un error del formulario, no una sesión que cerrar.
+const PUBLIC_AUTH = /\/auth\/(login|forgot-password|reset-password)$/;
+const isPublicAuth = (url?: string) => PUBLIC_AUTH.test((url || '').split('?')[0]);
+
 api.interceptors.request.use((config) => {
+  if (isPublicAuth(config.url)) return config;
   const token = localStorage.getItem('fel_tenant_auth');
   const tenantId = localStorage.getItem('fel_tenant_id');
   if (token) {
@@ -22,7 +28,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !isPublicAuth(error.config?.url)) {
       localStorage.removeItem('fel_tenant_auth');
       localStorage.removeItem('fel_tenant_id');
       localStorage.removeItem('fel_tenant_list');

@@ -12,7 +12,13 @@ export const api = axios.create({
 // El backend ahora exige el JWT (antes se guardaba en localStorage tras el login pero nunca se
 // enviaba — el API nunca lo validaba, así que no se notaba). Sin este interceptor, cada llamada
 // llegaría sin el header Authorization y el backend respondería 401.
+// Rutas sin sesión (entrar, pedir y usar el enlace de contraseña): no llevan la sesión guardada, que puede estar vencida y haría que el
+// servidor rechazara la petición con 401; y su 401 es un error del formulario, no una sesión que cerrar.
+const PUBLIC_AUTH = /\/auth\/(login|forgot-password|reset-password)$/;
+const isPublicAuth = (url?: string) => PUBLIC_AUTH.test((url || '').split('?')[0]);
+
 api.interceptors.request.use((config) => {
+  if (isPublicAuth(config.url)) return config;
   const token = localStorage.getItem('fel_superadmin_auth');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -25,7 +31,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !isPublicAuth(error.config?.url)) {
       localStorage.removeItem('fel_superadmin_auth');
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';

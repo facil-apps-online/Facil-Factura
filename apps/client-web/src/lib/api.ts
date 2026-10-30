@@ -25,6 +25,12 @@ function sessionHeaders(): Record<string, string> {
   return headers;
 }
 
+// Rutas sin sesión (entrar, pedir y usar el enlace de contraseña): no llevan la sesión guardada, que puede ser de otra persona o estar
+// vencida (p. ej. una sesión de soporte) y haría que el servidor rechazara la petición con 401; y su 401 es un error del formulario, no
+// una sesión que cerrar.
+const PUBLIC_AUTH = /\/auth\/(login|forgot-password|reset-password)$/;
+const isPublicAuth = (url?: string) => PUBLIC_AUTH.test((url || '').split('?')[0]);
+
 // Sesión vencida o rechazada: se limpia y se vuelve al login.
 function endSession() {
   const tenantSlug = localStorage.getItem('fel_client_tenant');
@@ -38,14 +44,14 @@ function endSession() {
 }
 
 api.interceptors.request.use(config => {
-  Object.entries(sessionHeaders()).forEach(([name, value]) => config.headers.set(name, value));
+  if (!isPublicAuth(config.url)) Object.entries(sessionHeaders()).forEach(([name, value]) => config.headers.set(name, value));
   return config;
 });
 
 api.interceptors.response.use(
   response => response,
   error => {
-    if (error.response?.status === 401) endSession();
+    if (error.response?.status === 401 && !isPublicAuth(error.config?.url)) endSession();
     return Promise.reject(error);
   }
 );

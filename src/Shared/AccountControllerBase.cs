@@ -40,6 +40,10 @@ namespace Fel.Api.Shared
         protected abstract Task<(string Role, string? Organization)> DescribeAsync(ISessionAccount account);
         // La cuenta puede renovar solo si todavía tiene acceso vigente (por ejemplo, al tenant del token).
         protected virtual Task<bool> CanRenewAsync(ISessionAccount account, ClaimsPrincipal user) => Task.FromResult(true);
+        // Otras cuentas de la misma persona que comparten la contraseña (en el portal de clientes, su usuario en cada empresa del tenant):
+        // tras cambiar la contraseña o el sello de esta, se les copia la contraseña y se les cambia el sello, para que la clave anterior no
+        // siga sirviendo ni quede abierta ninguna de sus sesiones.
+        protected virtual Task SyncLinkedAccountsAsync(ISessionAccount account) => Task.CompletedTask;
 
         private async Task<object> MeAsync(ISessionAccount account)
         {
@@ -63,6 +67,7 @@ namespace Fel.Api.Shared
             if (!Sessions.RegisterPasswordFailure(Kind, account.Id)) return BadRequest(message);
 
             Sessions.RotateStamp(Kind, account);
+            await SyncLinkedAccountsAsync(account);
             await SaveAsync();
             return StatusCode(StatusCodes.Status429TooManyRequests, "Demasiados intentos con la contraseña equivocada. Por seguridad cerramos tus sesiones: inicia sesión de nuevo.");
         }
@@ -99,6 +104,7 @@ namespace Fel.Api.Shared
             if (error == AccountSessionService.WrongCurrentPassword) return await PasswordFailedAsync(account, error);
             if (error != null) return BadRequest(error);
 
+            await SyncLinkedAccountsAsync(account);
             await SaveAsync();
             // Las demás sesiones murieron con el cambio de sello; esta sigue con un token nuevo (y como acaba de confirmar su contraseña, el
             // tope absoluto vuelve a contar desde ahora).
@@ -151,6 +157,7 @@ namespace Fel.Api.Shared
             if (Sessions.Renew(Kind, account, User) == null) return Conflict(new { reauthRequired = true });
 
             Sessions.RotateStamp(Kind, account);
+            await SyncLinkedAccountsAsync(account);
             await SaveAsync();
             // Todas las sesiones anteriores quedan sin efecto; esta sigue con el sello nuevo.
             return Ok(TokenBody(Sessions.Renew(Kind, account, User)!));

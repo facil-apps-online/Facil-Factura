@@ -58,6 +58,21 @@ namespace Fel.Api.Client.Controllers
             return (user.Role, company);
         }
 
+        // La contraseña es de la persona (su correo) en todo el tenant, como la fija el restablecimiento: el cambio y el cierre de sesiones
+        // alcanzan a sus usuarios en las demás empresas. La sesión de soporte es del usuario del tenant y no tiene gemelas.
+        protected override async Task SyncLinkedAccountsAsync(ISessionAccount account)
+        {
+            if (account is not ClientUser user) return;
+            var linked = await _dbContext.ClientUsers
+                .Where(u => u.Id != user.Id && u.Email == user.Email && u.Client.TenantId == user.Client.TenantId)
+                .ToListAsync();
+            foreach (var member in linked)
+            {
+                member.PasswordHash = user.PasswordHash;
+                Sessions.RotateStamp(PortalKind.Client, member);
+            }
+        }
+
         // Renovar solo mientras el cliente siga activo. En soporte, además, mientras el usuario del tenant conserve acceso vigente a ese cliente
         // (el bloqueo administrativo lo corta el validador de sesiones).
         protected override async Task<bool> CanRenewAsync(ISessionAccount account, ClaimsPrincipal user)

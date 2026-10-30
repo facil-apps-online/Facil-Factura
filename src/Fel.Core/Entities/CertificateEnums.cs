@@ -77,5 +77,17 @@ public enum CertificateEventType
     ChargeCreated = 11,
     Failed = 12,
     RevocationRequested = 13,
-    Revoked = 14
+    Revoked = 14,
+    // Auditoría de la entrega del .p12 desde el portal del tenant (archivo y contraseña por separado).
+    DownloadedByTenant = 15,
+    PasswordViewedByTenant = 16,
+    ChargeReleased = 17
+}
+
+public enum CertificateBalanceMovementType
+{
+    Deposit = 1,
+    Adjustment = 2,
+    Reserve = 3,
+    Release = 4
 }

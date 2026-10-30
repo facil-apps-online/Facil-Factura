@@ -1,7 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { Home, Users, FileKey, FileSignature, Settings, Palette, FileText, Briefcase, Code2, ChevronLeft, ChevronRight, Layers, Building2, Check, Loader2, Network, Package, Receipt } from 'lucide-react';
+import { Home, Users, FileKey, FileSignature, Settings, Palette, FileText, Briefcase, Code2, ChevronLeft, ChevronRight, Layers, Building2, Check, Loader2, Network, Package, Receipt, FileClock, Wallet } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { api } from './lib/api';
+import { ModulesContext, useModules, DEFAULT_MODULES, type TenantModules } from './lib/modules';
 import { Toaster } from 'sonner';
 
 import Dashboard from './pages/Dashboard';
@@ -21,6 +22,8 @@ import GroupBilling from './pages/GroupBilling';
 import Allies from './pages/Allies';
 import Plans from './pages/Plans';
 import Charges from './pages/Charges';
+import CertificateRequests from './pages/CertificateRequests';
+import CertificateBalance from './pages/CertificateBalance';
 import SessionGuard from '@shared/components/session/SessionGuard';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 import ProfilePage from '@shared/components/session/ProfilePage';
@@ -119,6 +122,16 @@ function GroupOnly({ children }: { children: React.ReactElement }) {
   return hidden ? <Navigate to="/" replace /> : children;
 }
 
+// Solicitudes y saldo de certificados: sin el módulo, al inicio.
+function CertificatesModuleOnly({ children }: { children: React.ReactElement }) {
+  return useModules().certificates ? children : <Navigate to="/" replace />;
+}
+
+// Pantallas de facturación electrónica: un tenant solo de certificados va a sus certificados.
+function InvoicingOnly({ children }: { children: React.ReactElement }) {
+  return useModules().invoicing ? children : <Navigate to="/certificates" replace />;
+}
+
 function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBranding: TenantBranding | null, collapsed: boolean, onToggleCollapsed: () => void }) {
   const hideGroupMenus = React.useContext(GroupMenusContext) !== false;
   const location = useLocation();
@@ -137,7 +150,24 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
     { to: "/templates", icon: <FileText size={20} />, label: "Modelos de Documentos" },
     { to: "/developers", icon: <Code2 size={20} />, label: "Desarrolladores" },
   ];
-  const links = allLinks.filter(l => !groupPaths.includes(l.to) || !hideGroupMenus);
+  const modules = useModules();
+  // Solo con Certificados: sus clientes son titulares y no hay nada de facturación.
+  const certificatesOnlyLinks = [
+    { to: "/clients", icon: <Users size={20} />, label: "Titulares" },
+    { to: "/certificate-requests", icon: <FileClock size={20} />, label: "Solicitudes" },
+    { to: "/certificates", icon: <FileKey size={20} />, label: "Certificados" },
+    { to: "/certificate-balance", icon: <Wallet size={20} />, label: "Saldo" },
+    { to: "/branding", icon: <Palette size={20} />, label: "Apariencia (Branding)" },
+  ];
+  // Con facturación y certificados, las solicitudes y el saldo van después de Clientes.
+  const certificateLinks = modules.certificates ? [
+    { to: "/certificate-requests", icon: <FileClock size={20} />, label: "Solicitudes de certificados" },
+    { to: "/certificate-balance", icon: <Wallet size={20} />, label: "Saldo de certificados" },
+  ] : [];
+  const invoicingLinks = allLinks.filter(l => !groupPaths.includes(l.to) || !hideGroupMenus);
+  const links = modules.invoicing
+    ? [...invoicingLinks.slice(0, 2), ...certificateLinks, ...invoicingLinks.slice(2)]
+    : certificatesOnlyLinks;
 
   const selfBillingLinks = [
     { to: "/resolutions", icon: <FileSignature size={20} />, label: "Mis Resoluciones" },
@@ -205,13 +235,13 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
           );
         })}
 
-        {!collapsed && (
+        {modules.invoicing && !collapsed && (
           <div className="pt-6 pb-2 px-4">
             <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Facturación propia</p>
           </div>
         )}
-        {collapsed && <div className="pt-4 border-t border-slate-800/60 mx-2" />}
-        {selfBillingLinks.map((link) => {
+        {modules.invoicing && collapsed && <div className="pt-4 border-t border-slate-800/60 mx-2" />}
+        {(modules.invoicing ? selfBillingLinks : []).map((link) => {
           const isActive = location.pathname === link.to;
           return (
             <Link
@@ -249,6 +279,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   // Suspensión de la plataforma (p. ej. por mora): el portal funciona en solo lectura y se avisa con una barra fija.
   const [readOnly, setReadOnly] = useState<{ reason: string | null } | null>(null);
   const [hideGroupMenus, setHideGroupMenus] = useState<boolean | null>(null);
+  // Módulos de la cuenta; null mientras se consultan (no se pinta nada hasta saberlos).
+  const [modules, setModules] = useState<TenantModules | null>(null);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('fel_tenant_sidebar_collapsed') === '1');
 
   const toggleCollapsed = () => {
@@ -274,13 +306,17 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     api.get('/tenant/auth/block-status').then(res => {
       setReadOnly(res.data.readOnly ? { reason: res.data.reason ?? null } : null);
       setHideGroupMenus(!!res.data.hideGroupMenus);
-    }).catch(() => {});
+      setModules(res.data.modules ?? DEFAULT_MODULES);
+    }).catch(() => setModules(DEFAULT_MODULES));
 
     const name = localStorage.getItem('fel_tenant_name') || 'Tenant';
     setTenantName(name);
   }, []);
 
+  if (!modules) return null;
+
   return (
+    <ModulesContext.Provider value={modules}>
     <GroupMenusContext.Provider value={hideGroupMenus}>
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
       <Sidebar tenantBranding={tenantBranding} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
@@ -309,6 +345,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       </main>
     </div>
     </GroupMenusContext.Provider>
+    </ModulesContext.Provider>
   );
 }
 
@@ -333,20 +370,22 @@ function App() {
             isAuthenticated ? (
               <ProtectedLayout>
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/" element={<InvoicingOnly><Dashboard /></InvoicingOnly>} />
                   <Route path="/clients" element={<Clients />} />
                   <Route path="/clients/edit/:id" element={<ClientEdit />} />
-                  <Route path="/associates" element={<GroupOnly><Associates /></GroupOnly>} />
-                  <Route path="/group-billing" element={<GroupOnly><GroupBilling /></GroupOnly>} />
-                  <Route path="/allies" element={<GroupOnly><Allies /></GroupOnly>} />
-                  <Route path="/plans" element={<Plans />} />
-                  <Route path="/charges" element={<Charges />} />
+                  <Route path="/associates" element={<InvoicingOnly><GroupOnly><Associates /></GroupOnly></InvoicingOnly>} />
+                  <Route path="/group-billing" element={<InvoicingOnly><GroupOnly><GroupBilling /></GroupOnly></InvoicingOnly>} />
+                  <Route path="/allies" element={<InvoicingOnly><GroupOnly><Allies /></GroupOnly></InvoicingOnly>} />
+                  <Route path="/plans" element={<InvoicingOnly><Plans /></InvoicingOnly>} />
+                  <Route path="/charges" element={<InvoicingOnly><Charges /></InvoicingOnly>} />
                   <Route path="/certificates" element={<Certificates />} />
-                  <Route path="/resolutions" element={<Resolutions />} />
+                  <Route path="/certificate-requests" element={<CertificatesModuleOnly><CertificateRequests /></CertificatesModuleOnly>} />
+                  <Route path="/certificate-balance" element={<CertificatesModuleOnly><CertificateBalance /></CertificatesModuleOnly>} />
+                  <Route path="/resolutions" element={<InvoicingOnly><Resolutions /></InvoicingOnly>} />
                   <Route path="/branding" element={<Branding />} />
-                  <Route path="/templates" element={<DocumentTemplates />} />
-                  <Route path="/templates/editor" element={<TemplateEditor />} />
-                  <Route path="/developers" element={<Developers />} />
+                  <Route path="/templates" element={<InvoicingOnly><DocumentTemplates /></InvoicingOnly>} />
+                  <Route path="/templates/editor" element={<InvoicingOnly><TemplateEditor /></InvoicingOnly>} />
+                  <Route path="/developers" element={<InvoicingOnly><Developers /></InvoicingOnly>} />
                   <Route path="/profile" element={<ProfilePage api={api} basePath={ACCOUNT_PATH} tokenKey={TOKEN_KEY} />} />
                 </Routes>
               </ProtectedLayout>

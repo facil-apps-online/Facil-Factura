@@ -3,8 +3,11 @@ import { toast } from 'sonner';
 import { Palette, Image as ImageIcon, Save, CheckCircle2, XCircle, Loader2, Copy } from 'lucide-react';
 import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
 import { api } from '../lib/api';
+import { useModules } from '../lib/modules';
 
 export default function Branding() {
+  // Sin facturación (tenant solo de certificados) no aplican la bolsa prepago de documentos ni el consumo en el portal de clientes.
+  const { invoicing } = useModules();
   const [formData, setFormData] = useState({
     slug: '',
     primaryColorLight: '#3b82f6',
@@ -55,11 +58,11 @@ export default function Branding() {
         });
         setOriginalSlug(res.data.slug || '');
         setBillingMode(res.data.billingMode || 'PerDocument');
-        if (res.data.billingMode === 'PerUser') loadPrepaidInfo();
+        if (invoicing && res.data.billingMode === 'PerUser') loadPrepaidInfo();
       })
       .catch(() => toast.error('No se pudo cargar la configuración de apariencia'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [invoicing]);
 
   useEffect(() => {
     if (!formData.slug) {
@@ -228,6 +231,7 @@ export default function Branding() {
             </div>
           </div>
 
+          {invoicing && (
           <div className="pt-6 border-t border-slate-100">
             <label className="flex items-center gap-3 cursor-pointer max-w-md">
               <input
@@ -242,6 +246,7 @@ export default function Branding() {
               </span>
             </label>
           </div>
+          )}
 
           <div className="pt-6 border-t border-slate-100 flex justify-end">
             <button 
@@ -262,7 +267,7 @@ export default function Branding() {
         description="SMTP por defecto para tus clientes que emiten directo a la DIAN (sin Dataico) y no configuraron su propio SMTP."
       />
 
-      {billingMode === 'PerUser' && (
+      {invoicing && billingMode === 'PerUser' && (
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden mt-8 p-8">
           <h2 className="text-xl font-bold text-slate-800 mb-1">Bolsa Prepago</h2>
           <p className="text-slate-500 text-sm mb-6">

@@ -133,6 +133,9 @@ public sealed class CertificateAssemblyService : ICertificateAssemblyService
                     OccurredAt = now
                 });
 
+            // Emitido: lo reservado del saldo prepagado queda causado, en el mismo guardado que activa el certificado.
+            await CertificateBilling.ConsumeAsync(_dbContext, request.Id, cancellationToken);
+
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(

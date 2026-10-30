@@ -17,8 +17,9 @@ namespace Fel.Worker
 {
     // Sincroniza el estado de las solicitudes de certificado con Viafirma (Fase 3 de
     // docs/certificados-electronicos-viafirma-especificacion.md) y, cuando detecta que el .p7b ya
-    // está listo, dispara el ensamble del .p12 e informa al cliente por correo. No cubre todavía
-    // renovación automática ni facturación (Fases 4-5), pendientes para una sesión aparte.
+    // está listo, dispara el ensamble del .p12 e informa al cliente por correo (si su tenant no lo apagó). Si Viafirma rechaza
+    // la solicitud o falla, devuelve al saldo prepagado del tenant lo reservado (ver CertificateBilling). No cubre todavía
+    // renovación automática.
     public class CertificatePollingWorker : BackgroundService
     {
         private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(15);
@@ -78,6 +79,22 @@ namespace Fel.Worker
             var assemblyService = scope.ServiceProvider.GetRequiredService<ICertificateAssemblyService>();
             var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
 
+            // Borradores huérfanos: la solicitud se guarda (y su precio se reserva) justo antes de enviarla a Viafirma; si el envío nunca
+            // terminó (p. ej. se reinició la API en ese instante), queda fallida y se devuelve lo reservado.
+            var orphanCutoff = DateTime.UtcNow.AddMinutes(-30);
+            var orphans = await dbContext.CertificateRequests
+                .Where(r => r.Status == CertificateRequestStatus.Draft && r.CreatedAt < orphanCutoff)
+                .ToListAsync(stoppingToken);
+            foreach (var orphan in orphans)
+            {
+                orphan.Status = CertificateRequestStatus.Failed;
+                orphan.LastErrorCode = "certificate_submission_interrupted";
+                orphan.LastErrorMessage = "El envío a Viafirma no terminó. Vuelve a solicitarlo; no se descontó saldo.";
+                orphan.UpdatedAt = DateTime.UtcNow;
+                await Fel.Infrastructure.Certificates.CertificateBilling.ReleaseAsync(dbContext, orphan.Id, "el envío a Viafirma no terminó", "system", stoppingToken);
+            }
+            if (orphans.Count > 0) await dbContext.SaveChangesAsync(stoppingToken);
+
             var requests = await dbContext.CertificateRequests
                 .Include(r => r.Client).ThenInclude(c => c.Tenant)
                 .Include(r => r.Profile).ThenInclude(p => p.Provider)
@@ -97,7 +114,9 @@ namespace Fel.Worker
                     if (request.Status == CertificateRequestStatus.ReadyToDownload)
                     {
                         var assembled = await assemblyService.AssembleAndInstallAsync(request, stoppingToken);
-                        await SendCertificateEmailsAsync(request.Client, assembled, emailSender, stoppingToken);
+                        // Un tenant que revende puede entregar él mismo el certificado (lo descarga desde su portal).
+                        if (request.Client.Tenant.SendCertificateToHolderByEmail)
+                            await SendCertificateEmailsAsync(request.Client, assembled, emailSender, stoppingToken);
                     }
                 }
                 catch (Exception ex)
@@ -148,6 +167,11 @@ namespace Fel.Worker
                     ActorType = "system",
                     OccurredAt = DateTime.UtcNow
                 });
+
+                // Rechazada o fallida: no se emitió, se devuelve al saldo lo reservado.
+                if (mappedStatus.Value is CertificateRequestStatus.Rejected or CertificateRequestStatus.Failed)
+                    await Fel.Infrastructure.Certificates.CertificateBilling.ReleaseAsync(
+                        dbContext, request.Id, mappedStatus.Value == CertificateRequestStatus.Rejected ? "rechazada por Viafirma" : "falló en Viafirma", "system", stoppingToken);
             }
 
             await dbContext.SaveChangesAsync(stoppingToken);

@@ -301,6 +301,32 @@ namespace Fel.Api.Superadmin.Controllers
             return Ok(new { tenant.Id, tenant.PlatformBlockedAt, tenant.PlatformBlockReason });
         }
 
+        // Módulos de la cuenta: Facturación electrónica (emisión, resoluciones, planes, portal de clientes...) y Certificados (solicitud de
+        // certificados digitales para sus clientes). Se combinan; al menos uno. Un tenant solo de certificados ve a sus clientes como titulares.
+        [HttpGet("{id:guid}/modules")]
+        public async Task<IActionResult> GetModules(Guid id)
+        {
+            var tenant = await _dbContext.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id);
+            if (tenant == null) return NotFound();
+            return Ok(new { invoicing = tenant.InvoicingModuleEnabled, certificates = tenant.CertificatesModuleEnabled });
+        }
+
+        [HttpPut("{id:guid}/modules")]
+        public async Task<IActionResult> SetModules(Guid id, [FromBody] TenantModulesRequest request)
+        {
+            if (!request.Invoicing && !request.Certificates)
+                return BadRequest("La cuenta debe tener al menos un módulo: facturación electrónica o certificados.");
+
+            var tenant = await _dbContext.Tenants.FindAsync(id);
+            if (tenant == null) return NotFound();
+
+            tenant.InvoicingModuleEnabled = request.Invoicing;
+            tenant.CertificatesModuleEnabled = request.Certificates;
+            await _dbContext.SaveChangesAsync();
+            Fel.Infrastructure.Security.TenantModules.Invalidate();
+            return Ok(new { invoicing = tenant.InvoicingModuleEnabled, certificates = tenant.CertificatesModuleEnabled });
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetTenants()
         {
@@ -385,6 +411,12 @@ namespace Fel.Api.Superadmin.Controllers
             if (rut != null && Digits(rut.TaxId) != Digits(request.TaxId))
                 return BadRequest("El RUT corresponde a otro NIT: vuelve a cargarlo o corrige el NIT.");
 
+            // Módulos de la cuenta: sin indicar, los de siempre (facturación y certificados). Al menos uno.
+            var invoicingModule = request.InvoicingModuleEnabled ?? true;
+            var certificatesModule = request.CertificatesModuleEnabled ?? true;
+            if (!invoicingModule && !certificatesModule)
+                return BadRequest("La cuenta debe tener al menos un módulo: facturación electrónica o certificados.");
+
             var tenant = new Tenant
             {
                 Id = Guid.NewGuid(),
@@ -429,7 +461,9 @@ namespace Fel.Api.Superadmin.Controllers
                 IncomeTaxRegime = string.IsNullOrWhiteSpace(rut?.IncomeTaxRegime) ? null : rut!.IncomeTaxRegime,
                 Address = !string.IsNullOrWhiteSpace(rut?.Address) ? rut!.Address! : request.PhysicalAddressLine1 ?? string.Empty,
                 City = !string.IsNullOrWhiteSpace(rut?.City) ? rut!.City! : request.PhysicalCity ?? string.Empty,
-                Phone = !string.IsNullOrWhiteSpace(rut?.Phone) ? rut!.Phone! : request.ContactPhone ?? string.Empty
+                Phone = !string.IsNullOrWhiteSpace(rut?.Phone) ? rut!.Phone! : request.ContactPhone ?? string.Empty,
+                InvoicingModuleEnabled = invoicingModule,
+                CertificatesModuleEnabled = certificatesModule
             };
 
             // Todo el alta va en una transacción y solo se confirma si Core responde bien.
@@ -1084,8 +1118,17 @@ namespace Fel.Api.Superadmin.Controllers
         public double? Longitude { get; set; }
         public string? AdminName { get; set; }
         public string? AdminEmail { get; set; }
+        // Módulos de la cuenta; nulo = activo (ver Tenant.InvoicingModuleEnabled y Tenant.CertificatesModuleEnabled).
+        public bool? InvoicingModuleEnabled { get; set; }
+        public bool? CertificatesModuleEnabled { get; set; }
         // Datos fiscales leídos del RUT (el formulario los conserva aunque no los muestre).
         public Fel.Infrastructure.Services.TenantRutData? Rut { get; set; }
+    }
+
+    public class TenantModulesRequest
+    {
+        public bool Invoicing { get; set; }
+        public bool Certificates { get; set; }
     }
 
     public class TenantBlockRequest

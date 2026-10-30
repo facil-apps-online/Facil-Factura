@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
+using Fel.Infrastructure.Certificates;
 using Fel.Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -92,15 +93,166 @@ namespace Fel.Api.Tenant.Controllers
                 .OrderBy(c => c.ExpirationDate)
                 .Select(c => new
                 {
+                    c.Id,
                     c.ClientId,
                     ClientName = string.IsNullOrWhiteSpace(c.Client.CommercialName) ? c.Client.CompanyName : c.Client.CommercialName,
                     c.FileName,
                     c.ExpirationDate,
-                    c.CreatedAt
+                    c.CreatedAt,
+                    Environment = c.Environment.ToString(),
+                    // Solo los emitidos por la plataforma se descargan desde el portal.
+                    Downloadable = c.CertificateRequestId != null
                 })
                 .ToListAsync();
 
             return Ok(certificates);
+        }
+
+        // Todas las solicitudes de certificado del tenant (de todos sus clientes o titulares), las más recientes primero, con su cobro.
+        [HttpGet]
+        [Route("~/api/tenant/certificates/requests")]
+        public async Task<IActionResult> GetRequests()
+        {
+            var tenantId = GetCurrentTenantId();
+            var requests = await _dbContext.CertificateRequests.AsNoTracking()
+                .Where(r => r.TenantId == tenantId)
+                .OrderByDescending(r => r.CreatedAt)
+                .Take(500)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.ClientId,
+                    ClientName = string.IsNullOrWhiteSpace(r.Client.CommercialName) ? r.Client.CompanyName : r.Client.CommercialName,
+                    ClientTaxId = r.Client.TaxId,
+                    ProfileTitle = r.Profile.Title,
+                    Environment = r.Environment.ToString(),
+                    Status = r.Status.ToString(),
+                    r.ProviderStatus,
+                    r.KycUrl,
+                    r.LastErrorMessage,
+                    r.CreatedAt,
+                    r.CompletedAt,
+                    Charge = r.Charges.OrderByDescending(c => c.CreatedAt)
+                        .Select(c => new { c.TotalAmount, Status = c.Status.ToString() }).FirstOrDefault(),
+                    Certificate = _dbContext.Certificates.Where(c => c.CertificateRequestId == r.Id)
+                        .Select(c => new { c.Id, c.ExpirationDate }).FirstOrDefault()
+                })
+                .ToListAsync();
+            return Ok(requests);
+        }
+
+        // Saldo prepagado de certificados: disponible, reservado (solicitudes en curso), consumido y los movimientos; además el precio vigente
+        // de cada perfil de producción para este tenant.
+        [HttpGet]
+        [Route("~/api/tenant/certificates/balance")]
+        public async Task<IActionResult> GetBalance()
+        {
+            var tenantId = GetCurrentTenantId();
+            var tenant = await _dbContext.Tenants.AsNoTracking().SingleAsync(t => t.Id == tenantId);
+            var balance = await CertificateBilling.GetBalanceAsync(_dbContext, tenantId);
+            var movements = await _dbContext.CertificateBalanceMovements.AsNoTracking()
+                .Where(m => m.TenantId == tenantId)
+                .OrderByDescending(m => m.OccurredAt).ThenByDescending(m => m.CreatedAt)
+                .Take(300)
+                .Select(m => new
+                {
+                    m.Id, Type = m.Type.ToString(), m.Amount, m.Reference, m.Notes, m.OccurredAt,
+                    ClientName = m.CertificateCharge == null ? null
+                        : (string.IsNullOrWhiteSpace(m.CertificateCharge.Client.CommercialName) ? m.CertificateCharge.Client.CompanyName : m.CertificateCharge.Client.CommercialName)
+                })
+                .ToListAsync();
+
+            var profiles = await _dbContext.CertificateProfiles.AsNoTracking()
+                .Where(p => p.Environment == CertificateEnvironment.Production && p.IsActive && p.Provider.IsActive)
+                .OrderBy(p => p.Title)
+                .Select(p => new { p.Id, p.Title })
+                .ToListAsync();
+            var prices = new List<object>();
+            foreach (var profile in profiles)
+            {
+                var price = await CertificateBilling.ResolvePriceAsync(_dbContext, tenantId, profile.Id, CertificateEnvironment.Production);
+                prices.Add(new
+                {
+                    ProfileId = profile.Id, profile.Title,
+                    NetAmount = price?.NetAmount, TaxRate = price?.TaxRate, Total = price == null ? (decimal?)null : CertificateBilling.Total(price)
+                });
+            }
+
+            return Ok(new
+            {
+                balance.Available, balance.Reserved, balance.Consumed, balance.Deposited,
+                Exempt = tenant.IsBillingExempt,
+                Movements = movements,
+                Prices = prices
+            });
+        }
+
+        [HttpGet]
+        [Route("~/api/tenant/certificates/settings")]
+        public async Task<IActionResult> GetSettings()
+        {
+            var tenantId = GetCurrentTenantId();
+            var send = await _dbContext.Tenants.Where(t => t.Id == tenantId).Select(t => t.SendCertificateToHolderByEmail).SingleAsync();
+            return Ok(new { sendToHolderByEmail = send });
+        }
+
+        [HttpPut]
+        [Route("~/api/tenant/certificates/settings")]
+        public async Task<IActionResult> SaveSettings([FromBody] CertificateSettingsRequest request)
+        {
+            var tenantId = GetCurrentTenantId();
+            var tenant = await _dbContext.Tenants.SingleAsync(t => t.Id == tenantId);
+            tenant.SendCertificateToHolderByEmail = request.SendToHolderByEmail;
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { sendToHolderByEmail = tenant.SendCertificateToHolderByEmail });
+        }
+
+        // Descarga del .p12 emitido por la plataforma (incluye la clave privada). La contraseña se consulta aparte; ambas quedan auditadas.
+        // Solo los emitidos por la plataforma: uno cargado a mano ya lo tiene quien lo cargó.
+        [HttpGet]
+        [Route("~/api/tenant/certificates/{certificateId:guid}/download")]
+        public async Task<IActionResult> DownloadCertificate(Guid certificateId)
+        {
+            var tenantId = GetCurrentTenantId();
+            var certificate = await _dbContext.Certificates.Include(c => c.Client)
+                .SingleOrDefaultAsync(c => c.Id == certificateId && c.Client.TenantId == tenantId && c.CertificateRequestId != null);
+            if (certificate == null) return NotFound();
+
+            var bytes = await _storageService.GetCertificateBytesAsync(certificate.FileName);
+            AuditDelivery(certificate, CertificateEventType.DownloadedByTenant);
+            await _dbContext.SaveChangesAsync();
+
+            var safeName = new string($"{certificate.Client.CompanyName}-{certificate.Client.TaxId}".Select(ch => char.IsLetterOrDigit(ch) || ch == '-' ? ch : '_').ToArray());
+            return File(bytes, "application/x-pkcs12", $"{safeName}.p12");
+        }
+
+        [HttpGet]
+        [Route("~/api/tenant/certificates/{certificateId:guid}/password")]
+        public async Task<IActionResult> GetCertificatePassword(Guid certificateId)
+        {
+            var tenantId = GetCurrentTenantId();
+            var certificate = await _dbContext.Certificates
+                .SingleOrDefaultAsync(c => c.Id == certificateId && c.Client.TenantId == tenantId && c.CertificateRequestId != null);
+            if (certificate == null) return NotFound();
+
+            var password = _cryptoVault.DecryptPassword(certificate.EncryptedPassword);
+            AuditDelivery(certificate, CertificateEventType.PasswordViewedByTenant);
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { password });
+        }
+
+        private void AuditDelivery(Certificate certificate, CertificateEventType eventType)
+        {
+            _dbContext.CertificateEvents.Add(new CertificateEvent
+            {
+                Id = Guid.NewGuid(),
+                CertificateRequestId = certificate.CertificateRequestId!.Value,
+                CertificateId = certificate.Id,
+                EventType = eventType,
+                ActorType = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "tenant",
+                CorrelationId = HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
+                OccurredAt = DateTime.UtcNow
+            });
         }
 
         [HttpGet]
@@ -166,7 +318,22 @@ namespace Fel.Api.Tenant.Controllers
                 .Select(r => new { r.Id, r.ProfileId, r.Status, r.ProviderStatus, r.KycUrl, r.LastErrorMessage, r.CreatedAt, r.UpdatedAt })
                 .ToListAsync();
 
-            return Ok(new { Environment = environment.ToString(), SandboxEnabled = provider.SandboxEnabled, Profiles = profiles, Certificates = certificates, Requests = requests });
+            // Precio de cada perfil para este tenant y su saldo prepagado: el formulario muestra cuánto cuesta antes de solicitar.
+            var tenant = await _dbContext.Tenants.AsNoTracking().SingleAsync(t => t.Id == tenantId);
+            var requiresPayment = CertificateBilling.RequiresPayment(tenant, environment);
+            var prices = new Dictionary<Guid, decimal?>();
+            foreach (var profile in profiles)
+            {
+                var price = requiresPayment ? await CertificateBilling.ResolvePriceAsync(_dbContext, tenantId, profile.Id, environment) : null;
+                prices[profile.Id] = price == null ? null : CertificateBilling.Total(price);
+            }
+            var balance = requiresPayment ? await CertificateBilling.GetBalanceAsync(_dbContext, tenantId) : null;
+
+            return Ok(new
+            {
+                Environment = environment.ToString(), SandboxEnabled = provider.SandboxEnabled, Profiles = profiles, Certificates = certificates, Requests = requests,
+                RequiresPayment = requiresPayment, Prices = prices, AvailableBalance = balance?.Available
+            });
         }
 
         [HttpPost("requests")]
@@ -297,6 +464,64 @@ namespace Fel.Api.Tenant.Controllers
                     Message = "El proveedor de certificados no está configurado para este ambiente. Contacta a Administración."
                 });
             }
+            string GetRequestField(string key, string fallback = "") =>
+                formValues.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : fallback;
+
+            // La solicitud se guarda como borrador antes de llamar a Viafirma: así, si es de producción, el precio queda reservado del
+            // saldo prepagado del tenant en la misma transacción y ninguna solicitud cobrable llega al proveedor sin saldo.
+            var now = DateTime.UtcNow;
+            var actor = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "tenant";
+            var certificateRequest = new CertificateRequest
+            {
+                Id = Guid.NewGuid(), TenantId = tenantId, ClientId = clientId, ProfileId = profile.Id,
+                Environment = request.Environment, RequestType = CertificateRequestType.Initial,
+                ProviderStatus = string.Empty, Status = CertificateRequestStatus.Draft,
+                CsrHash = Convert.ToHexString(SHA256.HashData(Convert.FromBase64String(subject.CsrBase64))).ToLowerInvariant(),
+                PublicKeyHash = subject.PublicKeyHash, EncryptedPrivateKey = subject.EncryptedPrivateKey,
+                KeyAlgorithm = subject.Algorithm, KeySize = subject.KeySize, TermsUrl = profile.TermsUrl,
+                TermsHash = profile.TermsHash, TermsAcceptedAt = now, TermsAcceptedIpAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
+                TermsAcceptedUserAgent = Request.Headers.UserAgent.ToString(), CreatedAt = now, UpdatedAt = now,
+                IdempotencyKey = $"tenant:{tenantId}:client:{clientId}:{request.Environment}:{profile.Id}:{now:yyyyMMddHHmmssfff}"
+            };
+
+            var tenant = await _dbContext.Tenants.AsNoTracking().SingleAsync(t => t.Id == tenantId, cancellationToken);
+            CertificatePrice? price = null;
+            if (CertificateBilling.RequiresPayment(tenant, request.Environment))
+            {
+                price = await CertificateBilling.ResolvePriceAsync(_dbContext, tenantId, profile.Id, request.Environment, cancellationToken);
+                if (price == null)
+                    return BadRequest(new { Code = "certificate_price_unavailable", Message = "No hay un precio vigente para este tipo de certificado. Contacta al administrador." });
+            }
+
+            await using (var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken))
+            {
+                if (price != null)
+                {
+                    await CertificateBilling.LockTenantBalanceAsync(_dbContext, tenantId, cancellationToken);
+                    var balance = await CertificateBilling.GetBalanceAsync(_dbContext, tenantId, cancellationToken);
+                    var total = CertificateBilling.Total(price);
+                    if (balance.Available < total)
+                        return StatusCode(StatusCodes.Status402PaymentRequired, new
+                        {
+                            Code = "certificate_insufficient_balance",
+                            Message = $"Saldo insuficiente: este certificado cuesta {FormatCop(total)} y tu saldo disponible es {FormatCop(balance.Available)}. Abona saldo con tu proveedor para continuar.",
+                            Price = total,
+                            Available = balance.Available
+                        });
+                }
+
+                _dbContext.CertificateRequests.Add(certificateRequest);
+                _dbContext.CertificateEvents.Add(new CertificateEvent
+                {
+                    Id = Guid.NewGuid(), CertificateRequestId = certificateRequest.Id, EventType = CertificateEventType.RequestCreated,
+                    ToStatus = CertificateRequestStatus.Draft, ActorType = actor, OccurredAt = now
+                });
+                if (price != null)
+                    CertificateBilling.Reserve(_dbContext, certificateRequest, price, profile.Title, actor);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+
             ProviderRequestCreated providerRequest;
             try
             {
@@ -307,44 +532,54 @@ namespace Fel.Api.Tenant.Controllers
                     isCorporateProfile ? GetRequestField("dnAlternativo2") : string.Empty,
                     subject.CsrBase64), context, cancellationToken);
             }
-            catch (Fel.Infrastructure.Certificates.CertificateProviderException ex)
+            catch (Exception ex)
             {
-                _logger.LogWarning("Viafirma rechazÃ³ la solicitud. Environment={Environment} Profile={ProfileId} Code={Code} HttpStatus={HttpStatus}",
-                    request.Environment, profile.Id, ex.Code, ex.HttpStatus);
+                // No llegó a Viafirma: la solicitud queda fallida y se devuelve lo reservado.
+                var providerException = ex as CertificateProviderException;
+                certificateRequest.Status = CertificateRequestStatus.Failed;
+                certificateRequest.LastErrorCode = providerException?.Code ?? "certificate_provider_unavailable";
+                certificateRequest.LastErrorMessage = ex.Message[..Math.Min(ex.Message.Length, 1000)];
+                certificateRequest.UpdatedAt = DateTime.UtcNow;
+                await CertificateBilling.ReleaseAsync(_dbContext, certificateRequest.Id, "no se pudo enviar a Viafirma", actor, CancellationToken.None);
+                await _dbContext.SaveChangesAsync(CancellationToken.None);
+
+                if (providerException == null)
+                {
+                    _logger.LogError(ex, "No se pudo enviar la solicitud de certificado a Viafirma. Environment={Environment} Profile={ProfileId}", request.Environment, profile.Id);
+                    return StatusCode(StatusCodes.Status502BadGateway, new
+                    {
+                        Provider = provider.Key,
+                        Environment = request.Environment.ToString(),
+                        Success = false,
+                        Code = "certificate_provider_unavailable",
+                        Message = "No fue posible comunicarse con Viafirma. Intenta de nuevo en unos minutos; no se descontó saldo."
+                    });
+                }
+                _logger.LogWarning("Viafirma rechazó la solicitud. Environment={Environment} Profile={ProfileId} Code={Code} HttpStatus={HttpStatus}",
+                    request.Environment, profile.Id, providerException.Code, providerException.HttpStatus);
                 return StatusCode(StatusCodes.Status502BadGateway, new
                 {
                     Provider = provider.Key,
                     Environment = request.Environment.ToString(),
                     Success = false,
-                    Code = ex.Code,
-                    ProviderHttpStatus = ex.HttpStatus,
-                    Message = "Viafirma rechazÃ³ la solicitud. Revisa los datos del perfil.",
-                    Details = SummarizeProviderError(ex.ProviderBody)
+                    Code = providerException.Code,
+                    ProviderHttpStatus = providerException.HttpStatus,
+                    Message = "Viafirma rechazó la solicitud. Revisa los datos del perfil; no se descontó saldo.",
+                    Details = SummarizeProviderError(providerException.ProviderBody)
                 });
             }
 
-            string GetRequestField(string key, string fallback = "") =>
-                formValues.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : fallback;
-
-            var now = DateTime.UtcNow;
-            var certificateRequest = new CertificateRequest
-            {
-                Id = Guid.NewGuid(), TenantId = tenantId, ClientId = clientId, ProfileId = profile.Id,
-                Environment = request.Environment, RequestType = CertificateRequestType.Initial,
-                ProviderRequestCode = providerRequest.RequestCode, ProviderPublicId = providerRequest.PublicId,
-                ProviderStatus = "CREATED", Status = CertificateRequestStatus.Submitted,
-                CsrHash = Convert.ToHexString(SHA256.HashData(Convert.FromBase64String(subject.CsrBase64))).ToLowerInvariant(),
-                PublicKeyHash = subject.PublicKeyHash, EncryptedPrivateKey = subject.EncryptedPrivateKey,
-                KeyAlgorithm = subject.Algorithm, KeySize = subject.KeySize, TermsUrl = profile.TermsUrl,
-                TermsHash = profile.TermsHash, TermsAcceptedAt = now, TermsAcceptedIpAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
-                TermsAcceptedUserAgent = Request.Headers.UserAgent.ToString(), SubmittedAt = now, CreatedAt = now, UpdatedAt = now,
-                IdempotencyKey = $"tenant:{tenantId}:client:{clientId}:{request.Environment}:{profile.Id}:{now:yyyyMMddHHmmssfff}"
-            };
+            certificateRequest.ProviderRequestCode = providerRequest.RequestCode;
+            certificateRequest.ProviderPublicId = providerRequest.PublicId;
+            certificateRequest.ProviderStatus = "CREATED";
+            certificateRequest.Status = CertificateRequestStatus.Submitted;
+            certificateRequest.SubmittedAt = DateTime.UtcNow;
+            certificateRequest.UpdatedAt = DateTime.UtcNow;
             try
             {
-                var kyc = await _provider.GetKycLinkAsync(providerRequest.RequestCode, context, cancellationToken);
+                var kyc = await _provider.GetKycLinkAsync(providerRequest.RequestCode, context, CancellationToken.None);
                 certificateRequest.KycUrl = kyc.ToString();
-                certificateRequest.KycUrlFetchedAt = now;
+                certificateRequest.KycUrlFetchedAt = DateTime.UtcNow;
                 certificateRequest.Status = CertificateRequestStatus.WaitingForIdentity;
             }
             catch (Exception ex)
@@ -352,10 +587,12 @@ namespace Fel.Api.Tenant.Controllers
                 certificateRequest.LastErrorCode = "kyc_link_pending";
                 certificateRequest.LastErrorMessage = ex.Message[..Math.Min(ex.Message.Length, 1000)];
             }
-            _dbContext.CertificateRequests.Add(certificateRequest);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
             return Ok(new { certificateRequest.Id, Environment = request.Environment.ToString(), Status = certificateRequest.Status.ToString(), certificateRequest.KycUrl });
         }
+
+        private static string FormatCop(decimal value) =>
+            "$" + value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("es-CO"));
 
         [HttpPost]
         public async Task<IActionResult> UploadCertificate(Guid clientId, [FromForm] IFormFile file, [FromForm] string password, [FromForm] CertificateEnvironment environment = CertificateEnvironment.Production)
@@ -412,6 +649,8 @@ namespace Fel.Api.Tenant.Controllers
         }
     }
 }
+
+public sealed record CertificateSettingsRequest(bool SendToHolderByEmail);
 
 public sealed record CreateCertificateRequestRequest(
     Guid ProfileId,

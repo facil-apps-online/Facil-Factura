@@ -88,6 +88,17 @@ namespace Fel.Core.Entities
 
         // Exento de cobro: el dueño de la plataforma y otros tenants que no pagan. Sus documentos se cuentan igual, pero no hay corte ni valor a cobrar.
         public bool IsBillingExempt { get; set; }
+
+        // --- Módulos ---
+        // Qué ofrece la cuenta, lo define el superadmin. Facturación electrónica es lo de siempre (emisión, resoluciones, planes, portal de
+        // clientes...); Certificados es la solicitud de certificados digitales con Viafirma para sus clientes. Se combinan: un tenant que factura
+        // con emisión directa también solicita los certificados de sus clientes, y uno solo de certificados ve sus clientes como titulares, sin
+        // nada de facturación. La carga manual del .p12 es parte de Facturación (lo necesita para firmar), no de Certificados. Al menos uno activo.
+        public bool InvoicingModuleEnabled { get; set; } = true;
+        public bool CertificatesModuleEnabled { get; set; } = true;
+        // Al emitirse un certificado se le envía al titular el .p12 y, en otro correo, su contraseña. Un tenant que revende puede apagarlo y
+        // entregarlo él mismo (lo descarga desde su portal).
+        public bool SendCertificateToHolderByEmail { get; set; } = true;
         // Controla si el portal del cliente final (client-web) puede mostrar información de
         // consumo/facturación de ese cliente. El tenant decide qué tanto expone a ese nivel.
         public bool ShowUsageToClients { get; set; } = false;

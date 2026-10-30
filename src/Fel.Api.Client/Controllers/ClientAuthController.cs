@@ -72,6 +72,12 @@ namespace Fel.Api.Client.Controllers
                 return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
             }
 
+            // Tenant solo de certificados: sus clientes son titulares, no tienen portal.
+            if (!(await Fel.Infrastructure.Security.TenantModules.GetAsync(_dbContext, tenant.Id)).Invoicing)
+            {
+                return StatusCode(403, Fel.Infrastructure.Security.TenantModules.ClientMessage);
+            }
+
             // Empresas a las que puede entrar (sin las bloqueadas por su tenant).
             var open = members.Where(u => u.Client.BlockedAt == null).ToList();
             if (open.Count == 0) return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);

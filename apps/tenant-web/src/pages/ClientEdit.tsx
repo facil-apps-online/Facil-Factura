@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Save, Building2, FileKey, FileSignature, ShieldAlert, Loader2, Plus, Trash2, X, Copy, Zap, Package, Pencil, PowerOff, Power, ListChecks, Check, Mail, Inbox, LayoutTemplate, ChevronRight, CheckCircle2, Star, UserRound, RefreshCw, LogIn } from 'lucide-react';
 import { api, getErrorMessage } from '../lib/api';
+import { useModules } from '../lib/modules';
+import { requestStatus } from '../lib/certificateFormat';
+import { CertificatePriceNotice } from '../components/CertificateDelivery';
 import { enterClientPortal } from '../lib/support';
 import ClientBlockSwitch from '../components/ClientBlockSwitch';
 import { toast } from 'sonner';
@@ -37,12 +40,18 @@ export default function ClientEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  // Sin facturación (tenant solo de certificados) el cliente es un titular: solo su información básica y su certificado. Sin el módulo de
+  // certificados no se ofrece la solicitud a Viafirma (la carga manual del .p12 sigue, la emisión directa la necesita).
+  const { invoicing, certificates } = useModules();
   const [loading, setLoading] = useState(true);
   // ¿Este cliente es la empresa emisora del tenant (la que factura a los demás)? Null mientras carga.
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
   // Este cliente es el que tiene el mismo NIT del tenant: el único que puede ser la empresa emisora.
   const [isEligibleOwner, setIsEligibleOwner] = useState(false);
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'info');
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get('tab') || 'info';
+    return invoicing || tab === 'certificate' ? tab : 'info';
+  });
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [branches, setBranches] = useState<{ id: string; name: string; isActive: boolean; isMain: boolean }[]>([]);
   // Sucursales elegidas en el modal; vacío al crear = las de la resolución que reemplaza o la principal.
@@ -175,10 +184,11 @@ export default function ClientEdit() {
 
   useEffect(() => {
     if (!id) return;
+    if (!invoicing) { setIsOwner(false); return; }
     api.get('/tenant/invoicing/settings')
       .then(res => { setIsOwner(res.data.ownerClientId === id); setIsEligibleOwner(res.data.eligibleClientId === id); })
       .catch(() => setIsOwner(false));
-  }, [id]);
+  }, [id, invoicing]);
 
   const makeOwner = async () => {
     try {
@@ -204,10 +214,11 @@ export default function ClientEdit() {
         .catch(() => toast.error("No se pudo cargar el cliente"))
         .finally(() => setLoading(false));
     }
+    if (!invoicing) return;
     api.get('/tenant/associates')
       .then(res => setAssociates(res.data))
       .catch(() => {});
-  }, [id]);
+  }, [id, invoicing]);
 
   const loadResolutions = () => {
     api.get(`/tenant/clients/${id}/branches`).then(res => setBranches(res.data)).catch(() => {});
@@ -363,6 +374,7 @@ export default function ClientEdit() {
     api.get(`/tenant/clients/${id}/certificate`)
       .then(res => setCertInfo(res.data))
       .catch(() => setCertInfo(null));
+    if (!certificates) return;
     api.get(`/tenant/clients/${id}/certificate/options?environment=${certificateEnvironment}`)
       .then(res => {
         setCertificateOptions(res.data);
@@ -459,8 +471,9 @@ export default function ClientEdit() {
 
   // El proveedor guardado decide qué pestañas aplican (certificado solo con emisión directa a la DIAN).
   useEffect(() => {
+    if (!invoicing) return;
     api.get(`/tenant/clients/${id}/document-provider`).then(res => setSavedProvider(res.data.documentProvider)).catch(() => {});
-  }, [id]);
+  }, [id, invoicing]);
 
   const loadPrepaid = () => {
     api.get(`/tenant/clients/${id}/prepaid/packages`).then(res => setPrepaidPackages(res.data)).catch(() => {});
@@ -1100,12 +1113,14 @@ export default function ClientEdit() {
               <span>NIT: {client.taxId}</span>
               <span className="w-1 h-1 rounded-full bg-slate-300"></span>
               <span className={client.isActive ? 'text-emerald-600 font-medium' : 'text-rose-600 font-medium'}>
-                {client.isActive ? (client.blocked ? 'Emisor Bloqueado' : 'Emisor Activo') : 'Emisor Archivado'}
+                {!invoicing
+                  ? (client.isActive ? 'Titular activo' : 'Titular archivado')
+                  : client.isActive ? (client.blocked ? 'Emisor Bloqueado' : 'Emisor Activo') : 'Emisor Archivado'}
               </span>
             </div>
           </div>
         </div>
-        {client.isActive && (
+        {invoicing && client.isActive && (
           <div className="flex flex-wrap items-center gap-5">
             {isOwner === true && (
               <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700" title="Esta empresa factura a tus clientes (facturación automática de planes)">Tu empresa emisora</span>
@@ -1147,24 +1162,28 @@ export default function ClientEdit() {
           >
             <Building2 size={18} /> Info. Básica
           </button>
-          <button 
-            onClick={() => setActiveTab('resolutions')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'resolutions' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <FileSignature size={18} /> Resoluciones y Consecutivos
-          </button>
-          {/* La habilitación ante la DIAN la hace Dataico con su propio software: solo aplica a la emisión directa. */}
-          {effectiveProvider !== 'Dataico' && (
-            <button
-              onClick={() => setActiveTab('dian')}
+          {invoicing && (
+            <>
+            <button 
+              onClick={() => setActiveTab('resolutions')}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-                activeTab === 'dian' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+                activeTab === 'resolutions' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <Zap size={18} /> Habilitación DIAN
+              <FileSignature size={18} /> Resoluciones y Consecutivos
             </button>
+            {/* La habilitación ante la DIAN la hace Dataico con su propio software: solo aplica a la emisión directa. */}
+            {effectiveProvider !== 'Dataico' && (
+              <button
+                onClick={() => setActiveTab('dian')}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                  activeTab === 'dian' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <Zap size={18} /> Habilitación DIAN
+              </button>
+            )}
+            </>
           )}
           {/* Con Dataico firma y transmite Dataico con su propio certificado: aquí no se carga ninguno. */}
           {effectiveProvider !== 'Dataico' && (
@@ -1177,78 +1196,82 @@ export default function ClientEdit() {
               <FileKey size={18} /> Certificado Digital
             </button>
           )}
-          <button
-            onClick={() => setActiveTab('credentials')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'credentials' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <ShieldAlert size={18} /> Proveedor y MinSalud
-          </button>
-          <button
-            onClick={() => setActiveTab('plan')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'plan' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Package size={18} /> Plan y consumo
-          </button>
-          <button
-            onClick={() => setActiveTab('branches')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'branches' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Building2 size={18} /> Sucursales
-          </button>
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'users' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <UserRound size={18} /> Usuarios del portal
-          </button>
-          <button
-            onClick={() => setActiveTab('prepaid')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'prepaid' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Package size={18} /> Paquetes Prepago
-          </button>
-          <button
-            onClick={() => setActiveTab('enablements')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'enablements' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <ListChecks size={18} /> Documentos y Retenciones
-          </button>
-          <button
-            onClick={() => setActiveTab('reception')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'reception' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Inbox size={18} /> Eventos de Recepción
-          </button>
-          <button
-            onClick={() => setActiveTab('smtp')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'smtp' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Mail size={18} /> SMTP de Reenvío
-          </button>
-          <button
-            onClick={() => setActiveTab('templates')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
-              activeTab === 'templates' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <LayoutTemplate size={18} /> Plantillas
-          </button>
+          {invoicing && (
+            <>
+            <button
+              onClick={() => setActiveTab('credentials')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'credentials' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <ShieldAlert size={18} /> Proveedor y MinSalud
+            </button>
+            <button
+              onClick={() => setActiveTab('plan')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'plan' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <Package size={18} /> Plan y consumo
+            </button>
+            <button
+              onClick={() => setActiveTab('branches')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'branches' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <Building2 size={18} /> Sucursales
+            </button>
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'users' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <UserRound size={18} /> Usuarios del portal
+            </button>
+            <button
+              onClick={() => setActiveTab('prepaid')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'prepaid' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <Package size={18} /> Paquetes Prepago
+            </button>
+            <button
+              onClick={() => setActiveTab('enablements')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'enablements' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <ListChecks size={18} /> Documentos y Retenciones
+            </button>
+            <button
+              onClick={() => setActiveTab('reception')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'reception' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <Inbox size={18} /> Eventos de Recepción
+            </button>
+            <button
+              onClick={() => setActiveTab('smtp')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'smtp' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <Mail size={18} /> SMTP de Reenvío
+            </button>
+            <button
+              onClick={() => setActiveTab('templates')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                activeTab === 'templates' ? 'bg-white shadow-sm border border-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <LayoutTemplate size={18} /> Plantillas
+            </button>
+            </>
+          )}
         </div>
 
         {/* Panel principal con scroll propio */}
@@ -1256,10 +1279,10 @@ export default function ClientEdit() {
           <div className="max-w-4xl">
             {activeTab === 'info' && (
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
-                <h2 className="text-xl font-bold text-slate-800 mb-6">Información del Emisor</h2>
+                <h2 className="text-xl font-bold text-slate-800 mb-6">{invoicing ? 'Información del Emisor' : 'Información del titular'}</h2>
                 <form onSubmit={handleSave} className="space-y-6">
                   
-                   <ClientFormFields client={client} setClient={setClient} associates={associates} showBillingSection />
+                   <ClientFormFields client={client} setClient={setClient} associates={associates} showBillingSection={invoicing} certificatesOnly={!invoicing} />
 
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5" data-testid="portal-modules">
                     <h3 className="font-semibold text-slate-800">Módulos del portal</h3>
@@ -1454,10 +1477,11 @@ export default function ClientEdit() {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-slate-800">Certificado digital</h2>
-                    <p className="text-sm text-slate-500">Solicita y administra certificados por ambiente.</p>
+                    <p className="text-sm text-slate-500">{certificates ? 'Solicita y administra certificados por ambiente.' : 'Carga y administra el certificado con el que firma sus documentos.'}</p>
                   </div>
                 </div>
 
+                {certificates && (
                 <div className="mb-8 rounded-2xl border border-blue-100 bg-blue-50 p-6 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -1503,8 +1527,11 @@ export default function ClientEdit() {
                           );
                         })}
                       </div>
+                      {certificateOptions.requiresPayment && (
+                        <CertificatePriceNotice price={certificateOptions.prices?.[selectedCertificateProfile]} available={certificateOptions.availableBalance} />
+                      )}
                       <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" checked={acceptCertificateTerms} onChange={e => setAcceptCertificateTerms(e.target.checked)} className="mt-1" /> Acepto los términos y condiciones del certificado seleccionado.</label>
-                      <button type="button" onClick={handleCreateCertificateRequest} disabled={requestingCertificate || !acceptCertificateTerms} className="rounded-xl bg-blue-600 px-5 py-3 font-bold text-white disabled:opacity-50">
+                      <button type="button" onClick={handleCreateCertificateRequest} disabled={requestingCertificate || !acceptCertificateTerms || (certificateOptions.requiresPayment && (certificateOptions.prices?.[selectedCertificateProfile] == null || (certificateOptions.availableBalance ?? 0) < certificateOptions.prices[selectedCertificateProfile]))} className="rounded-xl bg-blue-600 px-5 py-3 font-bold text-white disabled:opacity-50">
                         {requestingCertificate ? 'Creando solicitud...' : 'Solicitar certificado'}
                       </button>
                     </>
@@ -1512,10 +1539,11 @@ export default function ClientEdit() {
                     <p className="text-sm text-slate-600">No hay perfiles disponibles para este ambiente. Solicita a Administración sincronizar los perfiles.</p>
                   )}
                   {certificateOptions?.certificates?.length > 0 && <div className="border-t border-blue-100 pt-3 text-sm text-slate-600">Este ambiente tiene {certificateOptions.certificates.length} certificado(s). Las solicitudes nuevas se conservan como historial y no eliminan los existentes.</div>}
-                  {certificateOptions?.requests?.length > 0 && <div className="border-t border-blue-100 pt-3 space-y-2"><p className="text-sm font-semibold text-slate-700">Solicitudes recientes</p>{certificateOptions.requests.slice(0, 3).map((request: any) => <div key={request.id} className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600"><span>{request.status} · {new Date(request.createdAt).toLocaleString()}</span>{request.kycUrl && <a href={request.kycUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">Completar validación</a>}</div>)}</div>}
+                  {certificateOptions?.requests?.length > 0 && <div className="border-t border-blue-100 pt-3 space-y-2"><div className="flex items-center justify-between"><p className="text-sm font-semibold text-slate-700">Solicitudes recientes</p><button type="button" onClick={() => navigate('/certificate-requests')} className="text-xs font-semibold text-blue-700 hover:underline">Ver todas, descargar el .p12</button></div>{certificateOptions.requests.slice(0, 3).map((request: any) => <div key={request.id} className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600"><span>{requestStatus(request.status).label} · {new Date(request.createdAt).toLocaleString()}</span>{request.kycUrl && <a href={request.kycUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">Completar validación</a>}</div>)}</div>}
                 </div>
+                )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className={`grid grid-cols-1 gap-8 ${invoicing ? 'lg:grid-cols-2' : ''}`}>
                   {/* Estado Actual */}
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Estado del Certificado</h3>
@@ -1535,7 +1563,7 @@ export default function ClientEdit() {
                         </div>
                         {new Date(certInfo.expirationDate) < new Date() && (
                           <div className="p-3 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-sm font-medium">
-                            El certificado ha expirado. Por favor, sube uno nuevo.
+                            {invoicing ? 'El certificado ha expirado. Por favor, sube uno nuevo.' : 'El certificado ha expirado. Solicita uno nuevo.'}
                           </div>
                         )}
                       </div>
@@ -1543,12 +1571,13 @@ export default function ClientEdit() {
                       <div className="flex flex-col items-center justify-center h-40 text-center">
                         <ShieldAlert className="text-slate-300 w-12 h-12 mb-2" />
                         <span className="font-medium text-slate-500">No hay certificado cargado.</span>
-                        <span className="text-xs text-slate-400 mt-1">El emisor no podrá firmar facturas.</span>
+                        <span className="text-xs text-slate-400 mt-1">{invoicing ? 'El emisor no podrá firmar facturas.' : 'Solicítalo arriba; al emitirse queda aquí.'}</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Formulario Carga */}
+                  {/* Formulario Carga (la carga manual es de facturación: el .p12 con el que firma) */}
+                  {invoicing && (
                   <form onSubmit={handleUploadCertificate} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Reemplazar / Subir Certificado</h3>
                     
@@ -1587,6 +1616,7 @@ export default function ClientEdit() {
                       </div>
                     </div>
                   </form>
+                  )}
                 </div>
               </div>
             )}

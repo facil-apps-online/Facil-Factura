@@ -50,12 +50,14 @@ interface ClientFormFieldsProps {
   associates: { id: string; name: string; isActive: boolean }[];
   showBillingSection?: boolean;
   showRutUpload?: boolean;
+  // Tenant solo de certificados: el cliente es un titular, sin los datos que solo sirven para facturar (regímenes, CIIU, retenciones, moneda...).
+  certificatesOnly?: boolean;
 }
 
 // Campos de identidad/ubicación de un Client, compartidos entre el alta (Clients.tsx) y la edición
 // ("Info Básica" en ClientEdit.tsx) — antes el alta pedía solo 3 campos y el resto se llenaba
 // después en edición; ahora ambos usan exactamente el mismo formulario, con carga de RUT.
-export default function ClientFormFields({ client, setClient, associates, showBillingSection = false, showRutUpload = true }: ClientFormFieldsProps) {
+export default function ClientFormFields({ client, setClient, associates, showBillingSection = false, showRutUpload = true, certificatesOnly = false }: ClientFormFieldsProps) {
   const [uploadingRut, setUploadingRut] = React.useState(false);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const { isLoaded } = useJsApiLoader({ id: 'google-map-script', googleMapsApiKey: GOOGLE_MAPS_API_KEY, libraries });
@@ -215,7 +217,7 @@ export default function ClientFormFields({ client, setClient, associates, showBi
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Identidad */}
         <div className="space-y-6">
-          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-2">Información tributaria</h3>
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-2">{certificatesOnly ? 'Identificación' : 'Información tributaria'}</h3>
 
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">Razón Social</label>
@@ -247,120 +249,124 @@ export default function ClientFormFields({ client, setClient, associates, showBi
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {!certificatesOnly && (
+            <>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Régimen tributario</label>
+                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.taxRegime} onChange={e => setClient({ ...client, taxRegime: e.target.value })}>
+                  <option value="">Seleccione...</option>
+                  <option value="48">Resp. de IVA (48)</option>
+                  <option value="49">No Resp. de IVA (49)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">CIIU</label>
+                <input type="text" placeholder="Ej. 6201" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.economicActivity} onChange={e => setClient({ ...client, economicActivity: e.target.value })} />
+              </div>
+            </div>
+
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Régimen tributario</label>
-              <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.taxRegime} onChange={e => setClient({ ...client, taxRegime: e.target.value })}>
-                <option value="">Seleccione...</option>
-                <option value="48">Resp. de IVA (48)</option>
-                <option value="49">No Resp. de IVA (49)</option>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Régimen de renta</label>
+              <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.incomeTaxRegime || ''} onChange={e => setClient({ ...client, incomeTaxRegime: e.target.value })}>
+                <option value="">Sin definir</option>
+                <option value="05">Ordinario (05)</option>
+                <option value="04">Especial (04)</option>
+                <option value="47">Régimen Simple de Tributación (47)</option>
               </select>
             </div>
+
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">CIIU</label>
-              <input type="text" placeholder="Ej. 6201" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.economicActivity} onChange={e => setClient({ ...client, economicActivity: e.target.value })} />
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Responsabilidades tributarias</label>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={!!client.isGranContribuyente} onChange={e => setClient({ ...client, isGranContribuyente: e.target.checked })} />
+                  Gran Contribuyente (13)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={!!client.isAgenteRetenedorIva} onChange={e => setClient({ ...client, isAgenteRetenedorIva: e.target.checked })} />
+                  Agente Retenedor de IVA (09)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={!!client.isAutorretenedorRenta} onChange={e => setClient({ ...client, isAutorretenedorRenta: e.target.checked })} />
+                  Autorretenedor de Renta (15)
+                </label>
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Régimen de renta</label>
-            <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.incomeTaxRegime || ''} onChange={e => setClient({ ...client, incomeTaxRegime: e.target.value })}>
-              <option value="">Sin definir</option>
-              <option value="05">Ordinario (05)</option>
-              <option value="04">Especial (04)</option>
-              <option value="47">Régimen Simple de Tributación (47)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Responsabilidades tributarias</label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={!!client.isGranContribuyente} onChange={e => setClient({ ...client, isGranContribuyente: e.target.checked })} />
-                Gran Contribuyente (13)
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={!!client.isAgenteRetenedorIva} onChange={e => setClient({ ...client, isAgenteRetenedorIva: e.target.checked })} />
-                Agente Retenedor de IVA (09)
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={!!client.isAutorretenedorRenta} onChange={e => setClient({ ...client, isAutorretenedorRenta: e.target.checked })} />
-                Autorretenedor de Renta (15)
+            <div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={!!client.isDemo} onChange={e => setClient({ ...client, isDemo: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
+                <span>
+                  <span className="font-semibold text-slate-700 text-sm">Cliente de demostración</span>
+                  <span className="block text-xs text-slate-400 mt-0.5">Sirve para hacer pruebas de punta a punta: lo que emite es sandbox, no cuenta como documento emitido ni se cobra.</span>
+                </span>
               </label>
             </div>
-          </div>
 
-          <div>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input type="checkbox" checked={!!client.isDemo} onChange={e => setClient({ ...client, isDemo: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
-              <span>
-                <span className="font-semibold text-slate-700 text-sm">Cliente de demostración</span>
-                <span className="block text-xs text-slate-400 mt-0.5">Sirve para hacer pruebas de punta a punta: lo que emite es sandbox, no cuenta como documento emitido ni se cobra.</span>
-              </span>
-            </label>
-          </div>
-
-          <div>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input type="checkbox" checked={!!client.foreignCurrencyEnabled} onChange={e => setClient({ ...client, foreignCurrencyEnabled: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
-              <span>
-                <span className="font-semibold text-slate-700 text-sm">Factura también en moneda extranjera</span>
-                <span className="block text-xs text-slate-400 mt-0.5">Su formulario de factura permite elegir la moneda (USD, EUR...) e indicar la TRM. Apagado, todo sale en pesos.</span>
-              </span>
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Ajuste de centavos en las facturas</label>
-            <SearchableSelect
-              options={ROUNDING_ADJUSTMENT_OPTIONS}
-              value={client.roundingAdjustment || 'None'}
-              onChange={v => setClient({ ...client, roundingAdjustment: v })}
-              inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-            />
-            <p className="text-xs text-slate-400 mt-1">Para clientes que facturan a entidades que no manejan centavos. A cada factura en pesos se le crea un descuento general con lo que sobre del valor a pagar (siempre hacia abajo). No cambia el IVA y se informa en el XML.</p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Retenciones de cada línea (cómo se ven)</label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={!!client.foreignCurrencyEnabled} onChange={e => setClient({ ...client, foreignCurrencyEnabled: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
+                <span>
+                  <span className="font-semibold text-slate-700 text-sm">Factura también en moneda extranjera</span>
+                  <span className="block text-xs text-slate-400 mt-0.5">Su formulario de factura permite elegir la moneda (USD, EUR...) e indicar la TRM. Apagado, todo sale en pesos.</span>
+                </span>
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Ajuste de centavos en las facturas</label>
               <SearchableSelect
-                options={RETENTION_LABEL_STYLE_OPTIONS}
-                value={client.lineRetentionLabelStyle || 'Short'}
-                onChange={v => setClient({ ...client, lineRetentionLabelStyle: v || 'Short' })}
+                options={ROUNDING_ADJUSTMENT_OPTIONS}
+                value={client.roundingAdjustment || 'None'}
+                onChange={v => setClient({ ...client, roundingAdjustment: v })}
                 inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               />
+              <p className="text-xs text-slate-400 mt-1">Para clientes que facturan a entidades que no manejan centavos. A cada factura en pesos se le crea un descuento general con lo que sobre del valor a pagar (siempre hacia abajo). No cambia el IVA y se informa en el XML.</p>
             </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Retenciones de cada línea (cómo se ven)</label>
+                <SearchableSelect
+                  options={RETENTION_LABEL_STYLE_OPTIONS}
+                  value={client.lineRetentionLabelStyle || 'Short'}
+                  onChange={v => setClient({ ...client, lineRetentionLabelStyle: v || 'Short' })}
+                  inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Retenciones del pie (cómo se ven)</label>
+                <SearchableSelect
+                  options={RETENTION_LABEL_STYLE_OPTIONS}
+                  value={client.footerRetentionLabelStyle || 'Short'}
+                  onChange={v => setClient({ ...client, footerRetentionLabelStyle: v || 'Short' })}
+                  inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
+              </div>
+              <p className="text-xs text-slate-400 md:col-span-2 -mt-2">En los formularios de factura y documento soporte del cliente. El propio cliente también lo puede cambiar en "Valores por defecto"; manda el último cambio. Los nombres cortos los define la administración de la plataforma.</p>
+            </div>
+
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Retenciones del pie (cómo se ven)</label>
-              <SearchableSelect
-                options={RETENTION_LABEL_STYLE_OPTIONS}
-                value={client.footerRetentionLabelStyle || 'Short'}
-                onChange={v => setClient({ ...client, footerRetentionLabelStyle: v || 'Short' })}
-                inputClassName="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              />
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Formato de números</label>
+              <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.decimalSeparator || '.'} onChange={e => setClient({ ...client, decimalSeparator: e.target.value })}>
+                <option value=".">Punto decimal, coma de miles (1,234,567.89)</option>
+                <option value=",">Coma decimal, punto de miles (1.234.567,89)</option>
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Cómo ve y escribe los valores en su portal y cómo salen en los PDF de sus documentos.</p>
             </div>
-            <p className="text-xs text-slate-400 md:col-span-2 -mt-2">En los formularios de factura y documento soporte del cliente. El propio cliente también lo puede cambiar en "Valores por defecto"; manda el último cambio. Los nombres cortos los define la administración de la plataforma.</p>
-          </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Formato de números</label>
-            <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.decimalSeparator || '.'} onChange={e => setClient({ ...client, decimalSeparator: e.target.value })}>
-              <option value=".">Punto decimal, coma de miles (1,234,567.89)</option>
-              <option value=",">Coma decimal, punto de miles (1.234.567,89)</option>
-            </select>
-            <p className="text-xs text-slate-400 mt-1">Cómo ve y escribe los valores en su portal y cómo salen en los PDF de sus documentos.</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Responsable comercial</label>
-            <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.associateId || ''} onChange={e => setClient({ ...client, associateId: e.target.value })}>
-              <option value="">Sin asociado</option>
-              {associates.map(a => (
-                <option key={a.id} value={a.id}>{a.name}{!a.isActive ? ' (inactivo)' : ''}</option>
-              ))}
-            </select>
-          </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Responsable comercial</label>
+              <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.associateId || ''} onChange={e => setClient({ ...client, associateId: e.target.value })}>
+                <option value="">Sin asociado</option>
+                {associates.map(a => (
+                  <option key={a.id} value={a.id}>{a.name}{!a.isActive ? ' (inactivo)' : ''}</option>
+                ))}
+              </select>
+            </div>
+            </>
+          )}
         </div>
 
         {/* Contacto y Ubicación */}

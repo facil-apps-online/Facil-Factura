@@ -40,7 +40,15 @@ namespace Fel.Api.Tenant.Controllers
                 .Where(t => t.Id == tenantId)
                 .Select(t => t.ParentTenantId != null && !t.ChildTenants.Any())
                 .FirstOrDefaultAsync();
-            return Ok(new { readOnly = block.Level == Fel.Infrastructure.Security.TenantBlockLevel.ReadOnly, reason = block.Reason, hideGroupMenus });
+            // Módulos de la cuenta: el portal arma el menú y las rutas con ellos (sin facturación, los clientes se ven como titulares de certificados).
+            var modules = await Fel.Infrastructure.Security.TenantModules.GetAsync(_dbContext, tenantId);
+            return Ok(new
+            {
+                readOnly = block.Level == Fel.Infrastructure.Security.TenantBlockLevel.ReadOnly,
+                reason = block.Reason,
+                hideGroupMenus,
+                modules = new { invoicing = modules.Invoicing, certificates = modules.Certificates }
+            });
         }
 
         private static string BlockedMessage(string? reason) =>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -266,6 +267,189 @@ namespace Fel.Api.Superadmin.Controllers
             }
         }
 
+        // --- Precios y saldo prepagado de certificados (ver CertificateBilling) ---
+
+        [HttpGet("profiles")]
+        public async Task<IActionResult> GetProfiles([FromQuery] CertificateEnvironment environment = CertificateEnvironment.Production, CancellationToken cancellationToken = default)
+        {
+            var profiles = await _dbContext.CertificateProfiles.AsNoTracking()
+                .Where(p => p.Environment == environment && p.IsActive)
+                .OrderBy(p => p.Title)
+                .Select(p => new { p.Id, p.Title, p.Description, p.ExternalType, p.ProviderValidityDays, Environment = p.Environment.ToString() })
+                .ToListAsync(cancellationToken);
+            return Ok(profiles);
+        }
+
+        // Precios versionados: uno general por perfil (sin tenant) y, si se quiere, uno especial para un tenant. Crear un precio nuevo cierra la
+        // vigencia del anterior del mismo perfil y tenant; los cargos ya hechos conservan su valor.
+        [HttpGet("prices")]
+        public async Task<IActionResult> GetPrices(CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+            var prices = await _dbContext.CertificatePrices.AsNoTracking()
+                .OrderBy(p => p.Profile.Title).ThenBy(p => p.TenantId != null).ThenByDescending(p => p.EffectiveFrom)
+                .Select(p => new
+                {
+                    p.Id, p.ProfileId, ProfileTitle = p.Profile.Title, Environment = p.Environment.ToString(),
+                    p.TenantId, TenantName = p.Tenant != null ? p.Tenant.CommercialName : null,
+                    p.NetAmount, p.TaxRate, p.Currency, p.EffectiveFrom, p.EffectiveTo, p.IsActive,
+                    IsCurrent = p.IsActive && p.EffectiveFrom <= now && (p.EffectiveTo == null || p.EffectiveTo > now)
+                })
+                .ToListAsync(cancellationToken);
+            return Ok(prices.Select(p => new
+            {
+                p.Id, p.ProfileId, p.ProfileTitle, p.Environment, p.TenantId, p.TenantName, p.NetAmount, p.TaxRate, p.Currency,
+                Total = p.NetAmount + Math.Round(p.NetAmount * p.TaxRate / 100m, 2),
+                p.EffectiveFrom, p.EffectiveTo, p.IsActive, p.IsCurrent
+            }));
+        }
+
+        [HttpPost("prices")]
+        public async Task<IActionResult> CreatePrice([FromBody] CertificatePriceRequest request, CancellationToken cancellationToken = default)
+        {
+            if (request.NetAmount <= 0) return BadRequest(new { Message = "El precio debe ser mayor a cero." });
+            if (request.TaxRate < 0 || request.TaxRate > 100) return BadRequest(new { Message = "El IVA debe estar entre 0 y 100." });
+
+            var profile = await _dbContext.CertificateProfiles.SingleOrDefaultAsync(p => p.Id == request.ProfileId, cancellationToken);
+            if (profile == null) return BadRequest(new { Message = "El perfil no existe." });
+            if (request.TenantId.HasValue && !await _dbContext.Tenants.AnyAsync(t => t.Id == request.TenantId.Value, cancellationToken))
+                return BadRequest(new { Message = "El tenant no existe." });
+
+            var now = DateTime.UtcNow;
+            var effectiveFrom = request.EffectiveFrom?.ToUniversalTime() ?? now;
+            if (effectiveFrom < now.AddMinutes(-5)) effectiveFrom = now;
+
+            // El precio anterior del mismo perfil y tenant termina donde empieza el nuevo; uno que aún no había empezado se reemplaza.
+            var open = await _dbContext.CertificatePrices
+                .Where(p => p.ProfileId == profile.Id && p.Environment == profile.Environment && p.TenantId == request.TenantId
+                    && p.IsActive && (p.EffectiveTo == null || p.EffectiveTo > effectiveFrom))
+                .ToListAsync(cancellationToken);
+            foreach (var previous in open)
+            {
+                if (previous.EffectiveFrom >= effectiveFrom) previous.IsActive = false;
+                else previous.EffectiveTo = effectiveFrom;
+            }
+
+            Guid.TryParse(User.FindFirst("UserId")?.Value, out var userId);
+            var price = new CertificatePrice
+            {
+                Id = Guid.NewGuid(),
+                ProviderId = profile.ProviderId,
+                ProfileId = profile.Id,
+                Environment = profile.Environment,
+                TenantId = request.TenantId,
+                NetAmount = Math.Round(request.NetAmount, 2),
+                TaxRate = request.TaxRate,
+                EffectiveFrom = effectiveFrom,
+                IsActive = true,
+                CreatedByUserId = userId == Guid.Empty ? null : userId,
+                CreatedAt = now
+            };
+            _dbContext.CertificatePrices.Add(price);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return Ok(new { price.Id });
+        }
+
+        // Termina la vigencia de un precio (desde ya). Sin precio vigente, ese perfil no se puede solicitar en producción.
+        [HttpPost("prices/{id:guid}/close")]
+        public async Task<IActionResult> ClosePrice(Guid id, CancellationToken cancellationToken = default)
+        {
+            var price = await _dbContext.CertificatePrices.SingleOrDefaultAsync(p => p.Id == id, cancellationToken);
+            if (price == null) return NotFound();
+            var now = DateTime.UtcNow;
+            if (price.EffectiveFrom >= now) price.IsActive = false;
+            else if (price.EffectiveTo == null || price.EffectiveTo > now) price.EffectiveTo = now;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return Ok(new { price.Id, price.EffectiveTo, price.IsActive });
+        }
+
+        // Saldo de certificados de todos los tenants con el módulo, para ver de un vistazo quién tiene saldo y quién no.
+        [HttpGet("balances")]
+        public async Task<IActionResult> GetBalances(CancellationToken cancellationToken = default)
+        {
+            var tenants = await _dbContext.Tenants.AsNoTracking()
+                .Where(t => t.CertificatesModuleEnabled)
+                .OrderBy(t => t.CommercialName)
+                .Select(t => new { t.Id, t.CommercialName, t.IsBillingExempt, t.InvoicingModuleEnabled })
+                .ToListAsync(cancellationToken);
+            var result = new List<object>();
+            foreach (var tenant in tenants)
+            {
+                var balance = await CertificateBilling.GetBalanceAsync(_dbContext, tenant.Id, cancellationToken);
+                result.Add(new
+                {
+                    TenantId = tenant.Id, TenantName = tenant.CommercialName, tenant.IsBillingExempt,
+                    CertificatesOnly = !tenant.InvoicingModuleEnabled,
+                    balance.Available, balance.Reserved, balance.Consumed, balance.Deposited
+                });
+            }
+            return Ok(result);
+        }
+
+        [HttpGet("balances/{tenantId:guid}")]
+        public async Task<IActionResult> GetBalance(Guid tenantId, CancellationToken cancellationToken = default)
+        {
+            var tenant = await _dbContext.Tenants.AsNoTracking().SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+            if (tenant == null) return NotFound();
+            var balance = await CertificateBilling.GetBalanceAsync(_dbContext, tenantId, cancellationToken);
+            var movements = await _dbContext.CertificateBalanceMovements.AsNoTracking()
+                .Where(m => m.TenantId == tenantId)
+                .OrderByDescending(m => m.OccurredAt).ThenByDescending(m => m.CreatedAt)
+                .Take(300)
+                .Select(m => new
+                {
+                    m.Id, Type = m.Type.ToString(), m.Amount, m.Reference, m.Notes, m.OccurredAt, m.CreatedBy,
+                    ClientName = m.CertificateCharge == null ? null
+                        : (string.IsNullOrWhiteSpace(m.CertificateCharge.Client.CommercialName) ? m.CertificateCharge.Client.CompanyName : m.CertificateCharge.Client.CommercialName)
+                })
+                .ToListAsync(cancellationToken);
+            return Ok(new
+            {
+                balance.Available, balance.Reserved, balance.Consumed, balance.Deposited,
+                tenant.IsBillingExempt, Movements = movements
+            });
+        }
+
+        // Abono (pago recibido del tenant) o ajuste (corrección, positiva o negativa). Un ajuste no puede dejar el saldo disponible en negativo.
+        [HttpPost("balances/{tenantId:guid}/movements")]
+        public async Task<IActionResult> AddBalanceMovement(Guid tenantId, [FromBody] CertificateBalanceMovementRequest request, CancellationToken cancellationToken = default)
+        {
+            if (!await _dbContext.Tenants.AnyAsync(t => t.Id == tenantId, cancellationToken)) return NotFound();
+            var isDeposit = string.Equals(request.Type, "Deposit", StringComparison.OrdinalIgnoreCase);
+            var isAdjustment = string.Equals(request.Type, "Adjustment", StringComparison.OrdinalIgnoreCase);
+            if (!isDeposit && !isAdjustment) return BadRequest(new { Message = "El tipo debe ser abono o ajuste." });
+            var amount = Math.Round(request.Amount, 2);
+            if (isDeposit && amount <= 0) return BadRequest(new { Message = "El abono debe ser mayor a cero." });
+            if (isAdjustment && amount == 0) return BadRequest(new { Message = "El ajuste no puede ser cero." });
+            if (string.IsNullOrWhiteSpace(request.Reference)) return BadRequest(new { Message = "Indica la referencia del pago o del ajuste." });
+
+            var now = DateTime.UtcNow;
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await CertificateBilling.LockTenantBalanceAsync(_dbContext, tenantId, cancellationToken);
+            if (amount < 0)
+            {
+                var balance = await CertificateBilling.GetBalanceAsync(_dbContext, tenantId, cancellationToken);
+                if (balance.Available + amount < 0)
+                    return BadRequest(new { Message = "El ajuste dejaría el saldo disponible en negativo." });
+            }
+            var movement = new CertificateBalanceMovement
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Type = isDeposit ? CertificateBalanceMovementType.Deposit : CertificateBalanceMovementType.Adjustment,
+                Amount = amount,
+                Reference = request.Reference.Trim()[..Math.Min(request.Reference.Trim().Length, 200)],
+                Notes = (request.Notes ?? string.Empty).Trim()[..Math.Min((request.Notes ?? string.Empty).Trim().Length, 1000)],
+                OccurredAt = request.OccurredAt?.ToUniversalTime() ?? now,
+                CreatedBy = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "superadmin",
+                CreatedAt = now
+            };
+            _dbContext.CertificateBalanceMovements.Add(movement);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return Ok(new { movement.Id });
+        }
+
         private static string BuildKey(string providerKey, CertificateEnvironment environment, string externalCode)
             => $"{providerKey}:{environment}:{externalCode}";
 
@@ -273,6 +457,27 @@ namespace Fel.Api.Superadmin.Controllers
             => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty))).ToLowerInvariant();
 
         private static bool IsHttps(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
+    }
+
+    public sealed class CertificatePriceRequest
+    {
+        public Guid ProfileId { get; set; }
+        // Nulo = precio general; con tenant = precio especial para ese tenant.
+        public Guid? TenantId { get; set; }
+        public decimal NetAmount { get; set; }
+        // Porcentaje (19 = 19 %).
+        public decimal TaxRate { get; set; }
+        public DateTime? EffectiveFrom { get; set; }
+    }
+
+    public sealed class CertificateBalanceMovementRequest
+    {
+        // "Deposit" (abono) o "Adjustment" (ajuste, con signo).
+        public string Type { get; set; } = "Deposit";
+        public decimal Amount { get; set; }
+        public string Reference { get; set; } = string.Empty;
+        public string? Notes { get; set; }
+        public DateTime? OccurredAt { get; set; }
     }
 
     public sealed class CertificateProviderConfigurationRequest

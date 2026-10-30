@@ -39,6 +39,9 @@ namespace Fel.Api.Client.Security
             // Bloqueo administrativo del tenant (o de un ancestro): el cliente no entra. Mensaje neutro, sin motivo.
             if ((await TenantBlocks.GetAsync(_dbContext, tenant.Id)).Level != TenantBlockLevel.None)
                 return new IssueResult(403, TenantBlocks.ClientMessage, null);
+            // Tenant solo de certificados: sus clientes son titulares, no tienen portal.
+            if (!(await TenantModules.GetAsync(_dbContext, tenant.Id)).Invoicing)
+                return new IssueResult(403, TenantModules.ClientMessage, null);
             // Bloqueo del propio cliente por su tenant.
             if (user.Client.BlockedAt != null) return new IssueResult(403, TenantBlocks.ClientMessage, null);
 

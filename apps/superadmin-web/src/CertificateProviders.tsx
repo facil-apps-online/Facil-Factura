@@ -71,6 +71,27 @@ export function CertificateProviders() {
     } finally { setTesting(false); }
   };
 
+  // Los precios de certificados se definen sobre los perfiles de producción: hay que sincronizarlos también.
+  const testProduction = async () => {
+    setTesting(true);
+    try {
+      const { data } = await api.post('/certificates/providers/viafirma/test?environment=Production');
+      toast.success(`Conexión correcta. Perfiles disponibles: ${data.profiles}.`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message ?? 'La conexión con Producción falló.');
+    } finally { setTesting(false); }
+  };
+
+  const syncProductionProfiles = async () => {
+    setSyncing(true);
+    try {
+      const { data } = await api.post('/certificates/providers/viafirma/profiles/sync?environment=Production');
+      toast.success(`Perfiles de producción sincronizados: ${data.profiles}.`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message ?? 'No fue posible sincronizar los perfiles de Producción.');
+    } finally { setSyncing(false); }
+  };
+
   const syncSandboxProfiles = async () => {
     setSyncing(true);
     try {
@@ -106,7 +127,7 @@ export function CertificateProviders() {
         <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" checked={form.sandboxEnabled} onChange={event => update('sandboxEnabled', event.target.checked)} /> Permitir solicitudes Sandbox a los tenants</label>
       </section>
         <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 space-y-4"><div className="flex items-center justify-between"><h2 className="text-lg font-bold text-white">Credenciales Sandbox</h2><button type="button" onClick={() => setCredentialsUnlocked(value => !value)} className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300">{credentialsUnlocked ? <Unlock className="w-4" /> : <Lock className="w-4" />} {credentialsUnlocked ? 'Bloquear' : 'Desbloquear credenciales'}</button></div>{credentialInput('sandboxConsumerKey', 'Consumer key')}{credentialInput('sandboxConsumerSecret', 'Consumer secret', 'password')}<p className="text-xs text-slate-500">Los campos permanecen bloqueados y no aceptan autocompletado hasta desbloquearlos.</p><div className="flex flex-wrap gap-3"><button onClick={testSandbox} disabled={testing} className="flex items-center gap-2 rounded-lg border border-emerald-700 px-4 py-2 text-emerald-300">{testing ? <Loader2 className="animate-spin" /> : <TestTube2 className="w-4" />} Probar Sandbox</button><button onClick={syncSandboxProfiles} disabled={syncing} className="flex items-center gap-2 rounded-lg border border-blue-700 px-4 py-2 text-blue-300">{syncing ? <Loader2 className="animate-spin" /> : <ShieldCheck className="w-4" />} Sincronizar perfiles</button></div></section>
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 space-y-4"><h2 className="text-lg font-bold text-white">Credenciales Producción</h2>{credentialInput('productionConsumerKey', 'Consumer key')}{credentialInput('productionConsumerSecret', 'Consumer secret', 'password')}<p className="text-xs text-slate-500">La configuración queda separada de Sandbox y cifrada en la base de datos.</p></section>
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 space-y-4"><h2 className="text-lg font-bold text-white">Credenciales Producción</h2>{credentialInput('productionConsumerKey', 'Consumer key')}{credentialInput('productionConsumerSecret', 'Consumer secret', 'password')}<p className="text-xs text-slate-500">La configuración queda separada de Sandbox y cifrada en la base de datos. Los precios de certificados se definen sobre los perfiles de producción.</p><div className="flex flex-wrap gap-3"><button onClick={testProduction} disabled={testing} className="flex items-center gap-2 rounded-lg border border-emerald-700 px-4 py-2 text-emerald-300">{testing ? <Loader2 className="animate-spin" /> : <TestTube2 className="w-4" />} Probar Producción</button><button onClick={syncProductionProfiles} disabled={syncing} className="flex items-center gap-2 rounded-lg border border-blue-700 px-4 py-2 text-blue-300">{syncing ? <Loader2 className="animate-spin" /> : <ShieldCheck className="w-4" />} Sincronizar perfiles</button></div></section>
       <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 space-y-4"><h2 className="text-lg font-bold text-white">Operación</h2>{input('requestTimeoutSeconds', 'Timeout en segundos', 'number')}{input('maxRetryAttempts', 'Máximo de reintentos', 'number')}</section>
     </div>
     <button onClick={save} disabled={saving} className="mt-6 flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-500">{saving ? <Loader2 className="animate-spin" /> : <Save className="w-4" />} Guardar configuración</button>

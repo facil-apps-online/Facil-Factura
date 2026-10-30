@@ -2,13 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ShieldCheck, AlertTriangle, Clock, FileKey } from 'lucide-react';
 import { api } from '../lib/api';
+import { useModules } from '../lib/modules';
+import { CertificateDeliveryButtons } from '../components/CertificateDelivery';
 
 interface CertificateRow {
+  id: string;
   clientId: string;
   clientName: string;
   fileName: string;
   expirationDate: string;
   createdAt: string;
+  environment: 'Sandbox' | 'Production';
+  // Emitido por la plataforma (con su .p12 y contraseña guardados): se puede descargar.
+  downloadable: boolean;
 }
 
 const DAYS_SOON_THRESHOLD = 30;
@@ -44,6 +50,7 @@ function statusFor(days: number): { label: string; badgeClass: string; icon: Rea
 }
 
 export default function Certificates() {
+  const { invoicing } = useModules();
   const [certificates, setCertificates] = useState<CertificateRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -61,7 +68,7 @@ export default function Certificates() {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-slate-800">Certificados digitales</h1>
-        <p className="text-slate-500 mt-2">Consulta los certificados de tus clientes y sus fechas de vencimiento.</p>
+        <p className="text-slate-500 mt-2">{invoicing ? 'Consulta los certificados de tus clientes y sus fechas de vencimiento.' : 'Consulta los certificados de tus titulares y sus fechas de vencimiento.'}</p>
       </div>
 
       {!loading && certificates.length > 0 && (
@@ -84,7 +91,9 @@ export default function Certificates() {
       ) : certificates.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-slate-400">
           <FileKey className="mx-auto mb-3 text-slate-300" size={40} />
-          Ningún cliente tiene un certificado cargado todavía. Súbelos desde la ficha de cada cliente.
+          {invoicing
+            ? 'Ningún cliente tiene un certificado cargado todavía. Súbelos desde la ficha de cada cliente.'
+            : 'Ningún titular tiene un certificado todavía. Solicítalos desde la ficha de cada titular.'}
         </div>
       ) : (
         <div className="space-y-4">
@@ -92,26 +101,31 @@ export default function Certificates() {
             const days = daysUntil(cert.expirationDate);
             const status = statusFor(days);
             return (
-              <Link
-                key={cert.clientId}
-                to={`/clients/edit/${cert.clientId}?tab=certificate`}
-                className={`bg-white p-5 rounded-2xl shadow-sm border ${status.rowClass} flex items-center justify-between hover:shadow-md transition-shadow`}
+              <div
+                key={cert.id}
+                className={`bg-white p-5 rounded-2xl shadow-sm border ${status.rowClass} flex flex-wrap items-center justify-between gap-4 hover:shadow-md transition-shadow`}
               >
-                <div className="flex items-center gap-4">
+                <Link to={`/clients/edit/${cert.clientId}?tab=certificate`} className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center ${status.badgeClass}`}>
                     {status.icon}
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-800">{cert.clientName}</h3>
+                    <h3 className="font-bold text-slate-800">
+                      {cert.clientName}
+                      {cert.environment === 'Sandbox' && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">Sandbox</span>}
+                    </h3>
                     <p className="text-sm text-slate-500">
                       Vence: {new Date(cert.expirationDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}
                     </p>
                   </div>
+                </Link>
+                <div className="flex flex-wrap items-center gap-3">
+                  {cert.downloadable && <CertificateDeliveryButtons certificateId={cert.id} fileName={cert.clientName} compact />}
+                  <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${status.badgeClass}`}>
+                    {status.label}
+                  </span>
                 </div>
-                <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${status.badgeClass}`}>
-                  {status.label}
-                </span>
-              </Link>
+              </div>
             );
           })}
         </div>

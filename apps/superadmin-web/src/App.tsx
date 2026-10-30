@@ -23,6 +23,7 @@ import { MonthlyComparison } from './MonthlyComparison';
 import { ForgotPassword } from './ForgotPassword';
 import { ResetPassword } from './ResetPassword';
 import { CertificateProviders } from './CertificateProviders';
+import { CertificatePricing } from './CertificatePricing';
 import SessionGuard from '@shared/components/session/SessionGuard';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 import ProfilePage from '@shared/components/session/ProfilePage';
@@ -267,6 +268,9 @@ const emptyTenantForm = {
   defaultCurrencyId: '284d016a-80ba-4667-a3d0-a23989eb2733',
   adminName: '',
   adminEmail: '',
+  // Módulos de la cuenta: se combinan, al menos uno.
+  invoicingModuleEnabled: true,
+  certificatesModuleEnabled: true,
 };
 
 interface RegCountry {
@@ -433,6 +437,10 @@ const TenantsList = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.invoicingModuleEnabled && !formData.certificatesModuleEnabled) {
+      toast.error('La cuenta debe tener al menos un módulo.');
+      return;
+    }
     setSaving(true);
     try {
       // El RUT solo se envía si es del mismo NIT del formulario (si se corrigió el NIT a mano, ese RUT ya no corresponde).
@@ -728,6 +736,28 @@ const TenantsList = () => {
                 </div>
               </section>
 
+              {/* Módulos de la cuenta */}
+              <section className="border border-slate-200 rounded-2xl p-5">
+                <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><FileKey className="w-5 h-5 text-blue-600" /> Módulos</h3>
+                <p className="text-sm text-slate-500 mb-4">Qué ofrece la cuenta. Se combinan; solo con Certificados, sus clientes son titulares de certificados, sin facturación.</p>
+                <div className="space-y-3">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" checked={formData.invoicingModuleEnabled} onChange={e => setFormData(prev => ({ ...prev, invoicingModuleEnabled: e.target.checked }))} className="mt-1 h-5 w-5 rounded accent-blue-600" />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-700">Facturación electrónica</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">Emisión de documentos, resoluciones, planes, cobros, portal y API de sus clientes.</span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" checked={formData.certificatesModuleEnabled} onChange={e => setFormData(prev => ({ ...prev, certificatesModuleEnabled: e.target.checked }))} className="mt-1 h-5 w-5 rounded accent-blue-600" />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-700">Certificados digitales</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">Solicitud de certificados digitales con Viafirma para sus clientes.</span>
+                    </span>
+                  </label>
+                </div>
+              </section>
+
               {/* Usuario Administrador del Tenant */}
               <section className="border border-slate-200 rounded-2xl p-5 bg-blue-50/40">
                 <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> Administrador de la cuenta</h3>
@@ -801,6 +831,7 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
     { to: "/tenants", icon: <Users className="w-5 h-5" />, label: "Tenants (Clientes)" },
     { to: "/certificates", icon: <FileKey className="w-5 h-5" />, label: "Certificados" },
     { to: "/certificate-provider", icon: <ShieldCheck className="w-5 h-5" />, label: "Proveedor de Certificados" },
+    { to: "/certificate-pricing", icon: <Coins className="w-5 h-5" />, label: "Precios y saldos de certificados" },
     { to: "/document-types", icon: <Settings className="w-5 h-5" />, label: "Tipos de Documento" },
     { to: "/integrators", icon: <Cable className="w-5 h-5" />, label: "Integradores" },
     { to: "/tariff-tiers", icon: <Coins className="w-5 h-5" />, label: "Tarifario por Volumen" },
@@ -898,6 +929,7 @@ const App = () => {
                   <Route path="/tenants" element={<TenantsList />} />
                   <Route path="/certificates" element={<Certificates />} />
                   <Route path="/certificate-provider" element={<CertificateProviders />} />
+                  <Route path="/certificate-pricing" element={<CertificatePricing />} />
                   <Route path="/tenants/edit/:id" element={<TenantEdit />} />
                   <Route path="/document-types" element={<DocumentTypes />} />
                   <Route path="/integrators" element={<Integrators />} />

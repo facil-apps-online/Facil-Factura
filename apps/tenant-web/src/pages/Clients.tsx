@@ -5,6 +5,7 @@ import SearchableSelect from '@shared/components/SearchableSelect';
 import { CYCLE_LABELS, type Plan } from '../components/PlanFormModal';
 import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
+import { useModules } from '../lib/modules';
 import { enterClientPortal } from '../lib/support';
 import { toast } from 'sonner';
 import ClientFormFields from '../components/ClientFormFields';
@@ -96,20 +97,23 @@ export default function Clients() {
   const [assigningPlan, setAssigningPlan] = useState(false);
   const [bulkInviting, setBulkInviting] = useState(false);
   const navigate = useNavigate();
+  // Sin facturación (tenant solo de certificados) los clientes son titulares: sin asociados, planes, portal ni resoluciones.
+  const { invoicing } = useModules();
 
   const loadClients = () => {
     setLoading(true);
     api.get('/tenant/clients')
       .then(res => setClients(res.data))
-      .catch(err => toast.error("Error al cargar los clientes del servidor"))
+      .catch(err => toast.error(invoicing ? "Error al cargar los clientes del servidor" : "Error al cargar los titulares del servidor"))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     loadClients();
+    if (!invoicing) return;
     api.get('/tenant/associates').then(res => setAssociates(res.data)).catch(() => {});
     api.get('/tenant/integrators').then(res => setIntegrators(res.data)).catch(() => {});
-  }, []);
+  }, [invoicing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCreateModal = () => {
     // Con más de un proveedor habilitado el tenant elige; por defecto el motor propio (Nativo) si lo tiene.
@@ -123,9 +127,14 @@ export default function Clients() {
     setCreating(true);
     try {
       const res = await api.post('/tenant/clients', { ...newClient, associateId: newClient.associateId || null });
-      toast.success("Cliente creado exitosamente. Completa su información.");
       setShowModal(false);
-      navigate(`/clients/edit/${res.data.id}`);
+      if (invoicing) {
+        toast.success("Cliente creado exitosamente. Completa su información.");
+        navigate(`/clients/edit/${res.data.id}`);
+      } else {
+        toast.success("Titular creado. Ya puedes solicitar su certificado.");
+        navigate(`/clients/edit/${res.data.id}?tab=certificate`);
+      }
     } catch (err: any) {
       toast.error(getErrorMessage(err, "Error al crear cliente"));
     } finally {
@@ -172,7 +181,7 @@ export default function Clients() {
 
   const portalOrder: Record<Client['portalUserStatus'], number> = { Active: 0, Revoked: 1, Pending: 2, NotInvited: 3 };
 
-  const columns: DataTableColumn<Client>[] = [
+  const allColumns: DataTableColumn<Client>[] = [
     { key: 'companyName', header: 'Razón social', primary: true, cellClassName: 'font-medium text-slate-800', render: c => c.companyName, sortValue: c => c.companyName, searchValue: c => c.companyName },
     { key: 'taxId', header: 'NIT', cellClassName: 'text-slate-600 whitespace-nowrap', render: c => c.taxId, sortValue: c => c.taxId, searchValue: c => c.taxId },
     { key: 'email', header: 'Correo de recepción', cellClassName: 'text-slate-600', render: c => c.email, sortValue: c => c.email, searchValue: c => c.email },
@@ -222,6 +231,10 @@ export default function Clients() {
     },
     { key: 'portal', header: 'Portal', render: c => <PortalStatusBadge status={c.portalUserStatus} />, sortValue: c => portalOrder[c.portalUserStatus] },
   ];
+  const invoicingOnlyColumns = ['associate', 'expiry', 'block', 'portal'];
+  const columns = invoicing ? allColumns : allColumns
+    .filter(c => !invoicingOnlyColumns.includes(c.key))
+    .map(c => (c.key === 'email' ? { ...c, header: 'Correo' } : c));
 
   const openAssignPlan = async () => {
     setShowAssignPlan(true);
@@ -271,19 +284,19 @@ export default function Clients() {
     <div className="p-10 h-full overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Clientes emisores</h1>
-          <p className="text-slate-500 mt-2">Administra los negocios que emiten documentos desde tu cuenta.</p>
+          <h1 className="text-3xl font-bold text-slate-800">{invoicing ? 'Clientes emisores' : 'Titulares'}</h1>
+          <p className="text-slate-500 mt-2">{invoicing ? 'Administra los negocios que emiten documentos desde tu cuenta.' : 'Las personas y empresas a las que les solicitas certificados digitales.'}</p>
         </div>
         <button
           onClick={openCreateModal}
           className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-medium shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-all"
         >
           <Plus size={20} />
-          <span>Nuevo cliente</span>
+          <span>{invoicing ? 'Nuevo cliente' : 'Nuevo titular'}</span>
         </button>
       </div>
 
-      {(selectedIds.size > 0 || notInvitedIds.length > 0) && (
+      {invoicing && (selectedIds.size > 0 || notInvitedIds.length > 0) && (
         <div className="mb-4 px-4 py-3 rounded-2xl border border-blue-100 bg-blue-50/60 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             {selectedIds.size > 0 ? (
@@ -327,7 +340,7 @@ export default function Clients() {
         tableFrom="xl"
         search="Buscar por nombre, NIT, correo..."
         defaultSort={{ key: 'companyName', dir: 'asc' }}
-        emptyMessage="Aún no hay clientes registrados."
+        emptyMessage={invoicing ? 'Aún no hay clientes registrados.' : 'Aún no hay titulares registrados.'}
         toolbar={(
           <button
             onClick={loadClients}
@@ -338,7 +351,7 @@ export default function Clients() {
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
         )}
-        selection={{
+        selection={!invoicing ? undefined : {
           isSelected: c => selectedIds.has(c.id),
           onToggle: c => toggleSelected(c.id),
           onToggleMany: (rows, select) => setSelectedIds(prev => {
@@ -351,7 +364,7 @@ export default function Clients() {
         columns={columns}
         actions={client => (
           <>
-            {client.isActive && (
+            {invoicing && client.isActive && (
               <button
                 onClick={() => enterClientPortal(client.id)}
                 className="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors bg-white rounded shadow-sm border border-slate-200"
@@ -418,7 +431,7 @@ export default function Clients() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-              <h2 className="text-xl font-bold text-slate-800">Crear Nuevo Emisor</h2>
+              <h2 className="text-xl font-bold text-slate-800">{invoicing ? 'Crear Nuevo Emisor' : 'Nuevo titular'}</h2>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-2"><X size={20} /></button>
             </div>
             <form onSubmit={handleCreate} className="p-6 overflow-y-auto">
@@ -443,7 +456,7 @@ export default function Clients() {
                   <p className="text-xs text-slate-400 mt-1.5">Después se puede cambiar en la pestaña de credenciales del cliente.</p>
                 </div>
               )}
-              <ClientFormFields client={newClient} setClient={setNewClient} associates={associates} />
+              <ClientFormFields client={newClient} setClient={setNewClient} associates={associates} certificatesOnly={!invoicing} />
               <div className="flex gap-3 justify-end pt-6 border-t border-slate-100 mt-6">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-medium transition-colors">Cancelar</button>
                 <button type="submit" disabled={creating} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-medium shadow-md transition-colors flex items-center gap-2 disabled:opacity-50">

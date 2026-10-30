@@ -4,6 +4,7 @@ import { GoogleMap, useJsApiLoader, Autocomplete, Marker } from '@react-google-m
 import { ArrowLeft, Save, MapPin, Building2, Phone, Hash, FileText, Coins, ChevronDown, Check, Users, UserPlus, X, Mail, Link2, Trash2, RotateCcw, Cable, ToggleLeft, ToggleRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import { TenantCertificateBalance } from './TenantCertificateBalance';
 import { copyText } from '@shared/lib/clipboard';
 
 const libraries: "places"[] = ['places'];
@@ -81,6 +82,9 @@ export const TenantEdit = () => {
   const [savingIntegratorId, setSavingIntegratorId] = useState<string | null>(null);
   const [tenantIntegrators, setTenantIntegrators] = useState<any[]>([]);
   const [togglingIntegratorId, setTogglingIntegratorId] = useState<string | null>(null);
+  // Módulos de la cuenta: facturación electrónica y certificados. Se combinan; al menos uno. Null mientras carga.
+  const [modules, setModules] = useState<{ invoicing: boolean; certificates: boolean } | null>(null);
+  const [savingModules, setSavingModules] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [showUserModal, setShowUserModal] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '' });
@@ -241,6 +245,10 @@ export const TenantEdit = () => {
       })
       .catch(() => toast.error("Error cargando las condiciones de cobro"));
 
+    api.get(`/tenants/${id}/modules`)
+      .then(res => setModules(res.data))
+      .catch(() => toast.error("Error cargando los módulos de la cuenta"));
+
     loadPackages();
     loadUsers();
     loadIntegratorBilling();
@@ -263,6 +271,25 @@ export const TenantEdit = () => {
     api.get(`/tenants/${id}/integrators`)
       .then(res => setTenantIntegrators(res.data))
       .catch(() => toast.error("Error cargando los integradores habilitados"));
+  };
+
+  const handleToggleModule = async (module: 'invoicing' | 'certificates') => {
+    if (!modules) return;
+    const next = { ...modules, [module]: !modules[module] };
+    if (!next.invoicing && !next.certificates) {
+      toast.error('La cuenta debe tener al menos un módulo.');
+      return;
+    }
+    setSavingModules(true);
+    try {
+      const res = await api.put(`/tenants/${id}/modules`, next);
+      setModules(res.data);
+      toast.success('Módulos de la cuenta actualizados');
+    } catch {
+      toast.error('Error al actualizar los módulos de la cuenta');
+    } finally {
+      setSavingModules(false);
+    }
   };
 
   const handleToggleTenantIntegrator = async (integrator: any) => {
@@ -528,6 +555,39 @@ export const TenantEdit = () => {
           </ul>
         )}
       </div>
+
+      <div className="mb-8 p-6 rounded-3xl border border-slate-700/50 glass-panel">
+        <h2 className="text-lg font-bold text-white">Módulos de la cuenta</h2>
+        <p className="text-sm text-slate-400 mt-1">Qué ofrece este tenant. Se combinan: quien factura con emisión directa también solicita los certificados de sus clientes. Solo con Certificados, sus clientes se ven como titulares, sin nada de facturación, y no tienen portal ni API.</p>
+        <div className="mt-4 space-y-2">
+          {([
+            ['invoicing', 'Facturación electrónica', 'Emisión de documentos, resoluciones, planes, cobros, portal y API de sus clientes. La carga manual del certificado .p12 va con este módulo.'],
+            ['certificates', 'Certificados digitales', 'Solicitud de certificados digitales con Viafirma para sus clientes, desde la ficha de cada uno.'],
+          ] as const).map(([key, label, help]) => (
+            <div key={key} className="flex items-center justify-between gap-4 p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50">
+              <div>
+                <span className="font-bold text-white">{label}</span>
+                <span className="block text-xs text-slate-500 mt-0.5">{help}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleToggleModule(key)}
+                disabled={!modules || savingModules}
+                aria-label={`${modules?.[key] ? 'Desactivar' : 'Activar'} ${label}`}
+                className="shrink-0 flex items-center gap-1.5 text-xs font-bold disabled:opacity-50"
+              >
+                {modules?.[key] ? (
+                  <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"><ToggleRight className="w-4 h-4" /> Activo</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-700 text-slate-400"><ToggleLeft className="w-4 h-4" /> Inactivo</span>
+                )}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {modules?.certificates && id && <TenantCertificateBalance tenantId={id} />}
 
       <div className={`mb-8 p-6 rounded-3xl border ${block.at ? 'border-red-500/50 bg-red-500/10' : 'border-slate-700/50 glass-panel'}`}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

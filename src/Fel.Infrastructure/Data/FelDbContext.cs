@@ -18,6 +18,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<CertificateRequest> CertificateRequests => Set<CertificateRequest>();
         public DbSet<CertificatePrice> CertificatePrices => Set<CertificatePrice>();
         public DbSet<CertificateCharge> CertificateCharges => Set<CertificateCharge>();
+        public DbSet<CertificateBalanceMovement> CertificateBalanceMovements => Set<CertificateBalanceMovement>();
         public DbSet<CertificateEvent> CertificateEvents => Set<CertificateEvent>();
         public DbSet<Document> Documents => Set<Document>();
         public DbSet<ReceivedDocument> ReceivedDocuments => Set<ReceivedDocument>();
@@ -488,6 +489,20 @@ namespace Fel.Infrastructure.Data
                 entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(e => e.CertificateRequest).WithMany(r => r.Charges).HasForeignKey(e => e.CertificateRequestId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(e => e.Price).WithMany(p => p.Charges).HasForeignKey(e => e.PriceId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<CertificateBalanceMovement>(entity =>
+            {
+                entity.ToTable("CertificateBalanceMovements");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Currency).IsRequired().HasMaxLength(10);
+                entity.Property(e => e.Reference).HasMaxLength(200);
+                entity.Property(e => e.Notes).HasMaxLength(1000);
+                entity.Property(e => e.CreatedBy).HasMaxLength(256);
+                entity.HasIndex(e => new { e.TenantId, e.OccurredAt });
+                entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.CertificateCharge).WithMany().HasForeignKey(e => e.CertificateChargeId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<CertificateEvent>(entity =>

@@ -385,6 +385,59 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("Certificates", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.CertificateBalanceMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid?>("CertificateChargeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CertificateChargeId");
+
+                    b.HasIndex("TenantId", "OccurredAt");
+
+                    b.ToTable("CertificateBalanceMovements", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.CertificateCharge", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5185,6 +5238,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<bool>("CanViewPlatformBilling")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("CertificatesModuleEnabled")
+                        .HasColumnType("bit");
+
                     b.Property<string>("City")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -5252,6 +5308,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<string>("IncomeTaxRegime")
                         .HasMaxLength(2)
                         .HasColumnType("nvarchar(2)");
+
+                    b.Property<bool>("InvoicingModuleEnabled")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -5353,6 +5412,9 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<string>("SecondName")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("SendCertificateToHolderByEmail")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("ShowUsageToClients")
                         .HasColumnType("bit");
@@ -6058,6 +6120,24 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("Profile");
 
                     b.Navigation("Provider");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.CertificateBalanceMovement", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.CertificateCharge", "CertificateCharge")
+                        .WithMany()
+                        .HasForeignKey("CertificateChargeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fel.Core.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CertificateCharge");
+
+                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.CertificateCharge", b =>

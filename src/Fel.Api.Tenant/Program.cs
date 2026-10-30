@@ -248,6 +248,8 @@ app.UseAuthentication();
 app.UseMiddleware<SessionHeaderGuardMiddleware>();
 // Tenant suspendido por la plataforma: solo lectura (después de autenticar, para conocer su tenant).
 app.UseMiddleware<TenantReadOnlyMiddleware>();
+// Módulos de la cuenta: lo que no tiene contratado (facturación o certificados) se rechaza aunque se llame la API directamente.
+app.UseMiddleware<TenantModuleMiddleware>();
 app.UseAuthorization();
 
 app.MapGet("/", () => "FEL API is running.");

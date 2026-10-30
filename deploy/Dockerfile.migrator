@@ -21,8 +21,9 @@ RUN dotnet restore Fel.sln
 
 COPY src/ src/
 
-# La versión de la herramienta debe acompañar a la del runtime EF Core del proyecto.
-RUN dotnet tool install --global dotnet-ef --version 9.*
+# La versión de la herramienta debe acompañar a la del runtime EF Core del proyecto (fijada en los .csproj):
+# si se cambia una, se cambia la otra.
+RUN dotnet tool install --global dotnet-ef --version 9.0.22
 ENV PATH="${PATH}:/root/.dotnet/tools"
 
 # FelDbContextDesignTimeFactory exige esta variable para poder construir el DbContext

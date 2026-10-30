@@ -87,23 +87,21 @@ if (-not $sshOk) {
     throw "SSH connection failed after 3 attempts"
 }
 
-# 2. Create tarball excluding git, bin, obj, .env, node_modules
-Write-Host "[2/5] Creating tarball..."
+# 2. Paquete del commit actual (HEAD), no del directorio de trabajo: lo que no está commiteado no se
+# despliega. Antes se empaquetaba la carpeta tal cual y subían a producción cambios a medio hacer de
+# otra sesión o rama. git archive solo trae archivos versionados (nada de bin, obj, node_modules ni .env).
+Write-Host "[2/5] Creating tarball from HEAD..."
 Push-Location $ProjectRoot
 try {
-    & tar -czf $TempTar `
-        --exclude=".git" `
-        --exclude="bin" `
-        --exclude="obj" `
-        --exclude=".env" `
-        --exclude=".env.*" `
-        --exclude="node_modules" `
-        --exclude="scratch" `
-        --exclude="Validador_rips_ips" `
-        --exclude="*.pdf" `
-        --exclude="*.zip" `
-        .
-    if ($LASTEXITCODE -ne 0) { throw "tar failed" }
+    $head = (& git rev-parse --short HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "git rev-parse failed" }
+    $pending = & git status --porcelain
+    if ($pending) {
+        Write-Host "  Advertencia: hay $(@($pending).Count) cambio(s) sin commitear; NO se despliegan (se despliega $head)."
+    }
+    & git archive --format=tar.gz -o $TempTar HEAD -- . ":(exclude)*.pdf" ":(exclude)*.zip"
+    if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
+    Write-Host "  Commit desplegado: $head"
 } finally {
     Pop-Location
 }
@@ -113,21 +111,51 @@ Write-Host "[3/5] Transferring to ${Server}:$RemoteDir ..."
 & scp -o BatchMode=yes -i $Key $TempTar "root@${Server}:/tmp/facilfactura.tar.gz"
 if ($LASTEXITCODE -ne 0) { throw "scp failed" }
 
-& ssh -o BatchMode=yes -i $Key "root@${Server}" "mkdir -p $RemoteDir && tar -xzf /tmp/facilfactura.tar.gz -C $RemoteDir && rm -f /tmp/facilfactura.tar.gz"
+# Se borran src/ y apps/ antes de extraer: tar nunca elimina, así que archivos borrados o renombrados en el
+# repo se quedaban en el servidor y se seguían compilando (pasó con dos migraciones viejas). Ningún
+# contenedor monta esas carpetas; .env, deploy/ (montajes de nginx) y los volúmenes no se tocan.
+& ssh -o BatchMode=yes -i $Key "root@${Server}" "mkdir -p $RemoteDir && rm -rf $RemoteDir/src $RemoteDir/apps && tar -xzf /tmp/facilfactura.tar.gz -C $RemoteDir && rm -f /tmp/facilfactura.tar.gz"
 if ($LASTEXITCODE -ne 0) { throw "extract failed" }
+
+# Los servicios .NET dependen del migrador en docker-compose (service_completed_successfully).
+$DotnetServices = @("fel-api-tenant", "fel-api-integration", "fel-api-superadmin", "fel-api-client", "fel-worker")
+
+# Reconstruye el migrador con el código recién extraído y lo corre hasta que termine. Siempre se
+# reconstruye: una imagen vieja cuyo modelo no coincide con sus migraciones falla con
+# PendingModelChangesWarning y, como dependencia, dejaba detenido el servicio que se estaba desplegando.
+# Si falla, el despliegue se corta aquí y los contenedores que estaban corriendo siguen igual.
+function Invoke-Migrator {
+    param([string]$Server, [string]$Key)
+    Write-Host "  -> fel-migrator (build + migraciones)"
+    Wait-ForFreeMemory -Server $Server -Key $Key
+    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $PullFlag fel-migrator 2>&1 && docker compose up --no-deps --exit-code-from fel-migrator fel-migrator 2>&1"
+    if ($LASTEXITCODE -ne 0) { throw "El migrador fallo; no se reinicio ningun servicio. Revisa: docker logs fel-migrator" }
+}
+
+# Construye un servicio y solo después lo recrea, sin dependencias: el migrador ya corrió (o el servicio no lo
+# necesita), y sin --no-deps compose volvería a correrlo y, si fallara, dejaría el servicio detenido.
+function Deploy-ServiceContainer {
+    param([string]$Server, [string]$Key, [string]$Svc)
+    Wait-ForFreeMemory -Server $Server -Key $Key
+    # 2>&1 en el shell remoto: docker compose escribe el progreso por stderr y
+    # PowerShell 5.1 lo convierte en error terminante con ErrorActionPreference=Stop.
+    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $PullFlag$Svc 2>&1 && docker compose up -d --no-deps $Svc 2>&1"
+    if ($LASTEXITCODE -ne 0) { throw "docker build/up failed for service '$Svc'" }
+    if ($ServiceToContainer.ContainsKey($Svc)) {
+        Assert-ContainerRunning -Server $Server -Key $Key -ContainerName $ServiceToContainer[$Svc]
+    }
+}
 
 # 4. Build and start containers
 if ($SkipBuild) {
     Write-Host "[4/5] Skipping Docker build (SkipBuild)."
 } elseif ($Service) {
     Write-Host "[4/5] Building and starting only '$Service'..."
-    Wait-ForFreeMemory -Server $Server -Key $Key
-    # 2>&1 en el shell remoto: docker compose escribe el progreso por stderr y
-    # PowerShell 5.1 lo convierte en error terminante con ErrorActionPreference=Stop.
-    & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $PullFlag$Service 2>&1 && docker compose up -d $Service 2>&1"
-    if ($LASTEXITCODE -ne 0) { throw "docker build/up failed" }
-    if ($Service -ne "fel-migrator" -and $ServiceToContainer.ContainsKey($Service)) {
-        Assert-ContainerRunning -Server $Server -Key $Key -ContainerName $ServiceToContainer[$Service]
+    if ($Service -eq "fel-migrator" -or $DotnetServices -contains $Service) {
+        Invoke-Migrator -Server $Server -Key $Key
+    }
+    if ($Service -ne "fel-migrator") {
+        Deploy-ServiceContainer -Server $Server -Key $Key -Svc $Service
     }
 } else {
     # Uno a la vez, nunca "docker compose build" a secas: ese build en paralelo de los ~10
@@ -135,20 +163,13 @@ if ($SkipBuild) {
     # (3.8GB) y el OOM killer del sistema mató el proceso de sqlservr dos veces en producción
     # (ver incidente documentado). Reconstruir cada servicio por separado mantiene el pico de
     # memoria acotado al de un solo build, igual que -Service, pero recorriendo todos.
-    $BuildableServices = @(
-        "fel-migrator", "fel-api-tenant", "fel-api-integration", "fel-api-superadmin",
-        "fel-api-client", "fel-worker", "landing-web", "tenant-web", "superadmin-web",
-        "client-web", "developers-web"
-    )
-    Write-Host "[4/5] Building and starting containers one at a time ($($BuildableServices.Count) services)..."
+    # El migrador va primero y aparte; los demás se levantan sin dependencias (ver Deploy-ServiceContainer).
+    $BuildableServices = $DotnetServices + @("landing-web", "tenant-web", "superadmin-web", "client-web", "developers-web")
+    Write-Host "[4/5] Building and starting containers one at a time (migrador + $($BuildableServices.Count) services)..."
+    Invoke-Migrator -Server $Server -Key $Key
     foreach ($svc in $BuildableServices) {
         Write-Host "  -> $svc"
-        Wait-ForFreeMemory -Server $Server -Key $Key
-        & ssh -o BatchMode=yes -i $Key "root@${Server}" "cd $RemoteDir && docker compose build $PullFlag$svc 2>&1 && docker compose up -d $svc 2>&1"
-        if ($LASTEXITCODE -ne 0) { throw "docker build/up failed for service '$svc'" }
-        if ($svc -ne "fel-migrator") {
-            Assert-ContainerRunning -Server $Server -Key $Key -ContainerName $ServiceToContainer[$svc]
-        }
+        Deploy-ServiceContainer -Server $Server -Key $Key -Svc $svc
     }
 }
 

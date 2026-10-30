@@ -382,6 +382,8 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
+                await using var publishLock = await SqlAppLock.AcquireAsync(_dbContext, $"DocumentPublish:{clientId}:{id}");
+                if (publishLock == null) return Conflict("El documento ya está siendo enviado.");
                 var document = await BranchDocuments
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.GeneralRetentions)
@@ -440,6 +442,24 @@ namespace Fel.Api.Client.Controllers
                     return BadRequest("Debes indicar el medio de pago.");
                 }
 
+                Document? adjustedDocument = null;
+                if (document.TypeCode == AdjustmentTypeCode)
+                {
+                    if (!document.ReferenceDocumentId.HasValue)
+                    {
+                        return BadRequest("Esta nota de ajuste debe referenciar el documento soporte que ajusta.");
+                    }
+                    adjustedDocument = await _dbContext.Documents.FindAsync(document.ReferenceDocumentId.Value);
+                    if (adjustedDocument == null || string.IsNullOrEmpty(adjustedDocument.Cufe))
+                    {
+                        return BadRequest("El documento soporte original no tiene un CUDS registrado (puede no haberse emitido por Dataico). No se puede generar la nota.");
+                    }
+                }
+
+                // Antes de reservar el consecutivo: un documento que no se puede enviar no debe consumirlo.
+                var claimConflict = await ClaimSubmissionAsync(_dbContext, document);
+                if (claimConflict != null) return claimConflict;
+
                 // Consecutivo real, reclamado recién ahora que ya pasaron todas las validaciones (un
                 // documento rechazado que se reintenta conserva el que ya tiene). El Documento Soporte
                 // usa el rango de su resolución; la Nota de Ajuste, su contador propio del Client.
@@ -454,6 +474,8 @@ namespace Fel.Api.Client.Controllers
                     catch (Fel.Infrastructure.Services.ResolutionExhaustedException ex)
                     {
                         // Numeración agotada: no se emite ni se consume nada; el documento sigue editable.
+                        DocumentSubmissionGuard.MarkFailed(document, ex.Message);
+                        await _dbContext.SaveChangesAsync();
                         return BadRequest(ex.Message);
                     }
                 }
@@ -467,24 +489,12 @@ namespace Fel.Api.Client.Controllers
                     : resolution.Prefix;
 
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
-                Document? adjustedDocument = null;
-                if (document.TypeCode == AdjustmentTypeCode)
+                if (adjustedDocument != null)
                 {
-                    if (!document.ReferenceDocumentId.HasValue)
-                    {
-                        return BadRequest("Esta nota de ajuste debe referenciar el documento soporte que ajusta.");
-                    }
-                    var originalDocument = await _dbContext.Documents.FindAsync(document.ReferenceDocumentId.Value);
-                    if (originalDocument == null || string.IsNullOrEmpty(originalDocument.Cufe))
-                    {
-                        return BadRequest("El documento soporte original no tiene un CUDS registrado (puede no haberse emitido por Dataico). No se puede generar la nota.");
-                    }
-
-                    adjustedDocument = originalDocument;
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     var adjustmentRequest = DataicoDocumentMapper.BuildSupportDocAdjustmentRequest(
-                        document, originalDocument, document.Customer!, resolution, client, document.PaymentMeans, document.PaymentMeansType, document.Items);
-                    result = await _dataicoApiService.SendSupportDocAdjustmentAsync(adjustmentRequest, credentials);
+                        document, adjustedDocument, document.Customer!, resolution, client, document.PaymentMeans, document.PaymentMeansType, document.Items);
+                    result = await SendClaimedAsync(_dbContext, document, () => _dataicoApiService.SendSupportDocAdjustmentAsync(adjustmentRequest, credentials));
                     DataicoDianOutcome.Apply(result, client);
 
                     document.Status = result.Success ? "APPROVED" : "REJECTED";
@@ -496,11 +506,13 @@ namespace Fel.Api.Client.Controllers
                 }
                 else
                 {
-                    result = await SubmitSupportDocToDataicoAsync(document, document.Customer!, document.Items, client, resolution, document.PaymentMeans, document.PaymentMeansType);
+                    result = await SendClaimedAsync(_dbContext, document,
+                        () => SubmitSupportDocToDataicoAsync(document, document.Customer!, document.Items, client, resolution, document.PaymentMeans, document.PaymentMeansType));
                 }
 
                 if (result.Success)
                 {
+                    DocumentSubmissionGuard.MarkCompleted(document);
                     document.IntegratorId = client.IntegratorId;
 
                     var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
@@ -513,6 +525,10 @@ namespace Fel.Api.Client.Controllers
                         document, document.Customer?.Email, client,
                         _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: pdfCurrencyWords, documentTypeTitle: document.DocumentType?.ReportTitle, originalDocument: adjustedDocument, retentionShortNames: pdfRetentionNames),
                         credentials);
+                }
+                else
+                {
+                    DocumentSubmissionGuard.MarkFailed(document, document.DianResponseMessage);
                 }
 
                 await _dbContext.SaveChangesAsync();

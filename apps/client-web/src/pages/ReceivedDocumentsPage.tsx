@@ -7,7 +7,7 @@ import DataTable, { type DataTableColumn, type DataTableQuery } from '@shared/co
 import Modal from '../components/Modal';
 
 const EVENT_BUTTONS = [{ code: '030', label: 'Acuse' }, { code: '032', label: 'Recibo' }, { code: '033', label: 'Aceptación' }, { code: '031', label: 'Reclamo' }] as const;
-const EVENT_STATUS_LABELS: Record<string, string> = { SENT: 'Enviado', DUPLICATE: 'Recibido', REJECTED: 'Rechazado', PENDING: 'Enviando' };
+const EVENT_STATUS_LABELS: Record<string, string> = { SENT: 'Enviado', DUPLICATE: 'Registrado en Dataico', REJECTED: 'Rechazado', PENDING: 'Enviando' };
 
 export default function ReceivedDocumentsPage() {
   const fmt = useNumberFormat();
@@ -54,7 +54,7 @@ export default function ReceivedDocumentsPage() {
     try {
       const res = await api.post(`/client/received-documents/${docId}/events/${eventCode}`);
       if (res.data.status === 'SENT') toast.success('Evento enviado a la DIAN');
-      else if (res.data.status === 'DUPLICATE') toast.warning(res.data.dianResponseMessage || 'Dataico ya tenía este evento');
+      else if (res.data.status === 'DUPLICATE') toast.info(res.data.dianResponseMessage || 'Dataico ya tenía registrado este evento');
       else toast.error(res.data.dianResponseMessage || 'El proveedor rechazó el evento');
       loadDocuments();
     } catch (err: any) { toast.error(getErrorMessage(err, 'Error al enviar el evento')); }
@@ -77,18 +77,21 @@ export default function ReceivedDocumentsPage() {
     { key: 'source', header: 'Origen', hideBelow: 'ultra', cellClassName: 'text-xs text-slate-400', render: doc => doc.sourceType === 'Email' ? 'Correo' : 'Manual', sortValue: doc => doc.sourceType === 'Email' ? 'Correo' : 'Manual' },
     { key: 'events', header: 'Eventos', cardFullWidth: true, render: doc => {
       const latestByCode = new Map<string, any>(); for (const event of doc.events ?? []) if (!latestByCode.has(event.eventCode)) latestByCode.set(event.eventCode, event);
+      // Un reintento DUPLICATE posterior no debe ocultar un SENT confirmado del
+      // mismo documento y evento; el historial conserva ambos intentos.
+      for (const event of doc.events ?? []) if (event.status === 'SENT' && !latestByCode.has(`${event.eventCode}:confirmed`)) latestByCode.set(`${event.eventCode}:confirmed`, event);
         if (doc.isSupportDocument) return <span title="Los eventos RADIAN solo aplican a facturas electrónicas a crédito" className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700"><FileWarning size={13} /> Documento soporte · no aplica RADIAN</span>;
         if (!doc.isCredit) return <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500">Eventos no aplican · contado</span>;
       return <div className="flex flex-wrap gap-2 md:gap-1.5">{EVENT_BUTTONS.map(({ code, label }) => {
-        const event = latestByCode.get(code); const detail = event?.dianResponseMessage || '';
+        const event = latestByCode.get(`${code}:confirmed`) || latestByCode.get(code); const detail = event?.dianResponseMessage || '';
         const historyButton = event ? <button type="button" title="Ver historial de envíos" onClick={() => openHistory(doc, code, label)} className="inline-flex min-h-11 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-primary lg:min-h-0" aria-label={`Ver historial de ${label}`}><Info size={14} /></button> : null;
         const withInfo = (content: React.ReactNode) => <div key={code} className="inline-flex items-center gap-0.5">{content}{historyButton}</div>;
         if (sendingEvents.has(`${doc.id}:${code}`)) return withInfo(<span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold"><Loader2 size={12} className="animate-spin" /> {label} · enviando</span>);
-        if (event?.status === 'DUPLICATE') return withInfo(<span title={detail || 'Dataico confirmó que el evento ya estaba recibido'} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold"><CheckCircle2 size={12} /> {label}{event.eventNumber ? ` · ${event.eventNumber}` : ''}</span>);
+        if (event?.status === 'DUPLICATE') return withInfo(<span title={detail || 'Dataico ya tiene registrado este evento para la compra; no hay comprobante local (CUDE)'} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold"><CheckCircle2 size={12} /> {label} · registrado en Dataico</span>);
         if (event?.status === 'SENT') return withInfo(<span title={detail || 'Enviado'} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold"><CheckCircle2 size={12} /> {label}{event.eventNumber ? ` · ${event.eventNumber}` : ''}</span>);
         if (event?.status === 'PENDING') return withInfo(<span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold"><Loader2 size={12} className="animate-spin" /> {label} · enviando</span>);
         if (event?.status === 'REJECTED') return withInfo(<button title={detail || 'El proveedor rechazó el evento'} onClick={() => triggerEvent(doc.id, code)} className="inline-flex min-h-11 items-center gap-1 px-3 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold lg:min-h-0 lg:px-2 lg:py-1"><XCircle size={12} /> {label} · rechazado</button>);
-        return <button key={code} onClick={() => triggerEvent(doc.id, code)} className="inline-flex min-h-11 items-center gap-1 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold lg:min-h-0 lg:px-2 lg:py-1"><Send size={12} /> {label}</button>;
+        return <button key={code} disabled={sendingEvents.has(`${doc.id}:${code}`)} onClick={() => triggerEvent(doc.id, code)} className="inline-flex min-h-11 items-center gap-1 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0 lg:px-2 lg:py-1"><Send size={12} /> {label}</button>;
       })}</div>;
     } }
   ];
@@ -99,7 +102,8 @@ export default function ReceivedDocumentsPage() {
       <DataTable rows={pageData.items} server={{ total: pageData.total, onQueryChange: fetchPage }} loading={loading} columns={columns} rowKey={doc => doc.id} tableFrom="2xl" search="Buscar por proveedor, NIT o número de documento..." defaultSort={{ key: 'issueDate', dir: 'desc' }} emptyMessage="Aún no tienes documentos recibidos." />
     </div>
     {eventHistory && (() => {
-      const latest = eventHistory.events.filter((item: any) => item.eventCode === eventHistory.code).sort((a: any, b: any) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())[0];
+      const eventAttempts = eventHistory.events.filter((item: any) => item.eventCode === eventHistory.code).sort((a: any, b: any) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+      const latest = eventAttempts.find((item: any) => item.status === 'SENT') || eventAttempts[0];
       const downloadEventFile = async (item: any, type: 'xml' | 'pdf') => {
         setFileDownloading(type);
         try {

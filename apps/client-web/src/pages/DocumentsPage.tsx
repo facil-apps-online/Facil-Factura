@@ -268,6 +268,9 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [viewingRelated, setViewingRelated] = useState<any[]>([]);
   const [viewingOriginal, setViewingOriginal] = useState<any>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  // The visual button disable happens on the next render; this ref blocks two
+  // synchronous clicks on the same document before React repaints.
+  const publishingIdsRef = useRef(new Set<string>());
   const [editingId, setEditingId] = useState<string | null>(null);
   // PDF elegidos en un documento nuevo: se suben apenas el borrador queda guardado y ya tiene id.
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
@@ -1426,6 +1429,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   // cambio, por ejemplo), se manda de vuelta a completarlo en el formulario en vez de fallar en
   // la DIAN sin explicación.
   const handlePublishInvoice = async (inv: any) => {
+    if (publishingIdsRef.current.has(inv.id)) return;
     if (!inv.paymentMeansType) {
       toast.error('Este documento no tiene definida la forma de pago (Contado/Crédito). Edítalo para completarla.');
       return;
@@ -1434,6 +1438,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       toast.error('Este documento no tiene definido el medio de pago. Edítalo para completarla.');
       return;
     }
+    publishingIdsRef.current.add(inv.id);
     setPublishingId(inv.id);
     const wasViewingId = viewingInvoice?.id;
     try {
@@ -1451,6 +1456,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
       // Si se publicó desde la vista de detalle, refrescarla en vez de dejarla con el estado viejo.
       if (wasViewingId === inv.id) handleViewDetail({ id: inv.id });
       setPublishingId(null);
+      publishingIdsRef.current.delete(inv.id);
     }
   };
 

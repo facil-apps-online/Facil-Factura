@@ -50,6 +50,16 @@ namespace Fel.Core.Entities
         public string? DianResponseCode { get; set; }
         public string? DianResponseMessage { get; set; }
 
+        // Control persistente de publicación: evita que un reintento concurrente vuelva a llamar al
+        // proveedor y deja visible un envío que pudo haber sido aceptado externamente antes de que
+        // la API alcanzara a guardar el documento.
+        public string SubmissionState { get; set; } = "NONE"; // NONE, IN_PROGRESS, COMPLETED, FAILED, UNKNOWN
+        public Guid? SubmissionOperationId { get; set; }
+        public int SubmissionAttemptCount { get; set; }
+        public DateTime? SubmissionStartedAt { get; set; }
+        public DateTime? SubmissionLeaseUntil { get; set; }
+        public string? SubmissionLastError { get; set; }
+
         // ZipKey que devuelve SendBillAsync al emitir directo a la DIAN (NativeDianSubmissionProvider)
         // — se necesita para preguntarle después a la DIAN el veredicto real con GetStatusZip
         // (ver DianStatusPollingWorker). Null para documentos que no pasaron por esa vía (ej. Dataico).

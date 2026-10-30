@@ -360,6 +360,8 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
+                await using var publishLock = await SqlAppLock.AcquireAsync(_dbContext, $"DocumentPublish:{clientId}:{id}");
+                if (publishLock == null) return Conflict("La nómina ya está siendo enviada.");
                 var document = await BranchDocuments
                     .Include(d => d.Customer)
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == DeletionTypeCode || d.TypeCode == ReplacementTypeCode));
@@ -463,7 +465,9 @@ namespace Fel.Api.Client.Controllers
                     var deletionRequest = DataicoDocumentMapper.BuildPayrollDeletionRequest(
                         client, draft.Prefix, documentNumber, Fel.Core.Models.ColombiaTime.Now,
                         originalDraft.Prefix, originalNumber, originalDocument.Cufe, originalDocument.IssueDate, document.ReferenceConcept);
-                    result = await _dataicoApiService.SendPayrollDeletionAsync(deletionRequest, credentials);
+                    var claimConflict = await ClaimSubmissionAsync(_dbContext, document);
+                    if (claimConflict != null) return claimConflict;
+                    result = await SendClaimedAsync(_dbContext, document, () => _dataicoApiService.SendPayrollDeletionAsync(deletionRequest, credentials));
 
                     document.Status = result.Success ? "APPROVED" : "REJECTED";
                     document.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForDataico(client);
@@ -474,11 +478,13 @@ namespace Fel.Api.Client.Controllers
                 }
                 else
                 {
-                    result = await SubmitPayrollToDataicoAsync(
+                    var claimConflict = await ClaimSubmissionAsync(_dbContext, document);
+                    if (claimConflict != null) return claimConflict;
+                    result = await SendClaimedAsync(_dbContext, document, () => SubmitPayrollToDataicoAsync(
                         document, document.Customer!, client,
                         draft.Prefix, documentNumber,
                         draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
-                        draft.Accruals, draft.Deductions, identificationTypes);
+                        draft.Accruals, draft.Deductions, identificationTypes));
                 }
 
                 if (result.Success && pendingNumberResolutionId.HasValue)
@@ -498,6 +504,7 @@ namespace Fel.Api.Client.Controllers
 
                 if (result.Success)
                 {
+                    DocumentSubmissionGuard.MarkCompleted(document);
                     document.IntegratorId = client.IntegratorId;
                     // Sin el id de Dataico y el tipo de documento el paso del PDF por correo nunca corría para la nómina.
                     document.DataicoDocumentId = result.DataicoDocumentId;
@@ -515,6 +522,10 @@ namespace Fel.Api.Client.Controllers
                             draft.Accruals.SelectMany(ToReportConcepts), draft.Deductions.SelectMany(ToReportConcepts),
                             workerTypes, contractTypes),
                         pdfCredentials);
+                }
+                else
+                {
+                    DocumentSubmissionGuard.MarkFailed(document, document.DianResponseMessage);
                 }
 
                 await _dbContext.SaveChangesAsync();

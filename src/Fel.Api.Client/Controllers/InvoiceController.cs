@@ -687,6 +687,8 @@ namespace Fel.Api.Client.Controllers
             try
             {
                 var clientId = GetCurrentClientId();
+                await using var publishLock = await SqlAppLock.AcquireAsync(_dbContext, $"DocumentPublish:{clientId}:{id}");
+                if (publishLock == null) return Conflict("El documento ya está siendo enviado.");
                 var invoice = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.Retentions)
                     .Include(d => d.Items.OrderBy(i => i.LineNumber)).ThenInclude(i => i.AdditionalTaxes)
@@ -773,10 +775,14 @@ namespace Fel.Api.Client.Controllers
                 // El ajuste de centavos se recalcula con lo que realmente se va a enviar (el borrador pudo guardarse antes de activarlo en el cliente).
                 Fel.Core.Models.RoundingAdjustment.Apply(invoice, invoice.Items, client.RoundingAdjustment);
 
+                var claimConflict = await ClaimSubmissionAsync(_dbContext, invoice);
+                if (claimConflict != null) return claimConflict;
+
                 DocumentSubmissionResult result;
                 try
                 {
-                    result = await provider.SubmitAsync(invoice, invoice.Customer, invoice.Items, client, resolution, paymentMeans, paymentMeansType);
+                    result = await SendClaimedAsync(_dbContext, invoice,
+                        () => provider.SubmitAsync(invoice, invoice.Customer, invoice.Items, client, resolution, paymentMeans, paymentMeansType));
                 }
                 catch (NotSupportedException ex)
                 {
@@ -785,11 +791,16 @@ namespace Fel.Api.Client.Controllers
 
                 if (result.Success)
                 {
+                    DocumentSubmissionGuard.MarkCompleted(invoice);
                     // Tarifa vigente al momento de emitir, para que el corte mensual
                     // (SuperadminBillingController.CalculateBilling) tenga con qué facturar — antes
                     // quedaba en 0 y el corte real generaba cobros en $0 sin importar el volumen.
                     invoice.PriceCharged = await BranchProvisioning.PricePerDocumentAsync(_dbContext, invoice.BranchId);
                     invoice.IntegratorId = client.IntegratorId;
+                }
+                else
+                {
+                    DocumentSubmissionGuard.MarkFailed(invoice, invoice.DianResponseMessage);
                 }
 
                 await _dbContext.SaveChangesAsync();

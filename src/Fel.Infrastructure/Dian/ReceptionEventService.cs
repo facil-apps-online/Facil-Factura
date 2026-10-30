@@ -44,6 +44,52 @@ namespace Fel.Infrastructure.Dian
 
         public async Task<ReceivedDocumentEvent> TriggerEventAsync(ReceivedDocument document, Client client, string eventCode)
         {
+            // Un mismo documento/tipo de evento solo puede tener una operación activa o confirmada.
+            // El lock se mantiene durante la llamada externa para cubrir API, worker y varias instancias.
+            await using var eventLock = await Fel.Infrastructure.Services.SqlAppLock.AcquireAsync(
+                _dbContext, $"ReceptionEvent:{client.Id}:{document.Id}:{eventCode}", timeoutMilliseconds: 240000);
+            if (eventLock == null)
+            {
+                return new ReceivedDocumentEvent
+                {
+                    Id = Guid.NewGuid(),
+                    ReceivedDocumentId = document.Id,
+                    EventCode = eventCode,
+                    Status = "PENDING",
+                    SentAt = DateTime.UtcNow,
+                    DianResponseMessage = "El evento ya está siendo procesado por otra operación."
+                };
+            }
+
+            // Un evento ya aceptado no se vuelve a enviar, aunque después haya intentos rechazados o
+            // duplicados: se devuelve el aceptado, sin importar con qué consecutivo salió.
+            var confirmed = await _dbContext.ReceivedDocumentEvents
+                .Where(e => e.ReceivedDocumentId == document.Id && e.EventCode == eventCode && e.Status == "SENT")
+                .OrderByDescending(e => e.SentAt)
+                .FirstOrDefaultAsync();
+            if (confirmed != null)
+                return confirmed;
+
+            // Los rechazos explícitos sí pueden reintentarse. Un DUPLICATE no: Dataico ya tiene un
+            // evento de ese tipo para esta compra (registrado por fuera o sin respuesta local), y
+            // reenviarlo solo produce otro duplicado.
+            var existing = await _dbContext.ReceivedDocumentEvents
+                .Where(e => e.ReceivedDocumentId == document.Id && e.EventCode == eventCode)
+                .OrderByDescending(e => e.SentAt)
+                .FirstOrDefaultAsync();
+            if (existing?.Status == "DUPLICATE")
+                return existing;
+
+            // Con el lock tomado nadie más está enviando este evento: un PENDING es una operación que se
+            // cayó antes de recibir respuesta (el consecutivo no alcanzó a guardarse). Se cierra y se
+            // intenta de nuevo; si Dataico ya lo había registrado, responderá que el evento ya existe.
+            if (existing?.Status == "PENDING")
+            {
+                existing.Status = "REJECTED";
+                existing.DianResponseMessage = "Operación interrumpida sin respuesta de Dataico; se reintentó el envío.";
+                await _dbContext.SaveChangesAsync();
+            }
+
             var evt = new ReceivedDocumentEvent
             {
                 Id = Guid.NewGuid(),
@@ -154,10 +200,14 @@ namespace Fel.Infrastructure.Dian
             _ => throw new NotSupportedException($"Código de evento no soportado: '{eventCode}'.")
         };
 
-        // El evento ya existe en Dataico para ese documento y tipo: cuenta como enviado.
-        private static bool IsDuplicateEvent(string body) =>
-            body.Contains("Ya tienes evento de recepción con esa compra y tipo de evento")
-            || body.Contains("ya esta aceptado en la Dian")
+        // El evento ya existe en Dataico para esta compra y tipo: está hecho, aunque no tengamos su comprobante.
+        private static bool IsEventAlreadyRegistered(string body) =>
+            body.Contains("Ya tienes evento de recepción con esa compra y tipo de evento");
+
+        // El consecutivo ya lo usa otro evento aceptado ("El documento 'N' ya esta aceptado en la Dian", code 002):
+        // el evento de esta compra NO quedó registrado. No es un duplicado; se reintenta con otro consecutivo.
+        private static bool IsEventNumberTaken(string body) =>
+            body.Contains("ya esta aceptado en la Dian")
             || body.Contains("\"code\":\"002\"");
 
         // Límite de peticiones o demora de la pasarela de la DIAN: se reintenta.
@@ -203,6 +253,18 @@ namespace Fel.Infrastructure.Dian
             await numberingLock.WaitAsync();
             try
             {
+                // El semaforo estatico solo cubre una instancia del proceso. Este
+                // lock de SQL tambien coordina la API y el worker.
+                await using var distributedLock = await Fel.Infrastructure.Services.SqlAppLock.AcquireAsync(
+                    _dbContext, $"ReceptionEventNumbering:{client.Id}", timeoutMilliseconds: 240000);
+                if (distributedLock == null)
+                {
+                    evt.Status = "REJECTED";
+                    evt.DianResponseMessage = "No se pudo reservar el consecutivo RADIAN porque otro envio sigue en curso.";
+                    _dbContext.ReceivedDocumentEvents.Add(evt);
+                    await _dbContext.SaveChangesAsync();
+                    return evt;
+                }
                 return await TriggerViaDataicoCoreAsync(document, client, evt);
             }
             finally
@@ -260,6 +322,28 @@ namespace Fel.Infrastructure.Dian
             await _dbContext.SaveChangesAsync();
 
             var eventPrefix = receptionNumbering.Prefix;
+
+            // Igual que en facturación, no se envía a ciegas. Dataico es la fuente
+            // de verdad: si el consecutivo ya existe, se busca el siguiente libre;
+            // si la consulta falla por red/proveedor, se detiene el envío.
+            var numberAvailable = false;
+            for (var availabilityAttempt = 0; availabilityAttempt < 100; availabilityAttempt++)
+            {
+                var availability = await _dataicoApiService.GetReceptionEventAsync($"{eventPrefix}{number}", credentials);
+                if (availability.Success)
+                {
+                    number++;
+                    continue;
+                }
+
+                if (availability.StatusCode != 404)
+                    return await Finish("REJECTED", $"No se pudo validar la disponibilidad del consecutivo {eventPrefix}{number} en Dataico ({availability.StatusCode}). No se realizó el envío.");
+
+                numberAvailable = true;
+                break;
+            }
+            if (!numberAvailable)
+                return await Finish("REJECTED", $"No se encontró un consecutivo RADIAN libre en Dataico a partir de {eventPrefix}{number}.");
 
             var request = new DataicoReceptionEventEnvelope
             {
@@ -351,25 +435,19 @@ namespace Fel.Infrastructure.Dian
                     : "Evento enviado a la DIAN por Dataico.");
             }
 
-            if (IsDuplicateEvent(result.RawResponse))
+            // En ninguno de los dos casos Dataico usó el consecutivo de este intento: no se le asigna al evento
+            // ni se avanza la numeración, para no dejar un hueco local que Dataico después obligue a reutilizar.
+            // Tampoco se consulta el evento por ese consecutivo: o no existe, o es de otra compra.
+            if (IsEventAlreadyRegistered(result.RawResponse))
             {
-                evt.EventNumber = number;
-                await Fel.Infrastructure.Services.ReceptionEventNumberingService.AdvanceIfCurrentAsync(_dbContext, client.Id, number);
-                evt.ProviderUid = result.DataicoDocumentId;
-                evt.Cude = result.Cufe ?? string.Empty;
                 evt.ProviderResponse = result.RawResponse;
-                evt.ProviderXmlUrl = result.XmlUrl;
-                evt.ProviderPdfUrl = result.PdfUrl;
-                var lookup = await _dataicoApiService.GetReceptionEventAsync(eventPrefix + number, credentials);
-                if (lookup.Success)
-                {
-                    evt.ProviderUid ??= lookup.DataicoDocumentId;
-                    evt.Cude = string.IsNullOrWhiteSpace(evt.Cude) ? lookup.Cufe ?? string.Empty : evt.Cude;
-                    evt.ProviderResponse ??= lookup.RawResponse;
-                    evt.ProviderXmlUrl ??= lookup.XmlUrl;
-                    evt.ProviderPdfUrl ??= lookup.PdfUrl;
-                }
-                return await Finish("DUPLICATE", $"Dataico informa que este evento ya existe para el documento. Consecutivo consultado: {eventPrefix}{number}.");
+                return await Finish("DUPLICATE", "Dataico ya tiene registrado este evento para la compra; no se volvió a enviar. No hay comprobante local (CUDE).");
+            }
+
+            if (IsEventNumberTaken(result.RawResponse))
+            {
+                evt.ProviderResponse = result.RawResponse;
+                return await Finish("REJECTED", $"El consecutivo {eventPrefix}{number} ya lo usa otro evento en Dataico; este evento no quedó registrado. Puedes reintentarlo.");
             }
 
             var detail = string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.RawResponse : result.ErrorMessage;

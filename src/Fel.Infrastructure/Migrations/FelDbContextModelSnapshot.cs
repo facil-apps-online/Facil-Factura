@@ -17,7 +17,7 @@ namespace Fel.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.21")
+                .HasAnnotation("ProductVersion", "9.0.22")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -2159,6 +2159,25 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("SubmissionAttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SubmissionLastError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("SubmissionLeaseUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("SubmissionOperationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("SubmissionStartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SubmissionState")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("Subtotal")
                         .HasColumnType("decimal(18,4)");

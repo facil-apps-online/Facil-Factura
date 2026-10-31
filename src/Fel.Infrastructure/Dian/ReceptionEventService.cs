@@ -468,7 +468,6 @@ namespace Fel.Infrastructure.Dian
                 evt.Cude = result.Cufe ?? string.Empty;
                 evt.ProviderResponse = result.RawResponse;
                 evt.ProviderXmlUrl = result.XmlUrl;
-                evt.ProviderPdfUrl = result.PdfUrl;
 
                 // Dataico aceptó pero a veces no devuelve el CUDE en la misma respuesta (demora interna): se consulta por su número.
                 if (string.IsNullOrEmpty(evt.Cude))
@@ -481,7 +480,6 @@ namespace Fel.Infrastructure.Dian
                         evt.ProviderUid ??= lookup.DataicoDocumentId;
                         evt.ProviderResponse ??= lookup.RawResponse;
                         evt.ProviderXmlUrl ??= lookup.XmlUrl;
-                        evt.ProviderPdfUrl ??= lookup.PdfUrl;
                     }
                 }
 

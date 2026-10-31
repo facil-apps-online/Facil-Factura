@@ -66,7 +66,7 @@ namespace Fel.Api.Client.Controllers
                 var events = await _dbContext.ReceivedDocumentEvents.AsNoTracking()
                     .Where(e => e.ReceivedDocumentId == id && e.ReceivedDocument.ClientId == clientId)
                     .OrderByDescending(e => e.SentAt)
-                    .Select(e => new { e.Id, e.EventCode, e.Status, e.SentAt, e.EventNumber, e.ProviderUid, e.Cude, e.DianResponseMessage, e.ProviderResponse, e.ProviderXmlUrl, e.ProviderPdfUrl })
+                    .Select(e => new { e.Id, e.EventCode, e.Status, e.SentAt, e.EventNumber, e.ProviderUid, e.Cude, e.DianResponseMessage, e.ProviderResponse, e.ProviderXmlUrl })
                     .ToListAsync();
                 return Ok(events);
             }
@@ -89,13 +89,13 @@ namespace Fel.Api.Client.Controllers
             if (eventRow == null) return NotFound();
             if (!string.Equals(eventRow.ReceivedDocument.Client.Integrator?.Code, "DATAICO", StringComparison.OrdinalIgnoreCase)) return BadRequest("El archivo del evento solo está disponible para Dataico.");
 
-            var url = string.Equals(type, "xml", StringComparison.OrdinalIgnoreCase) ? eventRow.ProviderXmlUrl :
-                string.Equals(type, "pdf", StringComparison.OrdinalIgnoreCase) ? eventRow.ProviderPdfUrl : null;
+            // Los eventos RADIAN no generan PDF: Dataico solo entrega el XML del evento.
+            if (!string.Equals(type, "xml", StringComparison.OrdinalIgnoreCase)) return BadRequest("Los eventos RADIAN solo tienen XML.");
+            var url = eventRow.ProviderXmlUrl;
             if (string.IsNullOrWhiteSpace(url)) return NotFound(new { message = "Dataico no entregó este archivo." });
             var file = await _dataicoApiService.DownloadFileAsync(url, DataicoDocumentMapper.ToCredentials(eventRow.ReceivedDocument.Client, _cryptoService));
             if (file == null) return StatusCode(502, new { message = "Dataico no permitió descargar este archivo." });
-            var extension = string.Equals(type, "xml", StringComparison.OrdinalIgnoreCase) ? "xml" : "pdf";
-            return File(file.Value.Bytes, file.Value.ContentType, $"{eventRow.ReceivedDocument.DocumentId}-{eventRow.EventCode}.{extension}");
+            return File(file.Value.Bytes, file.Value.ContentType, $"{eventRow.ReceivedDocument.DocumentId}-{eventRow.EventCode}.xml");
         }
 
         [HttpGet("{id:guid}/xml")]

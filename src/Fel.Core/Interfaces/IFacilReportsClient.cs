@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace Fel.Core.Interfaces
 {
-    // Cliente del servicio centralizado Facil Reports (reports.facil-apps.online), que renderiza
+    // Cliente del servicio centralizado Facil Reports (reports.facil-apps.com.co), que renderiza
     // PDFs a partir de una plantilla .repx (identificada por templateKey, el mismo valor guardado
     // en DocumentTemplate.RepxTemplateKey) y datos JSON. FacilFactura es una plataforma más entre
     // las que consume ese servicio (junto con Glamtica, TattooSuite, Nexu), cada una con su propia

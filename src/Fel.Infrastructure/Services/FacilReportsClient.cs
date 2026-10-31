@@ -28,7 +28,7 @@ namespace Fel.Infrastructure.Services
         {
             _http = http;
             _logger = logger;
-            _apiUrl = (config["FacilReports:ApiUrl"] ?? config["FacilReports__ApiUrl"] ?? "https://reports.facil-apps.online").TrimEnd('/');
+            _apiUrl = (config["FacilReports:ApiUrl"] ?? config["FacilReports__ApiUrl"] ?? "https://reports.facil-apps.com.co").TrimEnd('/');
             _apiKey = config["FacilReports:ApiKey"] ?? config["FacilReports__ApiKey"] ?? string.Empty;
         }
 

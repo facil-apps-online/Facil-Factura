@@ -256,7 +256,7 @@
         APP: tenant-web
         VITE_API_URL: https://api.facil-factura.pro/api
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
-        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.online
+        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.com.co
         VITE_FACIL_REPORTS_API_KEY: ${FACIL_REPORTS_API_KEY}
     container_name: fel-tenant-web
     restart: unless-stopped
@@ -269,7 +269,7 @@
         APP: superadmin-web
         VITE_API_URL: https://api.facil-factura.pro/api/superadmin
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
-        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.online
+        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.com.co
         VITE_FACIL_REPORTS_API_KEY: ${FACIL_REPORTS_API_KEY}
     container_name: fel-superadmin-web
     restart: unless-stopped
@@ -282,7 +282,7 @@
         APP: client-web
         VITE_API_URL: https://api.facil-factura.pro/api
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
-        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.online
+        VITE_FACIL_REPORTS_URL: https://reports.facil-apps.com.co
         VITE_FACIL_REPORTS_API_KEY: ${FACIL_REPORTS_API_KEY}
     container_name: fel-client-web
     restart: unless-stopped

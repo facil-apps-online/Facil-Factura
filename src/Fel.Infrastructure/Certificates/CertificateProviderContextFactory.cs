@@ -29,7 +29,8 @@ public sealed class CertificateProviderContextFactory : ICertificateProviderCont
         var normalizedEnvironment = environment.Trim();
         var isSandbox = normalizedEnvironment.Equals(nameof(CertificateEnvironment.Sandbox), StringComparison.OrdinalIgnoreCase);
         var baseUrl = isSandbox ? provider.SandboxBaseUrl : provider.ProductionBaseUrl;
-        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(provider.DownloadBaseUrl))
+        var downloadBaseUrl = DownloadBaseUrlFor(baseUrl, provider.DownloadBaseUrl);
+        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(downloadBaseUrl))
             throw new InvalidOperationException($"El proveedor '{provider.Key}' no tiene URLs configuradas para el ambiente '{normalizedEnvironment}'.");
 
         var encryptedKey = isSandbox ? provider.EncryptedSandboxConsumerKey : provider.EncryptedProductionConsumerKey;
@@ -40,7 +41,17 @@ public sealed class CertificateProviderContextFactory : ICertificateProviderCont
         var consumerSecret = !string.IsNullOrWhiteSpace(encryptedSecret)
             ? _cryptoVault.DecryptPassword(encryptedSecret)
             : GetSecret(provider.ConsumerSecretSecretName);
-        return new CertificateProviderContext(provider.Key, normalizedEnvironment, baseUrl, provider.DownloadBaseUrl, provider.RaCode, consumerKey, consumerSecret);
+        return new CertificateProviderContext(provider.Key, normalizedEnvironment, baseUrl, downloadBaseUrl, provider.RaCode, consumerKey, consumerSecret);
+    }
+
+    // La descarga del certificado vive en el mismo servidor que la API de cada ambiente, sin el sufijo /api/v2 (sandbox.viafirma.com/ra/api/v2 → sandbox.viafirma.com/ra;
+    // ecd.viafirma.com/ra/api/v2 → ecd.viafirma.com/ra). La DownloadBaseUrl del proveedor es una sola y apuntaba a Sandbox: con ella, la descarga de un
+    // certificado de Producción iba al servidor de pruebas. Solo se usa si la base del ambiente no tiene ese sufijo.
+    private static string DownloadBaseUrlFor(string? baseUrl, string? configured)
+    {
+        const string ApiSuffix = "/api/v2";
+        var trimmed = (baseUrl ?? string.Empty).Trim().TrimEnd('/');
+        return trimmed.EndsWith(ApiSuffix, StringComparison.OrdinalIgnoreCase) ? trimmed[..^ApiSuffix.Length] : configured ?? string.Empty;
     }
 
     private string GetSecret(string secretName)

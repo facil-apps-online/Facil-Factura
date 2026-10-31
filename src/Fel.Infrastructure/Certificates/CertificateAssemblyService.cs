@@ -49,7 +49,17 @@ public sealed class CertificateAssemblyService : ICertificateAssemblyService
         var p7bBytes = await _provider.DownloadP7bAsync(request.ProviderPublicId, context, cancellationToken);
         request.DownloadedAt ??= DateTime.UtcNow;
 
-        var leafCertificate = ExtractLeafCertificate(p7bBytes, request.PublicKeyHash);
+        X509Certificate2 leafCertificate;
+        try
+        {
+            leafCertificate = ExtractLeafCertificate(p7bBytes, request.PublicKeyHash);
+        }
+        catch (CryptographicException ex)
+        {
+            // Lo recibido no es un .p7b: casi siempre es una página de error de otro servidor. Se deja el inicio para poder diagnosticarlo.
+            var preview = new string(System.Text.Encoding.ASCII.GetString(p7bBytes, 0, Math.Min(p7bBytes.Length, 60)).Select(c => c < 32 || c > 126 ? '.' : c).ToArray());
+            throw new InvalidOperationException($"El archivo recibido de Viafirma no es un .p7b válido ({p7bBytes.Length} bytes, empieza con: {preview}). Servidor de descarga: {context.DownloadBaseUrl}", ex);
+        }
 
         var pkcs8PrivateKey = Convert.FromBase64String(_cryptoVault.DecryptPassword(request.EncryptedPrivateKey));
         using var rsa = RSA.Create();

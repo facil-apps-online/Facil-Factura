@@ -1109,7 +1109,7 @@ namespace Fel.Api.Client.Controllers
                         return BadRequest(new { message = "Dataico rechazó el reenvío.", detail = result.ErrorMessage ?? result.RawResponse });
                     }
 
-                    return Ok(new { message = $"Dataico aceptó el reenvío. Estado del correo: {emailStatus ?? "sin informar"}. Correo del cliente en Dataico: {dataicoEmail ?? "sin informar"}." });
+                    return Ok(new { message = $"Documento reenviado a {request.Email}." });
                 }
                 else
                 {

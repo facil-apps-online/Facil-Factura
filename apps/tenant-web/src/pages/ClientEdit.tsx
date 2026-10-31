@@ -84,7 +84,7 @@ export default function ClientEdit() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPassword, setCertPassword] = useState('');
   const [uploadingCert, setUploadingCert] = useState(false);
-  const [certificateEnvironment, setCertificateEnvironment] = useState<'Sandbox' | 'Production'>('Sandbox');
+  const [certificateEnvironment, setCertificateEnvironment] = useState<'Sandbox' | 'Production'>('Production');
   const [certificateOptions, setCertificateOptions] = useState<any>(null);
   const [selectedCertificateProfile, setSelectedCertificateProfile] = useState('');
   const [certificateFormValues, setCertificateFormValues] = useState<Record<string, string>>({});
@@ -1535,10 +1535,12 @@ export default function ClientEdit() {
                       <h3 className="font-bold text-slate-800">Solicitar certificado automáticamente</h3>
                       <p className="text-sm text-slate-600">La solicitud se procesa con Viafirma. En Sandbox no se reemplaza el certificado existente.</p>
                     </div>
+                    {certificateOptions?.sandboxEnabled && (
                     <select value={certificateEnvironment} onChange={e => { setCertificateEnvironment(e.target.value as 'Sandbox' | 'Production'); setSelectedCertificateProfile(''); }} className="rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm">
                       <option value="Sandbox">Sandbox</option>
                       <option value="Production">Producción</option>
                     </select>
+                    )}
                   </div>
                   {certificateOptions?.profiles?.length ? (
                     <>

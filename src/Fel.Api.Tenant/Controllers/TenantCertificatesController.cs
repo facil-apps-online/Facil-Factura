@@ -545,7 +545,8 @@ namespace Fel.Api.Tenant.Controllers
                 KeyAlgorithm = subject.Algorithm, KeySize = subject.KeySize, TermsUrl = profile.TermsUrl,
                 TermsHash = profile.TermsHash, TermsAcceptedAt = now, TermsAcceptedIpAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
                 TermsAcceptedUserAgent = Request.Headers.UserAgent.ToString(), CreatedAt = now, UpdatedAt = now,
-                IdempotencyKey = $"tenant:{tenantId}:client:{clientId}:{request.Environment}:{profile.Id}:{now:yyyyMMddHHmmssfff}"
+                // GUID sin guiones: con ellos la clave mide 153 caracteres en Producción y la columna admite 150.
+                IdempotencyKey = $"tenant:{tenantId:N}:client:{clientId:N}:{request.Environment}:{profile.Id:N}:{now:yyyyMMddHHmmssfff}"
             };
 
             var tenant = await _dbContext.Tenants.AsNoTracking().SingleAsync(t => t.Id == tenantId, cancellationToken);

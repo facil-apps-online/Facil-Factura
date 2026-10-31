@@ -158,3 +158,18 @@ marcarlos "Exento de cobro".
 
 - Renovación automática (fase 4): programación, certificado futuro, rollover y alertas de vencimiento.
 - Pago por pasarela (por ejemplo Wompi) sobre el mismo modelo de saldo.
+
+### C7. Teléfono del representante legal en la ficha — TODO (2026-10-31)
+
+El formulario del certificado pide "Teléfono del representante" en cada solicitud y Viafirma lo valida con `[\+](\d{1}|\d{2})(\d{3})(\d{6,8})`
+(`+57` + celular, sin espacios ni guiones). La ficha del cliente no tiene ese dato: solo el teléfono del cliente.
+
+- Campo nuevo `LegalRepresentativePhone` en la ficha (junto a los demás datos del representante) y en el formulario corto de titular. Migración.
+- El formulario del certificado lo toma de ahí, o del teléfono del cliente si está vacío, y deja de pedirlo a mano.
+- Normalizar: quitar espacios, guiones y paréntesis y anteponer `+57` a un celular colombiano de 10 dígitos.
+- Si aun así no cumple el patrón, el mensaje debe decir el formato esperado en vez de solo "Revisa el campo".
+
+### C8. Clave de idempotencia de la solicitud de certificado — corregido (2026-10-31)
+
+La clave `tenant:{id}:client:{id}:{ambiente}:{perfil}:{fecha}` medía 153 caracteres en Producción (150 en Sandbox) y la columna admite 150: todas
+las solicitudes de producción fallaban con 500 al guardar. Se acortó escribiendo los GUID sin guiones (~141).

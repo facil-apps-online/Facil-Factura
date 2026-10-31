@@ -254,15 +254,30 @@ namespace Fel.Api.Superadmin.Controllers
                     Message = ex.Message
                 });
             }
+            catch (InvalidOperationException ex)
+            {
+                // Configuración del proveedor incompleta para ese ambiente (credenciales, URLs, secretos): se le dice al superadmin qué falta.
+                _logger.LogWarning(ex, "Proveedor de certificados {ProviderKey} sin configurar en {Environment}", providerKey, environment);
+                return BadRequest(new
+                {
+                    Provider = providerKey,
+                    Environment = environment.ToString(),
+                    Success = false,
+                    Code = "certificate_provider_configuration",
+                    Message = $"Configuración incompleta para {environment}: {ex.Message}"
+                });
+            }
             catch (Exception ex)
             {
+                // Pantalla solo de administración: se muestra el motivo real (p. ej. un dato que no cabe al guardar) en vez de un mensaje genérico.
                 _logger.LogError(ex, "Error inesperado sincronizando perfiles del proveedor {ProviderKey} en {Environment}", providerKey, environment);
+                var reason = ex is DbUpdateException { InnerException: not null } dbException ? dbException.InnerException.Message : ex.Message;
                 return StatusCode(StatusCodes.Status500InternalServerError, new
                 {
                     Provider = providerKey,
                     Environment = environment.ToString(),
                     Success = false,
-                    Message = "No fue posible sincronizar los perfiles del proveedor."
+                    Message = $"No fue posible sincronizar los perfiles del proveedor: {reason[..Math.Min(reason.Length, 500)]}"
                 });
             }
         }

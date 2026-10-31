@@ -1,33 +1,39 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
+using Fel.Infrastructure.Data;
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MimeKit;
 
 namespace Fel.Infrastructure.Services
 {
-    // Resuelve el transporte de correo por prioridad: SMTP propio del Client, si no está
-    // configurado el del Tenant (client.Tenant debe venir cargado), y si tampoco, la plataforma
-    // (Brevo vía Core). El tercer nivel depende de que Core soporte adjuntos en
-    // queue_platform_email_with_attachment, que a la fecha de este código no existe todavía del
-    // lado de Core — mientras tanto ese nivel falla con un mensaje claro en vez de enviar el correo
-    // sin el documento adjunto.
+    // Resuelve el transporte de correo por prioridad: SMTP propio del Client, si no está configurado el del Tenant (client.Tenant debe
+    // venir cargado), y si tampoco, Brevo directo desde la plataforma con adjuntos. Por Core no sale nada.
     public class SmtpEmailSender : IEmailSender
     {
+        private const string BrevoUrl = "https://api.brevo.com/v3/smtp/email";
+        private static readonly HttpClient BrevoHttp = new() { Timeout = TimeSpan.FromSeconds(60) };
+
         private readonly ICryptoService _cryptoService;
-        private readonly ICoreApiClient _coreApiClient;
+        private readonly ICryptoVault _cryptoVault;
+        private readonly FelDbContext _db;
         private readonly ILogger<SmtpEmailSender> _logger;
 
-        public SmtpEmailSender(ICryptoService cryptoService, ICoreApiClient coreApiClient, ILogger<SmtpEmailSender> logger)
+        public SmtpEmailSender(ICryptoService cryptoService, ICryptoVault cryptoVault, FelDbContext db, ILogger<SmtpEmailSender> logger)
         {
             _cryptoService = cryptoService;
-            _coreApiClient = coreApiClient;
+            _cryptoVault = cryptoVault;
+            _db = db;
             _logger = logger;
         }
 
         public async Task<EmailSendResult> SendAsync(
-            Client client, string recipientEmail, string subject, string bodyHtml,
+            Client client, EmailKind kind, string recipientEmail, string subject, string bodyHtml,
             IReadOnlyList<EmailAttachment>? attachments = null, CancellationToken ct = default)
         {
             if (HasSmtpConfigured(client.SmtpHost, client.SmtpUser, client.SmtpPasswordEncrypted))
@@ -47,20 +53,76 @@ namespace Fel.Infrastructure.Services
                     recipientEmail, subject, bodyHtml, attachments, ct);
             }
 
-            if (attachments != null && attachments.Count > 0)
+            return await SendViaBrevoAsync(client, kind, recipientEmail, subject, bodyHtml, attachments, ct);
+        }
+
+        // Remitente según el tipo de correo (ver el backlog de correo propio): el nombre visible es el de quien origina el correo y las
+        // respuestas van a su contacto; la dirección es siempre de facil-factura.pro, que es el dominio autenticado en Brevo.
+        private static (string Name, string Email, string? ReplyTo) ResolveSender(PlatformEmailSettings settings, Client client, EmailKind kind)
+        {
+            var tenant = client.Tenant;
+            var tenantName = tenant != null ? (!string.IsNullOrWhiteSpace(tenant.CommercialName) ? tenant.CommercialName : tenant.Name) : settings.PlatformFromName;
+            var clientName = !string.IsNullOrWhiteSpace(client.CommercialName) ? client.CommercialName : client.CompanyName;
+            return kind switch
             {
-                return EmailSendResult.Fail(
-                    "No hay un SMTP propio configurado (ni del cliente ni del tenant) y el envío por la plataforma todavía no soporta adjuntos.",
-                    "platform");
+                EmailKind.Document => (clientName, settings.DocumentsFromEmail, NullIfBlank(client.Email)),
+                EmailKind.Certificate or EmailKind.CertificatePassword => (tenantName, settings.CertificatesFromEmail, NullIfBlank(tenant?.Email)),
+                EmailKind.Notification => (tenantName, settings.NotificationsFromEmail, NullIfBlank(tenant?.Email)),
+                _ => (settings.PlatformFromName, settings.PlatformFromEmail, NullIfBlank(settings.SupportEmail))
+            };
+        }
+
+        private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+        private async Task<EmailSendResult> SendViaBrevoAsync(
+            Client client, EmailKind kind, string recipientEmail, string subject, string bodyHtml,
+            IReadOnlyList<EmailAttachment>? attachments, CancellationToken ct)
+        {
+            try
+            {
+                var settings = await _db.PlatformEmailSettings.AsNoTracking().FirstOrDefaultAsync(s => s.Id == 1, ct);
+                if (settings == null || string.IsNullOrWhiteSpace(settings.BrevoApiKeyEncrypted))
+                    return EmailSendResult.Fail("La plataforma no tiene configurada la API key de Brevo (superadmin → Correo de la plataforma).", "platform");
+
+                var apiKey = _cryptoVault.DecryptPassword(settings.BrevoApiKeyEncrypted);
+                var (name, email, replyTo) = ResolveSender(settings, client, kind);
+
+                var payload = new Dictionary<string, object?>
+                {
+                    ["sender"] = new { name, email },
+                    ["to"] = new[] { new { email = recipientEmail } },
+                    ["subject"] = subject,
+                    ["htmlContent"] = bodyHtml
+                };
+                if (replyTo != null) payload["replyTo"] = new { email = replyTo, name };
+                if (attachments is { Count: > 0 })
+                    payload["attachment"] = attachments.Select(a => new { name = a.FileName, content = Convert.ToBase64String(a.Content) }).ToArray();
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, BrevoUrl)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+                };
+                request.Headers.Add("api-key", apiKey);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+                using var response = await BrevoHttp.SendAsync(request, ct);
+                var body = await response.Content.ReadAsStringAsync(ct);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Brevo rechazó el correo a {Recipient}: {Status} {Body}", recipientEmail, (int)response.StatusCode, body);
+                    return EmailSendResult.Fail($"Brevo respondió {(int)response.StatusCode}: {(body.Length > 500 ? body[..500] : body)}", "platform");
+                }
+
+                var messageId = string.Empty;
+                try { messageId = JsonDocument.Parse(body).RootElement.GetProperty("messageId").GetString() ?? string.Empty; }
+                catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { }
+                return EmailSendResult.Ok("platform", messageId);
             }
-
-            var coreResult = await _coreApiClient.QueuePlatformEmailAsync(
-                recipientEmail, "invoice_resend",
-                new Dictionary<string, string> { ["subject"] = subject, ["body_html"] = bodyHtml },
-                tenant?.CoreTenantId, ct);
-
-            if (coreResult.IsSuccess) return EmailSendResult.Ok("platform");
-            return EmailSendResult.Fail(coreResult.Error ?? "No se pudo encolar el correo en la plataforma.", "platform");
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Error enviando correo vía Brevo a {Recipient}.", recipientEmail);
+                return EmailSendResult.Fail(ex.Message, "platform");
+            }
         }
 
         private static bool HasSmtpConfigured(string? host, string? user, string? passwordEncrypted)

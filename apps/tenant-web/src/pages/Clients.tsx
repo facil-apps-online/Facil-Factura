@@ -3,7 +3,7 @@ import { Plus, Edit2, RefreshCw, Send, X, LogIn, Archive, ArchiveRestore } from 
 import ClientBlockSwitch from '../components/ClientBlockSwitch';
 import SearchableSelect from '@shared/components/SearchableSelect';
 import { CYCLE_LABELS, type Plan } from '../components/PlanFormModal';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
 import { useModules } from '../lib/modules';
 import { enterClientPortal } from '../lib/support';
@@ -80,7 +80,8 @@ function ExpiryBadge({ value }: { value: string | null }) {
   );
 }
 
-export default function Clients() {
+// holders: los titulares (clientes sin facturación) de un tenant que sí factura; sin esa marca, la lista son los clientes que facturan.
+export default function Clients({ holders = false }: { holders?: boolean }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -98,11 +99,13 @@ export default function Clients() {
   const [bulkInviting, setBulkInviting] = useState(false);
   const navigate = useNavigate();
   // Sin facturación (tenant solo de certificados) los clientes son titulares: sin asociados, planes, portal ni resoluciones.
-  const { invoicing } = useModules();
+  const { invoicing: tenantInvoicing } = useModules();
+  const invoicing = tenantInvoicing && !holders;
+  const [searchParams] = useSearchParams();
 
   const loadClients = () => {
     setLoading(true);
-    api.get('/tenant/clients')
+    api.get('/tenant/clients', { params: tenantInvoicing ? { invoicing: !holders } : undefined })
       .then(res => setClients(res.data))
       .catch(err => toast.error(invoicing ? "Error al cargar los clientes del servidor" : "Error al cargar los titulares del servidor"))
       .finally(() => setLoading(false));
@@ -115,6 +118,9 @@ export default function Clients() {
     api.get('/tenant/integrators').then(res => setIntegrators(res.data)).catch(() => {});
   }, [invoicing]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Desde "Venta de certificados" > Nuevo titular se llega con ?new=1 y el formulario ya abierto.
+  useEffect(() => { if (holders && searchParams.get('new')) setShowModal(true); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const openCreateModal = () => {
     // Con más de un proveedor habilitado el tenant elige; por defecto el motor propio (Nativo) si lo tiene.
     const defaultProvider = integrators.length > 1 ? (integrators.some(i => i.code === 'NATIVE') ? 'Native' : integrators[0].code === 'DATAICO' ? 'Dataico' : 'Native') : '';
@@ -126,7 +132,7 @@ export default function Clients() {
     e.preventDefault();
     setCreating(true);
     try {
-      const res = await api.post('/tenant/clients', { ...newClient, associateId: newClient.associateId || null });
+      const res = await api.post('/tenant/clients', { ...newClient, associateId: newClient.associateId || null, invoicingEnabled: holders ? false : undefined });
       setShowModal(false);
       if (invoicing) {
         toast.success("Cliente creado exitosamente. Completa su información.");

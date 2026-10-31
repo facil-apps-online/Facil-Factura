@@ -81,7 +81,10 @@ public enum CertificateEventType
     // Auditoría de la entrega del .p12 desde el portal del tenant (archivo y contraseña por separado).
     DownloadedByTenant = 15,
     PasswordViewedByTenant = 16,
-    ChargeReleased = 17
+    ChargeReleased = 17,
+    // Resultado del correo con el .p12 al titular (la contraseña sale solo cuando este quedó enviado).
+    HolderEmailSent = 18,
+    HolderEmailFailed = 19
 }
 
 public enum CertificateBalanceMovementType

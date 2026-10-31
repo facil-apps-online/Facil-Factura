@@ -920,6 +920,9 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<bool>("InstallOnPlatform")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime?>("InstalledAt")
                         .HasColumnType("datetime2");
 
@@ -1084,6 +1087,9 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<bool?>("CertificatePurchaseEnabled")
+                        .HasColumnType("bit");
+
                     b.Property<string>("City")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -1181,6 +1187,9 @@ namespace Fel.Infrastructure.Migrations
 
                     b.Property<Guid>("IntegratorId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("InvoicingEnabled")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -2995,6 +3004,98 @@ namespace Fel.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.EmailOutbox", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AttachmentsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BodyHtml")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("CertificateRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DependsOnId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LastError")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProviderMessageId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<bool>("Sensitive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CertificateRequestId");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("DependsOnId");
+
+                    b.HasIndex("DocumentId");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("EmailOutbox", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.IdentificationType", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3370,6 +3471,58 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("TenantId", "RunPeriod");
 
                     b.ToTable("PlanCharges", (string)null);
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.PlatformEmailSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BrevoApiKeyEncrypted")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CertificatesFromEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("DocumentsFromEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("NotificationsFromEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("PlatformFromEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("PlatformFromName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SupportEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PlatformEmailSettings", (string)null);
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.PrepaidPackage", b =>
@@ -6737,6 +6890,16 @@ namespace Fel.Infrastructure.Migrations
                     b.Navigation("PreviousVersion");
 
                     b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.EmailOutbox", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Client");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.NoteNumbering", b =>

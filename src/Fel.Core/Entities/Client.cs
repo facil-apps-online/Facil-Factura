@@ -149,6 +149,14 @@ namespace Fel.Core.Entities
         // pagos). Apagado por defecto: sin él, el portal del cliente no muestra el menú "Pagos".
         public bool ControlsPayments { get; set; } = false;
 
+        // Si este cliente puede comprar certificados digitales (lo decide el Tenant por cliente). Sin definir (null) aplica el valor por defecto:
+        // sí, salvo que el Tenant facture y el cliente use Dataico, que firma con su propio certificado. Ver CertificatePurchase.
+        public bool? CertificatePurchaseEnabled { get; set; }
+
+        // Si este cliente factura electrónicamente. Un titular (alguien a quien el Tenant solo le vende certificados) no factura: no entra al
+        // portal ni a la API y no cuenta en el cobro. Factura de verdad solo si además el Tenant tiene el módulo de facturación (ver TenantModules).
+        public bool InvoicingEnabled { get; set; } = true;
+
         // --- Proveedor de Documentos Electrónicos ---
         public Guid IntegratorId { get; set; }
         public Integrator Integrator { get; set; } = null!;

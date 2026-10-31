@@ -116,17 +116,20 @@ namespace Fel.Api.Tenant.Controllers
             throw new UnauthorizedAccessException("x-tenant-id Header is missing");
         }
 
+        // invoicing=true: solo los clientes que facturan; false: solo los titulares (sin facturación); sin enviar: todos.
         [HttpGet]
-        public async Task<IActionResult> GetClients()
+        public async Task<IActionResult> GetClients([FromQuery] bool? invoicing = null)
         {
             try
             {
                 var tenantId = GetCurrentTenantId();
-                var clients = await _dbContext.Clients
-                    .Where(c => c.TenantId == tenantId && !c.IsDeveloperSandbox)
+                var query = _dbContext.Clients.Where(c => c.TenantId == tenantId && !c.IsDeveloperSandbox);
+                if (invoicing.HasValue) query = query.Where(c => c.InvoicingEnabled == invoicing.Value);
+                var clients = await query
                     .Select(c => new
                     {
                          c.Id,
+                         c.InvoicingEnabled,
                          c.CompanyName,
                          c.PersonType,
                         c.TaxId,
@@ -217,7 +220,9 @@ namespace Fel.Api.Tenant.Controllers
                 Blocked = client.BlockedAt != null,
                 client.BlockReason,
                 BillingFrequency = client.BillingFrequency.ToString(),
-                client.ControlsPayments
+                client.ControlsPayments,
+                client.CertificatePurchaseEnabled,
+                client.InvoicingEnabled
             });
         }
 
@@ -252,10 +257,17 @@ namespace Fel.Api.Tenant.Controllers
                 integratorId = chosen.Value;
             }
 
+            // Sin el módulo de facturación todos son titulares; con él, el tenant elige: un titular exige el módulo de certificados.
+            var tenantModules = await Fel.Infrastructure.Security.TenantModules.GetAsync(_dbContext, tenantId);
+            var invoicingEnabled = tenantModules.Invoicing && (request.InvoicingEnabled ?? true);
+            if (!invoicingEnabled && !tenantModules.Certificates)
+                return BadRequest("Sin facturación el cliente solo puede comprar certificados, y tu cuenta no tiene ese módulo.");
+
             var client = new Client
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenantId,
+                InvoicingEnabled = invoicingEnabled,
                 CompanyName = request.CompanyName,
                 PersonType = request.PersonType == "PN" ? "PN" : "PJ",
                 CommercialName = request.CommercialName,
@@ -412,6 +424,18 @@ namespace Fel.Api.Tenant.Controllers
             }
             // Opcional: un portal anterior que no lo envía no debe apagarlo sin querer.
             if (request.ControlsPayments.HasValue) client.ControlsPayments = request.ControlsPayments.Value;
+            if (request.CertificatePurchaseEnabled.HasValue) client.CertificatePurchaseEnabled = request.CertificatePurchaseEnabled.Value;
+            // Facturación sí/no del cliente. Sin facturación el cliente es un titular: solo compra certificados, así que hace falta el módulo
+            // de certificados; y activar la facturación exige que el tenant la tenga.
+            if (request.InvoicingEnabled.HasValue && request.InvoicingEnabled.Value != client.InvoicingEnabled)
+            {
+                var modules = await Fel.Infrastructure.Security.TenantModules.GetAsync(_dbContext, tenantId);
+                if (request.InvoicingEnabled.Value && !modules.Invoicing)
+                    return BadRequest("Tu cuenta no tiene el módulo de facturación electrónica.");
+                if (!request.InvoicingEnabled.Value && !modules.Certificates)
+                    return BadRequest("Sin facturación el cliente solo puede comprar certificados, y tu cuenta no tiene ese módulo.");
+                client.InvoicingEnabled = request.InvoicingEnabled.Value;
+            }
 
             await _dbContext.SaveChangesAsync();
 
@@ -897,6 +921,8 @@ namespace Fel.Api.Tenant.Controllers
     {
         // "Native" o "Dataico"; vacío = el de por defecto del tenant. Debe ser uno de los habilitados para el tenant.
         public string? DocumentProvider { get; set; }
+        // false = titular: solo se le venden certificados, no factura. Nulo = factura si el tenant tiene el módulo de facturación.
+        public bool? InvoicingEnabled { get; set; }
         public string CompanyName { get; set; } = string.Empty;
         public string PersonType { get; set; } = "PJ";
         public string CommercialName { get; set; } = string.Empty;
@@ -1013,6 +1039,8 @@ namespace Fel.Api.Tenant.Controllers
         public double? Longitude { get; set; }
         public string BillingFrequency { get; set; } = "Monthly";
         public bool? ControlsPayments { get; set; }
+        public bool? CertificatePurchaseEnabled { get; set; }
+        public bool? InvoicingEnabled { get; set; }
         public bool AppliesRetentions { get; set; } = true;
         public string? ElectronicInvoiceLegend { get; set; }
         public string? SupportDocumentLegend { get; set; }

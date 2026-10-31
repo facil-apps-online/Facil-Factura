@@ -170,7 +170,8 @@ builder.Services.AddSingleton<Fel.Core.Interfaces.IPublicFileStorageService, Fel
 builder.Services.AddSingleton<Fel.Infrastructure.Dataico.IDataicoApiService, Fel.Infrastructure.Dataico.DataicoApiService>();
 builder.Services.AddScoped<Fel.Infrastructure.Dataico.DataicoCustomPdfService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.DocumentAttachmentService>();
-builder.Services.AddScoped<Fel.Core.Interfaces.IEmailSender, Fel.Infrastructure.Services.SmtpEmailSender>();
+builder.Services.AddSingleton<Fel.Core.Interfaces.IEmailSignal, Fel.Infrastructure.Messaging.RedisEmailSignal>();
+builder.Services.AddScoped<Fel.Core.Interfaces.IEmailOutbox, Fel.Infrastructure.Email.EmailOutboxService>();
 builder.Services.AddTransient<Fel.Infrastructure.Services.DianRutParserService>();
 builder.Services.AddTransient<Fel.Core.Interfaces.IXmlSignerService, Fel.Infrastructure.Security.XadesSignerService>();
 

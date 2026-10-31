@@ -244,6 +244,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [resendEmailDraft, setResendEmailDraft] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resendEmails, setResendEmails] = useState<any[]>([]);
   const [resolutionFilter, setResolutionFilter] = useState('');
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [retentionCatalog, setRetentionCatalog] = useState<{ id: string, category: string, name: string, rate: number }[]>([]);
@@ -527,10 +528,28 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
 
   const { previewingId, preview: handlePreviewPdf } = usePdfPreview(cfg.api);
 
+  const loadResendEmails = async (invoiceId: string) => {
+    try {
+      const res = await api.get(`/client/invoices/${invoiceId}/emails`);
+      setResendEmails(res.data);
+    } catch {
+      // El historial es informativo: si falla, el diálogo sigue sirviendo para reenviar.
+    }
+  };
+
   const openResendModal = (invoice: any) => {
     setResendModalInv(invoice);
     setResendEmailDraft(invoice.customer?.email || '');
+    setResendEmails([]);
+    void loadResendEmails(invoice.id);
   };
+
+  // Mientras un envío sigue en cola o reintentando, el historial del diálogo se actualiza solo.
+  useEffect(() => {
+    if (!resendModalInv || !resendEmails.some(e => e.status === 'Pending' || e.status === 'Sending' || e.status === 'Failed')) return;
+    const timer = setTimeout(() => void loadResendEmails(resendModalInv.id), 3000);
+    return () => clearTimeout(timer);
+  }, [resendModalInv, resendEmails]);
 
   const handleResend = async () => {
     if (!resendModalInv) return;
@@ -542,7 +561,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     try {
       const res = await api.post(`/client/invoices/${resendModalInv.id}/resend`, { email: resendEmailDraft.trim() });
       toast.success(res.data?.message || 'Documento reenviado correctamente.');
-      setResendModalInv(null);
+      if (res.data?.emailId) await loadResendEmails(resendModalInv.id);
+      else setResendModalInv(null);
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Error al reenviar el documento'));
     } finally {
@@ -2955,6 +2975,24 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
               placeholder="correo@ejemplo.com"
             />
           </div>
+          {resendEmails.length > 0 && (
+            <div className="mt-5">
+              <p className="mb-2 text-sm font-bold text-slate-700">Envíos de este documento</p>
+              <ul className="space-y-2">
+                {resendEmails.map(e => {
+                  const label = e.status === 'Sent' ? 'Enviado' : e.status === 'Dead' ? 'Falló' : e.status === 'Failed' ? 'Reintentando' : 'En cola';
+                  const color = e.status === 'Sent' ? 'text-emerald-700' : e.status === 'Dead' ? 'text-rose-700' : 'text-amber-700';
+                  return (
+                    <li key={e.id} className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600">
+                      <span className={`font-bold ${color}`}>{label}</span> · {e.recipientEmail} · {new Date(e.sentAt || e.createdAt).toLocaleString('es-CO')}
+                      {e.status === 'Sent' && e.channel && <span> · {e.channel === 'platform' ? 'Facil Factura' : e.channel === 'tenant-smtp' ? 'SMTP de tu proveedor' : 'SMTP propio'}</span>}
+                      {e.lastError && e.status !== 'Sent' && <p className="mt-1 text-rose-600">{e.lastError}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </Modal>
       )}
 

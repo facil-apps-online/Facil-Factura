@@ -24,6 +24,7 @@ import { ForgotPassword } from './ForgotPassword';
 import { ResetPassword } from './ResetPassword';
 import { CertificateProviders } from './CertificateProviders';
 import { CertificatePricing } from './CertificatePricing';
+import { EmailSettings } from './EmailSettings';
 import SessionGuard from '@shared/components/session/SessionGuard';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 import ProfilePage from '@shared/components/session/ProfilePage';
@@ -832,6 +833,7 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
     { to: "/certificates", icon: <FileKey className="w-5 h-5" />, label: "Certificados" },
     { to: "/certificate-provider", icon: <ShieldCheck className="w-5 h-5" />, label: "Proveedor de Certificados" },
     { to: "/certificate-pricing", icon: <Coins className="w-5 h-5" />, label: "Precios y saldos de certificados" },
+    { to: "/email-settings", icon: <Mail className="w-5 h-5" />, label: "Correo de la plataforma" },
     { to: "/document-types", icon: <Settings className="w-5 h-5" />, label: "Tipos de Documento" },
     { to: "/integrators", icon: <Cable className="w-5 h-5" />, label: "Integradores" },
     { to: "/tariff-tiers", icon: <Coins className="w-5 h-5" />, label: "Tarifario por Volumen" },
@@ -930,6 +932,7 @@ const App = () => {
                   <Route path="/certificates" element={<Certificates />} />
                   <Route path="/certificate-provider" element={<CertificateProviders />} />
                   <Route path="/certificate-pricing" element={<CertificatePricing />} />
+                  <Route path="/email-settings" element={<EmailSettings />} />
                   <Route path="/tenants/edit/:id" element={<TenantEdit />} />
                   <Route path="/document-types" element={<DocumentTypes />} />
                   <Route path="/integrators" element={<Integrators />} />

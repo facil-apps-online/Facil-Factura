@@ -38,6 +38,8 @@ Core (`queue_platform_email` en Supabase), que encola en `client_email_queue` y 
 
 ### E1. Bandeja de salida y envío por evento — prioridad alta
 
+**Estado: implementado en local (migración `AddEmailOutbox`), sin commit ni despliegue.** Adjuntos y cuerpos sensibles se borran al enviarse; la contraseña de certificado va cifrada y retenida (`Held`) hasta que sale el correo del archivo.
+
 - Tabla `EmailOutbox` con estos campos:
   - tipo de correo, tenant, cliente;
   - destinatario, asunto, HTML y adjuntos (en la tabla o en el almacenamiento de archivos según tamaño);
@@ -54,6 +56,8 @@ Core (`queue_platform_email` en Supabase), que encola en `client_email_queue` y 
   `2026-10-29-idempotencia-y-concurrencia-en-envios.md`).
 
 ### E2. Canal Brevo directo desde FacilFactura, con adjuntos — prioridad alta
+
+**Estado: implementado en local, sin desplegar.** Falta pegar la API key en superadmin → Correo de la plataforma y probar con un envío real.
 
 - **Llamada:** tercer canal de `IEmailSender`: `POST https://api.brevo.com/v3/smtp/email` con adjuntos en base64.
 - **API key:** guardada **cifrada en la base de datos** con `ICryptoVault`, como las credenciales de Viafirma, y nunca en
@@ -103,12 +107,16 @@ Core (`queue_platform_email` en Supabase), que encola en `client_email_queue` y 
 
 ### E5. Reenvío de documentos nativos — prioridad alta (junto con E1-E2)
 
+**Estado: implementado en local, sin desplegar.** Pendiente: confirmar el asunto DIAN y el contenido del ZIP del envío inicial.
+
 - Quitar de `SmtpEmailSender` el camino a Core (`QueuePlatformEmailAsync` con `invoice_resend`). El reenvío sale por SMTP del
   cliente → SMTP del tenant → Brevo directo, nunca por Core.
 - El reenvío responde "En cola" y el documento muestra **Enviado** o **Falló (motivo)** con fecha y canal.
 - Confirmar el asunto en formato DIAN y el ZIP con AttachedDocument y PDF en el envío inicial y en el reenvío.
 
 ### E6. Correo de certificados — prioridad alta (junto con E1-E2)
+
+**Estado: implementado en local, sin desplegar.**
 
 - La contraseña solo se encola cuando el correo con el `.p12` quedó **enviado**.
 - El resultado queda como evento de la solicitud y se muestra en Solicitudes ("no se pudo enviar al titular; descárgalo aquí").

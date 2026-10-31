@@ -19,6 +19,8 @@ namespace Fel.Infrastructure.Data
         public DbSet<CertificatePrice> CertificatePrices => Set<CertificatePrice>();
         public DbSet<CertificateCharge> CertificateCharges => Set<CertificateCharge>();
         public DbSet<CertificateBalanceMovement> CertificateBalanceMovements => Set<CertificateBalanceMovement>();
+        public DbSet<EmailOutbox> EmailOutbox => Set<EmailOutbox>();
+        public DbSet<PlatformEmailSettings> PlatformEmailSettings => Set<PlatformEmailSettings>();
         public DbSet<CertificateEvent> CertificateEvents => Set<CertificateEvent>();
         public DbSet<Document> Documents => Set<Document>();
         public DbSet<ReceivedDocument> ReceivedDocuments => Set<ReceivedDocument>();
@@ -489,6 +491,37 @@ namespace Fel.Infrastructure.Data
                 entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(e => e.CertificateRequest).WithMany(r => r.Charges).HasForeignKey(e => e.CertificateRequestId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(e => e.Price).WithMany(p => p.Charges).HasForeignKey(e => e.PriceId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<EmailOutbox>(entity =>
+            {
+                entity.ToTable("EmailOutbox");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.RecipientEmail).IsRequired().HasMaxLength(320);
+                entity.Property(e => e.Subject).IsRequired().HasMaxLength(500);
+                entity.Property(e => e.LastError).HasMaxLength(1000);
+                entity.Property(e => e.Channel).HasMaxLength(30);
+                entity.Property(e => e.ProviderMessageId).HasMaxLength(200);
+                // El barrido del worker busca lo pendiente o fallido que ya toca reintentar.
+                entity.HasIndex(e => new { e.Status, e.NextAttemptAt });
+                entity.HasIndex(e => e.DocumentId);
+                entity.HasIndex(e => e.CertificateRequestId);
+                entity.HasIndex(e => e.DependsOnId);
+                entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<PlatformEmailSettings>(entity =>
+            {
+                entity.ToTable("PlatformEmailSettings");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedNever();
+                entity.Property(e => e.DocumentsFromEmail).IsRequired().HasMaxLength(320);
+                entity.Property(e => e.CertificatesFromEmail).IsRequired().HasMaxLength(320);
+                entity.Property(e => e.NotificationsFromEmail).IsRequired().HasMaxLength(320);
+                entity.Property(e => e.PlatformFromEmail).IsRequired().HasMaxLength(320);
+                entity.Property(e => e.PlatformFromName).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.SupportEmail).HasMaxLength(320);
+                entity.Property(e => e.UpdatedBy).HasMaxLength(256);
             });
 
             modelBuilder.Entity<CertificateBalanceMovement>(entity =>

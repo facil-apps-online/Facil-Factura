@@ -42,7 +42,7 @@ export default function ClientEdit() {
   const [searchParams] = useSearchParams();
   // Sin facturación (tenant solo de certificados) el cliente es un titular: solo su información básica y su certificado. Sin el módulo de
   // certificados no se ofrece la solicitud a Viafirma (la carga manual del .p12 sigue, la emisión directa la necesita).
-  const { invoicing, certificates } = useModules();
+  const { invoicing: tenantInvoicing, certificates } = useModules();
   const [loading, setLoading] = useState(true);
   // ¿Este cliente es la empresa emisora del tenant (la que factura a los demás)? Null mientras carga.
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
@@ -50,7 +50,7 @@ export default function ClientEdit() {
   const [isEligibleOwner, setIsEligibleOwner] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab') || 'info';
-    return invoicing || tab === 'certificate' ? tab : 'info';
+    return tenantInvoicing || tab === 'certificate' ? tab : 'info';
   });
   const [resolutions, setResolutions] = useState<any[]>([]);
   const [branches, setBranches] = useState<{ id: string; name: string; isActive: boolean; isMain: boolean }[]>([]);
@@ -89,6 +89,8 @@ export default function ClientEdit() {
   const [selectedCertificateProfile, setSelectedCertificateProfile] = useState('');
   const [certificateFormValues, setCertificateFormValues] = useState<Record<string, string>>({});
   const [acceptCertificateTerms, setAcceptCertificateTerms] = useState(false);
+  // Un cliente nativo instala el certificado para firmar; el tenant puede pedir solo entregarlo (no reemplaza el activo).
+  const [installOnPlatform, setInstallOnPlatform] = useState(true);
   const [requestingCertificate, setRequestingCertificate] = useState(false);
   const [habilitationStatus, setHabilitationStatus] = useState<any>(null);
   const [magicLink, setMagicLink] = useState('');
@@ -178,9 +180,17 @@ export default function ClientEdit() {
     blockReason: null as string | null,
     billingFrequency: 'Monthly',
     controlsPayments: false,
+    certificatePurchaseEnabled: undefined as boolean | undefined,
+    invoicingEnabled: true,
      electronicInvoiceLegend: '',
      supportDocumentLegend: ''
   });
+  // Factura de verdad si el tenant tiene el módulo y el cliente no es un titular (solo certificados).
+  const invoicing = tenantInvoicing && client.invoicingEnabled !== false;
+  // El tenant decide por cliente si puede comprar certificados; sin decidir, sí, salvo que el tenant facture y el cliente use Dataico (firma con el suyo).
+  const purchaseEnabled = certificates && (client.certificatePurchaseEnabled ?? (!invoicing || effectiveProvider !== 'Dataico'));
+  // La carga manual del .p12 es del cliente que firma en FacilFactura: no aplica con Dataico (firma con su propio certificado).
+  const signsHere = invoicing && effectiveProvider !== 'Dataico';
 
   useEffect(() => {
     if (!id) return;
@@ -444,7 +454,8 @@ export default function ClientEdit() {
         profileId: selectedCertificateProfile,
         environment: certificateEnvironment === 'Sandbox' ? 1 : 2,
         acceptTerms: true,
-        formValues: certificateFormValues
+        formValues: certificateFormValues,
+        installOnPlatform: certificateOptions?.canInstall ? installOnPlatform : undefined
       });
       toast.success(response.data.kycUrl ? 'Solicitud creada. Completa la validación de identidad.' : 'Solicitud creada correctamente');
       loadCertificate();
@@ -601,7 +612,9 @@ export default function ClientEdit() {
         latitude: client.latitude,
         longitude: client.longitude,
          billingFrequency: client.billingFrequency,
-         controlsPayments: !!client.controlsPayments
+         controlsPayments: !!client.controlsPayments,
+         certificatePurchaseEnabled: client.certificatePurchaseEnabled,
+         invoicingEnabled: tenantInvoicing ? client.invoicingEnabled : undefined
          ,electronicInvoiceLegend: client.electronicInvoiceLegend || '',
          supportDocumentLegend: client.supportDocumentLegend || ''
       });
@@ -1185,8 +1198,8 @@ export default function ClientEdit() {
             )}
             </>
           )}
-          {/* Con Dataico firma y transmite Dataico con su propio certificado: aquí no se carga ninguno. */}
-          {effectiveProvider !== 'Dataico' && (
+          {/* Con Dataico firma y transmite Dataico con su propio certificado: solo aparece si el tenant le habilitó la compra de certificados. */}
+          {(effectiveProvider !== 'Dataico' || purchaseEnabled) && (
             <button
               onClick={() => setActiveTab('certificate')}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${
@@ -1295,6 +1308,40 @@ export default function ClientEdit() {
                       </span>
                     </label>
                   </div>
+
+                  {tenantInvoicing && certificates && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5" data-testid="client-invoicing">
+                      <h3 className="font-semibold text-slate-800">Facturación electrónica</h3>
+                      <p className="text-sm text-slate-500 mt-1">Si este cliente factura desde tu cuenta o es un titular a quien solo le vendes certificados.</p>
+                      <label className="flex items-start gap-3 mt-4 cursor-pointer">
+                        <input type="checkbox" checked={client.invoicingEnabled !== false} onChange={e => setClient({ ...client, invoicingEnabled: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
+                        <span>
+                          <span className="font-semibold text-slate-700 text-sm">Factura electrónicamente{client.invoicingEnabled !== false ? (effectiveProvider === 'Dataico' ? ' (con Dataico)' : ' (con el motor propio)') : ''}</span>
+                          <span className="block text-xs text-slate-500 mt-0.5">
+                            Apagado, es un titular: solo se le venden certificados, no entra al portal ni a la API y no aparece en Clientes sino en Venta de certificados. El método de facturación se cambia en la pestaña de credenciales. Guarda los cambios para aplicarlo.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
+                  {invoicing && certificates && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5" data-testid="certificate-purchase">
+                      <h3 className="font-semibold text-slate-800">Certificados digitales</h3>
+                      <p className="text-sm text-slate-500 mt-1">Si este cliente puede comprar certificados digitales desde tu portal. Se descuentan de tu saldo de certificados.</p>
+                      <label className="flex items-start gap-3 mt-4 cursor-pointer">
+                        <input type="checkbox" checked={!!purchaseEnabled} onChange={e => setClient({ ...client, certificatePurchaseEnabled: e.target.checked })} className="w-5 h-5 mt-0.5 rounded accent-blue-600" />
+                        <span>
+                          <span className="font-semibold text-slate-700 text-sm">Puede comprar certificados</span>
+                          <span className="block text-xs text-slate-500 mt-0.5">
+                            {effectiveProvider === 'Dataico'
+                              ? 'Este cliente factura con Dataico, que firma con su propio certificado: actívalo solo si quieres venderle certificados. Aparece la pestaña "Certificado Digital" y guarda los cambios.'
+                              : 'Apagado, la pestaña "Certificado Digital" solo permite cargar el .p12 con el que firma.'}
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  )}
 
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4">
                     <div>
@@ -1469,7 +1516,7 @@ export default function ClientEdit() {
               </>
             )}
 
-            {activeTab === 'certificate' && effectiveProvider !== 'Dataico' && (
+            {activeTab === 'certificate' && (effectiveProvider !== 'Dataico' || purchaseEnabled) && (
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                 <div className="flex items-center gap-4 mb-8">
                   <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
@@ -1477,11 +1524,11 @@ export default function ClientEdit() {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-slate-800">Certificado digital</h2>
-                    <p className="text-sm text-slate-500">{certificates ? 'Solicita y administra certificados por ambiente.' : 'Carga y administra el certificado con el que firma sus documentos.'}</p>
+                    <p className="text-sm text-slate-500">{purchaseEnabled ? 'Solicita y administra certificados por ambiente.' : 'Carga y administra el certificado con el que firma sus documentos.'}</p>
                   </div>
                 </div>
 
-                {certificates && (
+                {purchaseEnabled && (
                 <div className="mb-8 rounded-2xl border border-blue-100 bg-blue-50 p-6 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -1530,6 +1577,9 @@ export default function ClientEdit() {
                       {certificateOptions.requiresPayment && (
                         <CertificatePriceNotice price={certificateOptions.prices?.[selectedCertificateProfile]} available={certificateOptions.availableBalance} />
                       )}
+                      {certificateOptions.canInstall && (
+                        <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" checked={installOnPlatform} onChange={e => setInstallOnPlatform(e.target.checked)} className="mt-1" /> <span>Instalar en la plataforma para firmar los documentos del cliente. Si lo desmarcas, solo se entrega (descarga o correo) y no reemplaza el certificado activo.</span></label>
+                      )}
                       <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" checked={acceptCertificateTerms} onChange={e => setAcceptCertificateTerms(e.target.checked)} className="mt-1" /> Acepto los términos y condiciones del certificado seleccionado.</label>
                       <button type="button" onClick={handleCreateCertificateRequest} disabled={requestingCertificate || !acceptCertificateTerms || (certificateOptions.requiresPayment && (certificateOptions.prices?.[selectedCertificateProfile] == null || (certificateOptions.availableBalance ?? 0) < certificateOptions.prices[selectedCertificateProfile]))} className="rounded-xl bg-blue-600 px-5 py-3 font-bold text-white disabled:opacity-50">
                         {requestingCertificate ? 'Creando solicitud...' : 'Solicitar certificado'}
@@ -1543,7 +1593,7 @@ export default function ClientEdit() {
                 </div>
                 )}
 
-                <div className={`grid grid-cols-1 gap-8 ${invoicing ? 'lg:grid-cols-2' : ''}`}>
+                <div className={`grid grid-cols-1 gap-8 ${signsHere ? 'lg:grid-cols-2' : ''}`}>
                   {/* Estado Actual */}
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Estado del Certificado</h3>
@@ -1551,7 +1601,7 @@ export default function ClientEdit() {
                       <div className="space-y-4">
                         <div className="flex items-center gap-3">
                           <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
-                          <span className="font-semibold text-slate-700">Certificado Activo y Validado</span>
+                          <span className="font-semibold text-slate-700">{certInfo.installed === false ? 'Certificado emitido (no instalado para firmar)' : 'Certificado Activo y Validado'}</span>
                         </div>
                         <div className="pt-2 border-t border-slate-200">
                           <p className="text-sm text-slate-500 mb-1">Archivo:</p>
@@ -1563,7 +1613,7 @@ export default function ClientEdit() {
                         </div>
                         {new Date(certInfo.expirationDate) < new Date() && (
                           <div className="p-3 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-sm font-medium">
-                            {invoicing ? 'El certificado ha expirado. Por favor, sube uno nuevo.' : 'El certificado ha expirado. Solicita uno nuevo.'}
+                            {signsHere ? 'El certificado ha expirado. Por favor, sube uno nuevo.' : 'El certificado ha expirado. Solicita uno nuevo.'}
                           </div>
                         )}
                       </div>
@@ -1571,13 +1621,13 @@ export default function ClientEdit() {
                       <div className="flex flex-col items-center justify-center h-40 text-center">
                         <ShieldAlert className="text-slate-300 w-12 h-12 mb-2" />
                         <span className="font-medium text-slate-500">No hay certificado cargado.</span>
-                        <span className="text-xs text-slate-400 mt-1">{invoicing ? 'El emisor no podrá firmar facturas.' : 'Solicítalo arriba; al emitirse queda aquí.'}</span>
+                        <span className="text-xs text-slate-400 mt-1">{signsHere ? 'El emisor no podrá firmar facturas.' : 'Solicítalo arriba; al emitirse queda aquí.'}</span>
                       </div>
                     )}
                   </div>
 
                   {/* Formulario Carga (la carga manual es de facturación: el .p12 con el que firma) */}
-                  {invoicing && (
+                  {signsHere && (
                   <form onSubmit={handleUploadCertificate} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Reemplazar / Subir Certificado</h3>
                     

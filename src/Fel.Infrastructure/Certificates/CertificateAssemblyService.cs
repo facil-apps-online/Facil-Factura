@@ -63,14 +63,19 @@ public sealed class CertificateAssemblyService : ICertificateAssemblyService
         {
             var fileName = await _storageService.SaveCertificateAsync(request.ClientId, stream, $"{request.ClientId}.p12");
 
-            var previousCurrent = await _dbContext.Certificates
-                .Where(c => c.ClientId == request.ClientId && c.Environment == request.Environment && c.Status == CertificateStatus.Current)
-                .ToListAsync(cancellationToken);
-            foreach (var previous in previousCurrent)
+            // Solo el que se instala para firmar reemplaza al activo; el que solo se entrega (Dataico, titulares, o un nativo que lo pidió
+            // para otro uso) no toca el certificado con el que el cliente firma.
+            if (request.InstallOnPlatform)
             {
-                previous.Status = CertificateStatus.Retired;
-                previous.RetiredAt = DateTime.UtcNow;
-                previous.IsActive = false;
+                var previousCurrent = await _dbContext.Certificates
+                    .Where(c => c.ClientId == request.ClientId && c.Environment == request.Environment && c.Status == CertificateStatus.Current)
+                    .ToListAsync(cancellationToken);
+                foreach (var previous in previousCurrent)
+                {
+                    previous.Status = CertificateStatus.Retired;
+                    previous.RetiredAt = DateTime.UtcNow;
+                    previous.IsActive = false;
+                }
             }
 
             var now = DateTime.UtcNow;
@@ -82,7 +87,7 @@ public sealed class CertificateAssemblyService : ICertificateAssemblyService
                 EncryptedPassword = _cryptoVault.EncryptPassword(password),
                 ExpirationDate = certificateWithKey.NotAfter,
                 CreatedAt = now,
-                IsActive = true,
+                IsActive = request.InstallOnPlatform,
                 Environment = request.Environment,
                 ProviderId = request.Profile.ProviderId,
                 ProfileId = request.ProfileId,

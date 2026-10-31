@@ -15,6 +15,9 @@ public class CertificateRequest
     public CertificateEnvironment Environment { get; set; }
     public CertificateRequestType RequestType { get; set; }
     public Guid? PreviousCertificateId { get; set; }
+    // Si el certificado emitido se instala en la plataforma para firmar los documentos del cliente (nativo) o solo se entrega al titular
+    // (Dataico, titulares, o un nativo que lo pidió para otro uso). Solo el instalado reemplaza al certificado activo.
+    public bool InstallOnPlatform { get; set; } = true;
     public Certificate? PreviousCertificate { get; set; }
     public string ProviderRequestCode { get; set; } = string.Empty;
     public string ProviderPublicId { get; set; } = string.Empty;

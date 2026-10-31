@@ -79,8 +79,12 @@ namespace Fel.Api.Client.Controllers
             }
 
             // Empresas a las que puede entrar (sin las bloqueadas por su tenant).
-            var open = members.Where(u => u.Client.BlockedAt == null).ToList();
-            if (open.Count == 0) return StatusCode(403, Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
+            // Los titulares (clientes a quienes solo se les venden certificados, sin facturación) no tienen portal.
+            var open = members.Where(u => u.Client.BlockedAt == null && u.Client.InvoicingEnabled).ToList();
+            if (open.Count == 0)
+                return StatusCode(403, members.Any(u => !u.Client.InvoicingEnabled)
+                    ? Fel.Infrastructure.Security.TenantModules.ClientMessage
+                    : Fel.Infrastructure.Security.TenantBlocks.ClientMessage);
 
             ClientUser? user;
             if (request.ClientId.HasValue)

@@ -26,7 +26,8 @@ namespace Fel.Infrastructure.Security
             var block = await TenantBlocks.GetAsync(dbContext, branch.Client.TenantId);
             // Un cliente bloqueado por su tenant tampoco emite por API, ni el de un tenant sin facturación electrónica (solo certificados).
             var invoicing = (await TenantModules.GetAsync(dbContext, branch.Client.TenantId)).Invoicing;
-            var level = branch.Client.BlockedAt != null || !invoicing ? TenantBlockLevel.Blocked : block.Level;
+            // Tampoco el titular (cliente sin facturación) de un tenant que sí factura.
+            var level = branch.Client.BlockedAt != null || !invoicing || !branch.Client.InvoicingEnabled ? TenantBlockLevel.Blocked : block.Level;
             return new ApiCredentials(branch.Client, branch, isSandbox ? branch.TestApiSecret : branch.LiveApiSecret, isSandbox, level);
         }
     }

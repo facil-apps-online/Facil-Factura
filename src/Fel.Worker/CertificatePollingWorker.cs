@@ -77,7 +77,7 @@ namespace Fel.Worker
             var provider = scope.ServiceProvider.GetRequiredService<ICertificateProvider>();
             var contextFactory = scope.ServiceProvider.GetRequiredService<ICertificateProviderContextFactory>();
             var assemblyService = scope.ServiceProvider.GetRequiredService<ICertificateAssemblyService>();
-            var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+            var emailOutbox = scope.ServiceProvider.GetRequiredService<IEmailOutbox>();
 
             // Borradores huérfanos: la solicitud se guarda (y su precio se reserva) justo antes de enviarla a Viafirma; si el envío nunca
             // terminó (p. ej. se reinició la API en ese instante), queda fallida y se devuelve lo reservado.
@@ -116,7 +116,7 @@ namespace Fel.Worker
                         var assembled = await assemblyService.AssembleAndInstallAsync(request, stoppingToken);
                         // Un tenant que revende puede entregar él mismo el certificado (lo descarga desde su portal).
                         if (request.Client.Tenant.SendCertificateToHolderByEmail)
-                            await SendCertificateEmailsAsync(request.Client, assembled, emailSender, stoppingToken);
+                            await QueueCertificateEmailsAsync(request.Client, request.Id, request.InstallOnPlatform, assembled, emailOutbox, dbContext, stoppingToken);
                     }
                 }
                 catch (Exception ex)
@@ -193,31 +193,40 @@ namespace Fel.Worker
             _ => null
         };
 
-        // El .p12 y su contraseña se mandan en dos correos separados para que, si alguno se filtra
-        // o se reenvía por error, no viajen juntas las dos piezas necesarias para usar el certificado.
-        private static async Task SendCertificateEmailsAsync(
-            Client client, Fel.Core.Interfaces.AssembledCertificate assembled, IEmailSender emailSender, CancellationToken stoppingToken)
+        // El .p12 y su contraseña se mandan en dos correos separados para que, si alguno se filtra o se reenvía por error, no viajen
+        // juntas las dos piezas necesarias para usar el certificado. Ambos quedan en la bandeja de salida: la contraseña queda retenida
+        // y solo sale cuando el correo con el archivo quedó enviado (si ese falla, no sale).
+        private static async Task QueueCertificateEmailsAsync(
+            Client client, Guid certificateRequestId, bool installedOnPlatform, Fel.Core.Interfaces.AssembledCertificate assembled,
+            IEmailOutbox emailOutbox, FelDbContext dbContext, CancellationToken stoppingToken)
         {
             var recipient = !string.IsNullOrWhiteSpace(client.LegalRepresentativeEmail) ? client.LegalRepresentativeEmail! : client.Email;
             if (string.IsNullOrWhiteSpace(recipient)) return;
 
             var zipBytes = ZipPkcs12(assembled.Pkcs12Bytes, $"{client.CompanyName}.p12");
 
-            await emailSender.SendAsync(
-                client, recipient, "Tu certificado digital ya está instalado",
-                "<p>Tu certificado digital para facturación electrónica ya quedó instalado y activo en Facil Factura.</p>" +
-                "<p>Adjunto va el archivo <strong>.p12</strong> comprimido, por si necesitas usarlo en otro sistema.</p>" +
-                "<p><strong>La contraseña del archivo te llega en un correo aparte</strong>, por seguridad.</p>",
-                new[] { new EmailAttachment { FileName = "certificado.zip", Content = zipBytes, ContentType = "application/zip" } },
-                stoppingToken);
+            var fileEmail = emailOutbox.Add(new OutboundEmail
+            {
+                Kind = EmailKind.Certificate, Client = client, RecipientEmail = recipient, CertificateRequestId = certificateRequestId,
+                Subject = installedOnPlatform ? "Tu certificado digital ya está instalado" : "Tu certificado digital fue emitido",
+                BodyHtml = (installedOnPlatform ? "<p>Tu certificado digital para facturación electrónica ya quedó instalado y activo en Facil Factura.</p>" : "<p>Tu certificado digital ya fue emitido.</p>") +
+                    "<p>Adjunto va el archivo <strong>.p12</strong> comprimido, por si necesitas usarlo en otro sistema.</p>" +
+                    "<p><strong>La contraseña del archivo te llega en un correo aparte</strong>, por seguridad.</p>",
+                Attachments = new[] { new EmailAttachment { FileName = "certificado.zip", Content = zipBytes, ContentType = "application/zip" } }
+            });
 
-            await emailSender.SendAsync(
-                client, recipient, "Contraseña de tu certificado digital",
-                "<p>Esta es la contraseña del archivo .p12 que te enviamos en el correo anterior:</p>" +
-                $"<p style=\"font-size:1.2em;font-weight:bold;letter-spacing:1px\">{assembled.Password}</p>" +
-                "<p>Guárdala en un lugar seguro — no la volveremos a enviar.</p>",
-                null,
-                stoppingToken);
+            var passwordEmail = emailOutbox.Add(new OutboundEmail
+            {
+                Kind = EmailKind.CertificatePassword, Client = client, RecipientEmail = recipient, CertificateRequestId = certificateRequestId,
+                DependsOnId = fileEmail.Id, Sensitive = true,
+                Subject = "Contraseña de tu certificado digital",
+                BodyHtml = "<p>Esta es la contraseña del archivo .p12 que te enviamos en el correo anterior:</p>" +
+                    $"<p style=\"font-size:1.2em;font-weight:bold;letter-spacing:1px\">{System.Net.WebUtility.HtmlEncode(assembled.Password)}</p>" +
+                    "<p>Guárdala en un lugar seguro — no la volveremos a enviar.</p>"
+            });
+
+            await dbContext.SaveChangesAsync(stoppingToken);
+            await emailOutbox.NotifyAsync(fileEmail, passwordEmail);
         }
 
         private static byte[] ZipPkcs12(byte[] pkcs12Bytes, string entryName)

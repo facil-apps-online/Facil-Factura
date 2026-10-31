@@ -42,6 +42,8 @@ namespace Fel.Api.Client.Security
             // Tenant solo de certificados: sus clientes son titulares, no tienen portal.
             if (!(await TenantModules.GetAsync(_dbContext, tenant.Id)).Invoicing)
                 return new IssueResult(403, TenantModules.ClientMessage, null);
+            // Un titular (solo certificados, sin facturación) tampoco tiene portal.
+            if (!user.Client.InvoicingEnabled) return new IssueResult(403, TenantModules.ClientMessage, null);
             // Bloqueo del propio cliente por su tenant.
             if (user.Client.BlockedAt != null) return new IssueResult(403, TenantBlocks.ClientMessage, null);
 

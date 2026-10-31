@@ -24,6 +24,7 @@ import Plans from './pages/Plans';
 import Charges from './pages/Charges';
 import CertificateRequests from './pages/CertificateRequests';
 import CertificateBalance from './pages/CertificateBalance';
+import CertificateSales from './pages/CertificateSales';
 import SessionGuard from '@shared/components/session/SessionGuard';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 import ProfilePage from '@shared/components/session/ProfilePage';
@@ -161,6 +162,7 @@ function Sidebar({ tenantBranding, collapsed, onToggleCollapsed }: { tenantBrand
   ];
   // Con facturación y certificados, las solicitudes y el saldo van después de Clientes.
   const certificateLinks = modules.certificates ? [
+    { to: "/certificate-sales", icon: <FileKey size={20} />, label: "Venta de certificados" },
     { to: "/certificate-requests", icon: <FileClock size={20} />, label: "Solicitudes de certificados" },
     { to: "/certificate-balance", icon: <Wallet size={20} />, label: "Saldo de certificados" },
   ] : [];
@@ -372,6 +374,7 @@ function App() {
                 <Routes>
                   <Route path="/" element={<InvoicingOnly><Dashboard /></InvoicingOnly>} />
                   <Route path="/clients" element={<Clients />} />
+                  <Route path="/holders" element={<CertificatesModuleOnly><Clients holders /></CertificatesModuleOnly>} />
                   <Route path="/clients/edit/:id" element={<ClientEdit />} />
                   <Route path="/associates" element={<InvoicingOnly><GroupOnly><Associates /></GroupOnly></InvoicingOnly>} />
                   <Route path="/group-billing" element={<InvoicingOnly><GroupOnly><GroupBilling /></GroupOnly></InvoicingOnly>} />
@@ -379,6 +382,7 @@ function App() {
                   <Route path="/plans" element={<InvoicingOnly><Plans /></InvoicingOnly>} />
                   <Route path="/charges" element={<InvoicingOnly><Charges /></InvoicingOnly>} />
                   <Route path="/certificates" element={<Certificates />} />
+                  <Route path="/certificate-sales" element={<CertificatesModuleOnly><CertificateSales /></CertificatesModuleOnly>} />
                   <Route path="/certificate-requests" element={<CertificatesModuleOnly><CertificateRequests /></CertificatesModuleOnly>} />
                   <Route path="/certificate-balance" element={<CertificatesModuleOnly><CertificateBalance /></CertificatesModuleOnly>} />
                   <Route path="/resolutions" element={<InvoicingOnly><Resolutions /></InvoicingOnly>} />

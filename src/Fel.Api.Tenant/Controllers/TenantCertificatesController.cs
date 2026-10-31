@@ -89,12 +89,14 @@ namespace Fel.Api.Tenant.Controllers
         {
             var tenantId = GetCurrentTenantId();
             var certificates = await _dbContext.Set<Certificate>()
-                .Where(c => c.IsActive && c.Client.TenantId == tenantId)
+                // El que solo se entrega (no instalado para firmar) no está "activo" pero sí es el vigente del titular.
+                .Where(c => (c.IsActive || (c.CertificateRequestId != null && c.Status == CertificateStatus.Current)) && c.Client.TenantId == tenantId)
                 .OrderBy(c => c.ExpirationDate)
                 .Select(c => new
                 {
                     c.Id,
                     c.ClientId,
+                    Installed = c.IsActive,
                     ClientName = string.IsNullOrWhiteSpace(c.Client.CommercialName) ? c.Client.CompanyName : c.Client.CommercialName,
                     c.FileName,
                     c.ExpirationDate,
@@ -135,10 +137,63 @@ namespace Fel.Api.Tenant.Controllers
                     Charge = r.Charges.OrderByDescending(c => c.CreatedAt)
                         .Select(c => new { c.TotalAmount, Status = c.Status.ToString() }).FirstOrDefault(),
                     Certificate = _dbContext.Certificates.Where(c => c.CertificateRequestId == r.Id)
-                        .Select(c => new { c.Id, c.ExpirationDate }).FirstOrDefault()
+                        .Select(c => new { c.Id, c.ExpirationDate }).FirstOrDefault(),
+                    // Correo con el .p12 al titular: la contraseña sale solo cuando este quedó enviado.
+                    HolderEmail = _dbContext.EmailOutbox.Where(e => e.CertificateRequestId == r.Id && e.Kind == EmailKind.Certificate)
+                        .OrderByDescending(e => e.CreatedAt)
+                        .Select(e => new { Status = e.Status.ToString(), e.RecipientEmail, e.Channel, e.SentAt, e.LastError }).FirstOrDefault()
                 })
                 .ToListAsync();
             return Ok(requests);
+        }
+
+        // Venta de certificados: los clientes y titulares del tenant que pueden comprar certificados, cada uno con su certificado vigente de
+        // producción y su última solicitud.
+        [HttpGet]
+        [Route("~/api/tenant/certificates/sales")]
+        public async Task<IActionResult> GetSales()
+        {
+            var tenantId = GetCurrentTenantId();
+            var modules = await Fel.Infrastructure.Security.TenantModules.GetAsync(_dbContext, tenantId);
+            var clients = await _dbContext.Clients.AsNoTracking()
+                .Where(c => c.TenantId == tenantId && c.IsActive && !c.IsDeveloperSandbox)
+                .Select(c => new
+                {
+                    c.Id,
+                    Name = string.IsNullOrWhiteSpace(c.CommercialName) ? c.CompanyName : c.CommercialName,
+                    c.TaxId,
+                    c.Email,
+                    c.InvoicingEnabled,
+                    c.CertificatePurchaseEnabled,
+                    IntegratorCode = c.Integrator.Code,
+                    Blocked = c.BlockedAt != null,
+                    Certificate = _dbContext.Certificates
+                        .Where(x => x.ClientId == c.Id && x.Environment == CertificateEnvironment.Production
+                            && (x.IsActive || (x.CertificateRequestId != null && x.Status == CertificateStatus.Current)))
+                        .OrderByDescending(x => x.IsActive).ThenByDescending(x => x.CreatedAt)
+                        .Select(x => new { x.Id, x.ExpirationDate, Installed = x.IsActive, Downloadable = x.CertificateRequestId != null })
+                        .FirstOrDefault(),
+                    LastRequest = _dbContext.CertificateRequests
+                        .Where(r => r.ClientId == c.Id && r.Environment == CertificateEnvironment.Production)
+                        .OrderByDescending(r => r.CreatedAt)
+                        .Select(r => new { Status = r.Status.ToString(), r.CreatedAt })
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
+
+            // Mismo criterio que CertificatePurchase.IsEnabledAsync, sin una consulta por cliente.
+            var sales = clients
+                .Where(c => !c.InvoicingEnabled || !modules.Invoicing
+                    || (c.CertificatePurchaseEnabled ?? c.IntegratorCode != "DATAICO"))
+                .Select(c => new
+                {
+                    c.Id, c.Name, c.TaxId, c.Email, c.Blocked,
+                    Kind = !c.InvoicingEnabled || !modules.Invoicing ? "Titular" : (c.IntegratorCode == "DATAICO" ? "Dataico" : "Nativo"),
+                    c.Certificate, c.LastRequest
+                })
+                .OrderBy(c => c.Name)
+                .ToList();
+            return Ok(sales);
         }
 
         // Saldo prepagado de certificados: disponible, reservado (solicitudes en curso), consumido y los movimientos; además el precio vigente
@@ -263,11 +318,14 @@ namespace Fel.Api.Tenant.Controllers
             if (!clientExists) return Forbid();
 
             var certificate = await _dbContext.Set<Certificate>()
-                .Where(c => c.ClientId == clientId && c.IsActive && c.Environment == CertificateEnvironment.Production)
+                .Where(c => c.ClientId == clientId && c.Environment == CertificateEnvironment.Production
+                    && (c.IsActive || (c.CertificateRequestId != null && c.Status == CertificateStatus.Current)))
+                .OrderByDescending(c => c.IsActive).ThenByDescending(c => c.CreatedAt)
                 .Select(c => new {
                     c.FileName,
                     c.ExpirationDate,
-                    c.CreatedAt
+                    c.CreatedAt,
+                    Installed = c.IsActive
                 })
                 .FirstOrDefaultAsync();
 
@@ -332,7 +390,9 @@ namespace Fel.Api.Tenant.Controllers
             return Ok(new
             {
                 Environment = environment.ToString(), SandboxEnabled = provider.SandboxEnabled, Profiles = profiles, Certificates = certificates, Requests = requests,
-                RequiresPayment = requiresPayment, Prices = prices, AvailableBalance = balance?.Available
+                RequiresPayment = requiresPayment, Prices = prices, AvailableBalance = balance?.Available,
+                PurchaseEnabled = await CertificatePurchase.IsEnabledAsync(_dbContext, client),
+                CanInstall = await CertificatePurchase.CanInstallAsync(_dbContext, client)
             });
         }
 
@@ -342,6 +402,8 @@ namespace Fel.Api.Tenant.Controllers
             var tenantId = GetCurrentTenantId();
             var client = await _dbContext.Clients.SingleOrDefaultAsync(c => c.Id == clientId && c.TenantId == tenantId, cancellationToken);
             if (client == null) return Forbid();
+            if (!await CertificatePurchase.IsEnabledAsync(_dbContext, client, cancellationToken))
+                return StatusCode(403, new { Code = "certificate_purchase_disabled", Message = CertificatePurchase.DisabledMessage });
             if (!request.AcceptTerms) return BadRequest(new { Message = "Debes aceptar los términos del certificado." });
 
             var provider = await _dbContext.CertificateProviders.SingleOrDefaultAsync(p => p.Key == "viafirma" && p.IsActive, cancellationToken);
@@ -474,6 +536,8 @@ namespace Fel.Api.Tenant.Controllers
             var certificateRequest = new CertificateRequest
             {
                 Id = Guid.NewGuid(), TenantId = tenantId, ClientId = clientId, ProfileId = profile.Id,
+                // Se instala para firmar solo si el cliente puede (nativo que factura) y el tenant no pidió solo entregarlo.
+                InstallOnPlatform = request.InstallOnPlatform != false && await CertificatePurchase.CanInstallAsync(_dbContext, client, cancellationToken),
                 Environment = request.Environment, RequestType = CertificateRequestType.Initial,
                 ProviderStatus = string.Empty, Status = CertificateRequestStatus.Draft,
                 CsrHash = Convert.ToHexString(SHA256.HashData(Convert.FromBase64String(subject.CsrBase64))).ToLowerInvariant(),
@@ -656,4 +720,6 @@ public sealed record CreateCertificateRequestRequest(
     Guid ProfileId,
     CertificateEnvironment Environment,
     bool AcceptTerms,
-    Dictionary<string, string>? FormValues);
+    Dictionary<string, string>? FormValues,
+    // false = solo entregarlo (no instalarlo para firmar ni reemplazar el activo); solo aplica a un cliente nativo que factura.
+    bool? InstallOnPlatform = null);

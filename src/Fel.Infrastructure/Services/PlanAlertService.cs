@@ -25,10 +25,10 @@ namespace Fel.Infrastructure.Services
 
         private readonly FelDbContext _db;
         private readonly ClientPlanUsageService _usage;
-        private readonly IEmailSender _email;
+        private readonly IEmailOutbox _email;
         private readonly ILogger<PlanAlertService> _logger;
 
-        public PlanAlertService(FelDbContext db, ClientPlanUsageService usage, IEmailSender email, ILogger<PlanAlertService> logger)
+        public PlanAlertService(FelDbContext db, ClientPlanUsageService usage, IEmailOutbox email, ILogger<PlanAlertService> logger)
         {
             _db = db;
             _usage = usage;
@@ -161,8 +161,10 @@ namespace Fel.Infrastructure.Services
             try
             {
                 var body = $"<p>{WebUtility.HtmlEncode(text)}</p>";
-                var result = await _email.SendAsync(client, to, subject, body, null, ct);
-                if (!result.Success) _logger.LogWarning("No se pudo enviar el aviso de consumo a {To}: {Error}", to, result.ErrorMessage);
+                // Queda en la bandeja de salida; el worker lo envía y reintenta.
+                var queued = _email.Add(new OutboundEmail { Kind = EmailKind.Notification, Client = client, RecipientEmail = to, Subject = subject, BodyHtml = body });
+                await _db.SaveChangesAsync(ct);
+                await _email.NotifyAsync(queued);
             }
             catch (Exception ex)
             {

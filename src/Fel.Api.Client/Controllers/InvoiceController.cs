@@ -133,13 +133,13 @@ namespace Fel.Api.Client.Controllers
         private readonly ICryptoVault _cryptoVault;
         private readonly IUblGenerator _ublGenerator;
         private readonly IXmlSigner _xmlSigner;
-        private readonly IEmailSender _emailSender;
+        private readonly IEmailOutbox _emailOutbox;
         private readonly Fel.Infrastructure.Services.DocumentLegendService _legendService;
 
         public InvoiceController(
             FelDbContext dbContext, IEnumerable<IDocumentSubmissionProvider> submissionProviders, IFacilReportsClient facilReportsClient,
             IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, ICryptoService cryptoService,
-            ICryptoVault cryptoVault, IUblGenerator ublGenerator, IXmlSigner xmlSigner, IEmailSender emailSender, Fel.Infrastructure.Services.DocumentLegendService legendService)
+            ICryptoVault cryptoVault, IUblGenerator ublGenerator, IXmlSigner xmlSigner, IEmailOutbox emailOutbox, Fel.Infrastructure.Services.DocumentLegendService legendService)
         {
             _dbContext = dbContext;
             _submissionProviders = submissionProviders;
@@ -150,7 +150,7 @@ namespace Fel.Api.Client.Controllers
             _cryptoVault = cryptoVault;
             _ublGenerator = ublGenerator;
             _xmlSigner = xmlSigner;
-            _emailSender = emailSender;
+            _emailOutbox = emailOutbox;
             _legendService = legendService;
         }
 
@@ -284,6 +284,22 @@ namespace Fel.Api.Client.Controllers
             {
                 return Unauthorized(ex.Message);
             }
+        }
+
+        // Envíos por correo de un documento (reenvíos): estado, destinatario, canal y motivo del fallo, para mostrarlos donde se reenvía.
+        [HttpGet("{id}/emails")]
+        public async Task<IActionResult> GetEmails(Guid id)
+        {
+            var clientId = GetCurrentClientId();
+            var exists = await InvoiceDocuments(_dbContext.Documents, clientId, CurrentBranchScope).AnyAsync(d => d.Id == id);
+            if (!exists) return NotFound("Factura no encontrada.");
+
+            var emails = await _dbContext.EmailOutbox.AsNoTracking()
+                .Where(e => e.DocumentId == id && e.ClientId == clientId)
+                .OrderByDescending(e => e.CreatedAt).Take(10)
+                .Select(e => new { e.Id, Status = e.Status.ToString(), e.RecipientEmail, e.Channel, e.Attempts, e.CreatedAt, e.SentAt, e.LastError })
+                .ToListAsync();
+            return Ok(emails);
         }
 
         // Respuesta del integrador (Dataico o DIAN) tal como se guardó: el listado solo avisa que existe porque pesa hasta decenas de KB por documento.
@@ -1031,7 +1047,7 @@ namespace Fel.Api.Client.Controllers
         // Si el emisor emite directo a la DIAN (sin Dataico), no existe tal endpoint del lado del
         // proveedor — hay que regenerar el XML firmado (determinístico a partir de los mismos datos
         // ya guardados, debe coincidir con el CUFE original) + el PDF, empacarlos en un zip, y
-        // enviarlos por correo propio (IEmailSender: SMTP del Client > del Tenant > plataforma).
+        // enviarlos por correo propio (bandeja de salida: SMTP del Client > del Tenant > Brevo de la plataforma).
         [HttpPost("{id}/resend")]
         public async Task<IActionResult> Resend(Guid id, [FromBody] ResendInvoiceRequest request)
         {
@@ -1191,13 +1207,16 @@ namespace Fel.Api.Client.Controllers
                     var subject = $"Reenvío de tu {label} N.º {invoice.Number}";
                     var bodyHtml = $"<p>Adjunto encontrarás el XML y la representación gráfica de tu {label} N.º {invoice.Number}.</p>";
 
-                    var sendResult = await _emailSender.SendAsync(client, request.Email, subject, bodyHtml, attachments);
-                    if (!sendResult.Success)
+                    // Queda en la bandeja de salida; el worker lo envía por el SMTP del cliente, el del tenant o Brevo, y el documento muestra el resultado.
+                    var queued = _emailOutbox.Add(new OutboundEmail
                     {
-                        return BadRequest(new { message = "No se pudo reenviar el documento.", detail = sendResult.ErrorMessage });
-                    }
+                        Kind = EmailKind.Document, Client = client, RecipientEmail = request.Email.Trim(), Subject = subject, BodyHtml = bodyHtml,
+                        Attachments = attachments, DocumentId = invoice.Id
+                    });
+                    await _dbContext.SaveChangesAsync();
+                    await _emailOutbox.NotifyAsync(queued);
 
-                    return Ok(new { message = "Documento reenviado correctamente." });
+                    return Ok(new { message = "Reenvío en cola. Verás el resultado en el documento.", emailId = queued.Id });
                 }
             }
             catch (UnauthorizedAccessException ex)

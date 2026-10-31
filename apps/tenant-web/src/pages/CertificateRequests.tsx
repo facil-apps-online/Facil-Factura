@@ -22,6 +22,14 @@ interface RequestRow {
   completedAt: string | null;
   charge: { totalAmount: number; status: string } | null;
   certificate: { id: string; expirationDate: string } | null;
+  holderEmail: { status: string; recipientEmail: string; channel: string; sentAt: string | null; lastError: string } | null;
+}
+
+// Estado del correo con el certificado al titular. La contraseña sale en otro correo, solo cuando este quedó enviado.
+function HolderEmailStatus({ email }: { email: NonNullable<RequestRow['holderEmail']> }) {
+  if (email.status === 'Sent') return <p className="text-xs text-emerald-700">Enviado a {email.recipientEmail}</p>;
+  if (email.status === 'Dead') return <p className="max-w-xs text-xs text-rose-600">No se pudo enviar a {email.recipientEmail}: descárgalo aquí y entrégaselo. {email.lastError}</p>;
+  return <p className="text-xs text-amber-700">Enviando a {email.recipientEmail}…</p>;
 }
 
 const IN_PROGRESS = new Set(['Draft', 'Submitted', 'WaitingForIdentity', 'IdentityReview', 'DocumentsRequired', 'DocumentsSubmitted', 'ProviderReview', 'CertificateProcessing', 'ReadyToDownload', 'Downloaded', 'Installing']);
@@ -110,6 +118,7 @@ export default function CertificateRequests() {
         <div className="space-y-1">
           <CertificateDeliveryButtons certificateId={r.certificate.id} fileName={`${r.clientName}-${r.clientTaxId}`} compact />
           <p className="text-xs text-slate-500">Vence {new Date(r.certificate.expirationDate).toLocaleDateString('es-CO')}</p>
+          {r.holderEmail && <HolderEmailStatus email={r.holderEmail} />}
         </div>
       ) : r.kycUrl && IN_PROGRESS.has(r.status) ? (
         <div className="flex flex-wrap gap-2">

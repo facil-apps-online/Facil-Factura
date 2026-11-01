@@ -2576,6 +2576,15 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<Guid>("DocumentId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<byte[]>("ApplicationResponseGzip")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<byte[]>("AttachedDocumentGzip")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<int>("FileSequence")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("SignedAt")
                         .HasColumnType("datetime2");
 

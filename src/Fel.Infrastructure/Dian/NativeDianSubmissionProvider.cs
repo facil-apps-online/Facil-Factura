@@ -29,12 +29,13 @@ namespace Fel.Infrastructure.Dian
         private readonly ICryptoVault _cryptoVault;
         private readonly IDianSoapClient _dianSoapClient;
         private readonly ILogger<NativeDianSubmissionProvider> _logger;
+        private readonly AttachedDocumentService _attachedDocuments;
 
         public string IntegratorCode => "NATIVE";
 
         public NativeDianSubmissionProvider(
             FelDbContext dbContext, IUblGenerator ublGenerator, IXmlSigner xmlSigner,
-            ICryptoVault cryptoVault, IDianSoapClient dianSoapClient, ILogger<NativeDianSubmissionProvider> logger)
+            ICryptoVault cryptoVault, IDianSoapClient dianSoapClient, ILogger<NativeDianSubmissionProvider> logger, AttachedDocumentService attachedDocuments)
         {
             _dbContext = dbContext;
             _ublGenerator = ublGenerator;
@@ -42,6 +43,7 @@ namespace Fel.Infrastructure.Dian
             _cryptoVault = cryptoVault;
             _dianSoapClient = dianSoapClient;
             _logger = logger;
+            _attachedDocuments = attachedDocuments;
         }
 
         public async Task<DocumentSubmissionResult> SubmitAsync(
@@ -200,8 +202,6 @@ namespace Fel.Infrastructure.Dian
             {
                 var certChain = _cryptoVault.GetCertificateChain(certificate.FileName, certificate.EncryptedPassword);
                 signedXml = _xmlSigner.SignXml(xml, cert, certChain);
-                // El XML firmado queda guardado tal como sale hacia la DIAN: el reenvío lo usa en vez de rearmarlo y volver a firmarlo.
-                await DocumentSignedXmlStore.SaveAsync(_dbContext, invoice.Id, signedXml);
             }
             catch (Exception ex)
             {
@@ -213,6 +213,10 @@ namespace Fel.Infrastructure.Dian
 
             var fileSequence = await Fel.Infrastructure.Services.DianFileNaming.ClaimNextSequenceAsync(_dbContext, client.Id);
             var entryFileName = Fel.Infrastructure.Services.DianFileNaming.BuildFileName(filePrefix, client.TaxId, fileSequence);
+
+            // El XML firmado queda guardado tal como sale hacia la DIAN, con su consecutivo de archivo: el reenvío lo usa en vez de rearmarlo y
+            // volver a firmarlo, y el consecutivo da el nombre de los archivos del correo al adquirente.
+            await DocumentSignedXmlStore.SaveSignedAsync(_dbContext, invoice.Id, signedXml, fileSequence);
 
             try
             {
@@ -243,6 +247,9 @@ namespace Fel.Infrastructure.Dian
                 invoice.Status = outcome.Accepted ? "APPROVED" : "REJECTED";
                 invoice.DianResponseMessage = outcome.Accepted ? outcome.StatusDescription : outcome.RejectionSummary;
                 invoice.ProcessedAt = DateTime.UtcNow;
+                // Aprobado: se deja listo el contenedor para el adquirente con la respuesta de la DIAN. Si falla no frena la emisión; el reenvío lo reintenta.
+                if (outcome.Accepted)
+                    await _attachedDocuments.EnsureAsync(invoice, client, outcome.ApplicationResponseXml);
                 return new DocumentSubmissionResult { Success = outcome.Accepted, Status = invoice.Status, Cufe = cufe, ResponseMessage = invoice.DianResponseMessage };
             }
             catch (Exception ex)

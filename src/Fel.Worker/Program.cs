@@ -50,6 +50,7 @@ builder.ConfigureServices((hostContext, services) =>
     // Set de pruebas de habilitación DIAN: corre acá y no en la API porque son varios minutos
     // (cada documento son ~20s entre transmitir y obtener el veredicto asíncrono de la DIAN).
     services.AddScoped<Fel.Infrastructure.Services.DianTestSetSubmissionService>();
+    services.AddScoped<Fel.Infrastructure.Dian.AttachedDocumentService>();
     services.AddScoped<Fel.Infrastructure.Services.DianStatusCheckService>();
 
     services.AddHostedService<Worker>();

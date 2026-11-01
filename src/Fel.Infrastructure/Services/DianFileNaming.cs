@@ -53,6 +53,14 @@ namespace Fel.Infrastructure.Services
 
         // taxId: NIT sin DV (tal como se guarda en Client.TaxId/Resolution). sequence: el valor que
         // devuelve ClaimNextSequenceAsync.
+        // Misma forma con año y extensión explícitos: el contenedor ad y el ZIP del correo se nombran con el consecutivo y el año de la emisión,
+        // no con los de hoy.
+        public static string BuildName(string prefix, string taxId, int sequence, int year, string extension)
+            => $"{prefix}{taxId.PadLeft(10, '0')}{SoftwarePropioCode}{(year % 100):D2}{sequence:X8}.{extension}";
+
+        public const string AttachedDocument = "ad";
+        public const string Zip = "z";
+
         public static string BuildFileName(string docTypePrefix, string taxId, int sequence)
         {
             var nit10 = taxId.PadLeft(10, '0');

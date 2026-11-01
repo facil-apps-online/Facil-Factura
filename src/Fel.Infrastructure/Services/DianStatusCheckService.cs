@@ -19,13 +19,15 @@ namespace Fel.Infrastructure.Services
         private readonly ICryptoVault _cryptoVault;
         private readonly IDianSoapClient _dianSoapClient;
         private readonly ILogger<DianStatusCheckService> _logger;
+        private readonly Fel.Infrastructure.Dian.AttachedDocumentService _attachedDocuments;
 
-        public DianStatusCheckService(FelDbContext dbContext, ICryptoVault cryptoVault, IDianSoapClient dianSoapClient, ILogger<DianStatusCheckService> logger)
+        public DianStatusCheckService(FelDbContext dbContext, ICryptoVault cryptoVault, IDianSoapClient dianSoapClient, ILogger<DianStatusCheckService> logger, Fel.Infrastructure.Dian.AttachedDocumentService attachedDocuments)
         {
             _dbContext = dbContext;
             _cryptoVault = cryptoVault;
             _dianSoapClient = dianSoapClient;
             _logger = logger;
+            _attachedDocuments = attachedDocuments;
         }
 
         // true si el documento quedó resuelto (APPROVED/REJECTED) — false si la DIAN todavía no
@@ -79,6 +81,10 @@ namespace Fel.Infrastructure.Services
             document.DianResponseMessage = outcome.Accepted ? outcome.StatusDescription : outcome.RejectionSummary;
             document.ProcessedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
+
+            // Aprobado: se deja listo el contenedor para el adquirente con la respuesta de la DIAN.
+            if (outcome.Accepted)
+                await _attachedDocuments.EnsureAsync(document, client, outcome.ApplicationResponseXml);
 
             _logger.LogInformation("Documento {DocumentId} resuelto por la DIAN: {Status}.", document.Id, document.Status);
             return true;

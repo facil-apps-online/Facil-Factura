@@ -135,11 +135,12 @@ namespace Fel.Api.Client.Controllers
         private readonly IXmlSigner _xmlSigner;
         private readonly IEmailOutbox _emailOutbox;
         private readonly Fel.Infrastructure.Services.DocumentLegendService _legendService;
+        private readonly AttachedDocumentService _attachedDocuments;
 
         public InvoiceController(
             FelDbContext dbContext, IEnumerable<IDocumentSubmissionProvider> submissionProviders, IFacilReportsClient facilReportsClient,
             IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, ICryptoService cryptoService,
-            ICryptoVault cryptoVault, IUblGenerator ublGenerator, IXmlSigner xmlSigner, IEmailOutbox emailOutbox, Fel.Infrastructure.Services.DocumentLegendService legendService)
+            ICryptoVault cryptoVault, IUblGenerator ublGenerator, IXmlSigner xmlSigner, IEmailOutbox emailOutbox, Fel.Infrastructure.Services.DocumentLegendService legendService, AttachedDocumentService attachedDocuments)
         {
             _dbContext = dbContext;
             _submissionProviders = submissionProviders;
@@ -152,6 +153,7 @@ namespace Fel.Api.Client.Controllers
             _xmlSigner = xmlSigner;
             _emailOutbox = emailOutbox;
             _legendService = legendService;
+            _attachedDocuments = attachedDocuments;
         }
 
         // Medio de Pago y Forma de Pago los administra Superadmin en el mismo catálogo global que
@@ -1020,18 +1022,18 @@ namespace Fel.Api.Client.Controllers
             _ => "factura"
         };
 
-        private static byte[] BuildInvoiceZip(string entryBaseName, string signedXml, byte[] pdfBytes)
+        private static byte[] BuildInvoiceZip(string xmlEntryName, string signedXml, string pdfEntryName, byte[] pdfBytes)
         {
             using var stream = new MemoryStream();
             using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
             {
-                var xmlEntry = archive.CreateEntry($"{entryBaseName}.xml", CompressionLevel.Optimal);
+                var xmlEntry = archive.CreateEntry(xmlEntryName, CompressionLevel.Optimal);
                 using (var writer = new StreamWriter(xmlEntry.Open()))
                 {
                     writer.Write(signedXml);
                 }
 
-                var pdfEntry = archive.CreateEntry($"{entryBaseName}.pdf", CompressionLevel.Optimal);
+                var pdfEntry = archive.CreateEntry(pdfEntryName, CompressionLevel.Optimal);
                 using (var pdfStream = pdfEntry.Open())
                 {
                     pdfStream.Write(pdfBytes, 0, pdfBytes.Length);
@@ -1134,13 +1136,21 @@ namespace Fel.Api.Client.Controllers
                         return BadRequest("El documento no tiene una resolución asociada.");
                     }
 
-                    // Lo normal: el XML firmado se guardó al emitir y se reenvía tal cual. Los documentos emitidos antes de que se guardara
-                    // se rearman desde sus datos y solo se envían si dan el mismo CUFE.
+                    // Lo normal: el XML firmado se guardó al emitir y al adquirente se le entrega el contenedor AttachedDocument (factura firmada
+                    // + respuesta de la DIAN), que se arma una vez y queda guardado. Los documentos emitidos antes de que se guardara el XML se
+                    // rearman desde sus datos y solo se envían si dan el mismo CUFE; esos van sin contenedor.
                     string signedXml;
-                    var storedXml = await DocumentSignedXmlStore.LoadAsync(_dbContext, invoice.Id);
-                    if (storedXml != null)
+                    string? attachedDocument = null;
+                    var stored = await DocumentSignedXmlStore.LoadAsync(_dbContext, invoice.Id);
+                    if (stored != null)
                     {
-                        signedXml = storedXml;
+                        signedXml = stored.SignedXml;
+                        var (container, containerError) = await _attachedDocuments.EnsureAsync(invoice, client);
+                        if (container == null)
+                        {
+                            return BadRequest($"No se pudo preparar el documento para el adquirente. {containerError}");
+                        }
+                        attachedDocument = container;
                     }
                     else
                     {
@@ -1205,17 +1215,35 @@ namespace Fel.Api.Client.Controllers
                         return BadRequest("No se pudo generar el PDF para el reenvío.");
                     }
 
-                    var entryBaseName = string.IsNullOrEmpty(invoice.Number) ? invoice.Id.ToString() : invoice.Number;
-                    var zipBytes = BuildInvoiceZip(entryBaseName, signedXml, pdfBytes);
+                    var label = DocumentTypeLabel(invoice.TypeCode);
+                    var bodyHtml = $"<p>Adjunto encontrarás el XML y la representación gráfica de tu {label} N.º {invoice.Number}.</p>";
+                    string subject, zipName;
+                    byte[] zipBytes;
+                    if (stored != null && attachedDocument != null)
+                    {
+                        // Nombres y asunto como los define el anexo técnico (numerales 6.7 y 9.1): contenedor y PDF "ad…", ZIP "z…", con el
+                        // consecutivo y el año de la emisión.
+                        var year = stored.SignedAt.Year;
+                        // Los documentos guardados antes de que existiera el consecutivo (0) toman el último que usó el emisor.
+                        var sequence = stored.FileSequence > 0 ? stored.FileSequence : client.DianFileSequence;
+                        var adName = DianFileNaming.BuildName(DianFileNaming.AttachedDocument, client.TaxId, sequence, year, "xml");
+                        var adPdfName = DianFileNaming.BuildName(DianFileNaming.AttachedDocument, client.TaxId, sequence, year, "pdf");
+                        zipName = DianFileNaming.BuildName(DianFileNaming.Zip, client.TaxId, sequence, year, "zip");
+                        zipBytes = BuildInvoiceZip(adName, attachedDocument, adPdfName, pdfBytes);
+                        subject = AttachedDocumentBuilder.BuildEmailSubject(stored.SignedXml);
+                    }
+                    else
+                    {
+                        var entryBaseName = string.IsNullOrEmpty(invoice.Number) ? invoice.Id.ToString() : invoice.Number;
+                        zipName = $"{entryBaseName}.zip";
+                        zipBytes = BuildInvoiceZip($"{entryBaseName}.xml", signedXml, $"{entryBaseName}.pdf", pdfBytes);
+                        subject = $"Reenvío de tu {label} N.º {invoice.Number}";
+                    }
 
                     var attachments = new List<EmailAttachment>
                     {
-                        new EmailAttachment { FileName = $"{entryBaseName}.zip", Content = zipBytes, ContentType = "application/zip" }
+                        new EmailAttachment { FileName = zipName, Content = zipBytes, ContentType = "application/zip" }
                     };
-
-                    var label = DocumentTypeLabel(invoice.TypeCode);
-                    var subject = $"Reenvío de tu {label} N.º {invoice.Number}";
-                    var bodyHtml = $"<p>Adjunto encontrarás el XML y la representación gráfica de tu {label} N.º {invoice.Number}.</p>";
 
                     // Queda en la bandeja de salida; el worker lo envía por el SMTP del cliente, el del tenant o SendPulse, y el documento muestra el resultado.
                     var queued = _emailOutbox.Add(new OutboundEmail

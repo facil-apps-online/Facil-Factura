@@ -24,6 +24,9 @@ namespace Fel.Infrastructure.Services
 
         public string StatusDescription { get; init; } = string.Empty;
 
+        // ApplicationResponse con la aprobación de la DIAN (viene en base64 en XmlBase64Bytes); null si no vino.
+        public string? ApplicationResponseXml { get; init; }
+
         // Reglas que reporto la DIAN, tal cual: "Regla: ZE02, Rechazo: ...". Incluye tanto rechazos
         // (bloquean la aceptacion) como notificaciones (no la bloquean).
         public IReadOnlyList<string> Rules { get; init; } = Array.Empty<string>();
@@ -32,6 +35,20 @@ namespace Fel.Infrastructure.Services
             Rules.Count == 0
                 ? StatusDescription
                 : string.Join(" | ", Rules.Where(r => r.Contains("Rechazo", StringComparison.OrdinalIgnoreCase)));
+
+        private static string? DecodeApplicationResponse(string? base64)
+        {
+            if (string.IsNullOrWhiteSpace(base64)) return null;
+            try
+            {
+                var xml = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64.Trim())).TrimStart('﻿');
+                return xml.TrimStart().StartsWith("<", StringComparison.Ordinal) ? xml : null;
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+        }
 
         public static DianStatusOutcome Pending() =>
             new() { Accepted = false, Resolved = false, StatusDescription = "La DIAN aún está validando el documento." };
@@ -81,7 +98,8 @@ namespace Fel.Infrastructure.Services
                 Accepted = bool.TryParse(isValidRaw, out var ok) && ok,
                 Resolved = true,
                 StatusDescription = statusDescription,
-                Rules = rules
+                Rules = rules,
+                ApplicationResponseXml = DecodeApplicationResponse(Local("XmlBase64Bytes"))
             };
         }
     }

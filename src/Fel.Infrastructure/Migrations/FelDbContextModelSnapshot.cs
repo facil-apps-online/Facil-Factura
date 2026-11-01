@@ -3773,7 +3773,7 @@ namespace Fel.Infrastructure.Migrations
                             RequiresDescription = false,
                             Section = 0,
                             SortOrder = 15,
-                            SpecialInput = 1
+                            SpecialInput = 0
                         },
                         new
                         {

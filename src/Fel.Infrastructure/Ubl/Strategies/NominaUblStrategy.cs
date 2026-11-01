@@ -202,6 +202,9 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement("Bonificaciones", new XElement("Bonificacion", new XAttribute("BonificacionS", M(e.BonificacionesTaxable)), new XAttribute("BonificacionNS", M(e.BonificacionesNonTaxable)))),
                 new XElement("Auxilios", new XElement("Auxilio", new XAttribute("AuxilioS", M(e.AuxiliosTaxable)), new XAttribute("AuxilioNS", M(e.AuxiliosNonTaxable)))),
 
+                new XElement("HuelgasLegales", e.HuelgasLegales.Select(h => new XElement("HuelgaLegal",
+                    new XAttribute("FechaInicio", D(h.Start)), new XAttribute("FechaFin", D(h.End)), new XAttribute("Cantidad", h.Quantity)))),
+
                 new XElement("OtrosConceptos", e.OtrosConceptos.Select(o => new XElement("OtroConcepto",
                     new XAttribute("DescripcionConcepto", o.Description), new XAttribute("ConceptoS", M(o.TaxableAmount)), new XAttribute("ConceptoNS", M(o.NonTaxableAmount))))),
 

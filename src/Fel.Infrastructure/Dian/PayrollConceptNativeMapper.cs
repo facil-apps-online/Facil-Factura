@@ -101,6 +101,7 @@ namespace Fel.Infrastructure.Dian
                 case "LicenciaMP": e.LicenciaMaternidadPaternidad.Add(DateRange()); break;
                 case "LicenciaR": e.LicenciaRemunerada.Add(DateRange()); break;
                 case "LicenciaNR": e.LicenciaNoRemunerada.Add((start, end, days)); break;
+                case "HuelgaLegal": e.HuelgasLegales.Add((start, end, days)); break;
                 case "Bonificacion": e.BonificacionesTaxable += amount; e.BonificacionesNonTaxable += nonSalary; break;
                 case "Auxilio": e.AuxiliosTaxable += amount; e.AuxiliosNonTaxable += nonSalary; break;
                 case "OtroConcepto":
@@ -122,7 +123,6 @@ namespace Fel.Infrastructure.Dian
                 case "BonifRetiro": e.BonificacionRetiro += amount + nonSalary; break;
                 case "Indemnizacion": e.Indemnizacion += amount + nonSalary; break;
                 case "Reintegro": e.Reintegro += amount + nonSalary; break;
-                // La huelga legal está en el XSD, pero el modelo del XML nativo todavía no la lleva.
                 default: return false;
             }
 

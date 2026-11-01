@@ -179,6 +179,7 @@ namespace Fel.Core.Models
         public List<PayrollDateRangeAmount> LicenciaMaternidadPaternidad { get; set; } = new();
         public List<PayrollDateRangeAmount> LicenciaRemunerada { get; set; } = new();
         public List<(DateTime Start, DateTime End, int Quantity)> LicenciaNoRemunerada { get; set; } = new();
+        public List<(DateTime Start, DateTime End, int Quantity)> HuelgasLegales { get; set; } = new();
 
         public decimal BonificacionesTaxable { get; set; }
         public decimal BonificacionesNonTaxable { get; set; }

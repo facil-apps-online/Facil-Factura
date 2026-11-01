@@ -69,7 +69,7 @@ namespace Fel.Infrastructure.Data
             Add(A, "PRIMA", "Prima de servicios", "Primas", Attrs, amount: "Pago", nonSalary: "PagoNS", quantity: "Cantidad", kind: Days, allowsNonSalary: true);
             Add(A, "CESANTIAS", "Cesantías", "Cesantias", Attrs, amount: "Pago", percentage: "Porcentaje", kind: Pct, allowsNonSalary: true, special: PayrollSpecialInput.CesantiasInterest);
             Add(A, "INCAPACIDAD", "Incapacidad", "Incapacidad", List, amount: "Pago", quantity: "Cantidad", kind: Days, special: PayrollSpecialInput.MedicalLeave);
-            Add(A, "LICENCIA_PATERNIDAD", "Licencia de maternidad o paternidad", "LicenciaMP", List, amount: "Pago", quantity: "Cantidad", kind: Days, special: PayrollSpecialInput.Dates);
+            Add(A, "LICENCIA_PATERNIDAD", "Licencia de maternidad o paternidad", "LicenciaMP", List, amount: "Pago", quantity: "Cantidad", kind: Days);
             Add(A, "LICENCIA_REMUNERADA", "Licencia remunerada", "LicenciaR", List, amount: "Pago", quantity: "Cantidad", kind: Days);
             Add(A, "LICENCIA_NO_REMUNERADA", "Licencia no remunerada", "LicenciaNR", List, quantity: "Cantidad", kind: Days, allowsAmount: false);
             Add(A, "HUELGA_LEGAL", "Huelga legal", "HuelgaLegal", List, quantity: "Cantidad", kind: Days, allowsAmount: false, special: PayrollSpecialInput.Dates);

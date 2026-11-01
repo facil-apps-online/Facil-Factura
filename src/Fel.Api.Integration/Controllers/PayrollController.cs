@@ -59,6 +59,20 @@ namespace Fel.Api.Integration.Controllers
             var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(this, _dbContext, _cryptoVault);
             if (resolved.Error != null) return resolved.Error;
 
+            // Devengos y deducciones como lista de conceptos: el catálogo de nómina dice a qué elemento del XML va cada uno.
+            if (request.AccrualLines != null || request.DeductionLines != null)
+            {
+                var conceptTypes = await _dbContext.PayrollConceptTypes.AsNoTracking().ToListAsync();
+                var concepts = PayrollConceptNativeMapper.Build(request.AccrualLines, request.DeductionLines, conceptTypes, request.Period.SettlementStart, request.Period.SettlementEnd);
+                if (concepts.Errors.Count > 0) return BadRequest(new { message = "Hay conceptos de nómina que no se pueden emitir.", errors = concepts.Errors });
+
+                request.Earnings = concepts.Earnings;
+                request.Deductions = concepts.Deductions;
+                if (request.EarningsTotal == 0) request.EarningsTotal = concepts.EarningsTotal;
+                if (request.DeductionsTotal == 0) request.DeductionsTotal = concepts.DeductionsTotal;
+                if (request.PayableTotal == 0) request.PayableTotal = request.EarningsTotal - request.DeductionsTotal + request.Rounding;
+            }
+
             var ublData = PayrollDocumentMapper.BuildPayrollDataFromRequest(request, resolved.Client!, resolved.Location!);
             var cune = _ublGenerator.CalculateCune(ublData);
             var xml = _ublGenerator.GeneratePayrollXml(ublData, cune);

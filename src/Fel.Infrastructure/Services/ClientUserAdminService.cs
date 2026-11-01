@@ -219,7 +219,7 @@ namespace Fel.Infrastructure.Services
         {
             var client = await _dbContext.Clients.AsNoTracking().Include(c => c.Tenant).FirstAsync(c => c.Id == user.ClientId);
             var result = await _passwordResetService.RequestAsync(
-                PortalUserType.Client, user.Id, user.Email, user.Name, portalUrl, "invitation", client.Tenant?.CoreTenantId,
+                PortalUserType.Client, user.Id, user.Email, user.Name, portalUrl, "invitation", client.TenantId,
                 client.Tenant?.LogoLightUrl, client.Tenant?.CommercialName);
 
             if (result.IsSuccess)

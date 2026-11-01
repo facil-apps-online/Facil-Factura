@@ -186,7 +186,7 @@ namespace Fel.Api.Tenant.Controllers
             if (user == null) return Ok(new { message = genericMessage });
 
             await _passwordResetService.RequestAsync(
-                PortalUserType.Tenant, user.Id, user.Email, user.Name, _portalUrl, "password_reset", user.Tenant.CoreTenantId,
+                PortalUserType.Tenant, user.Id, user.Email, user.Name, _portalUrl, "password_reset", user.Tenant.Id,
                 user.Tenant.LogoLightUrl, user.Tenant.CommercialName);
 
             return Ok(new { message = genericMessage });

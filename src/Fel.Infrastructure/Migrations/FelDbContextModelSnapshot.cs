@@ -3034,6 +3034,14 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("DeliveryDetail")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("DeliveryStatus")
+                        .HasColumnType("int");
+
                     b.Property<Guid?>("DependsOnId")
                         .HasColumnType("uniqueidentifier");
 
@@ -3049,6 +3057,9 @@ namespace Fel.Infrastructure.Migrations
                         .HasColumnType("nvarchar(1000)");
 
                     b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("OpenedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("ProviderMessageId")
@@ -3078,6 +3089,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("TrackedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -3092,6 +3106,8 @@ namespace Fel.Infrastructure.Migrations
                     b.HasIndex("DocumentId");
 
                     b.HasIndex("Status", "NextAttemptAt");
+
+                    b.HasIndex("Channel", "Status", "SentAt");
 
                     b.ToTable("EmailOutbox", (string)null);
                 });
@@ -3478,10 +3494,6 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("int");
 
-                    b.Property<string>("BrevoApiKeyEncrypted")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("CertificatesFromEmail")
                         .IsRequired()
                         .HasMaxLength(320)
@@ -3491,6 +3503,9 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
+
+                    b.Property<int>("MaxPerHour")
+                        .HasColumnType("int");
 
                     b.Property<string>("NotificationsFromEmail")
                         .IsRequired()
@@ -3506,6 +3521,15 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SendPulseClientId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SendPulseSecretEncrypted")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("SupportEmail")
                         .IsRequired()

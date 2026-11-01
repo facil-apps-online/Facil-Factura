@@ -57,6 +57,8 @@ Core (`queue_platform_email` en Supabase), que encola en `client_email_queue` y 
 
 ### E2. Canal Brevo directo desde FacilFactura, con adjuntos — prioridad alta
 
+**Cambio 2026-10-31: el proveedor es SendPulse (API SMTP), no Brevo.** Más barato por volumen y con IP dedicada incluida. Implementado en local, sin desplegar: envío por `POST /smtp/emails`, tope por hora configurable (50 en el plan gratis), seguimiento cada 5 min con `GET /smtp/emails/{id}` (250 = entregado, 5xx = rebotó, aperturas) y pantalla "Correos enviados" en superadmin. Pendiente: el plan gratis rechaza mensajes de más de 1 MB; activar el SMTP de la cuenta y probar adjuntos reales, DKIM del dominio y entrega a Gmail/Outlook.
+
 **Estado: implementado en local, sin desplegar.** Falta pegar la API key en superadmin → Correo de la plataforma y probar con un envío real.
 
 - **Llamada:** tercer canal de `IEmailSender`: `POST https://api.brevo.com/v3/smtp/email` con adjuntos en base64.
@@ -99,6 +101,8 @@ Core (`queue_platform_email` en Supabase), que encola en `client_email_queue` y 
 - **Restricción DIAN:** el asunto de los documentos tiene el formato del anexo técnico y no debe ser editable.
 
 ### E4. Sacar invitaciones y contraseñas de Core — prioridad media (después de E1-E3)
+
+**Estado 2026-10-31: implementado en local, sin desplegar.** Invitaciones y recuperación de contraseña van a la bandeja propia (`EmailKind.Platform`, sin cliente) y salen por SendPulse en nombre del tenant, con una plantilla base en código (`PlatformEmailTemplates`); no se copió el texto de Core porque no se puede leer desde aquí. Se retiró `QueuePlatformEmailAsync`. Decisión: todos los usuarios (también los de un cliente) reciben estos correos por SendPulse, no por el SMTP del cliente. Queda para E3 mover estas plantillas a la base y hacerlas editables.
 
 - **Plantillas:** sembrar `password_reset` e `invitation` en nuestra base con el contenido actual de Core, adaptado a la base común.
 - **`PasswordResetService`:** encola en la bandeja propia en vez de `QueuePlatformEmailAsync`. Con usuarios de un cliente prueba

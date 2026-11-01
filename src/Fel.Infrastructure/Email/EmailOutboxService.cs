@@ -26,8 +26,8 @@ namespace Fel.Infrastructure.Email
                 Kind = email.Kind,
                 // Con dependencia espera (Held) a que el otro correo quede enviado.
                 Status = email.DependsOnId != null ? EmailOutboxStatus.Held : EmailOutboxStatus.Pending,
-                TenantId = email.Client.TenantId,
-                ClientId = email.Client.Id,
+                TenantId = email.Client?.TenantId ?? email.TenantId,
+                ClientId = email.Client?.Id,
                 RecipientEmail = email.RecipientEmail,
                 Subject = email.Subject.Length > 500 ? email.Subject[..500] : email.Subject,
                 BodyHtml = email.Sensitive ? _cryptoVault.EncryptPassword(email.BodyHtml) : email.BodyHtml,

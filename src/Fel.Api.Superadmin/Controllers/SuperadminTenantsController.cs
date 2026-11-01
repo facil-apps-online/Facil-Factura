@@ -617,7 +617,7 @@ namespace Fel.Api.Superadmin.Controllers
             {
                 await _passwordResetService.RequestAsync(
                     PortalUserType.Tenant, adminNuevo.Id, adminNuevo.Email, adminNuevo.Name, _tenantPortalUrl, "invitation",
-                    tenant.CoreTenantId, tenant.LogoLightUrl, tenant.CommercialName);
+                    tenant.Id, tenant.LogoLightUrl, tenant.CommercialName);
             }
 
             return Ok(new
@@ -993,7 +993,7 @@ namespace Fel.Api.Superadmin.Controllers
             await _dbContext.SaveChangesAsync();
 
             await _passwordResetService.RequestAsync(
-                PortalUserType.Tenant, user.Id, user.Email, user.Name, _tenantPortalUrl, "invitation", tenant.CoreTenantId,
+                PortalUserType.Tenant, user.Id, user.Email, user.Name, _tenantPortalUrl, "invitation", tenant.Id,
                 tenant.LogoLightUrl, tenant.CommercialName);
 
             return Ok(new { user.Id, user.Name, user.Email, user.IsActive });
@@ -1021,7 +1021,7 @@ namespace Fel.Api.Superadmin.Controllers
             if (tenant == null) return NotFound("Tenant no encontrado.");
 
             await _passwordResetService.RequestAsync(
-                PortalUserType.Tenant, user.Id, user.Email, user.Name, _tenantPortalUrl, "invitation", tenant.CoreTenantId,
+                PortalUserType.Tenant, user.Id, user.Email, user.Name, _tenantPortalUrl, "invitation", tenant.Id,
                 tenant.LogoLightUrl, tenant.CommercialName);
 
             return Ok(new { message = "Invitación reenviada." });

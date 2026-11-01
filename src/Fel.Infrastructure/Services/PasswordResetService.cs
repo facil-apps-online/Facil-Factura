@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Infrastructure.Services
@@ -25,13 +26,13 @@ namespace Fel.Infrastructure.Services
         private const string DefaultBrandName = "Facil Factura";
 
         private readonly FelDbContext _db;
-        private readonly ICoreApiClient _core;
+        private readonly IEmailOutbox _emailOutbox;
         private readonly ICryptoService _crypto;
 
-        public PasswordResetService(FelDbContext db, ICoreApiClient core, ICryptoService crypto)
+        public PasswordResetService(FelDbContext db, IEmailOutbox emailOutbox, ICryptoService crypto)
         {
             _db = db;
-            _core = core;
+            _emailOutbox = emailOutbox;
             _crypto = crypto;
         }
 
@@ -41,17 +42,28 @@ namespace Fel.Infrastructure.Services
         // Facil Factura por defecto.
         public async Task<CoreResult<bool>> RequestAsync(
             PortalUserType userType, Guid userId, string email, string userName,
-            string portalBaseUrl, string templateType, string? tenantCoreId = null,
+            string portalBaseUrl, string templateType, Guid? tenantId = null,
             string? brandLogoUrl = null, string? brandName = null, CancellationToken ct = default)
         {
             var resetLink = await GetLinkAsync(userType, userId, portalBaseUrl, ct);
-            return await _core.QueuePlatformEmailAsync(email, templateType, new Dictionary<string, string>
+            var (subject, html) = PlatformEmailTemplates.Build(
+                templateType, userName, resetLink,
+                string.IsNullOrWhiteSpace(brandLogoUrl) ? DefaultBrandLogoUrl : brandLogoUrl,
+                string.IsNullOrWhiteSpace(brandName) ? DefaultBrandName : brandName, TokenLifetime);
+
+            // Queda en la bandeja de salida y el worker lo envía por SendPulse. El cuerpo lleva el enlace con el token: se guarda cifrado y se borra al enviarse.
+            var row = _emailOutbox.Add(new OutboundEmail
             {
-                ["reset_link"] = resetLink,
-                ["user_name"] = userName,
-                ["logo_url"] = string.IsNullOrWhiteSpace(brandLogoUrl) ? DefaultBrandLogoUrl : brandLogoUrl,
-                ["brand_name"] = string.IsNullOrWhiteSpace(brandName) ? DefaultBrandName : brandName
-            }, tenantCoreId, ct);
+                Kind = EmailKind.Platform,
+                TenantId = tenantId,
+                RecipientEmail = email,
+                Subject = subject,
+                BodyHtml = html,
+                Sensitive = true
+            });
+            await _db.SaveChangesAsync(ct);
+            await _emailOutbox.NotifyAsync(row);
+            return CoreResult<bool>.Ok(true);
         }
 
         // El enlace de invitación/restablecimiento sin enviarlo por correo, para que quien administra lo copie y lo mande por otro medio (WhatsApp).

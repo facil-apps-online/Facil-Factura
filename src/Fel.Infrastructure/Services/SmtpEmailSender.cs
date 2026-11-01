@@ -1,6 +1,4 @@
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
+using Fel.Infrastructure.Email;
 using Fel.Core.Entities;
 using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
@@ -13,11 +11,9 @@ using MimeKit;
 namespace Fel.Infrastructure.Services
 {
     // Resuelve el transporte de correo por prioridad: SMTP propio del Client, si no está configurado el del Tenant (client.Tenant debe
-    // venir cargado), y si tampoco, Brevo directo desde la plataforma con adjuntos. Por Core no sale nada.
+    // venir cargado), y si tampoco, SendPulse directo desde la plataforma con adjuntos. Por Core no sale nada.
     public class SmtpEmailSender : IEmailSender
     {
-        private const string BrevoUrl = "https://api.brevo.com/v3/smtp/email";
-        private static readonly HttpClient BrevoHttp = new() { Timeout = TimeSpan.FromSeconds(60) };
 
         private readonly ICryptoService _cryptoService;
         private readonly ICryptoVault _cryptoVault;
@@ -53,11 +49,11 @@ namespace Fel.Infrastructure.Services
                     recipientEmail, subject, bodyHtml, attachments, ct);
             }
 
-            return await SendViaBrevoAsync(client, kind, recipientEmail, subject, bodyHtml, attachments, ct);
+            return await SendViaSendPulseAsync(settings => ResolveSender(settings, client, kind), recipientEmail, subject, bodyHtml, attachments, ct);
         }
 
         // Remitente según el tipo de correo (ver el backlog de correo propio): el nombre visible es el de quien origina el correo y las
-        // respuestas van a su contacto; la dirección es siempre de facil-factura.pro, que es el dominio autenticado en Brevo.
+        // respuestas van a su contacto; la dirección es siempre de facil-factura.pro, que es el dominio autenticado en SendPulse.
         private static (string Name, string Email, string? ReplyTo) ResolveSender(PlatformEmailSettings settings, Client client, EmailKind kind)
         {
             var tenant = client.Tenant;
@@ -74,53 +70,51 @@ namespace Fel.Infrastructure.Services
 
         private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-        private async Task<EmailSendResult> SendViaBrevoAsync(
-            Client client, EmailKind kind, string recipientEmail, string subject, string bodyHtml,
-            IReadOnlyList<EmailAttachment>? attachments, CancellationToken ct)
+        public Task<EmailSendResult> SendPlatformAsync(
+            Tenant? tenant, EmailKind kind, string recipientEmail, string subject, string bodyHtml, CancellationToken ct = default)
+            => SendViaSendPulseAsync(settings => ResolvePlatformSender(settings, tenant), recipientEmail, subject, bodyHtml, null, ct);
+
+        // Sin cliente de por medio: el nombre visible es el del tenant dueño de la cuenta (la marca que reconoce quien recibe el correo).
+        private static (string Name, string Email, string? ReplyTo) ResolvePlatformSender(PlatformEmailSettings settings, Tenant? tenant)
+        {
+            var name = tenant != null ? (!string.IsNullOrWhiteSpace(tenant.CommercialName) ? tenant.CommercialName : tenant.Name) : settings.PlatformFromName;
+            return (name, settings.PlatformFromEmail, NullIfBlank(settings.SupportEmail) ?? NullIfBlank(tenant?.Email));
+        }
+
+        private async Task<EmailSendResult> SendViaSendPulseAsync(
+            Func<PlatformEmailSettings, (string Name, string Email, string? ReplyTo)> resolveSender, string recipientEmail,
+            string subject, string bodyHtml, IReadOnlyList<EmailAttachment>? attachments, CancellationToken ct)
         {
             try
             {
                 var settings = await _db.PlatformEmailSettings.AsNoTracking().FirstOrDefaultAsync(s => s.Id == 1, ct);
-                if (settings == null || string.IsNullOrWhiteSpace(settings.BrevoApiKeyEncrypted))
-                    return EmailSendResult.Fail("La plataforma no tiene configurada la API key de Brevo (superadmin → Correo de la plataforma).", "platform");
+                if (settings == null || string.IsNullOrWhiteSpace(settings.SendPulseClientId) || string.IsNullOrWhiteSpace(settings.SendPulseSecretEncrypted))
+                    return EmailSendResult.Fail("La plataforma no tiene configuradas las credenciales de SendPulse (superadmin → Correo de la plataforma).", "platform");
 
-                var apiKey = _cryptoVault.DecryptPassword(settings.BrevoApiKeyEncrypted);
-                var (name, email, replyTo) = ResolveSender(settings, client, kind);
-
-                var payload = new Dictionary<string, object?>
+                // Tope por hora del plan: lo que pasa de ahí no es un fallo, espera a que salga el correo más antiguo de la ventana.
+                if (settings.MaxPerHour > 0)
                 {
-                    ["sender"] = new { name, email },
-                    ["to"] = new[] { new { email = recipientEmail } },
-                    ["subject"] = subject,
-                    ["htmlContent"] = bodyHtml
-                };
-                if (replyTo != null) payload["replyTo"] = new { email = replyTo, name };
-                if (attachments is { Count: > 0 })
-                    payload["attachment"] = attachments.Select(a => new { name = a.FileName, content = Convert.ToBase64String(a.Content) }).ToArray();
-
-                using var request = new HttpRequestMessage(HttpMethod.Post, BrevoUrl)
-                {
-                    Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-                };
-                request.Headers.Add("api-key", apiKey);
-                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-                using var response = await BrevoHttp.SendAsync(request, ct);
-                var body = await response.Content.ReadAsStringAsync(ct);
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Brevo rechazó el correo a {Recipient}: {Status} {Body}", recipientEmail, (int)response.StatusCode, body);
-                    return EmailSendResult.Fail($"Brevo respondió {(int)response.StatusCode}: {(body.Length > 500 ? body[..500] : body)}", "platform");
+                    var windowStart = DateTime.UtcNow.AddHours(-1);
+                    var sentInWindow = await _db.EmailOutbox.AsNoTracking()
+                        .Where(e => e.Channel == "platform" && e.Status == EmailOutboxStatus.Sent && e.SentAt >= windowStart)
+                        .OrderBy(e => e.SentAt).Select(e => e.SentAt!.Value).ToListAsync(ct);
+                    if (sentInWindow.Count >= settings.MaxPerHour)
+                        return EmailSendResult.Throttled(sentInWindow[sentInWindow.Count - settings.MaxPerHour].AddHours(1).AddSeconds(5));
                 }
 
-                var messageId = string.Empty;
-                try { messageId = JsonDocument.Parse(body).RootElement.GetProperty("messageId").GetString() ?? string.Empty; }
-                catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { }
+                var secret = _cryptoVault.DecryptPassword(settings.SendPulseSecretEncrypted);
+                var (name, email, replyTo) = resolveSender(settings);
+                var messageId = await SendPulseApi.SendAsync(settings.SendPulseClientId, secret, name, email, replyTo, recipientEmail, subject, bodyHtml, attachments, ct);
                 return EmailSendResult.Ok("platform", messageId);
+            }
+            catch (SendPulseException ex)
+            {
+                _logger.LogWarning("SendPulse no envió el correo a {Recipient}: {Error}", recipientEmail, ex.Message);
+                return EmailSendResult.Fail(ex.Message, "platform");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Error enviando correo vía Brevo a {Recipient}.", recipientEmail);
+                _logger.LogError(ex, "Error enviando correo vía SendPulse a {Recipient}.", recipientEmail);
                 return EmailSendResult.Fail(ex.Message, "platform");
             }
         }

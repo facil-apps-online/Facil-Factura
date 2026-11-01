@@ -6,7 +6,9 @@ namespace Fel.Core.Interfaces
     public class OutboundEmail
     {
         public EmailKind Kind { get; set; }
-        public Client Client { get; set; } = null!;
+        // Los correos de documentos y certificados salen en nombre de un cliente; los de plataforma (invitaciones, contraseñas) no tienen cliente.
+        public Client? Client { get; set; }
+        public Guid? TenantId { get; set; }
         public string RecipientEmail { get; set; } = string.Empty;
         public string Subject { get; set; } = string.Empty;
         public string BodyHtml { get; set; } = string.Empty;

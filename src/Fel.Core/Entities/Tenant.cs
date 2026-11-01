@@ -35,7 +35,7 @@ namespace Fel.Core.Entities
         public string PrimaryColorDark { get; set; } = "#f8fafc";  // Tailwind Slate-50 default
 
         // --- SMTP propio (opcional, fallback para los Clients de este Tenant que no configuraron
-        // el suyo; ver Client.SmtpHost para la prioridad Client > Tenant > Brevo de la plataforma) ---
+        // el suyo; ver Client.SmtpHost para la prioridad Client > Tenant > SendPulse de la plataforma) ---
         public string? SmtpHost { get; set; }
         public int? SmtpPort { get; set; }
         public string? SmtpUser { get; set; }

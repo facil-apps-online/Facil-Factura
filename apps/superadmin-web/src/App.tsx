@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Receipt, XCircle, Settings, Plus, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, XCircle, Settings, Plus, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler, MailCheck } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
 import { api } from './api';
@@ -25,6 +25,7 @@ import { ResetPassword } from './ResetPassword';
 import { CertificateProviders } from './CertificateProviders';
 import { CertificatePricing } from './CertificatePricing';
 import { EmailSettings } from './EmailSettings';
+import { EmailLog } from './EmailLog';
 import SessionGuard from '@shared/components/session/SessionGuard';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 import ProfilePage from '@shared/components/session/ProfilePage';
@@ -834,6 +835,7 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
     { to: "/certificate-provider", icon: <ShieldCheck className="w-5 h-5" />, label: "Proveedor de Certificados" },
     { to: "/certificate-pricing", icon: <Coins className="w-5 h-5" />, label: "Precios y saldos de certificados" },
     { to: "/email-settings", icon: <Mail className="w-5 h-5" />, label: "Correo de la plataforma" },
+    { to: "/email-log", icon: <MailCheck className="w-5 h-5" />, label: "Correos enviados" },
     { to: "/document-types", icon: <Settings className="w-5 h-5" />, label: "Tipos de Documento" },
     { to: "/integrators", icon: <Cable className="w-5 h-5" />, label: "Integradores" },
     { to: "/tariff-tiers", icon: <Coins className="w-5 h-5" />, label: "Tarifario por Volumen" },
@@ -933,6 +935,7 @@ const App = () => {
                   <Route path="/certificate-provider" element={<CertificateProviders />} />
                   <Route path="/certificate-pricing" element={<CertificatePricing />} />
                   <Route path="/email-settings" element={<EmailSettings />} />
+                  <Route path="/email-log" element={<EmailLog />} />
                   <Route path="/tenants/edit/:id" element={<TenantEdit />} />
                   <Route path="/document-types" element={<DocumentTypes />} />
                   <Route path="/integrators" element={<Integrators />} />

@@ -72,6 +72,8 @@ builder.Services.AddScoped<Fel.Core.Interfaces.ICertificateCsrService, Fel.Infra
 builder.Services.AddHttpClient<Fel.Core.Interfaces.ICoreApiClient, Fel.Infrastructure.Services.CoreApiClient>();
 builder.Services.AddHttpClient<Fel.Core.Interfaces.IFacilReportsClient, Fel.Infrastructure.Services.FacilReportsClient>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.PasswordResetService>();
+builder.Services.AddSingleton<Fel.Core.Interfaces.IEmailSignal, Fel.Infrastructure.Messaging.RedisEmailSignal>();
+builder.Services.AddScoped<Fel.Core.Interfaces.IEmailOutbox, Fel.Infrastructure.Email.EmailOutboxService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.UnusedTemplateDraftService>();
 builder.Services.AddOpenApi(); // .NET 9 json endpoint
 builder.Services.AddEndpointsApiExplorer();

@@ -2,7 +2,7 @@ using System;
 
 namespace Fel.Core.Entities;
 
-// Qué tipo de correo es: define el remitente cuando sale por la plataforma (Brevo) y qué se hace con él al enviarse.
+// Qué tipo de correo es: define el remitente cuando sale por la plataforma (SendPulse) y qué se hace con él al enviarse.
 public enum EmailKind
 {
     Document = 1,            // Documento electrónico o su reenvío
@@ -21,6 +21,14 @@ public enum EmailOutboxStatus
     Dead = 5,      // Agotó los intentos
     Held = 6,      // Espera a que se envíe el correo del que depende (DependsOnId)
     Cancelled = 7  // El correo del que dependía no se pudo enviar
+}
+
+// Estado de entrega que reporta el proveedor: Delivered = el servidor del destinatario respondió 2xx; Bounced = lo rechazó (5xx).
+public enum EmailDeliveryStatus
+{
+    Unknown = 0,
+    Delivered = 1,
+    Bounced = 2
 }
 
 // Bandeja de salida de los correos de la plataforma (patrón outbox): quien origina el correo inserta la fila en la misma transacción
@@ -51,17 +59,25 @@ public class EmailOutbox
     // client-smtp | tenant-smtp | platform
     public string Channel { get; set; } = string.Empty;
     public string ProviderMessageId { get; set; } = string.Empty;
+    // Lo que el proveedor reporta después del envío (solo canal platform): el servidor del destinatario aceptó o rechazó el correo y si lo abrió.
+    public EmailDeliveryStatus DeliveryStatus { get; set; }
+    public string DeliveryDetail { get; set; } = string.Empty;
+    public DateTime? OpenedAt { get; set; }
+    public DateTime? TrackedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? SentAt { get; set; }
 }
 
-// Configuración única de la plataforma para el envío de correo por Brevo.
+// Configuración única de la plataforma para el envío de correo por SendPulse.
 public class PlatformEmailSettings
 {
     public int Id { get; set; } = 1;
-    // Cifrada con ICryptoVault; nunca se devuelve por la API.
-    public string BrevoApiKeyEncrypted { get; set; } = string.Empty;
+    // Client ID de la API de SendPulse (Configuración > API); el secreto va cifrado con ICryptoVault y nunca se devuelve por la API.
+    public string SendPulseClientId { get; set; } = string.Empty;
+    public string SendPulseSecretEncrypted { get; set; } = string.Empty;
+    // Tope de correos por hora que SendPulse admite en el plan contratado; lo que pasa de ahí espera a la siguiente hora.
+    public int MaxPerHour { get; set; } = 50;
     public string DocumentsFromEmail { get; set; } = "facturacion@facil-factura.pro";
     public string CertificatesFromEmail { get; set; } = "certificados@facil-factura.pro";
     public string NotificationsFromEmail { get; set; } = "notificaciones@facil-factura.pro";

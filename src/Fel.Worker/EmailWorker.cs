@@ -12,6 +12,7 @@ namespace Fel.Worker
     public class EmailWorker : BackgroundService
     {
         private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(1);
+        private static readonly TimeSpan TrackingInterval = TimeSpan.FromMinutes(5);
 
         private readonly ILogger<EmailWorker> _logger;
         private readonly IServiceProvider _serviceProvider;
@@ -29,6 +30,7 @@ namespace Fel.Worker
 
             _ = SubscribeWithRetryAsync(stoppingToken);
             _ = SweepLoopAsync(stoppingToken);
+            _ = TrackingLoopAsync(stoppingToken);
 
             try
             {
@@ -70,6 +72,29 @@ namespace Fel.Worker
                 {
                     _logger.LogWarning(ex, "No se pudo suscribir EmailWorker a Redis; se reintenta en 15 s.");
                     try { await Task.Delay(TimeSpan.FromSeconds(15), ct); } catch (OperationCanceledException) { return; }
+                }
+            }
+        }
+
+        // Cada pocos minutos pregunta al proveedor qué pasó con lo enviado (entregado, rebotado, abierto).
+        private async Task TrackingLoopAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(TrackingInterval, ct); } catch (OperationCanceledException) { return; }
+
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    await scope.ServiceProvider.GetRequiredService<EmailTracker>().TrackAsync(ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error en el seguimiento de los correos enviados.");
                 }
             }
         }

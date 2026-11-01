@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Fel.Infrastructure.Email
 {
-    // Envía una fila de la bandeja de salida por el canal que corresponda (SMTP del cliente → SMTP del tenant → Brevo) y deja el
+    // Envía una fila de la bandeja de salida por el canal que corresponda (SMTP del cliente → SMTP del tenant → SendPulse) y deja el
     // resultado en la fila. Lo ejecuta el worker al recibir el aviso y en el barrido de seguridad.
     public class EmailDispatcher
     {
@@ -65,10 +65,15 @@ namespace Fel.Infrastructure.Email
             EmailSendResult result;
             try
             {
-                if (email.Client == null) result = EmailSendResult.Fail("El correo no tiene un cliente de origen.");
+                var body = email.Sensitive ? _cryptoVault.DecryptPassword(email.BodyHtml) : email.BodyHtml;
+                if (email.Client == null)
+                {
+                    // Correo de plataforma (invitación, contraseña): sin cliente, sale por SendPulse en nombre del tenant dueño de la cuenta.
+                    var tenant = email.TenantId != null ? await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == email.TenantId, ct) : null;
+                    result = await _sender.SendPlatformAsync(tenant, email.Kind, email.RecipientEmail, email.Subject, body, ct);
+                }
                 else
                 {
-                    var body = email.Sensitive ? _cryptoVault.DecryptPassword(email.BodyHtml) : email.BodyHtml;
                     var attachments = string.IsNullOrEmpty(email.AttachmentsJson)
                         ? null
                         : JsonSerializer.Deserialize<List<StoredAttachment>>(email.AttachmentsJson)!
@@ -81,6 +86,17 @@ namespace Fel.Infrastructure.Email
             {
                 _logger.LogError(ex, "Error preparando el correo {EmailId}.", id);
                 result = EmailSendResult.Fail(ex.Message);
+            }
+
+            // Tope por hora de la plataforma: el correo espera su turno sin gastar un intento ni quedar como fallido.
+            if (result.RetryAt != null)
+            {
+                email.Status = EmailOutboxStatus.Pending;
+                email.Attempts = Math.Max(0, email.Attempts - 1);
+                email.NextAttemptAt = result.RetryAt.Value;
+                email.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+                return;
             }
 
             email.UpdatedAt = DateTime.UtcNow;

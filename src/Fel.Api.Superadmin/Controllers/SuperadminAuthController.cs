@@ -101,7 +101,7 @@ namespace Fel.Api.Superadmin.Controllers
             var user = await _context.SuperadminUsers.FirstOrDefaultAsync(u => u.Email == request.Email);
             if (user == null) return Ok(new { message = genericMessage });
 
-            // Sin tenantCoreId: el personal Superadmin no pertenece a ningún tenant de Core.
+            // Sin tenant: el personal Superadmin no pertenece a ninguno.
             await _passwordResetService.RequestAsync(
                 PortalUserType.Superadmin, user.Id, user.Email, user.Email, _portalUrl, "password_reset");
 

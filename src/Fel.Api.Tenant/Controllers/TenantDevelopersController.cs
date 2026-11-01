@@ -105,7 +105,7 @@ namespace Fel.Api.Tenant.Controllers
 
                 await _passwordResetService.RequestAsync(
                     PortalUserType.Developer, developer.Id, developer.Email, developer.Name, _developerPortalUrl, "invitation",
-                    tenant.CoreTenantId, tenant.LogoLightUrl, tenant.CommercialName);
+                    tenant.Id, tenant.LogoLightUrl, tenant.CommercialName);
 
                 return Ok(new { developer.Id, developer.Name, developer.Email, developer.IsActive });
             }
@@ -134,7 +134,7 @@ namespace Fel.Api.Tenant.Controllers
 
                 await _passwordResetService.RequestAsync(
                     PortalUserType.Developer, developer.Id, developer.Email, developer.Name, _developerPortalUrl, "invitation",
-                    tenant.CoreTenantId, tenant.LogoLightUrl, tenant.CommercialName);
+                    tenant.Id, tenant.LogoLightUrl, tenant.CommercialName);
 
                 return Ok(new { message = "Invitación reenviada." });
             }

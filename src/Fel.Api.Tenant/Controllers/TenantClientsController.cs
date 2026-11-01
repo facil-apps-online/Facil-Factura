@@ -590,7 +590,7 @@ namespace Fel.Api.Tenant.Controllers
             {
                 var representative = group.First().User;
                 var result = await _passwordResetService.RequestAsync(
-                    PortalUserType.Client, representative.Id, representative.Email, representative.Name, _clientPortalUrl, "invitation", tenant.CoreTenantId,
+                    PortalUserType.Client, representative.Id, representative.Email, representative.Name, _clientPortalUrl, "invitation", tenant.Id,
                     tenant.LogoLightUrl, tenant.CommercialName);
                 // Solo queda como invitada si el correo salió de verdad; si no, sigue pendiente y el envío masivo la vuelve a cubrir.
                 if (!result.IsSuccess) continue;

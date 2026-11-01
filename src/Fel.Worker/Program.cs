@@ -39,6 +39,7 @@ builder.ConfigureServices((hostContext, services) =>
     services.AddSingleton<Fel.Core.Interfaces.IEmailSignal, Fel.Infrastructure.Messaging.RedisEmailSignal>();
     services.AddScoped<Fel.Core.Interfaces.IEmailOutbox, Fel.Infrastructure.Email.EmailOutboxService>();
     services.AddScoped<Fel.Infrastructure.Email.EmailDispatcher>();
+    services.AddScoped<Fel.Infrastructure.Email.EmailTracker>();
     services.AddScoped<IDianSoapClient, Fel.Infrastructure.Dian.DianSoapClient>();
     services.AddScoped<IReceptionEventService, Fel.Infrastructure.Dian.ReceptionEventService>();
     services.AddScoped<Fel.Infrastructure.Dian.ReceptionEmailPollerService>();

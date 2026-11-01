@@ -186,7 +186,7 @@ namespace Fel.Core.Entities
         public string PrimaryColorDark { get; set; } = "#f8fafc";  // Slate-50 default
 
         // --- SMTP propio (opcional, para reenvío de documentos del flujo nativo DIAN) ---
-        // Prioridad al resolver el transporte de correo: Client > Tenant > Brevo de la plataforma.
+        // Prioridad al resolver el transporte de correo: Client > Tenant > SendPulse de la plataforma.
         // Si estos campos están vacíos, el envío cae al SMTP del Tenant y luego al de la plataforma.
         public string? SmtpHost { get; set; }
         public int? SmtpPort { get; set; }

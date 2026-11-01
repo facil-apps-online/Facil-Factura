@@ -3,9 +3,9 @@ import { Loader2, Mail, Save, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
 
-type Problem = { id: string; kind: string; status: string; recipientEmail: string; subject: string; attempts: number; channel: string; lastError: string; updatedAt: string };
+type Problem = { id: string; kind: string; status: string; deliveryStatus: string; recipientEmail: string; subject: string; attempts: number; channel: string; lastError: string; updatedAt: string };
 type Settings = {
-  apiKeyConfigured: boolean; documentsFromEmail: string; certificatesFromEmail: string; notificationsFromEmail: string;
+  credentialsConfigured: boolean; sendPulseClientId: string; maxPerHour: number; sentLastHour: number; documentsFromEmail: string; certificatesFromEmail: string; notificationsFromEmail: string;
   platformFromEmail: string; platformFromName: string; supportEmail: string; updatedAt: string; updatedBy: string;
   queue: { pending: number; held: number; failed: number; dead: number };
   recentProblems: Problem[];
@@ -18,12 +18,12 @@ const KIND_LABELS: Record<string, string> = {
 const errorMessage = (err: unknown, fallback: string) =>
   (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback;
 
-// Correo de la plataforma: la API key de Brevo (se guarda cifrada y nunca se vuelve a mostrar), los remitentes por tipo de correo y el
-// estado de la bandeja de salida. Un correo sale por el SMTP del cliente, el del tenant o, si no hay, por Brevo con esta configuración.
+// Correo de la plataforma: las credenciales de SendPulse (el secreto se guarda cifrado y nunca se vuelve a mostrar), el tope por hora, los
+// remitentes por tipo de correo y el estado de la bandeja de salida. Un correo sale por el SMTP del cliente, el del tenant o, si no hay, por SendPulse.
 export function EmailSettings() {
   const [data, setData] = useState<Settings | null>(null);
-  const [apiKey, setApiKey] = useState('');
-  const [form, setForm] = useState({ documentsFromEmail: '', certificatesFromEmail: '', notificationsFromEmail: '', platformFromEmail: '', platformFromName: '', supportEmail: '' });
+  const [secret, setSecret] = useState('');
+  const [form, setForm] = useState({ sendPulseClientId: '', maxPerHour: 50, documentsFromEmail: '', certificatesFromEmail: '', notificationsFromEmail: '', platformFromEmail: '', platformFromName: '', supportEmail: '' });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -32,6 +32,7 @@ export function EmailSettings() {
     .then(res => {
       setData(res.data);
       setForm({
+        sendPulseClientId: res.data.sendPulseClientId, maxPerHour: res.data.maxPerHour,
         documentsFromEmail: res.data.documentsFromEmail, certificatesFromEmail: res.data.certificatesFromEmail,
         notificationsFromEmail: res.data.notificationsFromEmail, platformFromEmail: res.data.platformFromEmail,
         platformFromName: res.data.platformFromName, supportEmail: res.data.supportEmail,
@@ -44,8 +45,8 @@ export function EmailSettings() {
   const save = async () => {
     setSaving(true);
     try {
-      await api.put('/email-settings', { brevoApiKey: apiKey || null, ...form });
-      setApiKey('');
+      await api.put('/email-settings', { sendPulseSecret: secret || null, ...form });
+      setSecret('');
       toast.success('Configuración de correo guardada.');
       await load();
     } catch (err: unknown) {
@@ -71,38 +72,47 @@ export function EmailSettings() {
   if (!data) return <div className="p-10 text-slate-400"><Loader2 className="animate-spin" /></div>;
 
   const field = 'mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white';
-  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value });
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: key === 'maxPerHour' ? Number(e.target.value) : e.target.value });
 
   return (
     <div className="p-10 max-w-5xl">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-extrabold text-white">Correo de la plataforma</h1>
-          <p className="text-slate-400 mt-2">Todos los correos de Facil Factura salen de aquí, nunca por Core. Cada correo usa el SMTP del cliente, si no tiene el del tenant y, si tampoco, Brevo con esta configuración.</p>
+          <p className="text-slate-400 mt-2">Todos los correos de Facil Factura salen de aquí, nunca por Core. Cada correo usa el SMTP del cliente, si no tiene el del tenant y, si tampoco, SendPulse con esta configuración.</p>
         </div>
         <Mail className="w-10 h-10 text-blue-400 shrink-0" />
       </div>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 mb-8">
-        <h2 className="text-lg font-bold text-white mb-1">Brevo</h2>
+        <h2 className="text-lg font-bold text-white mb-1">SendPulse</h2>
         <p className="text-sm text-slate-400 mb-4">
-          La API key se guarda cifrada y no se vuelve a mostrar. {data.apiKeyConfigured ? 'Ya hay una guardada: déjala vacía para conservarla.' : 'Todavía no hay ninguna guardada: sin ella los correos que no tengan SMTP propio no se pueden enviar.'}
+          El Client ID y el Client Secret están en SendPulse → Configuración → API. El secreto se guarda cifrado y no se vuelve a mostrar. {data.credentialsConfigured ? 'Ya hay credenciales guardadas: deja el secreto vacío para conservarlo.' : 'Todavía no hay credenciales: sin ellas los correos que no tengan SMTP propio no se pueden enviar.'}
         </p>
-        <label className="block text-sm text-slate-300">API key de Brevo
-          <input type="password" autoComplete="off" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={data.apiKeyConfigured ? '•••••••• (guardada)' : 'xkeysib-…'} className={field} />
-        </label>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label className="block text-sm text-slate-300">Client ID
+            <input autoComplete="off" value={form.sendPulseClientId} onChange={set('sendPulseClientId')} className={field} />
+          </label>
+          <label className="block text-sm text-slate-300">Client Secret
+            <input type="password" autoComplete="off" value={secret} onChange={e => setSecret(e.target.value)} placeholder={data.credentialsConfigured ? '•••••••• (guardado)' : ''} className={field} />
+          </label>
+          <label className="block text-sm text-slate-300">Tope de correos por hora
+            <input type="number" min={1} value={form.maxPerHour} onChange={set('maxPerHour')} className={field} />
+            <span className="mt-1 block text-xs text-slate-500">Lo que permite el plan de SendPulse. Lo que pasa del tope espera a la siguiente hora, no se pierde. Última hora: {data.sentLastHour} de {data.maxPerHour}.</span>
+          </label>
+        </div>
         <div className="mt-4 flex items-center gap-4">
-          <button onClick={test} disabled={testing || !data.apiKeyConfigured} className="flex items-center gap-2 rounded-lg border border-slate-600 px-4 py-2 font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40">
+          <button onClick={test} disabled={testing || !data.credentialsConfigured} className="flex items-center gap-2 rounded-lg border border-slate-600 px-4 py-2 font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40">
             {testing ? <Loader2 className="w-4 animate-spin" /> : <Zap className="w-4" />} Probar conexión
           </button>
           {testResult && <span className={`text-sm ${testResult.success ? 'text-emerald-300' : 'text-rose-300'}`}>{testResult.message}</span>}
         </div>
-        {apiKey && <p className="mt-2 text-xs text-amber-300">La prueba usa la key guardada: guarda primero la nueva.</p>}
+        {secret && <p className="mt-2 text-xs text-amber-300">La prueba usa las credenciales guardadas: guarda primero las nuevas.</p>}
       </section>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 mb-8">
         <h2 className="text-lg font-bold text-white mb-1">Remitentes</h2>
-        <p className="text-sm text-slate-400 mb-4">Solo aplican cuando el correo sale por Brevo; con SMTP propio sale desde ese buzón. Las direcciones deben ser del dominio autenticado en Brevo. El nombre visible es el del cliente o tenant que origina el correo.</p>
+        <p className="text-sm text-slate-400 mb-4">Solo aplican cuando el correo sale por SendPulse; con SMTP propio sale desde ese buzón. Las direcciones deben ser de un dominio de remitente autorizado en SendPulse. El nombre visible es el del cliente o tenant que origina el correo.</p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="block text-sm text-slate-300">Documentos y reenvíos
             <input value={form.documentsFromEmail} onChange={set('documentsFromEmail')} className={field} />
@@ -147,7 +157,7 @@ export function EmailSettings() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2 pr-4">Fecha</th><th className="py-2 pr-4">Tipo</th><th className="py-2 pr-4">Destinatario</th><th className="py-2 pr-4">Intentos</th><th className="py-2">Último error</th></tr>
+                <tr><th className="py-2 pr-4">Fecha</th><th className="py-2 pr-4">Tipo</th><th className="py-2 pr-4">Destinatario</th><th className="py-2 pr-4">Intentos</th><th className="py-2">Motivo</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-slate-200">
                 {data.recentProblems.map(p => (
@@ -155,7 +165,7 @@ export function EmailSettings() {
                     <td className="py-2 pr-4 whitespace-nowrap">{new Date(p.updatedAt).toLocaleString('es-CO')}</td>
                     <td className="py-2 pr-4">{KIND_LABELS[p.kind] ?? p.kind}</td>
                     <td className="py-2 pr-4">{p.recipientEmail}</td>
-                    <td className="py-2 pr-4">{p.attempts}{p.status === 'Dead' ? ' (agotados)' : ''}</td>
+                    <td className="py-2 pr-4">{p.deliveryStatus === 'Bounced' ? 'Rebotó' : `${p.attempts}${p.status === 'Dead' ? ' (agotados)' : ''}`}</td>
                     <td className="py-2 text-rose-300">{p.lastError}</td>
                   </tr>
                 ))}

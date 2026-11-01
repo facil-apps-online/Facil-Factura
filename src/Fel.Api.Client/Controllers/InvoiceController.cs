@@ -1047,7 +1047,7 @@ namespace Fel.Api.Client.Controllers
         // Si el emisor emite directo a la DIAN (sin Dataico), no existe tal endpoint del lado del
         // proveedor — hay que regenerar el XML firmado (determinístico a partir de los mismos datos
         // ya guardados, debe coincidir con el CUFE original) + el PDF, empacarlos en un zip, y
-        // enviarlos por correo propio (bandeja de salida: SMTP del Client > del Tenant > Brevo de la plataforma).
+        // enviarlos por correo propio (bandeja de salida: SMTP del Client > del Tenant > SendPulse de la plataforma).
         [HttpPost("{id}/resend")]
         public async Task<IActionResult> Resend(Guid id, [FromBody] ResendInvoiceRequest request)
         {
@@ -1207,7 +1207,7 @@ namespace Fel.Api.Client.Controllers
                     var subject = $"Reenvío de tu {label} N.º {invoice.Number}";
                     var bodyHtml = $"<p>Adjunto encontrarás el XML y la representación gráfica de tu {label} N.º {invoice.Number}.</p>";
 
-                    // Queda en la bandeja de salida; el worker lo envía por el SMTP del cliente, el del tenant o Brevo, y el documento muestra el resultado.
+                    // Queda en la bandeja de salida; el worker lo envía por el SMTP del cliente, el del tenant o SendPulse, y el documento muestra el resultado.
                     var queued = _emailOutbox.Add(new OutboundEmail
                     {
                         Kind = EmailKind.Document, Client = client, RecipientEmail = request.Email.Trim(), Subject = subject, BodyHtml = bodyHtml,

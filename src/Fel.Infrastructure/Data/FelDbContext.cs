@@ -502,6 +502,9 @@ namespace Fel.Infrastructure.Data
                 entity.Property(e => e.LastError).HasMaxLength(1000);
                 entity.Property(e => e.Channel).HasMaxLength(30);
                 entity.Property(e => e.ProviderMessageId).HasMaxLength(200);
+                entity.Property(e => e.DeliveryDetail).HasMaxLength(1000);
+                // El tope por hora cuenta lo enviado por la plataforma en la última hora; el seguimiento busca lo enviado sin estado de entrega.
+                entity.HasIndex(e => new { e.Channel, e.Status, e.SentAt });
                 // El barrido del worker busca lo pendiente o fallido que ya toca reintentar.
                 entity.HasIndex(e => new { e.Status, e.NextAttemptAt });
                 entity.HasIndex(e => e.DocumentId);
@@ -515,6 +518,7 @@ namespace Fel.Infrastructure.Data
                 entity.ToTable("PlatformEmailSettings");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedNever();
+                entity.Property(e => e.SendPulseClientId).HasMaxLength(200);
                 entity.Property(e => e.DocumentsFromEmail).IsRequired().HasMaxLength(320);
                 entity.Property(e => e.CertificatesFromEmail).IsRequired().HasMaxLength(320);
                 entity.Property(e => e.NotificationsFromEmail).IsRequired().HasMaxLength(320);

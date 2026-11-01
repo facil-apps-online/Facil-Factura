@@ -204,7 +204,10 @@ namespace Fel.Infrastructure.Dian
 
             foreach (var item in itemsList)
             {
-                var lineBase = item.Quantity * item.UnitPrice * (1 - item.DiscountRate / 100);
+                // Todo monto se aproxima a dos decimales con la regla del Anexo (DianRounding) por línea, y los totales del encabezado suman esas
+                // líneas ya aproximadas: la DIAN valida que el encabezado coincida con la suma de sus líneas (FAU04, FAS01b).
+                var lineBase = DianRounding.Round2(item.Quantity * item.UnitPrice * (1 - item.DiscountRate / 100));
+                var lineIva = DianRounding.Round2(item.TaxAmount);
                 lineExtension += lineBase;
 
                 // AIU: Administración e Imprevistos no hacen parte de la base gravable (solo la
@@ -236,13 +239,15 @@ namespace Fel.Infrastructure.Dian
 
                 if (!outsideTaxBase)
                 {
-                    line.Taxes.Add(new TaxSubtotal { TaxId = "01", TaxName = "IVA", TaxableAmount = lineBase, TaxAmount = item.TaxAmount, Percent = item.TaxRate });
-                    AddTaxGroup(taxGroups, ("01", "IVA", item.TaxRate), lineBase, item.TaxAmount);
+                    line.Taxes.Add(new TaxSubtotal { TaxId = "01", TaxName = "IVA", TaxableAmount = lineBase, TaxAmount = lineIva, Percent = item.TaxRate });
+                    AddTaxGroup(taxGroups, ("01", "IVA", item.TaxRate), lineBase, lineIva);
                     foreach (var tax in item.AdditionalTaxes.Where(t => t.Amount != 0))
                     {
                         var dianTax = DianTax(tax.TaxCategory);
-                        line.Taxes.Add(new TaxSubtotal { TaxId = dianTax.Id, TaxName = dianTax.Name, TaxableAmount = tax.BaseAmount == 0 ? lineBase : tax.BaseAmount, TaxAmount = tax.Amount, Percent = tax.Rate });
-                        AddTaxGroup(taxGroups, (dianTax.Id, dianTax.Name, tax.Rate), tax.BaseAmount == 0 ? lineBase : tax.BaseAmount, tax.Amount);
+                        var taxBase = tax.BaseAmount == 0 ? lineBase : DianRounding.Round2(tax.BaseAmount);
+                        var taxAmount = DianRounding.Round2(tax.Amount);
+                        line.Taxes.Add(new TaxSubtotal { TaxId = dianTax.Id, TaxName = dianTax.Name, TaxableAmount = taxBase, TaxAmount = taxAmount, Percent = tax.Rate });
+                        AddTaxGroup(taxGroups, (dianTax.Id, dianTax.Name, tax.Rate), taxBase, taxAmount);
                     }
                 }
                 data.Lines.Add(line);
@@ -264,7 +269,7 @@ namespace Fel.Infrastructure.Dian
             // cac:AllowanceCharge a nivel de factura (FAQ01-09). Se informan por el valor completo:
             // BaseAmount = Amount con 100 % — mismo criterio del "charges" que se manda a Dataico.
             // Código de descuento "09" (Descuento general, tabla 13.3.9 de la Caja de Herramientas).
-            var generalDiscount = document.GeneralDiscountAmount ?? 0;
+            var generalDiscount = DianRounding.Round2(document.GeneralDiscountAmount ?? 0);
             if (generalDiscount > 0)
             {
                 data.AllowanceCharges.Add(new AllowanceChargeData
@@ -278,7 +283,7 @@ namespace Fel.Infrastructure.Dian
                 });
             }
             // Ajuste de centavos del Client: otro descuento general (mismo código 09), que baja el valor a pagar del XML.
-            var roundingAdjustment = document.RoundingAdjustmentAmount ?? 0;
+            var roundingAdjustment = DianRounding.Round2(document.RoundingAdjustmentAmount ?? 0);
             if (roundingAdjustment > 0)
             {
                 data.AllowanceCharges.Add(new AllowanceChargeData
@@ -291,7 +296,7 @@ namespace Fel.Infrastructure.Dian
                     Amount = roundingAdjustment
                 });
             }
-            var generalCharge = document.GeneralChargeAmount ?? 0;
+            var generalCharge = DianRounding.Round2(document.GeneralChargeAmount ?? 0);
             if (generalCharge > 0)
             {
                 data.AllowanceCharges.Add(new AllowanceChargeData

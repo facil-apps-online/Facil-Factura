@@ -46,15 +46,16 @@ namespace Fel.Core.Models
             && string.Equals(document.Currency, "COP", StringComparison.OrdinalIgnoreCase);
 
         // Calcula y deja en el documento el descuento del ajuste según el Client. Se llama al guardar el borrador y de nuevo al emitir, con los mismos
-        // ítems que arman el XML (base de cada línea sin redondear + IVA de la línea). Sin ajuste (o si no aplica) lo deja en nulo.
+        // ítems que arman el XML (base de cada línea + IVA de la línea, aproximados con DianRounding). Sin ajuste (o si no aplica) lo deja en nulo.
         public static void Apply(Document document, IEnumerable<DocumentItem> items, string? mode)
         {
             document.RoundingAdjustmentAmount = null;
             document.RoundingAdjustmentReason = null;
             if (Unit(mode) == 0 || !Applies(document)) return;
 
-            var gross = items.Sum(i => i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100) + i.TaxAmount + i.AdditionalTaxes.Sum(t => t.Amount));
-            var payable = gross - (document.GeneralDiscountAmount ?? 0) + (document.GeneralChargeAmount ?? 0);
+            // Cada valor se aproxima con la regla DIAN línea por línea, igual que el XML, para que el valor a pagar coincida con el del encabezado.
+            var gross = items.Sum(i => DianRounding.Round2(i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100)) + DianRounding.Round2(i.TaxAmount) + i.AdditionalTaxes.Sum(t => DianRounding.Round2(t.Amount)));
+            var payable = gross - DianRounding.Round2(document.GeneralDiscountAmount ?? 0) + DianRounding.Round2(document.GeneralChargeAmount ?? 0);
             var adjustment = Compute(payable, mode);
             if (adjustment <= 0) return;
             document.RoundingAdjustmentAmount = adjustment;

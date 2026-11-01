@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fel.Api.Tenant", "Fel.Api.T
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fel.Api.Client", "Fel.Api.Client\Fel.Api.Client.csproj", "{9B2BC6AA-B9F9-4665-96ED-6355845C6B6B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fel.Tests", "Fel.Tests\Fel.Tests.csproj", "{0AB139B8-63D9-4B8A-B561-8A265A6457FC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -111,6 +113,18 @@ Global
 		{9B2BC6AA-B9F9-4665-96ED-6355845C6B6B}.Release|x64.Build.0 = Release|Any CPU
 		{9B2BC6AA-B9F9-4665-96ED-6355845C6B6B}.Release|x86.ActiveCfg = Release|Any CPU
 		{9B2BC6AA-B9F9-4665-96ED-6355845C6B6B}.Release|x86.Build.0 = Release|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Debug|x64.Build.0 = Debug|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Debug|x86.Build.0 = Debug|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Release|x64.ActiveCfg = Release|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Release|x64.Build.0 = Release|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Release|x86.ActiveCfg = Release|Any CPU
+		{0AB139B8-63D9-4B8A-B561-8A265A6457FC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

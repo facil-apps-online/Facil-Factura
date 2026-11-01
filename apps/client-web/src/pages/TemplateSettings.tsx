@@ -8,6 +8,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { Button } from '../components/ui/button';
 import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
+import EmailColorsCard from '@shared/components/EmailColorsCard';
 import UnusedDraftsDialog from '@shared/components/UnusedDraftsDialog';
 import ReceptionSettingsPanel from '../components/ReceptionSettingsPanel';
 
@@ -318,6 +319,15 @@ export default function TemplateSettings() {
           )}
         </div>
       </div>
+
+      {/* Colores del correo con el que se entregan los documentos, con visor en vivo */}
+      <EmailColorsCard
+        className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8"
+        inheritLabel="los de mi proveedor"
+        load={() => api.get('/v1/branding/my-branding').then(res => ({ light: res.data.emailColorLight ?? null, dark: res.data.emailColorDark ?? null, inherited: res.data.inheritedEmailColor }))}
+        save={(light, dark) => api.put('/v1/branding/email-colors', { colorLight: light, colorDark: dark })}
+        preview={(light, dark) => api.post('/v1/branding/email-preview', { colorLight: light, colorDark: dark }).then(res => res.data.html)}
+      />
 
       {/* Formato de la Unidad de Medida en el detalle de la factura */}
       <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 lg:p-8 mb-6 lg:mb-8">

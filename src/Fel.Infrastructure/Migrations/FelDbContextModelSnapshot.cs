@@ -1169,6 +1169,12 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("EmailColorDark")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EmailColorLight")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("FooterRetentionLabelStyle")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -4576,6 +4582,12 @@ namespace Fel.Infrastructure.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
 
+                    b.Property<string>("EmailColorDark")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EmailColorLight")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("MaxPerHour")
                         .HasColumnType("int");
 
@@ -6547,6 +6559,12 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("EmailColorDark")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EmailColorLight")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("FirstLastName")
                         .HasColumnType("nvarchar(max)");

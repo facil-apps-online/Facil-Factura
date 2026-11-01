@@ -53,6 +53,8 @@ namespace Fel.Api.Superadmin.Controllers
                 settings.PlatformFromEmail,
                 settings.PlatformFromName,
                 settings.SupportEmail,
+                settings.EmailColorLight,
+                settings.EmailColorDark,
                 settings.UpdatedAt,
                 settings.UpdatedBy,
                 queue = new
@@ -64,6 +66,35 @@ namespace Fel.Api.Superadmin.Controllers
                 },
                 recentProblems
             });
+        }
+
+        // Colores de los correos de documentos cuando ni el cliente ni su tenant definieron los suyos. Vacío = el azul por defecto.
+        [HttpPut("email-colors")]
+        public async Task<IActionResult> UpdateEmailColors([FromBody] EmailColorsRequest request, CancellationToken ct)
+        {
+            if (!request.TryNormalize(out var light, out var dark)) return BadRequest(new { message = "Los colores deben tener el formato #rrggbb." });
+            var settings = await _db.PlatformEmailSettings.FirstOrDefaultAsync(s => s.Id == 1, ct);
+            if (settings == null)
+            {
+                settings = new PlatformEmailSettings();
+                _db.PlatformEmailSettings.Add(settings);
+            }
+            settings.EmailColorLight = light;
+            settings.EmailColorDark = dark;
+            settings.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            return Ok(new { message = "Colores guardados." });
+        }
+
+        // Cómo se vería el correo de un documento con esos colores (sin guardarlos), con un documento de ejemplo.
+        [HttpPost("email-preview")]
+        public IActionResult PreviewEmail([FromBody] EmailColorsRequest request)
+        {
+            if (!request.TryNormalize(out var light, out var dark)) return BadRequest(new { message = "Los colores deben tener el formato #rrggbb." });
+            var html = DocumentEmailTemplate.Build(new DocumentEmailModel(
+                "Facil Factura", null, null, null, null, null,
+                "factura electrónica de venta", "FE1001", DateTime.Today, 1250000m, "COP", DocumentEmailColors.Resolve((light, dark))));
+            return Ok(new { html });
         }
 
         // El secreto de SendPulse solo se reemplaza si llega uno nuevo; vacío conserva el guardado.
@@ -170,6 +201,21 @@ namespace Fel.Api.Superadmin.Controllers
 
         private static bool IsEmail(string? value) =>
             !string.IsNullOrWhiteSpace(value) && System.Net.Mail.MailAddress.TryCreate(value.Trim(), out var address) && address.Address == value.Trim();
+    }
+
+    public class EmailColorsRequest
+    {
+        // Vacío o nulo = el azul por defecto.
+        public string? ColorLight { get; set; }
+        public string? ColorDark { get; set; }
+
+        // Normaliza los dos colores; falla si alguno viene con texto que no es #rrggbb.
+        public bool TryNormalize(out string? light, out string? dark)
+        {
+            light = DocumentEmailColors.Normalize(ColorLight);
+            dark = DocumentEmailColors.Normalize(ColorDark);
+            return (string.IsNullOrWhiteSpace(ColorLight) || light != null) && (string.IsNullOrWhiteSpace(ColorDark) || dark != null);
+        }
     }
 
     public class PlatformEmailSettingsRequest

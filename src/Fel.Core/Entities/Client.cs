@@ -185,6 +185,11 @@ namespace Fel.Core.Entities
         public string PrimaryColorLight { get; set; } = "#2563eb"; // Blue-600 default
         public string PrimaryColorDark { get; set; } = "#f8fafc";  // Slate-50 default
 
+        // Colores de los correos de documentos (fondo del correo). Nulos = heredar: cliente, luego tenant, luego plataforma. Con los dos definidos
+        // el correo usa el que más contraste tenga con la tarjeta blanca (ver DocumentEmailTemplate).
+        public string? EmailColorLight { get; set; }
+        public string? EmailColorDark { get; set; }
+
         // --- SMTP propio (opcional, para reenvío de documentos del flujo nativo DIAN) ---
         // Prioridad al resolver el transporte de correo: Client > Tenant > SendPulse de la plataforma.
         // Si estos campos están vacíos, el envío cae al SMTP del Tenant y luego al de la plataforma.

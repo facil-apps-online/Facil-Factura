@@ -15,6 +15,7 @@ using Fel.Core.Interfaces;
 using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Dataico;
 using Fel.Infrastructure.Dian;
+using Fel.Infrastructure.Email;
 using Fel.Infrastructure.Services;
 
 namespace Fel.Api.Client.Controllers
@@ -1216,7 +1217,18 @@ namespace Fel.Api.Client.Controllers
                     }
 
                     var label = DocumentTypeLabel(invoice.TypeCode);
-                    var bodyHtml = $"<p>Adjunto encontrarás el XML y la representación gráfica de tu {label} N.º {invoice.Number}.</p>";
+                    // Cuerpo con la identidad del emisor: su logo, su razón social y su color (el del cliente, el de su tenant o el de la plataforma).
+                    var emailBackground = DocumentEmailColors.Resolve(
+                        (client.EmailColorLight, client.EmailColorDark),
+                        await DocumentEmailColors.TenantColorsAsync(_dbContext, client.TenantId),
+                        await DocumentEmailColors.PlatformColorsAsync(_dbContext));
+                    var bodyHtml = DocumentEmailTemplate.Build(new DocumentEmailModel(
+                        string.IsNullOrWhiteSpace(client.CommercialName) ? client.CompanyName : client.CommercialName,
+                        string.IsNullOrWhiteSpace(client.VerificationDigit) ? client.TaxId : $"{client.TaxId}-{client.VerificationDigit}",
+                        client.Address, client.Phone, client.Email,
+                        !string.IsNullOrWhiteSpace(client.LogoLightUrl) ? client.LogoLightUrl : client.LogoDarkUrl,
+                        invoice.TypeCode switch { "NC" => "nota crédito electrónica", "ND" => "nota débito electrónica", _ => "factura electrónica de venta" },
+                        $"{invoice.Prefix}{invoice.Number}", invoice.IssueDate, invoice.TotalAmount, invoice.Currency, emailBackground));
                     string subject, zipName;
                     byte[] zipBytes;
                     if (stored != null && attachedDocument != null)

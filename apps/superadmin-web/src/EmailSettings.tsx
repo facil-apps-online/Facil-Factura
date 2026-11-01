@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { Loader2, Mail, Save, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from './api';
+import EmailColorsCard from '@shared/components/EmailColorsCard';
 
 type Problem = { id: string; kind: string; status: string; deliveryStatus: string; recipientEmail: string; subject: string; attempts: number; channel: string; lastError: string; updatedAt: string };
 type Settings = {
   credentialsConfigured: boolean; sendPulseClientId: string; maxPerHour: number; sentLastHour: number; documentsFromEmail: string; certificatesFromEmail: string; notificationsFromEmail: string;
-  platformFromEmail: string; platformFromName: string; supportEmail: string; updatedAt: string; updatedBy: string;
+  platformFromEmail: string; platformFromName: string; supportEmail: string; emailColorLight: string | null; emailColorDark: string | null; updatedAt: string; updatedBy: string;
   queue: { pending: number; held: number; failed: number; dead: number };
   recentProblems: Problem[];
 };
@@ -174,6 +175,16 @@ export function EmailSettings() {
           </div>
         )}
       </section>
+
+      <EmailColorsCard
+        className="rounded-2xl bg-white p-6 mt-8"
+        buttonClass="bg-blue-600 hover:bg-blue-500"
+        iconClass="text-blue-600"
+        inheritLabel="el azul por defecto"
+        load={() => api.get<Settings>('/email-settings').then(res => ({ light: res.data.emailColorLight ?? null, dark: res.data.emailColorDark ?? null, inherited: '#2563eb' }))}
+        save={(light, dark) => api.put('/email-settings/email-colors', { colorLight: light, colorDark: dark })}
+        preview={(light, dark) => api.post<{ html: string }>('/email-settings/email-preview', { colorLight: light, colorDark: dark }).then(res => res.data.html)}
+      />
     </div>
   );
 }

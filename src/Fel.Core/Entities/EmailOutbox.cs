@@ -84,6 +84,9 @@ public class PlatformEmailSettings
     public string PlatformFromEmail { get; set; } = "no-responder@facil-factura.pro";
     public string PlatformFromName { get; set; } = "Facil Factura";
     public string SupportEmail { get; set; } = string.Empty;
+    // Colores de los correos de documentos cuando ni el cliente ni su tenant definieron los suyos. Nulos = el azul por defecto.
+    public string? EmailColorLight { get; set; }
+    public string? EmailColorDark { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public string UpdatedBy { get; set; } = string.Empty;
 }

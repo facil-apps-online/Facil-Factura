@@ -34,6 +34,10 @@ namespace Fel.Core.Entities
         public string PrimaryColorLight { get; set; } = "#0f172a"; // Tailwind Slate-900 default
         public string PrimaryColorDark { get; set; } = "#f8fafc";  // Tailwind Slate-50 default
 
+        // Colores de los correos de documentos de sus clientes cuando el cliente no definió los suyos. Nulos = heredar los de la plataforma.
+        public string? EmailColorLight { get; set; }
+        public string? EmailColorDark { get; set; }
+
         // --- SMTP propio (opcional, fallback para los Clients de este Tenant que no configuraron
         // el suyo; ver Client.SmtpHost para la prioridad Client > Tenant > SendPulse de la plataforma) ---
         public string? SmtpHost { get; set; }

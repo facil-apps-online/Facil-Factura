@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Palette, Image as ImageIcon, Save, CheckCircle2, XCircle, Loader2, Copy } from 'lucide-react';
 import SmtpSettingsCard from '@shared/components/SmtpSettingsCard';
+import EmailColorsCard from '@shared/components/EmailColorsCard';
 import { api } from '../lib/api';
 import { useModules } from '../lib/modules';
 
@@ -265,6 +266,14 @@ export default function Branding() {
         basePath="/tenant/smtp-settings"
         className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden mt-8 p-8"
         description="SMTP por defecto para tus clientes que emiten directo a la DIAN (sin Dataico) y no configuraron su propio SMTP."
+      />
+
+      <EmailColorsCard
+        className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden mt-8 p-8"
+        inheritLabel="los de la plataforma"
+        load={() => api.get('/tenant/branding/email-colors').then(res => ({ light: res.data.emailColorLight ?? null, dark: res.data.emailColorDark ?? null, inherited: res.data.inheritedEmailColor }))}
+        save={(light, dark) => api.put('/tenant/branding/email-colors', { colorLight: light, colorDark: dark })}
+        preview={(light, dark) => api.post('/tenant/branding/email-preview', { colorLight: light, colorDark: dark }).then(res => res.data.html)}
       />
 
       {invoicing && billingMode === 'PerUser' && (

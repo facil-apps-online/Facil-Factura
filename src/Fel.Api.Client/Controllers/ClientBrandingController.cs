@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Fel.Core.Interfaces;
 using Fel.Core.Models;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Email;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -64,7 +65,13 @@ namespace Fel.Api.Client.Controllers
                     VerificationDigit = client.VerificationDigit,
                     UnitOfMeasureDisplayOverride = client.UnitOfMeasureDisplayOverride,
                     // Formato numérico del portal y de los PDF de este cliente: "." (punto decimal) o ",".
-                    DecimalSeparator = client.DecimalSeparator
+                    DecimalSeparator = client.DecimalSeparator,
+                    // Colores propios de los correos de documentos (nulos = heredar) y el color que se usaría si no definiera los suyos.
+                    EmailColorLight = client.EmailColorLight,
+                    EmailColorDark = client.EmailColorDark,
+                    InheritedEmailColor = DocumentEmailColors.Resolve(
+                        (client.Tenant.EmailColorLight, client.Tenant.EmailColorDark),
+                        await DocumentEmailColors.PlatformColorsAsync(_dbContext))
                 };
 
                 return Ok(branding);
@@ -150,6 +157,74 @@ namespace Fel.Api.Client.Controllers
                 return Unauthorized(ex.Message);
             }
         }
+
+        // Colores de los correos con los que se entregan los documentos. Vacío = heredar los del tenant.
+        [ClientRole(ClientUserRoles.Administrator)]
+        [HttpPut("email-colors")]
+        public async Task<IActionResult> UpdateEmailColors([FromBody] EmailColorsRequest request)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var client = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Id == clientId);
+                if (client == null) return NotFound(new { Message = "Client not found" });
+
+                if (!TryNormalize(request, out var light, out var dark)) return BadRequest(new { Message = "Los colores deben tener el formato #rrggbb." });
+                client.EmailColorLight = light;
+                client.EmailColorDark = dark;
+                await _dbContext.SaveChangesAsync();
+                return Ok(new { Message = "Colores guardados." });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Cómo se vería el correo con esos colores (sin guardarlos), para decidir sin enviar uno de prueba. Usa los datos reales del emisor y un
+        // documento de ejemplo.
+        [HttpPost("email-preview")]
+        public async Task<IActionResult> PreviewEmail([FromBody] EmailColorsRequest request)
+        {
+            try
+            {
+                var clientId = GetCurrentClientId();
+                var client = await _dbContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == clientId);
+                if (client == null) return NotFound(new { Message = "Client not found" });
+
+                if (!TryNormalize(request, out var light, out var dark)) return BadRequest(new { Message = "Los colores deben tener el formato #rrggbb." });
+                var background = DocumentEmailColors.Resolve(
+                    (light, dark),
+                    await DocumentEmailColors.TenantColorsAsync(_dbContext, client.TenantId),
+                    await DocumentEmailColors.PlatformColorsAsync(_dbContext));
+                var html = DocumentEmailTemplate.Build(new DocumentEmailModel(
+                    string.IsNullOrWhiteSpace(client.CommercialName) ? client.CompanyName : client.CommercialName,
+                    string.IsNullOrWhiteSpace(client.VerificationDigit) ? client.TaxId : $"{client.TaxId}-{client.VerificationDigit}",
+                    client.Address, client.Phone, client.Email,
+                    !string.IsNullOrWhiteSpace(client.LogoLightUrl) ? client.LogoLightUrl : client.LogoDarkUrl,
+                    "factura electrónica de venta", "FE1001", DateTime.Today, 1250000m, "COP", background));
+                return Ok(new { html });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+        }
+
+        // Normaliza los dos colores; falla si alguno viene con texto que no es #rrggbb.
+        private static bool TryNormalize(EmailColorsRequest request, out string? light, out string? dark)
+        {
+            light = DocumentEmailColors.Normalize(request.ColorLight);
+            dark = DocumentEmailColors.Normalize(request.ColorDark);
+            return (string.IsNullOrWhiteSpace(request.ColorLight) || light != null) && (string.IsNullOrWhiteSpace(request.ColorDark) || dark != null);
+        }
+    }
+
+    public class EmailColorsRequest
+    {
+        // Vacío o nulo = heredar (tenant y luego plataforma).
+        public string? ColorLight { get; set; }
+        public string? ColorDark { get; set; }
     }
 
     public class UpdateClientBrandingRequest

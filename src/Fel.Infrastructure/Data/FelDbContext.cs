@@ -21,6 +21,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<CertificateBalanceMovement> CertificateBalanceMovements => Set<CertificateBalanceMovement>();
         public DbSet<EmailOutbox> EmailOutbox => Set<EmailOutbox>();
         public DbSet<PlatformEmailSettings> PlatformEmailSettings => Set<PlatformEmailSettings>();
+        public DbSet<DocumentSignedXml> DocumentSignedXmls => Set<DocumentSignedXml>();
         public DbSet<CertificateEvent> CertificateEvents => Set<CertificateEvent>();
         public DbSet<Document> Documents => Set<Document>();
         public DbSet<ReceivedDocument> ReceivedDocuments => Set<ReceivedDocument>();
@@ -511,6 +512,14 @@ namespace Fel.Infrastructure.Data
                 entity.HasIndex(e => e.CertificateRequestId);
                 entity.HasIndex(e => e.DependsOnId);
                 entity.HasOne(e => e.Client).WithMany().HasForeignKey(e => e.ClientId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<DocumentSignedXml>(entity =>
+            {
+                entity.ToTable("DocumentSignedXmls");
+                entity.HasKey(e => e.DocumentId);
+                entity.Property(e => e.DocumentId).ValueGeneratedNever();
+                entity.HasOne(e => e.Document).WithOne().HasForeignKey<DocumentSignedXml>(e => e.DocumentId).OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<PlatformEmailSettings>(entity =>

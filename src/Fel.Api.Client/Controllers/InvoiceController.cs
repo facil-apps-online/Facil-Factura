@@ -1129,54 +1129,64 @@ namespace Fel.Api.Client.Controllers
                 }
                 else
                 {
-                    var certificate = await _dbContext.Certificates.FirstOrDefaultAsync(c => c.ClientId == clientId && c.IsActive);
-                    if (certificate == null)
-                    {
-                        return BadRequest("Este emisor no tiene un certificado digital activo cargado.");
-                    }
-
                     if (invoice.Resolution == null)
                     {
                         return BadRequest("El documento no tiene una resolución asociada.");
                     }
 
-                    X509Certificate2 cert;
-                    X509Certificate2Collection certChain;
-                    try
-                    {
-                        cert = _cryptoVault.GetCertificate(certificate.FileName, certificate.EncryptedPassword);
-                        certChain = _cryptoVault.GetCertificateChain(certificate.FileName, certificate.EncryptedPassword);
-                    }
-                    catch (Exception ex)
-                    {
-                        return BadRequest($"No se pudo cargar el certificado: {ex.Message}");
-                    }
-
-                    var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-                    var xmlLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
-                    var resendDocType = invoice.DocumentTypeId.HasValue
-                        ? await _dbContext.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == invoice.DocumentTypeId.Value)
-                        : null;
-                    var resendCountryNames = await _dbContext.TaxCatalogItems.AsNoTracking()
-                        .Where(t => t.Kind == TaxCatalogKind.Country)
-                        .ToDictionaryAsync(t => t.Category, t => t.Name);
-                    var ublData = DianDocumentMapper.BuildInvoiceData(invoice, invoice.Customer, invoice.Items, invoice.Resolution, client, xmlLocation, municipalities, null, resendDocType, null, resendCountryNames);
-                    var xml = _ublGenerator.GenerateInvoiceXml(ublData);
-                    var recalculatedCufe = _ublGenerator.CalculateCufe(ublData);
-
-                    if (!string.Equals(recalculatedCufe, invoice.Cufe, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return BadRequest("No se pudo regenerar el documento de forma consistente con el CUFE emitido originalmente. Contacta soporte.");
-                    }
-
+                    // Lo normal: el XML firmado se guardó al emitir y se reenvía tal cual. Los documentos emitidos antes de que se guardara
+                    // se rearman desde sus datos y solo se envían si dan el mismo CUFE.
                     string signedXml;
-                    try
+                    var storedXml = await DocumentSignedXmlStore.LoadAsync(_dbContext, invoice.Id);
+                    if (storedXml != null)
                     {
-                        signedXml = _xmlSigner.SignXml(xml, cert, certChain);
+                        signedXml = storedXml;
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        return BadRequest($"No se pudo firmar el documento: {ex.Message}");
+                        var certificate = await _dbContext.Certificates.FirstOrDefaultAsync(c => c.ClientId == clientId && c.IsActive);
+                        if (certificate == null)
+                        {
+                            return BadRequest("Este emisor no tiene un certificado digital activo cargado.");
+                        }
+
+                        X509Certificate2 cert;
+                        X509Certificate2Collection certChain;
+                        try
+                        {
+                            cert = _cryptoVault.GetCertificate(certificate.FileName, certificate.EncryptedPassword);
+                            certChain = _cryptoVault.GetCertificateChain(certificate.FileName, certificate.EncryptedPassword);
+                        }
+                        catch (Exception ex)
+                        {
+                            return BadRequest($"No se pudo cargar el certificado: {ex.Message}");
+                        }
+
+                        var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
+                        var xmlLocation = await BranchProvisioning.LocationAsync(_dbContext, client, invoice.BranchId);
+                        var resendDocType = invoice.DocumentTypeId.HasValue
+                            ? await _dbContext.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == invoice.DocumentTypeId.Value)
+                            : null;
+                        var resendCountryNames = await _dbContext.TaxCatalogItems.AsNoTracking()
+                            .Where(t => t.Kind == TaxCatalogKind.Country)
+                            .ToDictionaryAsync(t => t.Category, t => t.Name);
+                        var ublData = DianDocumentMapper.BuildInvoiceData(invoice, invoice.Customer, invoice.Items, invoice.Resolution, client, xmlLocation, municipalities, null, resendDocType, null, resendCountryNames);
+                        var xml = _ublGenerator.GenerateInvoiceXml(ublData);
+                        var recalculatedCufe = _ublGenerator.CalculateCufe(ublData);
+
+                        if (!string.Equals(recalculatedCufe, invoice.Cufe, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return BadRequest("Este documento se emitió antes de que se guardara su XML firmado y, con los datos actuales, ya no da el mismo CUFE con el que se emitió; no se puede reenviar. Los documentos nuevos sí se pueden reenviar. Contacta soporte.");
+                        }
+
+                        try
+                        {
+                            signedXml = _xmlSigner.SignXml(xml, cert, certChain);
+                        }
+                        catch (Exception ex)
+                        {
+                            return BadRequest($"No se pudo firmar el documento: {ex.Message}");
+                        }
                     }
 
                     var template = await ResolveTemplateAsync(client, invoice.DocumentTypeId.Value);

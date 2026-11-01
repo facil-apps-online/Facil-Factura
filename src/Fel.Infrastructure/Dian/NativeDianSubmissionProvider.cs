@@ -200,6 +200,8 @@ namespace Fel.Infrastructure.Dian
             {
                 var certChain = _cryptoVault.GetCertificateChain(certificate.FileName, certificate.EncryptedPassword);
                 signedXml = _xmlSigner.SignXml(xml, cert, certChain);
+                // El XML firmado queda guardado tal como sale hacia la DIAN: el reenvío lo usa en vez de rearmarlo y volver a firmarlo.
+                await DocumentSignedXmlStore.SaveAsync(_dbContext, invoice.Id, signedXml);
             }
             catch (Exception ex)
             {

@@ -2571,6 +2571,23 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("DocumentRetentions", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.DocumentSignedXml", b =>
+                {
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("SignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("XmlGzip")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.HasKey("DocumentId");
+
+                    b.ToTable("DocumentSignedXmls", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.DocumentTemplate", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6876,6 +6893,17 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("DocumentItem");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentSignedXml", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Document", "Document")
+                        .WithOne()
+                        .HasForeignKey("Fel.Core.Entities.DocumentSignedXml", "DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Document");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentTemplate", b =>

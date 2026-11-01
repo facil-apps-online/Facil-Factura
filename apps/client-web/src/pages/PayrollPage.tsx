@@ -23,6 +23,7 @@ import DecimalInput from '../components/DecimalInput';
 import { todayColombia } from '../lib/colombiaTime';
 import DataicoLookupModal from '../components/DataicoLookupModal';
 import { useSession } from '../context/SessionContext';
+import { type ConceptList, type ConceptType, OTHER_CODE, QUANTITY_FIELD, QUANTITY_LABELS, findConceptType, sectionOf } from '../lib/payrollConcepts';
 
 
 interface Concept {
@@ -39,15 +40,31 @@ interface Concept {
   cesantiasInterest?: number;
   ordinaryCompensation?: number;
   extraordinaryCompensation?: number;
+  privateSanction?: number;
+  publicSanction?: number;
 }
+
+// Las fechas de un concepto viajan como dd/MM/yyyy (formato de Dataico y del Excel) y el campo de fecha las maneja como yyyy-MM-dd.
+const dmyToIso = (value?: string) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value || '');
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+};
+const isoToDmy = (value: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+};
+
+const MEDICAL_LEAVE_TYPES = [
+  { value: 'COMUN', label: 'Común' },
+  { value: 'PROFESIONAL', label: 'Profesional' },
+  { value: 'LABORAL', label: 'Laboral' }
+];
 
 // Los conceptos cargados por Excel traen un código real de Dataico (ej. "BASICO",
 // "AUXILIO_DE_TRANSPORTE") en vez de una descripción libre. Esta función lo vuelve legible sin
 // tener que exponer todo el catálogo de códigos en la captura manual simplificada.
 const humanizeConceptCode = (code: string) =>
   code.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-
-const GENERIC_CODES = ['OTRO_CONCEPTO', 'OTRA_DEDUCCION'];
 
 const conceptDetails = (c: Concept): string => {
   const parts: string[] = [];
@@ -82,6 +99,8 @@ export default function PayrollPage() {
   const [viewingRelated, setViewingRelated] = useState<any[]>([]);
   const [viewingOriginal, setViewingOriginal] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  // Catálogo de conceptos (devengos y deducciones) que administra Superadmin.
+  const [conceptTypes, setConceptTypes] = useState<ConceptType[]>([]);
 
   const today = todayColombia();
   const initialForm = {
@@ -101,6 +120,12 @@ export default function PayrollPage() {
   useEffect(() => {
     loadData();
   }, [range]);
+
+  useEffect(() => {
+    api.get('/client/payroll/concept-types')
+      .then(res => setConceptTypes(res.data))
+      .catch(() => toast.error('No se pudo cargar el catálogo de conceptos de nómina'));
+  }, []);
 
   const searchEmployees = async (q: string) =>
     (await api.get('/client/customers/search', { params: { partyType: 'Empleado', q } })).data
@@ -150,17 +175,52 @@ export default function PayrollPage() {
   const updateConcept = (list: 'accruals' | 'deductions', idx: number, field: keyof Concept, value: any) => {
     setFormData({ ...formData, [list]: formData[list].map((c, i) => i === idx ? { ...c, [field]: value } : c) });
   };
+  const patchConcept = (list: ConceptList, idx: number, patch: Partial<Concept>) => {
+    setFormData({ ...formData, [list]: formData[list].map((c, i) => i === idx ? { ...c, ...patch } : c) });
+  };
+
+  // Al cambiar de concepto se limpian los datos que el nuevo no admite: el integrador rechaza una llave que no le corresponde.
+  const pickConcept = (list: ConceptList, idx: number, code: string) => {
+    const type = findConceptType(conceptTypes, list, code);
+    const current = formData[list][idx];
+    patchConcept(list, idx, {
+      code,
+      description: type?.requiresDescription ? current.description : '',
+      amount: type?.allowsAmount === false ? 0 : current.amount,
+      amountNs: type?.allowsNonSalary ? current.amountNs : undefined,
+      days: undefined, hours: undefined, percentage: undefined,
+      initialDate: undefined, finalDate: undefined, medicalLeaveType: undefined, cesantiasInterest: undefined,
+      ordinaryCompensation: undefined, extraordinaryCompensation: undefined, privateSanction: undefined, publicSanction: undefined
+    });
+  };
+
+  // Lo que viaja al guardar: sin los ceros de campos que el usuario no usó.
+  const cleanConcepts = (concepts: Concept[]): Concept[] => concepts.map(c => ({
+    ...c,
+    // Compensaciones y sanciones guardan sus partes por separado; el monto del borrador es la suma, para que los totales cuenten.
+    amount: c.amount || (c.privateSanction || 0) + (c.publicSanction || 0) || (c.ordinaryCompensation || 0) + (c.extraordinaryCompensation || 0) || 0,
+    amountNs: c.amountNs || undefined,
+    days: c.days || undefined,
+    hours: c.hours || undefined,
+    percentage: c.percentage || undefined,
+    cesantiasInterest: c.cesantiasInterest || undefined,
+    ordinaryCompensation: c.ordinaryCompensation || undefined,
+    extraordinaryCompensation: c.extraordinaryCompensation || undefined,
+    privateSanction: c.privateSanction || undefined,
+    publicSanction: c.publicSanction || undefined
+  }));
 
   const handleSaveDraft = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.employeeId) { toast.error('Selecciona el empleado.'); return; }
     setSubmitting(true);
     try {
+      const payload = { ...formData, accruals: cleanConcepts(formData.accruals), deductions: cleanConcepts(formData.deductions) };
       if (editingId) {
-        await api.put(`/client/payroll/${editingId}/draft`, formData);
+        await api.put(`/client/payroll/${editingId}/draft`, payload);
         toast.success('Borrador actualizado');
       } else {
-        await api.post('/client/payroll/draft', formData);
+        await api.post('/client/payroll/draft', payload);
         toast.success('Borrador guardado');
       }
       setEditingId(null);
@@ -317,7 +377,10 @@ export default function PayrollPage() {
 
     // Función de render, no componente: definirla como componente dentro del render la remonta en cada
     // tecla y el campo que se está escribiendo pierde el foco.
-    const renderConceptTable = (list: 'accruals' | 'deductions', label: string) => (
+    const renderConceptTable = (list: ConceptList, label: string) => {
+      const options = conceptTypes.filter(t => t.section === sectionOf(list)).map(t => ({ value: t.code, label: t.name }));
+      const fieldClass = 'min-w-0 px-3 py-2 border rounded-lg text-sm outline-none font-mono disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed';
+      return (
       <div>
         <div className="flex justify-between items-center mb-2 gap-2">
           <label className="block text-sm font-bold text-slate-700">{label}</label>
@@ -327,28 +390,119 @@ export default function PayrollPage() {
         </div>
         <div className="space-y-3 sm:space-y-2">
           {formData[list].map((c, idx) => {
-            const isCoded = !!c.code && !GENERIC_CODES.includes(c.code);
+            // Un borrador anterior sin código y con descripción libre era "otro concepto".
+            const rowCode = c.code ? c.code.toUpperCase() : (c.description ? OTHER_CODE[list] : '');
+            const type = findConceptType(conceptTypes, list, rowCode);
+            // Código fuera del catálogo (cargado por Excel o dado de baja): se muestra tal cual y solo se editan los valores.
+            const isUnknown = !!rowCode && !type;
+            const salaryLocked = (c.amountNs || 0) > 0;
+            const nonSalaryLocked = (c.amount || 0) > 0;
+            const quantityKind = type && type.quantityKind !== 'None' ? type.quantityKind : null;
+            const quantityField = quantityKind ? QUANTITY_FIELD[quantityKind] : null;
+            const quantityLabel = quantityKind ? QUANTITY_LABELS[quantityKind] : '';
             return (
-              // En móvil la descripción ocupa toda la fila y debajo van el valor y el botón de quitar.
-              <div key={idx} className="flex flex-wrap items-center gap-2">
-                {isCoded ? (
-                  <div className="w-full min-w-0 break-words px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm sm:w-auto sm:flex-1">
-                    <span className="font-bold text-slate-700">{humanizeConceptCode(c.code!)}</span>
-                    {c.description && <span className="text-slate-500"> — {c.description}</span>}
-                    {conceptDetails(c) && <span className="block text-xs text-slate-400">{conceptDetails(c)}</span>}
+              // En móvil el concepto ocupa toda la fila y debajo van la cantidad, los valores y el botón de quitar.
+              <div key={idx} className="rounded-xl border border-slate-100 p-2 sm:border-0 sm:p-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  {isUnknown ? (
+                    <div className="w-full min-w-0 break-words px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm sm:w-auto sm:flex-1">
+                      <span className="font-bold text-slate-700">{humanizeConceptCode(rowCode)}</span>
+                      {c.description && <span className="text-slate-500"> — {c.description}</span>}
+                      {conceptDetails(c) && <span className="block text-xs text-slate-400">{conceptDetails(c)}</span>}
+                    </div>
+                  ) : (
+                    <SearchableSelect
+                      className="w-full sm:w-auto sm:min-w-[220px] sm:flex-1"
+                      required
+                      value={rowCode}
+                      onChange={v => pickConcept(list, idx, v)}
+                      placeholder="Concepto..."
+                      options={options}
+                    />
+                  )}
+                  {type?.requiresDescription && (
+                    <input placeholder="Descripción" required value={c.description} onChange={e => updateConcept(list, idx, 'description', e.target.value)} className="w-full min-w-0 px-3 py-2 border rounded-lg text-sm outline-none sm:w-48" />
+                  )}
+                  {quantityField && quantityKind && (
+                    <DecimalInput
+                      aria-label={quantityLabel}
+                      placeholder={quantityLabel}
+                      title={quantityLabel}
+                      value={(c[quantityField] as number | undefined) ?? 0}
+                      maxDecimals={quantityKind === 'Days' ? 0 : quantityKind === 'Hours' ? 2 : 3}
+                      blankWhenZero
+                      onValueChange={v => updateConcept(list, idx, quantityField, v)}
+                      className={`${fieldClass} w-20 flex-none`}
+                    />
+                  )}
+                  {type?.hasPercentage && (
+                    <DecimalInput aria-label="Porcentaje" placeholder="%" title="Porcentaje" value={c.percentage ?? 0} maxDecimals={3} blankWhenZero onValueChange={v => updateConcept(list, idx, 'percentage', v)} className={`${fieldClass} w-20 flex-none`} />
+                  )}
+                  {(isUnknown || type?.allowsAmount) && (
+                    <DecimalInput
+                      placeholder={list === 'accruals' ? 'Valor salarial' : 'Valor'}
+                      aria-label={list === 'accruals' ? 'Valor salarial' : 'Valor'}
+                      title={salaryLocked ? 'Ya diligenciaste el valor no salarial' : undefined}
+                      disabled={salaryLocked}
+                      value={c.amount}
+                      onValueChange={v => updateConcept(list, idx, 'amount', v)}
+                      className={`${fieldClass} flex-1 sm:w-36 sm:flex-none`}
+                    />
+                  )}
+                  {(isUnknown ? (c.amountNs || 0) > 0 : type?.allowsNonSalary) && (
+                    <DecimalInput
+                      placeholder="Valor no salarial"
+                      aria-label="Valor no salarial"
+                      title={nonSalaryLocked ? 'Ya diligenciaste el valor salarial' : undefined}
+                      disabled={nonSalaryLocked}
+                      value={c.amountNs ?? 0}
+                      blankWhenZero
+                      onValueChange={v => updateConcept(list, idx, 'amountNs', v)}
+                      className={`${fieldClass} flex-1 sm:w-40 sm:flex-none`}
+                    />
+                  )}
+                  <button type="button" aria-label="Quitar concepto" onClick={() => removeConcept(list, idx)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 md:h-9 md:w-9"><Trash2 size={16} /></button>
+                </div>
+                {type && type.specialInput !== 'None' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 sm:pl-1">
+                    {type.specialInput === 'Dates' && (
+                      <>
+                        <label className="text-xs text-slate-500">Desde <input type="date" required value={dmyToIso(c.initialDate)} onChange={e => updateConcept(list, idx, 'initialDate', isoToDmy(e.target.value))} className="ml-1 px-2 py-1.5 border rounded-lg text-sm outline-none" /></label>
+                        <label className="text-xs text-slate-500">Hasta <input type="date" required value={dmyToIso(c.finalDate)} onChange={e => updateConcept(list, idx, 'finalDate', isoToDmy(e.target.value))} className="ml-1 px-2 py-1.5 border rounded-lg text-sm outline-none" /></label>
+                      </>
+                    )}
+                    {type.specialInput === 'MedicalLeave' && (
+                      <label className="text-xs text-slate-500">Tipo de incapacidad
+                        <select value={c.medicalLeaveType || 'COMUN'} onChange={e => updateConcept(list, idx, 'medicalLeaveType', e.target.value)} className="ml-1 px-2 py-1.5 border rounded-lg text-sm outline-none">
+                          {MEDICAL_LEAVE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                      </label>
+                    )}
+                    {type.specialInput === 'CesantiasInterest' && (
+                      <DecimalInput placeholder="Intereses de cesantías" aria-label="Intereses de cesantías" value={c.cesantiasInterest ?? 0} blankWhenZero onValueChange={v => updateConcept(list, idx, 'cesantiasInterest', v)} className={`${fieldClass} w-44`} />
+                    )}
+                    {type.specialInput === 'Compensation' && (
+                      <>
+                        <DecimalInput placeholder="Compensación ordinaria" aria-label="Compensación ordinaria" value={c.ordinaryCompensation ?? 0} blankWhenZero onValueChange={v => updateConcept(list, idx, 'ordinaryCompensation', v)} className={`${fieldClass} w-48`} />
+                        <DecimalInput placeholder="Compensación extraordinaria" aria-label="Compensación extraordinaria" value={c.extraordinaryCompensation ?? 0} blankWhenZero onValueChange={v => updateConcept(list, idx, 'extraordinaryCompensation', v)} className={`${fieldClass} w-52`} />
+                      </>
+                    )}
+                    {type.specialInput === 'Sanction' && (
+                      <>
+                        <DecimalInput placeholder="Sanción pública" aria-label="Sanción pública" value={c.publicSanction ?? 0} blankWhenZero onValueChange={v => updateConcept(list, idx, 'publicSanction', v)} className={`${fieldClass} w-40`} />
+                        <DecimalInput placeholder="Sanción privada" aria-label="Sanción privada" value={c.privateSanction ?? 0} blankWhenZero onValueChange={v => updateConcept(list, idx, 'privateSanction', v)} className={`${fieldClass} w-40`} />
+                      </>
+                    )}
                   </div>
-                ) : (
-                  <input placeholder="Descripción del concepto" required value={c.description} onChange={e => updateConcept(list, idx, 'description', e.target.value)} className="w-full min-w-0 px-3 py-2 border rounded-lg text-sm outline-none sm:w-auto sm:flex-1" />
                 )}
-                <DecimalInput placeholder="Valor" value={c.amount} onValueChange={v => updateConcept(list, idx, 'amount', v)} className="min-w-0 flex-1 px-3 py-2 border rounded-lg text-sm outline-none font-mono sm:w-32 sm:flex-none" />
-                <button type="button" aria-label="Quitar concepto" onClick={() => removeConcept(list, idx)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 md:h-9 md:w-9"><Trash2 size={16} /></button>
               </div>
             );
           })}
           {formData[list].length === 0 && <p className="text-xs text-slate-400">Sin conceptos.</p>}
         </div>
       </div>
-    );
+      );
+    };
 
     return (
       <div className="p-4 sm:p-6 lg:p-8">
@@ -469,7 +623,10 @@ export default function PayrollPage() {
             {(items || []).map((c: any, idx: number) => (
               <tr key={idx}>
                 <td className="p-3 text-sm text-slate-700 break-words">{c.code ? humanizeConceptCode(c.code) : c.description}</td>
-                <td className="p-3 text-sm font-mono font-bold text-right whitespace-nowrap">${fmt.number((c.amount || 0), 3)}</td>
+                <td className="p-3 text-sm font-mono font-bold text-right whitespace-nowrap">
+                  ${fmt.number((c.amount || 0) + (c.amountNs || 0), 3)}
+                  {(c.amountNs || 0) > 0 && <span className="block text-xs font-normal text-slate-400">{(c.amount || 0) > 0 ? `${fmt.number(c.amountNs, 3)} no salarial` : 'no salarial'}</span>}
+                </td>
               </tr>
             ))}
             {(!items || items.length === 0) && <tr><td className="p-3 text-sm text-slate-400">{emptyText}</td></tr>}

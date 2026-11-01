@@ -11,7 +11,7 @@ import RowIconButton from '../components/RowIconButton';
 import SearchableSelect, { type SearchableSelectOption } from '@shared/components/SearchableSelect';
 import CustomerFormModal from '../components/CustomerFormModal';
 import EditCustomerButton from '../components/EditCustomerButton';
-import { DATE_RANGE_PRESET_OPTIONS, getDateRangeForPreset, type DateRangePreset } from '../lib/dateRangePresets';
+import MonthRangeBar, { currentMonthRange, type MonthRangeValue } from '@shared/components/MonthRangeBar';
 import { exportToCsv } from '../lib/exportCsv';
 import { STATUS_FILTER_OPTIONS, statusLabel } from '../lib/documentStatus';
 import DianResponseDialog, { hasDianResponse } from '../components/DianResponseDialog';
@@ -73,12 +73,8 @@ export default function PayrollPage() {
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('last-2-months');
-  const [customFrom, setCustomFrom] = useState(() => getDateRangeForPreset('last-2-months')!.from);
-  const [customTo, setCustomTo] = useState(() => getDateRangeForPreset('last-2-months')!.to);
-  // Las fechas Desde/Hasta solo se aplican al pulsar Filtrar, como en facturas.
-  const [appliedCustomFrom, setAppliedCustomFrom] = useState(() => getDateRangeForPreset('last-2-months')!.from);
-  const [appliedCustomTo, setAppliedCustomTo] = useState(() => getDateRangeForPreset('last-2-months')!.to);
+  // La nómina se emite una o dos veces al mes: el listado se filtra por meses completos (por fecha de emisión).
+  const [range, setRange] = useState<MonthRangeValue>(currentMonthRange());
   const [statusFilter, setStatusFilter] = useState('');
   const [responseEntry, setResponseEntry] = useState<any>(null);
   const { previewingId, preview: handlePreviewPdf } = usePdfPreview('/client/payroll');
@@ -104,7 +100,7 @@ export default function PayrollPage() {
 
   useEffect(() => {
     loadData();
-  }, [datePreset, appliedCustomFrom, appliedCustomTo]);
+  }, [range]);
 
   const searchEmployees = async (q: string) =>
     (await api.get('/client/customers/search', { params: { partyType: 'Empleado', q } })).data
@@ -126,8 +122,9 @@ export default function PayrollPage() {
     // quiet: refresca la lista sin el spinner de página completa (no desmonta el avance de un lote en curso).
     if (!quiet) setLoading(true);
     try {
-      const range = datePreset === 'custom' ? { from: appliedCustomFrom, to: appliedCustomTo } : getDateRangeForPreset(datePreset)!;
-      const entriesRes = await api.get(`/client/payroll?from=${range.from}&to=${range.to}`);
+      const [toYear, toMonth] = range.to.split('-').map(Number);
+      const lastDay = String(new Date(toYear, toMonth, 0).getDate()).padStart(2, '0');
+      const entriesRes = await api.get(`/client/payroll?from=${range.from}-01&to=${range.to}-${lastDay}`);
       setEntries(entriesRes.data);
     } catch {
       toast.error('Error al cargar la nómina');
@@ -625,7 +622,7 @@ export default function PayrollPage() {
     : '-';
 
   const handleExport = () => exportToCsv(
-    `nomina_${appliedCustomFrom}_a_${appliedCustomTo}.csv`,
+    `nomina_${range.from}_a_${range.to}.csv`,
     filteredEntries.map(e => ({
       consecutivo: e.consecutiveNumber || '',
       empleado: e.customer?.name || '',
@@ -698,45 +695,9 @@ export default function PayrollPage() {
 
       {/* En móvil los filtros van de a dos por fila (menos alto antes del listado); desde sm vuelven a una fila con salto. Igual que en facturas. */}
       <div className="grid grid-cols-2 gap-3 mb-4 sm:flex sm:flex-wrap sm:items-end">
-        <div className="w-full sm:w-52">
-          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Periodo</label>
-          <SearchableSelect
-            value={datePreset}
-            onChange={v => setDatePreset(v as DateRangePreset)}
-            placeholder="Periodo..."
-            options={DATE_RANGE_PRESET_OPTIONS}
-          />
+        <div className="col-span-2 sm:col-auto">
+          <MonthRangeBar value={range} onChange={setRange} />
         </div>
-        {datePreset === 'custom' && (
-          <>
-            <div className="min-w-0 flex-1 sm:flex-none">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Desde</label>
-              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
-            </div>
-            <div className="min-w-0 flex-1 sm:flex-none">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Hasta</label>
-              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary" />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (!customFrom || !customTo) {
-                  toast.error('Selecciona las fechas Desde y Hasta');
-                  return;
-                }
-                if (customFrom > customTo) {
-                  toast.error('La fecha Desde no puede ser posterior a Hasta');
-                  return;
-                }
-                setAppliedCustomFrom(customFrom);
-                setAppliedCustomTo(customTo);
-              }}
-              className="col-span-2 w-full self-end px-4 py-3 sm:col-auto sm:w-auto sm:py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-bold transition-colors"
-            >
-              Filtrar
-            </button>
-          </>
-        )}
         <div className="w-full sm:w-48">
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
           <SearchableSelect
@@ -772,7 +733,7 @@ export default function PayrollPage() {
 
       <DataTable
         rows={filteredEntries}
-        resetKey={`${searchTerm}|${statusFilter}|${datePreset}|${appliedCustomFrom}|${appliedCustomTo}`}
+        resetKey={`${searchTerm}|${statusFilter}|${range.from}|${range.to}`}
         selection={batchSelectionProps}
         columns={columns}
         rowKey={e => e.id}

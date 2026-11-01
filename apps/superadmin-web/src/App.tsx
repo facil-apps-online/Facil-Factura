@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Receipt, XCircle, Settings, Plus, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler, MailCheck } from 'lucide-react';
+import { LayoutDashboard, Users, Receipt, XCircle, Settings, Plus, ShieldCheck, Mail, Lock, Loader2, MapPin, Building2, Hash, Phone, Globe, FileText, X, Percent, Calculator, Cable, Coins, ChevronLeft, ChevronRight, FileKey, BadgeCheck, Ruler, MailCheck, Banknote } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
 import { api } from './api';
@@ -15,6 +15,7 @@ import { TariffTiers } from './TariffTiers';
 import { TaxCatalog } from './TaxCatalog';
 import { UnitOfMeasureCatalog } from './UnitOfMeasureCatalog';
 import { IdentificationTypes } from './IdentificationTypes';
+import { PayrollConcepts } from './PayrollConcepts';
 import { RetentionEngine } from './RetentionEngine';
 import { DocumentTemplates } from './DocumentTemplates';
 import { TemplateEditor } from './TemplateEditor';
@@ -842,6 +843,7 @@ const ProtectedLayout = ({ children }: { children: React.ReactNode }) => {
     { to: "/tax-catalog", icon: <Percent className="w-5 h-5" />, label: "Catálogo de Impuestos" },
     { to: "/units-of-measure", icon: <Ruler className="w-5 h-5" />, label: "Unidades de Medida" },
     { to: "/identification-types", icon: <BadgeCheck className="w-5 h-5" />, label: "Tipos de Identificación" },
+    { to: "/payroll-concepts", icon: <Banknote className="w-5 h-5" />, label: "Conceptos de Nómina" },
     { to: "/retention-engine", icon: <Calculator className="w-5 h-5" />, label: "Motor de Retenciones" },
     { to: "/billing", icon: <Receipt className="w-5 h-5" />, label: "Facturación" },
   ];
@@ -943,6 +945,7 @@ const App = () => {
                   <Route path="/tax-catalog" element={<TaxCatalog />} />
                   <Route path="/units-of-measure" element={<UnitOfMeasureCatalog />} />
                   <Route path="/identification-types" element={<IdentificationTypes />} />
+                  <Route path="/payroll-concepts" element={<PayrollConcepts />} />
                   <Route path="/retention-engine" element={<RetentionEngine />} />
                   <Route path="/document-types/:typeId/templates" element={<DocumentTemplates />} />
                   <Route path="/document-types/:typeId/templates/:templateKey/edit" element={<TemplateEditor />} />

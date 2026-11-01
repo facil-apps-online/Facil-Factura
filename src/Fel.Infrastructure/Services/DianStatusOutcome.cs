@@ -36,6 +36,19 @@ namespace Fel.Infrastructure.Services
                 ? StatusDescription
                 : string.Join(" | ", Rules.Where(r => r.Contains("Rechazo", StringComparison.OrdinalIgnoreCase)));
 
+        // Lo que se guarda en Document.DianResponseMessage al aprobarse un documento nativo. Usa las mismas claves que la respuesta de Dataico para
+        // que el portal muestre igual los dos métodos (número, fecha, estado, mensajes de la DIAN, CUFE y contenido del QR).
+        public string ApprovalMessage(Fel.Core.Entities.Document document) =>
+            System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["number"] = document.Number,
+                ["issue_date"] = document.IssueDate.ToString("yyyy-MM-dd"),
+                ["dian_status"] = StatusDescription,
+                ["dian_messages"] = Rules,
+                ["cufe"] = document.Cufe,
+                ["qrcode"] = document.QrCode
+            });
+
         private static string? DecodeApplicationResponse(string? base64)
         {
             if (string.IsNullOrWhiteSpace(base64)) return null;

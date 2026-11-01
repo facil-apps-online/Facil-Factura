@@ -78,7 +78,7 @@ namespace Fel.Infrastructure.Services
             }
 
             document.Status = outcome.Accepted ? "APPROVED" : "REJECTED";
-            document.DianResponseMessage = outcome.Accepted ? outcome.StatusDescription : outcome.RejectionSummary;
+            document.DianResponseMessage = outcome.Accepted ? outcome.ApprovalMessage(document) : outcome.RejectionSummary;
             document.ProcessedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
 

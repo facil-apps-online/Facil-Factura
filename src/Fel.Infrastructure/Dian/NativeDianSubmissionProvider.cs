@@ -245,7 +245,7 @@ namespace Fel.Infrastructure.Dian
                 }
 
                 invoice.Status = outcome.Accepted ? "APPROVED" : "REJECTED";
-                invoice.DianResponseMessage = outcome.Accepted ? outcome.StatusDescription : outcome.RejectionSummary;
+                invoice.DianResponseMessage = outcome.Accepted ? outcome.ApprovalMessage(invoice) : outcome.RejectionSummary;
                 invoice.ProcessedAt = DateTime.UtcNow;
                 // Aprobado: se deja listo el contenedor para el adquirente con la respuesta de la DIAN. Si falla no frena la emisión; el reenvío lo reintenta.
                 if (outcome.Accepted)

@@ -61,6 +61,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<TenantPrepaidBag> TenantPrepaidBags => Set<TenantPrepaidBag>();
         public DbSet<TaxCatalogItem> TaxCatalogItems => Set<TaxCatalogItem>();
         public DbSet<IdentificationType> IdentificationTypes => Set<IdentificationType>();
+        public DbSet<PayrollConceptType> PayrollConceptTypes => Set<PayrollConceptType>();
         public DbSet<RetentionConcept> RetentionConcepts => Set<RetentionConcept>();
         public DbSet<TaxParameter> TaxParameters => Set<TaxParameter>();
         public DbSet<Associate> Associates => Set<Associate>();
@@ -809,6 +810,22 @@ namespace Fel.Infrastructure.Data
                     new DocumentType { Id = Guid.Parse("00000000-0000-0000-0000-000000000026"), Code = "NE-PAGO", Name = "Nómina Electrónica", Description = "Pago de nómina electrónica", DianCode = "102" },
                     new DocumentType { Id = Guid.Parse("00000000-0000-0000-0000-000000000027"), Code = "NE-AJUSTE", Name = "Nota de Ajuste - Nómina Electrónica", Description = "Ajuste de nómina electrónica", DianCode = "103" }
                 );
+            });
+
+            modelBuilder.Entity<PayrollConceptType>(entity =>
+            {
+                entity.ToTable("PayrollConceptTypes");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.DataicoCode).IsRequired().HasMaxLength(60);
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+                entity.Property(e => e.DianElement).IsRequired().HasMaxLength(60);
+                entity.Property(e => e.DianAmountAttribute).HasMaxLength(60);
+                entity.Property(e => e.DianNonSalaryAttribute).HasMaxLength(60);
+                entity.Property(e => e.DianQuantityAttribute).HasMaxLength(60);
+                entity.Property(e => e.DianPercentageAttribute).HasMaxLength(60);
+                entity.HasIndex(e => new { e.Section, e.DataicoCode }).IsUnique();
+                // Conceptos de nómina (devengos y deducciones) con su equivalencia en Dataico y en el XML de la DIAN; ver PayrollConceptSeed.
+                entity.HasData(PayrollConceptSeed.All);
             });
 
             modelBuilder.Entity<IdentificationType>(entity =>

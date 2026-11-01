@@ -172,10 +172,11 @@ namespace Fel.Api.Client.Controllers
                 var approved = document.Status == "APPROVED";
                 var location = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
                 var (workerTypes, contractTypes) = await GetEmployeeCatalogsAsync();
+                var conceptTypes = await _dbContext.PayrollConceptTypes.AsNoTracking().ToListAsync();
                 var data = NominaReportDataMapper.Build(
                     document, document.Customer!, client, location, draft.Prefix, approved && long.TryParse(document.Number, out var number) ? number : 0,
                     draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
-                    draft.Accruals.SelectMany(ToReportConcepts), draft.Deductions.SelectMany(ToReportConcepts),
+                    draft.Accruals.SelectMany(c => ToReportConcepts(c, PayrollConceptSection.Accrual, conceptTypes)), draft.Deductions.SelectMany(c => ToReportConcepts(c, PayrollConceptSection.Deduction, conceptTypes)),
                     workerTypes, contractTypes);
                 // Mientras Dataico no apruebe no hay consecutivo (se asigna al aprobar): el borrador se identifica como tal.
                 if (!approved && data["Documento"] is Dictionary<string, object?> header) header["DocumentoNumero"] = "Borrador";
@@ -197,8 +198,11 @@ namespace Fel.Api.Client.Controllers
         // Un concepto del borrador puede dar una o dos filas del PDF. El valor no siempre está en Amount:
         // las compensaciones y las sanciones guardan sus partes por separado, y los intereses de cesantías
         // (con el porcentaje, que es el de los intereses) van en su propia fila, en la columna no salarial.
-        private static IEnumerable<NominaConcepto> ToReportConcepts(PayrollConceptItem c)
+        private static IEnumerable<NominaConcepto> ToReportConcepts(PayrollConceptItem c, PayrollConceptSection section, IReadOnlyCollection<PayrollConceptType> conceptTypes)
         {
+            // El nombre del concepto sale del catálogo; la descripción que el usuario escribió (otro concepto, libranza) tiene prioridad.
+            var type = conceptTypes.FirstOrDefault(t => t.Section == section && string.Equals(t.DataicoCode, c.Code, StringComparison.OrdinalIgnoreCase));
+            var description = !string.IsNullOrWhiteSpace(c.Description) ? c.Description : type?.Name ?? c.Description;
             var salarial = c.Code?.ToUpperInvariant() switch
             {
                 "COMPENSACION" => (c.OrdinaryCompensation ?? 0m) + (c.ExtraordinaryCompensation ?? 0m),
@@ -207,7 +211,7 @@ namespace Fel.Api.Client.Controllers
             };
             var conIntereses = string.Equals(c.Code, "CESANTIAS", StringComparison.OrdinalIgnoreCase) && c.CesantiasInterest is > 0;
 
-            yield return new NominaConcepto(c.Code, c.Description, salarial, c.AmountNs ?? 0m, c.Days, conIntereses ? null : c.Percentage, c.Hours);
+            yield return new NominaConcepto(c.Code, description, salarial, c.AmountNs ?? 0m, c.Days, conIntereses ? null : c.Percentage, c.Hours);
             if (conIntereses)
             {
                 yield return new NominaConcepto("INTERESES_DE_CESANTIAS", "Intereses de cesantías", 0m, c.CesantiasInterest!.Value, null, c.Percentage);
@@ -514,12 +518,13 @@ namespace Fel.Api.Client.Controllers
                     var pdfCredentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
                     var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
                     var (workerTypes, contractTypes) = await GetEmployeeCatalogsAsync();
+                    var conceptTypes = await _dbContext.PayrollConceptTypes.AsNoTracking().ToListAsync();
                     await _customPdfService.TrySendCustomPdfAsync(
                         document, document.Customer?.Email, client,
                         _ => NominaReportDataMapper.Build(
                             document, document.Customer!, client, pdfLocation, draft.Prefix, documentNumber,
                             draft.InitialSettlementDate, draft.FinalSettlementDate, draft.PaymentDate,
-                            draft.Accruals.SelectMany(ToReportConcepts), draft.Deductions.SelectMany(ToReportConcepts),
+                            draft.Accruals.SelectMany(c => ToReportConcepts(c, PayrollConceptSection.Accrual, conceptTypes)), draft.Deductions.SelectMany(c => ToReportConcepts(c, PayrollConceptSection.Deduction, conceptTypes)),
                             workerTypes, contractTypes),
                         pdfCredentials);
                 }
@@ -587,8 +592,23 @@ namespace Fel.Api.Client.Controllers
             return new EmptyResult();
         }
 
+        // Catálogo de conceptos que el formulario ofrece (devengos y deducciones) con lo que cada uno captura.
+        [HttpGet("concept-types")]
+        public async Task<IActionResult> GetConceptTypes()
+        {
+            var types = await _dbContext.PayrollConceptTypes.AsNoTracking()
+                .Where(t => t.IsActive)
+                .OrderBy(t => t.Section).ThenBy(t => t.SortOrder)
+                .Select(t => new
+                {
+                    t.Section, Code = t.DataicoCode, t.Name, t.QuantityKind, t.HasPercentage, t.AllowsAmount, t.AllowsNonSalary, t.RequiresDescription, t.SpecialInput
+                })
+                .ToListAsync();
+            return Ok(types);
+        }
+
         [HttpGet("template")]
-        public IActionResult DownloadTemplate()
+        public async Task<IActionResult> DownloadTemplate()
         {
             using var workbook = new XLWorkbook();
             var sheet = workbook.Worksheets.Add("NOMINA - SIMPLE");
@@ -653,26 +673,17 @@ namespace Fel.Api.Client.Controllers
             ExcelTemplateHelper.AddDropdown(sheet, "K2:K1000", "DEVENGADO", "DEDUCCION");
 
             var codesSheet = workbook.Worksheets.Add("CODIGOS_DEVENGADOS_DEDUCCIONES");
-            ExcelTemplateHelper.WriteHeaderRow(codesSheet, 1, "TIPO", "CODIGO");
-            var accrualCodes = new[]
-            {
-                "BASICO", "AUXILIO_DE_TRANSPORTE", "VIATICO", "HORA_EXTRA_DIURNA", "HORA_EXTRA_NOCTURNA",
-                "HORA_RECARGO_NOCTURNO", "HORA_EXTRA_DIURNA_DF", "HORA_RECARGO_DIURNA_DF", "HORA_EXTRA_NOCTURNA_DF",
-                "HORA_RECARGO_NOCTURNO_DF", "VACACION", "VACACION_COMPENSADA", "PRIMA", "CESANTIAS", "INCAPACIDAD",
-                "LICENCIA_PATERNIDAD", "LICENCIA_REMUNERADA", "LICENCIA_NO_REMUNERADA", "BONIFICACION", "AUXILIO",
-                "HUELGA_LEGAL", "OTRO_CONCEPTO", "COMPENSACION", "BONO_EPCTV", "BONO_EPCTV_ALIMENTACION", "COMISION",
-                "PAGO_TERCERO", "ANTICIPO", "DOTACION", "APOYO_PRACTICA", "TELETRABAJO", "BONIFICACION_RETIRO",
-                "INDEMNIZACION", "REINTEGRO"
-            };
-            var deductionCodes = new[]
-            {
-                "SALUD", "FONDO_PENSION", "FONDO_SUBSISTENCIA", "SINDICATO", "SANCION", "LIBRANZA", "PAGO_TERCERO",
-                "ANTICIPO", "OTRA_DEDUCCION", "PENSION_VOLUNTARIA", "RETENCION_FUENTE", "AFC", "COOPERATIVA",
-                "EMBARGO_FISCAL", "PLANES_COMPLEMENTARIOS", "EDUCACION", "REINTEGRO", "DEUDA", "FONDO_SOLIDARIDAD_PENSIONAL"
-            };
+            ExcelTemplateHelper.WriteHeaderRow(codesSheet, 1, "TIPO", "CODIGO", "NOMBRE");
+            // Los códigos válidos son los del catálogo de conceptos de nómina (los mismos que usan el formulario y los dos caminos de emisión).
+            var concepts = await _dbContext.PayrollConceptTypes.AsNoTracking().Where(t => t.IsActive).OrderBy(t => t.Section).ThenBy(t => t.SortOrder).ToListAsync();
             var codeRow = 2;
-            foreach (var code in accrualCodes) { codesSheet.Cell(codeRow, 1).Value = "DEVENGADO"; codesSheet.Cell(codeRow, 2).Value = code; codeRow++; }
-            foreach (var code in deductionCodes) { codesSheet.Cell(codeRow, 1).Value = "DEDUCCION"; codesSheet.Cell(codeRow, 2).Value = code; codeRow++; }
+            foreach (var concept in concepts)
+            {
+                codesSheet.Cell(codeRow, 1).Value = concept.Section == PayrollConceptSection.Accrual ? "DEVENGADO" : "DEDUCCION";
+                codesSheet.Cell(codeRow, 2).Value = concept.DataicoCode;
+                codesSheet.Cell(codeRow, 3).Value = concept.Name;
+                codeRow++;
+            }
             codesSheet.Columns().AdjustToContents();
 
             sheet.Columns().AdjustToContents();
@@ -1027,9 +1038,10 @@ namespace Fel.Api.Client.Controllers
             string prefix, long number, DateTime initialSettlement, DateTime finalSettlement, DateTime paymentDate,
             List<PayrollConceptItem> accruals, List<PayrollConceptItem> deductions, IReadOnlyCollection<IdentificationType> identificationTypes)
         {
+            var conceptTypes = await _dbContext.PayrollConceptTypes.AsNoTracking().ToListAsync();
             var dataicoRequest = DataicoDocumentMapper.BuildPayrollRequest(
                 employee, client, prefix, number, initialSettlement, finalSettlement, Fel.Core.Models.ColombiaTime.Now, paymentDate,
-                accruals.Select(ToConceptInput), deductions.Select(ToConceptInput), identificationTypes);
+                accruals.Select(ToConceptInput), deductions.Select(ToConceptInput), identificationTypes, conceptTypes);
 
             var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
             var result = await _dataicoApiService.SendPayrollAsync(dataicoRequest, credentials);

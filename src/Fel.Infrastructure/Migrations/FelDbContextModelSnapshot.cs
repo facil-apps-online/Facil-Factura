@@ -3408,6 +3408,1052 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("PasswordResetTokens");
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.PayrollConceptType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AllowsAmount")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AllowsNonSalary")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("DataicoCode")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("DianAmountAttribute")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("DianElement")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("DianNonSalaryAttribute")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("DianPercentageAttribute")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("DianQuantityAttribute")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<int>("DianShape")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("HasPercentage")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<int>("QuantityKind")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RequiresDescription")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Section")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SpecialInput")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Section", "DataicoCode")
+                        .IsUnique();
+
+                    b.ToTable("PayrollConceptTypes", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000001"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "BASICO",
+                            DianAmountAttribute = "SueldoTrabajado",
+                            DianElement = "Basico",
+                            DianQuantityAttribute = "DiasTrabajados",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Salario básico",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 1,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000002"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "AUXILIO_DE_TRANSPORTE",
+                            DianAmountAttribute = "AuxilioTransporte",
+                            DianElement = "Transporte",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Auxilio de transporte",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 2,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000003"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "HORA_EXTRA_DIURNA",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "HED",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = true,
+                            IsActive = true,
+                            Name = "Hora extra diurna",
+                            QuantityKind = 2,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 3,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000004"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "HORA_EXTRA_NOCTURNA",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "HEN",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = true,
+                            IsActive = true,
+                            Name = "Hora extra nocturna",
+                            QuantityKind = 2,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 4,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000005"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "HORA_EXTRA_DIURNA_DF",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "HEDDF",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = true,
+                            IsActive = true,
+                            Name = "Hora extra diurna dominical/festiva",
+                            QuantityKind = 2,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 5,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000006"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "HORA_EXTRA_NOCTURNA_DF",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "HENDF",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = true,
+                            IsActive = true,
+                            Name = "Hora extra nocturna dominical/festiva",
+                            QuantityKind = 2,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 6,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000007"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "HORA_RECARGO_NOCTURNO",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "HRN",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = true,
+                            IsActive = true,
+                            Name = "Recargo nocturno",
+                            QuantityKind = 2,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 7,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000008"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "HORA_RECARGO_DIURNA_DF",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "HRDDF",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = true,
+                            IsActive = true,
+                            Name = "Recargo diurno dominical/festivo",
+                            QuantityKind = 2,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 8,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000009"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "HORA_RECARGO_NOCTURNO_DF",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "HRNDF",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = true,
+                            IsActive = true,
+                            Name = "Recargo nocturno dominical/festivo",
+                            QuantityKind = 2,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 9,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000010"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "VACACION",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "VacacionesComunes",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Vacaciones disfrutadas",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 10,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000011"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "VACACION_COMPENSADA",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "VacacionesCompensadas",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Vacaciones compensadas",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 11,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000012"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "PRIMA",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "Primas",
+                            DianNonSalaryAttribute = "PagoNS",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Prima de servicios",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 12,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000013"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "CESANTIAS",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "Cesantias",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Cesantías",
+                            QuantityKind = 3,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 13,
+                            SpecialInput = 3
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000014"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "INCAPACIDAD",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "Incapacidad",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Incapacidad",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 14,
+                            SpecialInput = 2
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000015"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "LICENCIA_PATERNIDAD",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "LicenciaMP",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Licencia de maternidad o paternidad",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 15,
+                            SpecialInput = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000016"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "LICENCIA_REMUNERADA",
+                            DianAmountAttribute = "Pago",
+                            DianElement = "LicenciaR",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Licencia remunerada",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 16,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000017"),
+                            AllowsAmount = false,
+                            AllowsNonSalary = false,
+                            DataicoCode = "LICENCIA_NO_REMUNERADA",
+                            DianElement = "LicenciaNR",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Licencia no remunerada",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 17,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000018"),
+                            AllowsAmount = false,
+                            AllowsNonSalary = false,
+                            DataicoCode = "HUELGA_LEGAL",
+                            DianElement = "HuelgaLegal",
+                            DianQuantityAttribute = "Cantidad",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Huelga legal",
+                            QuantityKind = 1,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 18,
+                            SpecialInput = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000019"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "BONIFICACION",
+                            DianAmountAttribute = "BonificacionS",
+                            DianElement = "Bonificacion",
+                            DianNonSalaryAttribute = "BonificacionNS",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Bonificación",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 19,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000020"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "AUXILIO",
+                            DianAmountAttribute = "AuxilioS",
+                            DianElement = "Auxilio",
+                            DianNonSalaryAttribute = "AuxilioNS",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Auxilio",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 20,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000021"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "VIATICO",
+                            DianAmountAttribute = "ViaticoManuAlojS",
+                            DianElement = "Transporte",
+                            DianNonSalaryAttribute = "ViaticoManuAlojNS",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Viático",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 21,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000022"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "COMISION",
+                            DianElement = "Comision",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Comisión",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 22,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000023"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "BONO_EPCTV",
+                            DianAmountAttribute = "PagoS",
+                            DianElement = "BonoEPCTV",
+                            DianNonSalaryAttribute = "PagoNS",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Bono electrónico o de papel",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 23,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000024"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "BONO_EPCTV_ALIMENTACION",
+                            DianAmountAttribute = "PagoAlimentacionS",
+                            DianElement = "BonoEPCTV",
+                            DianNonSalaryAttribute = "PagoAlimentacionNS",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Bono de alimentación",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 24,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000025"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "DOTACION",
+                            DianElement = "Dotacion",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Dotación",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 25,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000026"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "APOYO_PRACTICA",
+                            DianElement = "ApoyoSost",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Apoyo de sostenimiento",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 26,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000027"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "TELETRABAJO",
+                            DianElement = "Teletrabajo",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Teletrabajo",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 27,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000028"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "BONIFICACION_RETIRO",
+                            DianElement = "BonifRetiro",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Bonificación de retiro",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 28,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000029"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "INDEMNIZACION",
+                            DianElement = "Indemnizacion",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Indemnización",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 29,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000030"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "PAGO_TERCERO",
+                            DianElement = "PagoTercero",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Pago a terceros",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 30,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000031"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "ANTICIPO",
+                            DianElement = "Anticipo",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Anticipo",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 31,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000032"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "REINTEGRO",
+                            DianElement = "Reintegro",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Reintegro",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 32,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000033"),
+                            AllowsAmount = false,
+                            AllowsNonSalary = false,
+                            DataicoCode = "COMPENSACION",
+                            DianAmountAttribute = "CompensacionO",
+                            DianElement = "Compensacion",
+                            DianNonSalaryAttribute = "CompensacionE",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Compensación",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 0,
+                            SortOrder = 33,
+                            SpecialInput = 4
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000034"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = true,
+                            DataicoCode = "OTRO_CONCEPTO",
+                            DianAmountAttribute = "ConceptoS",
+                            DianElement = "OtroConcepto",
+                            DianNonSalaryAttribute = "ConceptoNS",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Otro concepto",
+                            QuantityKind = 1,
+                            RequiresDescription = true,
+                            Section = 0,
+                            SortOrder = 34,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000035"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "SALUD",
+                            DianAmountAttribute = "Deduccion",
+                            DianElement = "Salud",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Salud",
+                            QuantityKind = 3,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 35,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000036"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "FONDO_PENSION",
+                            DianAmountAttribute = "Deduccion",
+                            DianElement = "FondoPension",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Fondo de pensión",
+                            QuantityKind = 3,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 36,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000037"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "FONDO_SOLIDARIDAD_PENSIONAL",
+                            DianAmountAttribute = "DeduccionSP",
+                            DianElement = "FondoSP",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Fondo de solidaridad pensional",
+                            QuantityKind = 3,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 37,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000038"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "FONDO_SUBSISTENCIA",
+                            DianAmountAttribute = "DeduccionSub",
+                            DianElement = "FondoSP",
+                            DianPercentageAttribute = "PorcentajeSub",
+                            DianShape = 0,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Fondo de subsistencia",
+                            QuantityKind = 3,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 38,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000039"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "SINDICATO",
+                            DianAmountAttribute = "Deduccion",
+                            DianElement = "Sindicato",
+                            DianPercentageAttribute = "Porcentaje",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Sindicato",
+                            QuantityKind = 3,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 39,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000040"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "RETENCION_FUENTE",
+                            DianElement = "RetencionFuente",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Retención en la fuente",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 40,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000041"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "LIBRANZA",
+                            DianAmountAttribute = "Deduccion",
+                            DianElement = "Libranza",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Libranza",
+                            QuantityKind = 0,
+                            RequiresDescription = true,
+                            Section = 1,
+                            SortOrder = 41,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000042"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "PENSION_VOLUNTARIA",
+                            DianElement = "PensionVoluntaria",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Pensión voluntaria",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 42,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000043"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "AFC",
+                            DianElement = "AFC",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Ahorro AFC",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 43,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000044"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "COOPERATIVA",
+                            DianElement = "Cooperativa",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Cooperativa",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 44,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000045"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "EMBARGO_FISCAL",
+                            DianElement = "EmbargoFiscal",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Embargo fiscal",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 45,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000046"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "PLANES_COMPLEMENTARIOS",
+                            DianElement = "PlanComplementarios",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Planes complementarios",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 46,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000047"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "EDUCACION",
+                            DianElement = "Educacion",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Educación",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 47,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000048"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "REINTEGRO",
+                            DianElement = "Reintegro",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Reintegro",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 48,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000049"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "DEUDA",
+                            DianElement = "Deuda",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Deuda",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 49,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000050"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "PAGO_TERCERO",
+                            DianElement = "PagoTercero",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Pago a terceros",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 50,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000051"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "ANTICIPO",
+                            DianElement = "Anticipo",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Anticipo",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 51,
+                            SpecialInput = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000052"),
+                            AllowsAmount = false,
+                            AllowsNonSalary = false,
+                            DataicoCode = "SANCION",
+                            DianAmountAttribute = "SancionPublic",
+                            DianElement = "Sancion",
+                            DianNonSalaryAttribute = "SancionPriv",
+                            DianShape = 1,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Sanción",
+                            QuantityKind = 0,
+                            RequiresDescription = false,
+                            Section = 1,
+                            SortOrder = 52,
+                            SpecialInput = 5
+                        },
+                        new
+                        {
+                            Id = new Guid("b0000000-0000-0000-0000-000000000053"),
+                            AllowsAmount = true,
+                            AllowsNonSalary = false,
+                            DataicoCode = "OTRA_DEDUCCION",
+                            DianElement = "OtraDeduccion",
+                            DianShape = 2,
+                            HasPercentage = false,
+                            IsActive = true,
+                            Name = "Otra deducción",
+                            QuantityKind = 0,
+                            RequiresDescription = true,
+                            Section = 1,
+                            SortOrder = 53,
+                            SpecialInput = 0
+                        });
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.PlanAlert", b =>
                 {
                     b.Property<Guid>("Id")

@@ -555,63 +555,27 @@ namespace Fel.Infrastructure.Dataico
             CesantiasInterest = 128, Compensation = 256, Description = 512, Sanction = 1024
         }
 
-        private const ConceptField A = ConceptField.Amount, N = ConceptField.AmountNs, D = ConceptField.Days, P = ConceptField.Percentage, H = ConceptField.Hours;
-
-        private static readonly Dictionary<string, ConceptField> ConceptFields = new(StringComparer.OrdinalIgnoreCase)
+        // Los campos que acepta un concepto salen del catálogo de conceptos de nómina (PayrollConceptTypes), que administra Superadmin.
+        private static ConceptField FieldsOf(PayrollConceptType type)
         {
-            // Devengos
-            ["BASICO"] = A | D,
-            ["AUXILIO_DE_TRANSPORTE"] = A,
-            ["VIATICO"] = A | N,
-            ["BONIFICACION"] = A | N,
-            ["AUXILIO"] = A | N,
-            ["BONO_EPCTV"] = A | N,
-            ["BONO_EPCTV_ALIMENTACION"] = A | N,
-            ["COMISION"] = A,
-            ["PAGO_TERCERO"] = A,
-            ["ANTICIPO"] = A,
-            ["DOTACION"] = A | N,
-            ["APOYO_PRACTICA"] = A | N,
-            ["TELETRABAJO"] = A,
-            ["BONIFICACION_RETIRO"] = A | N,
-            ["INDEMNIZACION"] = A | N,
-            ["HORA_EXTRA_DIURNA"] = A | H | P,
-            ["HORA_EXTRA_NOCTURNA"] = A | H | P,
-            ["HORA_EXTRA_DIURNA_DF"] = A | H | P,
-            ["HORA_EXTRA_NOCTURNA_DF"] = A | H | P,
-            ["HORA_RECARGO_NOCTURNO"] = A | H | P,
-            ["HORA_RECARGO_DIURNA_DF"] = A | H | P,
-            ["HORA_RECARGO_NOCTURNO_DF"] = A | H | P,
-            ["VACACION"] = A | D,
-            ["VACACION_COMPENSADA"] = A | D,
-            ["PRIMA"] = A | N | D,
-            ["CESANTIAS"] = A | N | P | ConceptField.CesantiasInterest,
-            ["INCAPACIDAD"] = A | D | ConceptField.MedicalLeave,
-            ["LICENCIA_PATERNIDAD"] = A | D | ConceptField.Dates,
-            ["LICENCIA_REMUNERADA"] = A | D,
-            ["LICENCIA_NO_REMUNERADA"] = D,
-            ["HUELGA_LEGAL"] = D | ConceptField.Dates,
-            ["COMPENSACION"] = ConceptField.Compensation,
-            ["OTRO_CONCEPTO"] = A | N | D | ConceptField.Description,
-            // Deducciones
-            ["SALUD"] = A | P,
-            ["FONDO_PENSION"] = A | P,
-            ["FONDO_SUBSISTENCIA"] = A | P,
-            ["FONDO_SOLIDARIDAD_PENSIONAL"] = A | P,
-            ["SINDICATO"] = A | P,
-            ["LIBRANZA"] = A | ConceptField.Description,
-            ["OTRA_DEDUCCION"] = A | ConceptField.Description,
-            ["SANCION"] = ConceptField.Sanction,
-            ["PENSION_VOLUNTARIA"] = A,
-            ["RETENCION_FUENTE"] = A,
-            ["AFC"] = A,
-            ["COOPERATIVA"] = A,
-            ["EMBARGO_FISCAL"] = A,
-            ["PLANES_COMPLEMENTARIOS"] = A,
-            ["EDUCACION"] = A,
-            ["REINTEGRO"] = A,
-            ["DEUDA"] = A
-        };
+            var fields = ConceptField.None;
+            if (type.AllowsAmount) fields |= ConceptField.Amount;
+            if (type.AllowsNonSalary) fields |= ConceptField.AmountNs;
+            if (type.QuantityKind == PayrollQuantityKind.Days) fields |= ConceptField.Days;
+            if (type.QuantityKind == PayrollQuantityKind.Hours) fields |= ConceptField.Hours;
+            if (type.QuantityKind == PayrollQuantityKind.Percentage || type.HasPercentage) fields |= ConceptField.Percentage;
+            if (type.RequiresDescription) fields |= ConceptField.Description;
+            fields |= type.SpecialInput switch
+            {
+                PayrollSpecialInput.Dates => ConceptField.Dates,
+                PayrollSpecialInput.MedicalLeave => ConceptField.MedicalLeave,
+                PayrollSpecialInput.CesantiasInterest => ConceptField.CesantiasInterest,
+                PayrollSpecialInput.Compensation => ConceptField.Compensation,
+                PayrollSpecialInput.Sanction => ConceptField.Sanction,
+                _ => ConceptField.None
+            };
+            return fields;
+        }
 
         // Un concepto con un código fuera del catálogo conocido conserva los campos más comunes.
         private const ConceptField UnknownConceptFields = ConceptField.Amount | ConceptField.AmountNs | ConceptField.Days | ConceptField.Description;
@@ -621,10 +585,11 @@ namespace Fel.Infrastructure.Dataico
         // Dataico trata un monto en cero como ausente: se omite en vez de enviar 0.
         private static decimal? NullIfZero(decimal? value) => value is null or 0m ? null : value;
 
-        private static DataicoPayrollConcept ToDataicoConcept(PayrollConceptInput input, string defaultCode)
+        private static DataicoPayrollConcept ToDataicoConcept(PayrollConceptInput input, string defaultCode, PayrollConceptSection section, IReadOnlyCollection<PayrollConceptType> conceptTypes)
         {
             var code = string.IsNullOrWhiteSpace(input.Code) ? defaultCode : input.Code!.Trim();
-            var allowed = ConceptFields.TryGetValue(code, out var fields) ? fields : UnknownConceptFields;
+            var type = conceptTypes.FirstOrDefault(t => t.Section == section && string.Equals(t.DataicoCode, code, StringComparison.OrdinalIgnoreCase));
+            var allowed = type != null ? FieldsOf(type) : UnknownConceptFields;
             bool Has(ConceptField f) => (allowed & f) != 0;
 
             return new DataicoPayrollConcept
@@ -659,6 +624,7 @@ namespace Fel.Infrastructure.Dataico
             IEnumerable<PayrollConceptInput> accruals,
             IEnumerable<PayrollConceptInput> deductions,
             IReadOnlyCollection<IdentificationType> identificationTypes,
+            IReadOnlyCollection<PayrollConceptType> conceptTypes,
             string? noteText = null)
         {
             var (department, city) = DataicoMapper.SplitCityCode(employee.CityCode);
@@ -700,8 +666,8 @@ namespace Fel.Infrastructure.Dataico
                 notes = BuildPayrollNotes(noteText)
             };
 
-            request.accruals.AddRange(accruals.Select(a => ToDataicoConcept(a, "OTRO_CONCEPTO")));
-            request.deductions.AddRange(deductions.Select(d => ToDataicoConcept(d, "OTRA_DEDUCCION")));
+            request.accruals.AddRange(accruals.Select(a => ToDataicoConcept(a, "OTRO_CONCEPTO", PayrollConceptSection.Accrual, conceptTypes)));
+            request.deductions.AddRange(deductions.Select(d => ToDataicoConcept(d, "OTRA_DEDUCCION", PayrollConceptSection.Deduction, conceptTypes)));
 
             return request;
         }

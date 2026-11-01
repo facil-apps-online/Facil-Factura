@@ -98,6 +98,27 @@ namespace Fel.Core.Models
         public decimal Amount { get; set; }
     }
 
+    // Un devengo o una deducción tal como los captura el cliente (código del catálogo de conceptos de nómina más sus valores). Es la entrada
+    // genérica del XML nativo: PayrollConceptNativeMapper la convierte a PayrollEarningsData / PayrollDeductionsData con lo que diga el catálogo.
+    public class PayrollConceptLine
+    {
+        public string Code { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public decimal? Amount { get; set; }          // Valor salarial (o el valor, en las deducciones)
+        public decimal? AmountNs { get; set; }        // Valor no salarial
+        public decimal? Days { get; set; }
+        public decimal? Hours { get; set; }
+        public decimal? Percentage { get; set; }
+        public DateTime? InitialDate { get; set; }    // Inicio del rango (horas extra, vacaciones, incapacidades, licencias). Sin fecha se usa el período liquidado.
+        public DateTime? FinalDate { get; set; }
+        public string? MedicalLeaveType { get; set; } // COMUN, PROFESIONAL o LABORAL
+        public decimal? CesantiasInterest { get; set; }
+        public decimal? OrdinaryCompensation { get; set; }
+        public decimal? ExtraordinaryCompensation { get; set; }
+        public decimal? PrivateSanction { get; set; }
+        public decimal? PublicSanction { get; set; }
+    }
+
     public class PayrollDateRangeAmount
     {
         public DateTime Start { get; set; }

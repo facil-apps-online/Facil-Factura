@@ -54,6 +54,10 @@ namespace Fel.Core.Models
         public List<DateTime> PaymentDates { get; set; } = new List<DateTime>();
         public PayrollEarningsData Earnings { get; set; } = new PayrollEarningsData();
         public PayrollDeductionsData Deductions { get; set; } = new PayrollDeductionsData();
+        // Alternativa a Earnings/Deductions: los devengos y las deducciones como lista de conceptos del catálogo de nómina. Si vienen, la API arma
+        // Earnings y Deductions con la equivalencia DIAN del catálogo y calcula los totales que no se envíen.
+        public List<PayrollConceptLine>? AccrualLines { get; set; }
+        public List<PayrollConceptLine>? DeductionLines { get; set; }
         public decimal Rounding { get; set; }
         public decimal EarningsTotal { get; set; }
         public decimal DeductionsTotal { get; set; }

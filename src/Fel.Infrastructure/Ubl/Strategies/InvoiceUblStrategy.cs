@@ -65,7 +65,8 @@ namespace Fel.Infrastructure.Ubl.Strategies
         // el de POS/SPD (DianCode 20) además distingue 601 (normal) vs 602 (en sitio).
         private static string ResolveProfileId(UblInvoiceData data) => data.DianCode switch
         {
-            "20" => data.OperationType == "602" ? "DIAN 2.1: Documento Equivalente SPD – ON SITE" : "DIAN 2.1: Documento Equivalente SPD",
+            // POS (Anexo, numeral 8.2): perfil propio y tipo de operación 10; el par 601/602 y el perfil SPD son de otro documento equivalente.
+            "20" => "DIAN 2.1: Documento Equivalente POS",
             "25" => "DIAN 2.1: Boleta de ingreso a cine",
             "27" => "DIAN 2.1: Boleta de ingreso a espectáculos públicos",
             "30" => "DIAN 2.1: Documento en juegos localizados - relación diaria de control de ventas",

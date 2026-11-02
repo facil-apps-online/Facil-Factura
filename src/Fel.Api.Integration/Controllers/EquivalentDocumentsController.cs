@@ -37,18 +37,6 @@ namespace Fel.Api.Integration.Controllers
             _dianSoapClient = dianSoapClient;
         }
 
-        /// <response code="200">La DIAN validó y aceptó el documento. Incluye el CUFE.</response>
-        /// <response code="400">Falta el prefijo o el número de documento.</response>
-        /// <response code="401">No se pudo resolver el emisor autenticado.</response>
-        /// <response code="422">El emisor no está listo para facturar directo a la DIAN, o la DIAN rechazó el documento.</response>
-        [HttpPost("pos")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-        public Task<IActionResult> ReceivePosDocument([FromBody] PosDocumentRequest request) =>
-            EmitAsync(request, "DE-POS", "20", "POS", request.OnSite);
-
         /// <summary>Boleta de ingreso a cine (DEBIC).</summary>
         [HttpPost("cine")]
         [ProducesResponseType(StatusCodes.Status200OK)]

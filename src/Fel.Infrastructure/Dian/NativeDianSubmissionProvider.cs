@@ -190,6 +190,16 @@ namespace Fel.Infrastructure.Dian
             {
                 ublData = DianDocumentMapper.BuildInvoiceData(invoice, customer, items, resolution, client, location, municipalities, paymentMeansDianCodes, documentType, null, countryNames);
                 filePrefix = Fel.Infrastructure.Services.DianFileNaming.FacturaVenta;
+
+                // Documento Equivalente POS: lleva sus propias extensiones (caja de venta) y su nombre de archivo; sin los datos de la caja la DIAN lo rechazaría.
+                if (documentType?.Code == "DE-POS")
+                {
+                    var pos = ublData.Pos;
+                    if (pos == null || string.IsNullOrWhiteSpace(pos.BoxPlate) || string.IsNullOrWhiteSpace(pos.BoxLocation) || string.IsNullOrWhiteSpace(pos.Cashier)
+                        || string.IsNullOrWhiteSpace(pos.BoxType) || string.IsNullOrWhiteSpace(pos.SaleCode))
+                        throw new NotSupportedException("El documento equivalente POS debe indicar los datos de la caja: placa, ubicación, cajero, tipo de caja y código de venta.");
+                    filePrefix = Fel.Infrastructure.Services.DianFileNaming.DocumentoEquivalente;
+                }
             }
 
             var xml = _ublGenerator.GenerateInvoiceXml(ublData);

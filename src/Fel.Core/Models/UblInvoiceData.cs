@@ -31,6 +31,9 @@ namespace Fel.Core.Models
         public string OperationType { get; set; } = "10";
         public string? CustomizationId { get; set; }
 
+        // Documento Equivalente POS (DianCode "20"): datos de la caja y beneficios del comprador que van en extensiones propias del XML.
+        public PosSaleData? Pos { get; set; }
+
         public IssuerData Issuer { get; set; } = new IssuerData();
         public CustomerData Customer { get; set; } = new CustomerData();
         

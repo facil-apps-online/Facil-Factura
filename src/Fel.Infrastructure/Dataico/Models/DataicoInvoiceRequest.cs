@@ -100,6 +100,12 @@ namespace Fel.Infrastructure.Dataico.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public DataicoAiuContract? aiu { get; set; }
 
+        // Documento equivalente POS (operation "POS"): datos de la caja de venta y, si el comprador tiene programa de beneficios, los suyos.
+        // Solo lo lee la API de integración; nunca viaja a Dataico.
+        [JsonPropertyName("pos")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DataicoPosData? pos { get; set; }
+
         // Observaciones del documento, una por entrada y en orden.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<string>? notes { get; set; }
@@ -132,6 +138,19 @@ namespace Fel.Infrastructure.Dataico.Models
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<DataicoCharge>? charges { get; set; }
+    }
+
+    // Datos de la caja de venta del documento equivalente POS (Anexo Técnico, numeral 8.2.1.2). Los beneficios del comprador son opcionales pero van completos.
+    public class DataicoPosData
+    {
+        public string box_plate { get; set; } = string.Empty;
+        public string box_location { get; set; } = string.Empty;
+        public string cashier { get; set; } = string.Empty;
+        public string box_type { get; set; } = string.Empty;
+        public string sale_code { get; set; } = string.Empty;
+        public string? buyer_code { get; set; }
+        public string? buyer_name { get; set; }
+        public decimal? buyer_points { get; set; }
     }
 
     // Datos del contrato AIU que envía el integrador. Los porcentajes se aplican sobre base_amount; A e I no causan IVA, la Utilidad usa

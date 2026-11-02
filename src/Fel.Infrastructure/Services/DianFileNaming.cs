@@ -22,6 +22,8 @@ namespace Fel.Infrastructure.Services
         public const string FacturaVenta = "fv";
         public const string NotaCredito = "nc";
         public const string NotaDebito = "nd";
+        // Documento equivalente electrónico (Anexo Técnico de Documento Equivalente, numeral 8.13.5).
+        public const string DocumentoEquivalente = "ds";
 
         // Mismo patrón optimista de ResolutionNumbering.ClaimNextNumberAsync — el consecutivo se
         // reinicia a 1 cada 1 de enero (numeral 6.5.7, última nota).

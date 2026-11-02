@@ -31,6 +31,14 @@ namespace Fel.Tests
                 };
                 Db.Resolutions.Add(Resolution);
                 Db.ResolutionBranches.Add(new ResolutionBranch { ResolutionId = Resolution.Id, BranchId = BranchId });
+                var posResolution = new Resolution
+                {
+                    Id = Guid.NewGuid(), ClientId = Client.Id, ResolutionNumber = "18760000099", Prefix = "POS", DocumentType = "DE-POS", IsActive = true,
+                    NumberStart = 1, NumberEnd = 5000, ValidFrom = DateTime.Today.AddYears(-1), ValidTo = DateTime.Today.AddYears(1)
+                };
+                Db.Resolutions.Add(posResolution);
+                Db.ResolutionBranches.Add(new ResolutionBranch { ResolutionId = posResolution.Id, BranchId = BranchId });
+                Db.DocumentTypes.Add(new DocumentType { Id = Guid.NewGuid(), Code = "DE-POS", Name = "Tiquete POS", IsActive = true, DianCode = "20" });
                 Db.DocumentTypes.Add(new DocumentType { Id = Guid.NewGuid(), Code = "FE-STD", Name = "Factura", IsActive = true });
                 Db.DocumentTypes.Add(new DocumentType { Id = Guid.NewGuid(), Code = "FE-MANDATO", Name = "Mandato", IsActive = true, OperationType = "11" });
                 Db.DocumentTypes.Add(new DocumentType { Id = Guid.NewGuid(), Code = "FE-AIU", Name = "Servicios AIU", IsActive = true, OperationType = "09" });
@@ -284,6 +292,93 @@ namespace Fel.Tests
             Assert.Equal(10, stored!.AdminPercent);
             Assert.Equal(19, stored.IvaRate);
             Assert.Equal("Obra civil de adecuación de bodega", stored.ContractObject);
+        }
+
+        private sealed class FakeCrypto : Fel.Core.Interfaces.ICryptoService
+        {
+            public string Encrypt(string plainText) => plainText;
+            public string Decrypt(string cipherText) => cipherText;
+            public string GenerateCufeSha384(string dataToHash) => System.Convert.ToHexString(System.Security.Cryptography.SHA384.HashData(System.Text.Encoding.UTF8.GetBytes(dataToHash))).ToLowerInvariant();
+        }
+
+        private static DataicoPosData Box() => new()
+        {
+            box_plate = "CAJA-01", box_location = "ALMACEN", cashier = "Maria Perez", box_type = "Registradora", sale_code = "V-1001"
+        };
+
+        [Fact]
+        public async Task A_pos_document_uses_the_pos_resolution_and_stores_the_box_data()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r => { r.operation = "POS"; r.numbering = new DataicoNumbering { prefix = "POS" }; r.pos = Box(); }), f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            var doc = result.Document!;
+            Assert.Equal("DE-POS", doc.TypeCode);
+            Assert.Equal("POS", doc.Prefix);
+            var pos = Fel.Core.Models.PosSaleData.TryRead(doc.SectorExtensionData)!;
+            Assert.Equal("CAJA-01", pos.BoxPlate);
+            Assert.Equal("V-1001", pos.SaleCode);
+            Assert.False(pos.HasBuyerBenefits);
+        }
+
+        [Fact]
+        public async Task A_pos_document_without_a_customer_goes_to_the_consumidor_final()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r =>
+            {
+                r.operation = "POS"; r.numbering = new DataicoNumbering { prefix = "POS" }; r.pos = Box(); r.customer = new DataicoParty();
+            }), f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            Assert.Equal("222222222222", result.Document!.Customer!.IdentificationNumber);
+        }
+
+        [Fact]
+        public async Task A_pos_document_needs_the_box_data_and_complete_benefits()
+        {
+            var f = new Fixture();
+            var missing = await f.Factory.BuildAsync(Request(tweak: r => { r.operation = "POS"; r.numbering = new DataicoNumbering { prefix = "POS" }; }), f.Client, BranchId);
+            Assert.Contains("pos:", string.Join("|", missing.Error!.Details!));
+
+            var partial = await f.Factory.BuildAsync(Request(tweak: r =>
+            {
+                r.operation = "POS"; r.numbering = new DataicoNumbering { prefix = "POS" };
+                r.pos = Box(); r.pos.buyer_code = "123";
+            }), f.Client, BranchId);
+            Assert.Contains("beneficios", string.Join("|", partial.Error!.Details!));
+        }
+
+        [Fact]
+        public async Task A_pos_document_does_not_take_a_factura_resolution()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r => { r.operation = "POS"; r.pos = Box(); }), f.Client, BranchId);
+
+            Assert.Equal("RESOLUTION_NOT_FOUND", result.Error!.Code);
+        }
+
+        [Fact]
+        public void The_pos_xml_has_its_profile_operation_and_box_extensions()
+        {
+            var generator = new Fel.Infrastructure.Ubl.UblGenerator(new FakeCrypto());
+            var data = new Fel.Core.Models.UblInvoiceData
+            {
+                DocumentNumber = "1", Prefix = "POS", DianCode = "20", OperationType = "10", IssueDate = DateTime.Now, IssueTime = DateTime.Now, LineExtensionAmount = 10000m,
+                Issuer = new Fel.Core.Models.IssuerData { TaxId = "900123456", Name = "ACME" },
+                Pos = new Fel.Core.Models.PosSaleData { BoxPlate = "CAJA-01", BoxLocation = "ALMACEN", Cashier = "Maria Perez", BoxType = "Registradora", SaleCode = "V-1", BuyerCode = "99", BuyerName = "Juan", BuyerPoints = 5 }
+            };
+
+            var xml = generator.GenerateInvoiceXml(data);
+
+            Assert.Contains("DIAN 2.1: Documento Equivalente POS", xml);
+            Assert.Contains("<InformacionCajaVenta>", xml);
+            var flat = System.Text.RegularExpressions.Regex.Replace(xml, @">\s+<", "><");
+            Assert.Contains("<Name>PlacaCaja</Name><Value>CAJA-01</Value>", flat);
+            Assert.Contains("<Name>SubTotal</Name><Value>10000.00</Value>", flat);
+            Assert.Contains("<InformacionVeneficiosComprador>", xml);
+            Assert.True(xml.IndexOf("SignaturePlaceholder", StringComparison.Ordinal) < xml.IndexOf("InformacionCajaVenta", StringComparison.Ordinal));
         }
 
         [Fact]

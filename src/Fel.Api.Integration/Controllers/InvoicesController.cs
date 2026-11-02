@@ -23,9 +23,7 @@ namespace Fel.Api.Integration.Controllers
     /// El documento se crea y se emite por el mismo motor del portal (directo a la DIAN o por el integrador que tenga configurado el emisor),
     /// así que también aparece en el portal. La respuesta es síncrona: trae el resultado final de la emisión.
     /// </remarks>
-    [ApiController]
-    [Route("api/co/dian/invoices")]
-    public class InvoicesController : ControllerBase
+    public abstract class InvoiceControllerBase : ControllerBase
     {
         private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -33,28 +31,15 @@ namespace Fel.Api.Integration.Controllers
         private readonly SimpleInvoiceFactory _factory;
         private readonly InvoicePublishingService _publishing;
 
-        public InvoicesController(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing)
+        protected InvoiceControllerBase(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing)
         {
             _dbContext = dbContext;
             _factory = factory;
             _publishing = publishing;
         }
 
-        /// <summary>
-        /// Emite una factura. El consecutivo (<c>number</c>) lo lleva el integrador: puede enviarse en cualquier orden mientras esté
-        /// dentro del rango de la resolución y no esté usado.
-        /// </summary>
-        /// <param name="body">El JSON de la factura, directo o dentro de <c>{ "invoice": { ... } }</c> como lo envía Dataico.</param>
-        /// <response code="201">Factura emitida. Trae el <c>id</c> (UUID), el número, el estado y el CUFE.</response>
-        /// <response code="400">Datos inválidos o faltantes; <c>details</c> lista cada campo.</response>
-        /// <response code="409">El número ya fue usado. Trae el <c>id</c> y el estado del documento existente.</response>
-        /// <response code="422">La DIAN o el integrador rechazaron la factura, o el emisor no está listo (resolución, rango, certificado).</response>
-        [HttpPost]
-        [ProducesResponseType(StatusCodes.Status201Created)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status409Conflict)]
-        [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-        public async Task<IActionResult> Issue([FromBody] JsonElement body)
+        // forcedOperation fija el tipo de documento del endpoint (p. ej. "POS") sin depender de lo que traiga el cuerpo.
+        protected async Task<IActionResult> IssueAsync(JsonElement body, string? forcedOperation = null)
         {
             if (HttpContext.Items["ClientId"] is not string clientIdText || !Guid.TryParse(clientIdText, out var clientId))
                 return Unauthorized(new { code = "INVALID_API_KEY", message = "No se pudo resolver el emisor autenticado." });
@@ -70,6 +55,9 @@ namespace Fel.Api.Integration.Controllers
                 return BadRequest(new { code = "INVALID_JSON", message = "El cuerpo no tiene la estructura esperada.", details = new[] { ex.Message } });
             }
             if (request == null) return BadRequest(new { code = "INVALID_JSON", message = "El cuerpo está vacío." });
+            if (forcedOperation != null) request.operation = forcedOperation;
+            else if (string.Equals(request.operation, "POS", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { code = "VALIDATION_ERROR", message = "El documento equivalente POS se emite en POST /api/co/dian/equivalent-documents/pos.", details = new[] { "operation: POS no aplica en este endpoint." } });
 
             var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
             if (client == null) return Unauthorized(new { code = "INVALID_API_KEY", message = "Emisor no encontrado." });
@@ -178,5 +166,59 @@ namespace Fel.Api.Integration.Controllers
 
         private IActionResult Problem(ApiError error) =>
             StatusCode(error.Status, new { code = error.Code, message = error.Message, details = error.Details });
+    }
+
+    /// <summary>
+    /// Emisión de la Factura Electrónica de Venta (estándar, de mandato, de exportación y AIU) con un JSON sencillo, con la misma estructura
+    /// que recibe Dataico. El emisor sale de la API Key; los totales los calcula el servidor.
+    /// </summary>
+    [ApiController]
+    [Route("api/co/dian/invoices")]
+    public class InvoicesController : InvoiceControllerBase
+    {
+        public InvoicesController(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing) : base(dbContext, factory, publishing) { }
+
+        /// <summary>
+        /// Emite una factura. El consecutivo (<c>number</c>) lo lleva el integrador: puede enviarse en cualquier orden mientras esté
+        /// dentro del rango de la resolución y no esté usado.
+        /// </summary>
+        /// <param name="body">El JSON de la factura, directo o dentro de <c>{ "invoice": { ... } }</c> como lo envía Dataico.</param>
+        /// <response code="201">Factura emitida. Trae el <c>id</c> (UUID), el número, el estado y el CUFE.</response>
+        /// <response code="400">Datos inválidos o faltantes; <c>details</c> lista cada campo.</response>
+        /// <response code="409">El número ya fue usado. Trae el <c>id</c> y el estado del documento existente.</response>
+        /// <response code="422">La DIAN o el integrador rechazaron la factura, o el emisor no está listo (resolución, rango, certificado).</response>
+        [HttpPost]
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+        public Task<IActionResult> Issue([FromBody] JsonElement body) => IssueAsync(body);
+    }
+
+    /// <summary>
+    /// Emisión del Documento Equivalente Electrónico POS (tiquete de máquina registradora) directo a la DIAN con el certificado del emisor.
+    /// Mismo JSON que la factura más el bloque <c>pos</c> con los datos de la caja; sin <c>customer</c> el tiquete va a nombre del consumidor final.
+    /// </summary>
+    [ApiController]
+    [Route("api/co/dian/equivalent-documents/pos")]
+    public class PosDocumentsController : InvoiceControllerBase
+    {
+        public PosDocumentsController(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing) : base(dbContext, factory, publishing) { }
+
+        /// <summary>
+        /// Emite un tiquete POS. Requiere una resolución activa de tipo documento equivalente POS. El bloque <c>pos</c> lleva <c>box_plate</c>,
+        /// <c>box_location</c>, <c>cashier</c>, <c>box_type</c> y <c>sale_code</c>; los beneficios del comprador (<c>buyer_code</c>, <c>buyer_name</c>,
+        /// <c>buyer_points</c>) son opcionales pero van completos.
+        /// </summary>
+        /// <response code="201">Tiquete emitido. Trae el <c>id</c> (UUID), el número, el estado y el CUFE.</response>
+        /// <response code="400">Datos inválidos o faltantes; <c>details</c> lista cada campo.</response>
+        /// <response code="409">El número ya fue usado. Trae el <c>id</c> y el estado del documento existente.</response>
+        /// <response code="422">La DIAN rechazó el documento, o el emisor no está listo (resolución, rango, certificado).</response>
+        [HttpPost]
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+        public Task<IActionResult> Issue([FromBody] JsonElement body) => IssueAsync(body, "POS");
     }
 }

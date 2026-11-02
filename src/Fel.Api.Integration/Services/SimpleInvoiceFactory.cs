@@ -41,6 +41,7 @@ namespace Fel.Api.Integration.Services
         public const string MandateInvoice = "FE-MANDATO";
         public const string ExportInvoice = "FE-EXP";
         public const string AiuInvoice = "FE-AIU";
+        public const string PosDocument = "DE-POS";
 
         private readonly FelDbContext _db;
 
@@ -51,6 +52,10 @@ namespace Fel.Api.Integration.Services
 
         public async Task<InvoiceBuildResult> BuildAsync(DataicoInvoiceRequest request, Client client, Guid branchId)
         {
+            // POS: sin adquirente identificado el tiquete va a nombre del consumidor final.
+            if (IsPos(request) && string.IsNullOrWhiteSpace(request.customer?.party_identification))
+                request.customer = new DataicoParty { party_identification_type = "13", party_identification = "222222222222", company_name = "Consumidor final" };
+
             var problems = Validate(request);
             if (problems.Count > 0)
                 return Fail(400, "VALIDATION_ERROR", "El documento tiene datos inválidos o faltantes. Revisa el detalle de cada campo.", problems);
@@ -58,10 +63,11 @@ namespace Fel.Api.Integration.Services
             var isMandate = string.Equals(request.operation, "MANDATO", StringComparison.OrdinalIgnoreCase);
             var isExport = string.Equals(request.invoice_type_code, "FACTURA_EXPORTACION", StringComparison.OrdinalIgnoreCase);
             var isAiu = IsAiu(request);
-            if (isAiu && (isExport || isMandate))
-                return Fail(400, "VALIDATION_ERROR", "La factura AIU no puede ser a la vez de exportación o de mandato.");
+            var isPos = IsPos(request);
+            if ((isAiu || isPos) && (isExport || isMandate))
+                return Fail(400, "VALIDATION_ERROR", "Este tipo de documento no puede ser a la vez de exportación o de mandato.");
 
-            var typeCode = isExport ? ExportInvoice : isMandate ? MandateInvoice : isAiu ? AiuInvoice : StandardInvoice;
+            var typeCode = isPos ? PosDocument : isExport ? ExportInvoice : isMandate ? MandateInvoice : isAiu ? AiuInvoice : StandardInvoice;
             var documentType = await _db.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Code == typeCode && t.IsActive);
             if (documentType == null)
                 return Fail(422, "DOCUMENT_TYPE_UNAVAILABLE", $"El tipo de documento {typeCode} no está disponible.");
@@ -69,7 +75,7 @@ namespace Fel.Api.Integration.Services
             var number = long.Parse(request.number.Trim(), CultureInfo.InvariantCulture);
             var prefix = (request.numbering.prefix ?? string.Empty).Trim();
 
-            var resolutionResult = await FindResolutionAsync(client.Id, branchId, request.numbering, prefix, number);
+            var resolutionResult = await FindResolutionAsync(client.Id, branchId, request.numbering, prefix, number, isPos ? PosDocument : "FE");
             if (resolutionResult.Error != null) return new InvoiceBuildResult { Error = resolutionResult.Error };
             var resolution = resolutionResult.Resolution!;
 
@@ -121,7 +127,7 @@ namespace Fel.Api.Integration.Services
             document.PaymentMeansType = request.payment_means_type.Trim().ToUpperInvariant();
             document.PaymentMeans = paymentMeansResult.Category;
             document.PurchaseOrderReference = string.IsNullOrWhiteSpace(request.order_reference) ? null : request.order_reference.Trim();
-            document.SectorExtensionData = isAiu ? AiuExtensionData(request.aiu!) : "{}";
+            document.SectorExtensionData = isAiu ? AiuExtensionData(request.aiu!) : isPos ? PosExtensionData(request.pos!) : "{}";
             var dueDate = ParseDate(request.payment_date);
             document.PaymentTermDays = dueDate.HasValue ? Math.Max(0, (int)(dueDate.Value.Date - issueDate.Date).TotalDays) : null;
 
@@ -180,6 +186,20 @@ namespace Fel.Api.Integration.Services
 
             return new InvoiceBuildResult { Document = document, Reused = existing != null }.WithWarnings(warnings);
         }
+
+        private static bool IsPos(DataicoInvoiceRequest r) => string.Equals(r.operation, "POS", StringComparison.OrdinalIgnoreCase);
+
+        private static string PosExtensionData(DataicoPosData x) =>
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                pos = new PosSaleData
+                {
+                    BoxPlate = x.box_plate.Trim(), BoxLocation = x.box_location.Trim(), Cashier = x.cashier.Trim(), BoxType = x.box_type.Trim(), SaleCode = x.sale_code.Trim(),
+                    BuyerCode = string.IsNullOrWhiteSpace(x.buyer_code) ? null : x.buyer_code.Trim(),
+                    BuyerName = string.IsNullOrWhiteSpace(x.buyer_name) ? null : x.buyer_name.Trim(),
+                    BuyerPoints = x.buyer_points
+                }
+            }, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
 
         private static bool IsAiu(DataicoInvoiceRequest r) => string.Equals(r.operation, "AIU", StringComparison.OrdinalIgnoreCase);
 
@@ -258,7 +278,27 @@ namespace Fel.Api.Integration.Services
                     p.Add("customer: falta el nombre; envía company_name, o first_name y family_name.");
             }
 
-            if (IsAiu(r))
+            if (IsPos(r))
+            {
+                var x = r.pos;
+                if (x == null) p.Add("pos: es obligatorio en el documento equivalente POS; indica la placa, ubicación, cajero, tipo de caja y código de venta.");
+                else
+                {
+                    void Required(string name, string? value)
+                    {
+                        if (string.IsNullOrWhiteSpace(value)) p.Add($"pos.{name}: es obligatorio.");
+                        else if (value.Trim().Length > PosSaleData.MaxLength) p.Add($"pos.{name}: no puede superar {PosSaleData.MaxLength} caracteres.");
+                    }
+                    Required("box_plate", x.box_plate); Required("box_location", x.box_location); Required("cashier", x.cashier);
+                    Required("box_type", x.box_type); Required("sale_code", x.sale_code);
+                    if (x.buyer_points is < 0) p.Add("pos.buyer_points: no puede ser negativo.");
+                    var benefits = !string.IsNullOrWhiteSpace(x.buyer_code) || !string.IsNullOrWhiteSpace(x.buyer_name) || x.buyer_points.HasValue;
+                    if (benefits && (string.IsNullOrWhiteSpace(x.buyer_code) || string.IsNullOrWhiteSpace(x.buyer_name) || !x.buyer_points.HasValue))
+                        p.Add("pos: los beneficios del comprador van completos o no van; envía buyer_code, buyer_name y buyer_points juntos.");
+                }
+                if (r.items == null || r.items.Count == 0) p.Add("items: debe traer al menos una línea.");
+            }
+            else if (IsAiu(r))
             {
                 var a = r.aiu;
                 if (a == null) p.Add("aiu: es obligatorio en una factura AIU; indica base_amount, los porcentajes y contract_object.");
@@ -299,10 +339,10 @@ namespace Fel.Api.Integration.Services
         // ---------------------------------------------------------------------------------------------------------------------------
         // Resolución
         // ---------------------------------------------------------------------------------------------------------------------------
-        private async Task<(Resolution? Resolution, ApiError? Error)> FindResolutionAsync(Guid clientId, Guid branchId, DataicoNumbering numbering, string prefix, long number)
+        private async Task<(Resolution? Resolution, ApiError? Error)> FindResolutionAsync(Guid clientId, Guid branchId, DataicoNumbering numbering, string prefix, long number, string resolutionType)
         {
             var candidates = await _db.Resolutions.ForBranch(_db, branchId)
-                .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
+                .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == resolutionType)
                 .ToListAsync();
 
             var byPrefix = candidates.Where(r => string.Equals(r.Prefix ?? string.Empty, prefix, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -316,9 +356,9 @@ namespace Fel.Api.Integration.Services
             if (resolution == null)
             {
                 var available = candidates.Count == 0
-                    ? "Este emisor no tiene resoluciones de factura activas para esta sucursal."
+                    ? "Este emisor no tiene resoluciones activas de este tipo de documento para esta sucursal."
                     : "Resoluciones activas: " + string.Join(", ", candidates.Select(r => $"prefijo \"{r.Prefix}\" resolución {r.ResolutionNumber} ({r.NumberStart}-{r.NumberEnd})")) + ".";
-                return (null, new ApiError(422, "RESOLUTION_NOT_FOUND", $"No hay una resolución de factura activa con el prefijo \"{prefix}\"" +
+                return (null, new ApiError(422, "RESOLUTION_NOT_FOUND", $"No hay una resolución activa de este tipo de documento con el prefijo \"{prefix}\"" +
                     (string.IsNullOrWhiteSpace(numbering.resolution_number) ? "." : $" y número {numbering.resolution_number}.") + " " + available));
             }
 

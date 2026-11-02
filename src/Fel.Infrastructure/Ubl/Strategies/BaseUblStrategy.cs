@@ -135,7 +135,40 @@ namespace Fel.Infrastructure.Ubl.Strategies
                     )
                 )
             );
+
+            // La firma debe seguir siendo la segunda extensión (el firmador la busca ahí); las propias del POS van después.
+            foreach (var extra in BuildPosExtensions(data))
+                extensions.Add(new XElement(ext + "UBLExtension", new XElement(ext + "ExtensionContent", extra)));
             return extensions;
+        }
+
+        // Documento Equivalente POS (Anexo Técnico, numerales 8.2.1.1 y 8.2.1.2 / 10.2.1.1 y 10.2.1.2): beneficios del comprador (solo si el
+        // comprador los tiene) y la información de la caja de venta, cada dato como par Name/Value con el literal exacto que exige la DIAN.
+        protected static IEnumerable<XElement> BuildPosExtensions(UblInvoiceData data)
+        {
+            if (data.DianCode != "20" || data.Pos == null) yield break;
+            var pos = data.Pos;
+
+            XElement[] Pairs(params (string Name, string Value)[] pairs) =>
+                pairs.SelectMany(p => new[] { new XElement("Name", p.Name), new XElement("Value", p.Value) }).ToArray();
+
+            if (pos.HasBuyerBenefits)
+            {
+                yield return new XElement("VeneficiosComprador",
+                    new XElement("InformacionVeneficiosComprador", Pairs(
+                        ("Codigo", pos.BuyerCode ?? string.Empty),
+                        ("NombresApellidos", pos.BuyerName ?? string.Empty),
+                        ("Puntos", (pos.BuyerPoints ?? 0m).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)))));
+            }
+
+            yield return new XElement("PuntoVenta",
+                new XElement("InformacionCajaVenta", Pairs(
+                    ("PlacaCaja", pos.BoxPlate),
+                    ("UbicaciónCaja", pos.BoxLocation),
+                    ("Cajero", pos.Cashier),
+                    ("TipoCaja", pos.BoxType),
+                    ("CódigoVenta", pos.SaleCode),
+                    ("SubTotal", data.LineExtensionAmount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)))));
         }
 
         protected XElement BuildAccountingSupplierParty(UblInvoiceData data)

@@ -312,6 +312,13 @@ namespace Fel.Infrastructure.Dian
             // FAU14: valor de la factura = TaxInclusiveAmount - descuentos + cargos.
             data.PayableAmount = data.TaxInclusiveAmount - generalDiscount - roundingAdjustment + generalCharge;
 
+            // Documento Equivalente POS: tipo de operación único (10) y los datos de la caja guardados en el documento.
+            if (data.DianCode == "20")
+            {
+                data.OperationType = "10";
+                data.Pos = PosSaleData.TryRead(document.SectorExtensionData);
+            }
+
             return data;
         }
 
@@ -501,7 +508,8 @@ namespace Fel.Infrastructure.Dian
         {
             var data = BuildInvoiceDataFromRequest(request, client, location, resolution, municipalitiesByCode);
             data.DianCode = dianCode;
-            data.OperationType = dianCode == "20" ? (onSite ? "602" : "601") : "10";
+            // El POS lleva tipo de operación 10 (código único, numeral 16.4.1); onSite se conserva por compatibilidad con la ruta anterior pero ya no cambia el XML.
+            data.OperationType = "10";
             return data;
         }
 

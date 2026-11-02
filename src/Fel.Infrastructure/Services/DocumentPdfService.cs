@@ -41,7 +41,7 @@ namespace Fel.Infrastructure.Services
             if (document.TypeCode is "DS" or "DS-AJUSTE" || document.TypeCode.StartsWith("NE", StringComparison.OrdinalIgnoreCase))
                 return (null, "El PDF de este tipo de documento todavía no está disponible por la API.");
 
-            var client = await _db.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == clientId);
+            var client = await _db.Clients.AsNoTracking().Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
             if (client == null) return (null, "Emisor no encontrado.");
 
             var template = await DocumentTemplateResolver.ResolveAsync(_db, client, document.DocumentTypeId.Value);

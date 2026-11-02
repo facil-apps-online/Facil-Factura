@@ -17,6 +17,7 @@ COPY src/Fel.Api.Integration/Fel.Api.Integration.csproj Fel.Api.Integration/
 COPY src/Fel.Api.Superadmin/Fel.Api.Superadmin.csproj Fel.Api.Superadmin/
 COPY src/Fel.Api.Client/Fel.Api.Client.csproj Fel.Api.Client/
 COPY src/Fel.Worker/Fel.Worker.csproj Fel.Worker/
+COPY src/Fel.Tests/Fel.Tests.csproj Fel.Tests/
 RUN dotnet restore Fel.sln
 
 COPY src/ src/

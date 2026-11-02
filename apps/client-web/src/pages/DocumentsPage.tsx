@@ -55,22 +55,32 @@ const invoiceNetTotal = (inv: any): number =>
     (inv.totalAmount || 0) - invoiceRetentionsTotal(inv) - (inv.generalDiscountAmount || 0) - (inv.roundingAdjustmentAmount || 0) + (inv.generalChargeAmount || 0)
   );
 
-// Contrato AIU (Administración, Imprevistos, Utilidad) — factura con tipo de operación "09". El
-// formulario pide el valor del servicio y los porcentajes y genera cuatro líneas: Administración, Imprevistos, Utilidad y el propio
-// servicio (que se cobra). A y I no causan IVA; la Utilidad y, si se indica, el servicio sí. El objeto del contrato va en la nota
-// obligatoria de la línea de Administración (y, con Dataico, en la del servicio).
-// Se guarda como JSON en sectorExtensionData ({ aiu: {...} }), el backend lo lee del documento.
+// Contrato AIU (Administración, Imprevistos, Utilidad) — factura con tipo de operación "09". El formulario pide las líneas del
+// servicio contratado (una o varias) y los porcentajes, y genera esas líneas más Administración, Imprevistos y Utilidad. La base del contrato es la
+// suma de las líneas de servicio (antes de IVA) y sobre ella se calculan A, I y U. A y I no causan IVA; la Utilidad y las líneas de servicio sí, si
+// indican su tarifa. El objeto del contrato va en la nota obligatoria de la línea de Administración (y, con Dataico, en las del servicio).
+// Se guarda como JSON en sectorExtensionData ({ aiu: {...} }), el backend lo lee del documento; las líneas de servicio viven en los ítems.
+interface AiuServiceLine {
+  code: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  // IVA de la línea (0 = sin IVA).
+  ivaRate: number;
+}
 interface AiuParams {
+  // Líneas del servicio contratado; baseAmount es su suma y es lo que lee el backend.
+  serviceLines: AiuServiceLine[];
   baseAmount: number;
   adminPercent: number;
   unforeseenPercent: number;
   profitPercent: number;
   ivaRate: number;
-  // IVA de la línea del servicio (0 = sin IVA).
-  serviceIvaRate: number;
   contractObject: string;
 }
-const AIU_DEFAULT: AiuParams = { baseAmount: 0, adminPercent: 10, unforeseenPercent: 5, profitPercent: 5, ivaRate: 19, serviceIvaRate: 0, contractObject: '' };
+const AIU_RESERVED_CODES = ['AIU-A', 'AIU-I', 'AIU-U'];
+const newAiuServiceLine = (): AiuServiceLine => ({ code: '', name: '', quantity: 1, unitPrice: 0, ivaRate: 0 });
+const AIU_DEFAULT: AiuParams = { serviceLines: [newAiuServiceLine()], baseAmount: 0, adminPercent: 10, unforeseenPercent: 5, profitPercent: 5, ivaRate: 19, contractObject: '' };
 const AIU_OPERATION_TYPE = '09';
 const MANDATE_OPERATION_TYPE = '11';
 const OBSERVATION_MAX_LENGTH = 500;
@@ -87,29 +97,48 @@ const roundingAdjustmentFor = (mode: string | undefined, payable: number) => {
   return round2(rounded - Math.floor(rounded / unit) * unit);
 };
 
+const aiuLineBase = (l: AiuServiceLine) => round2(l.quantity * l.unitPrice);
+const aiuBase = (lines: AiuServiceLine[]) => round2(lines.reduce((sum, l) => sum + aiuLineBase(l), 0));
 const buildAiuItems = (aiu: AiuParams) => {
-  const line = (code: string, name: string, unitPrice: number, ivaRate: number) => {
-    const taxAmount = round2(unitPrice * ivaRate / 100);
+  const line = (code: string, name: string, quantity: number, unitPrice: number, ivaRate: number) => {
+    const taxAmount = round2(round2(quantity * unitPrice) * ivaRate / 100);
     return {
-      productId: '', code, name, quantity: 1, unitPrice,
+      productId: '', code, name, quantity, unitPrice,
       unitOfMeasureCode: '94', unitOfMeasureAbbreviation: 'EA', unitOfMeasureDisplayFormat: 'Combined',
       ivaTreatment: ivaRate > 0 ? 'Gravado' : 'Excluido', taxRate: ivaRate, discountRate: 0,
-      taxAmount, totalAmount: unitPrice + taxAmount, retentions: [] as any[]
+      taxAmount, totalAmount: round2(quantity * unitPrice) + taxAmount, retentions: [] as any[]
     };
   };
-  const percentOf = (percent: number) => round2(aiu.baseAmount * percent / 100);
+  const base = aiuBase(aiu.serviceLines);
+  const percentOf = (percent: number) => round2(base * percent / 100);
+  const service = aiu.serviceLines.map((l, i) =>
+    line(l.code.trim() || (i === 0 ? 'SERVICIO' : `SERV-${i + 1}`), l.name.trim() || aiu.contractObject.trim() || 'Servicio contratado', l.quantity, l.unitPrice, l.ivaRate));
   return [
-    line('AIU-A', 'Administración (A.I.U.)', percentOf(aiu.adminPercent), 0),
-    line('AIU-I', 'Imprevistos (A.I.U.)', percentOf(aiu.unforeseenPercent), 0),
-    line('AIU-U', 'Utilidad (A.I.U.)', percentOf(aiu.profitPercent), aiu.ivaRate),
-    line('SERVICIO', aiu.contractObject.trim() || 'Servicio contratado', aiu.baseAmount, aiu.serviceIvaRate),
+    ...service,
+    line('AIU-A', 'Administración (A.I.U.)', 1, percentOf(aiu.adminPercent), 0),
+    line('AIU-I', 'Imprevistos (A.I.U.)', 1, percentOf(aiu.unforeseenPercent), 0),
+    line('AIU-U', 'Utilidad (A.I.U.)', 1, percentOf(aiu.profitPercent), aiu.ivaRate),
   ];
 };
 
-const parseAiu = (sectorExtensionData?: string): AiuParams | null => {
+// Subtotal e IVA de las líneas AIU ya armadas (cada una con su cantidad).
+const aiuTotals = (items: { quantity: number; unitPrice: number; taxAmount: number }[]) => {
+  const sub = round2(items.reduce((sum, i) => sum + round2(i.quantity * i.unitPrice), 0));
+  const tax = round2(items.reduce((sum, i) => sum + i.taxAmount, 0));
+  return { sub, tax, total: round2(sub + tax) };
+};
+
+// Las líneas de servicio salen de los ítems del documento (todo lo que no es A, I o U); los datos del contrato, del JSON guardado.
+const parseAiu = (sectorExtensionData?: string, items?: any[]): AiuParams | null => {
   try {
     const a = JSON.parse(sectorExtensionData || '{}')?.aiu;
-    return a ? { ...AIU_DEFAULT, ...a } : null;
+    if (!a) return null;
+    const lines: AiuServiceLine[] = (items || [])
+      .filter(i => !AIU_RESERVED_CODES.includes(i.code))
+      .map(i => ({ code: i.code === 'SERVICIO' ? '' : (i.code || ''), name: i.name || '', quantity: Number(i.quantity) || 1, unitPrice: Number(i.unitPrice) || 0, ivaRate: Number(i.taxRate) || 0 }));
+    // Borradores AIU anteriores sin ítems de servicio: una sola línea con la base guardada.
+    const serviceLines = lines.length > 0 ? lines : [{ ...newAiuServiceLine(), unitPrice: Number(a.baseAmount) || 0, ivaRate: Number(a.serviceIvaRate) || 0 }];
+    return { ...AIU_DEFAULT, ...a, serviceLines, baseAmount: aiuBase(serviceLines) };
   } catch { return null; }
 };
 
@@ -698,7 +727,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         referenceDocumentIssueDate,
         referenceConcept: full.referenceConcept || '',
         discrepancyResponseCode: full.discrepancyResponseCode || '', noteNumberingId: full.noteNumberingId || '',
-        aiu: parseAiu(full.sectorExtensionData),
+        aiu: parseAiu(full.sectorExtensionData, full.items),
         sectorExtensionData: full.sectorExtensionData || '{}'
       });
       setView('create');
@@ -980,22 +1009,26 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
   const removeObservation = (index: number) =>
     setFormData({ ...formData, observations: formData.observations.filter((_, i) => i !== index) });
 
-  // Cambia algún dato del contrato AIU: se regeneran las cuatro líneas y los totales.
-  const applyAiu = (next: AiuParams) => {
+  // Cambia algún dato del contrato AIU (o una línea del servicio): se recalcula la base, se regeneran las líneas y los totales.
+  const applyAiu = (changed: AiuParams) => {
+    const next = { ...changed, baseAmount: aiuBase(changed.serviceLines) };
     const items = buildAiuItems(next);
-    const sub = items.reduce((sum, i) => sum + i.unitPrice, 0);
-    const tax = items.reduce((sum, i) => sum + i.taxAmount, 0);
-    setFormData({ ...formData, aiu: next, items, subtotal: sub, taxAmount: tax, totalAmount: sub + tax });
+    const { sub, tax, total } = aiuTotals(items);
+    setFormData({ ...formData, aiu: next, items, subtotal: sub, taxAmount: tax, totalAmount: total });
   };
+  const updateAiuLine = (index: number, patch: Partial<AiuServiceLine>) =>
+    applyAiu({ ...formData.aiu!, serviceLines: formData.aiu!.serviceLines.map((l, i) => (i === index ? { ...l, ...patch } : l)) });
+  const addAiuLine = () => applyAiu({ ...formData.aiu!, serviceLines: [...formData.aiu!.serviceLines, newAiuServiceLine()] });
+  const removeAiuLine = (index: number) =>
+    applyAiu({ ...formData.aiu!, serviceLines: formData.aiu!.serviceLines.length > 1 ? formData.aiu!.serviceLines.filter((_, i) => i !== index) : formData.aiu!.serviceLines });
 
   const handleDocumentTypeChange = (typeId: string) => {
     const next = documentTypes.find(d => d.id === typeId);
     if (!isSupport && next?.operationType === AIU_OPERATION_TYPE) {
       const aiu = formData.aiu || AIU_DEFAULT;
       const items = buildAiuItems(aiu);
-      const sub = items.reduce((sum, i) => sum + i.unitPrice, 0);
-      const tax = items.reduce((sum, i) => sum + i.taxAmount, 0);
-      setFormData({ ...formData, documentTypeId: typeId, aiu, items, subtotal: sub, taxAmount: tax, totalAmount: sub + tax });
+      const { sub, tax, total } = aiuTotals(items);
+      setFormData({ ...formData, documentTypeId: typeId, aiu, items, subtotal: sub, taxAmount: tax, totalAmount: total });
     } else if (!isSupport && next?.typeCode === 'NC' && !formData.referenceDocumentId) {
       const reason = creditNoteReasonCatalog.find(c => c.category === '1');
       setFormData({ ...formData, documentTypeId: typeId, discrepancyResponseCode: '1', referenceConcept: reason?.name || formData.referenceConcept, aiu: null });
@@ -1358,7 +1391,8 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
     // así que no hay nada que el usuario deba elegir acá.
     if (isAiu) {
       const a = formData.aiu || AIU_DEFAULT;
-      if (a.baseAmount <= 0) { toast.error('Indica el valor base del contrato AIU.'); return; }
+      if (a.serviceLines.some(l => !(l.unitPrice > 0) || !(l.quantity > 0))) { toast.error('Cada línea del servicio necesita cantidad y precio mayores que cero.'); return; }
+      if (a.serviceLines.some(l => AIU_RESERVED_CODES.includes(l.code.trim().toUpperCase()))) { toast.error('Los códigos AIU-A, AIU-I y AIU-U están reservados para Administración, Imprevistos y Utilidad.'); return; }
       if (a.contractObject.trim().length < 10) { toast.error('Describe el objeto del contrato (es obligatorio en la factura AIU).'); return; }
     }
     if (!isSupport && formData.currency !== 'COP' && !formData.referenceDocumentId) {
@@ -1404,7 +1438,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
         ...(isMandate
           ? { notes: '', observations: observations.filter(o => o.trim()).map(text => ({ text: text.trim() })) }
           : { observations: [] as { text: string }[] }),
-        sectorExtensionData: isAiu && aiuParams ? JSON.stringify({ aiu: aiuParams }) : '{}',
+        sectorExtensionData: isAiu && aiuParams ? JSON.stringify({ aiu: (({ serviceLines: _lines, ...contract }) => contract)(aiuParams) }) : '{}',
         paymentTermDays: formData.paymentTermDays === '' ? null : formData.paymentTermDays,
         // Las notas no traen resolutionId (el selector queda oculto) — "" no es un Guid? válido
         // para el backend, hay que mandar null.
@@ -1977,12 +2011,53 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
             {isAiu && formData.aiu && (
               <div className="mb-8">
                 <h3 className="text-lg font-bold text-slate-800 mb-1">Contrato AIU</h3>
-                <p className="text-sm text-slate-500 mb-4">Se factura el servicio más Administración, Imprevistos y Utilidad. Administración e Imprevistos no causan IVA; la Utilidad y el servicio sí, si indicas su tarifa.</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-500 mb-1">Valor del servicio ($)</label>
-                    <DecimalInput value={formData.aiu.baseAmount} onValueChange={v => applyAiu({ ...formData.aiu!, baseAmount: v })} placeholder="0" blankWhenZero className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
+                <p className="text-sm text-slate-500 mb-4">Se facturan las líneas del servicio más Administración, Imprevistos y Utilidad, calculados sobre la suma de las líneas. Administración e Imprevistos no causan IVA; la Utilidad y cada línea de servicio sí, si indicas su tarifa.</p>
+                <div className="mb-4">
+                  <div className="flex justify-between items-end mb-2">
+                    <label className="block text-xs font-bold text-slate-500">Líneas del servicio contratado</label>
+                    <button type="button" onClick={addAiuLine} className="text-sm font-bold text-blue-600 hover:text-blue-800">+ Agregar línea</button>
                   </div>
+                  <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-xs text-slate-500">
+                        <tr>
+                          <th className="text-left p-2 font-bold w-28">Código</th>
+                          <th className="text-left p-2 font-bold">Descripción</th>
+                          <th className="text-right p-2 font-bold w-20">Cant.</th>
+                          <th className="text-right p-2 font-bold w-36">Precio ($)</th>
+                          <th className="text-right p-2 font-bold w-20">IVA %</th>
+                          <th className="text-right p-2 font-bold w-36">Subtotal</th>
+                          <th className="w-10" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {formData.aiu.serviceLines.map((l, index) => (
+                          <tr key={index} className="border-t border-slate-100">
+                            <td className="p-1"><input type="text" value={l.code} placeholder={index === 0 ? 'SERVICIO' : `SERV-${index + 1}`} onChange={e => updateAiuLine(index, { code: e.target.value })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" /></td>
+                            <td className="p-1"><input type="text" value={l.name} placeholder="Ej. Costo directo obra civil" onChange={e => updateAiuLine(index, { name: e.target.value })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" /></td>
+                            <td className="p-1"><DecimalInput value={l.quantity} onValueChange={v => updateAiuLine(index, { quantity: v })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" /></td>
+                            <td className="p-1"><DecimalInput value={l.unitPrice} onValueChange={v => updateAiuLine(index, { unitPrice: v })} placeholder="0" blankWhenZero className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" /></td>
+                            <td className="p-1"><DecimalInput value={l.ivaRate} onValueChange={v => updateAiuLine(index, { ivaRate: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" /></td>
+                            <td className="p-2 text-right font-mono">{symOf(formData)}{fmt.money(aiuLineBase(l))}</td>
+                            <td className="p-1 text-center">
+                              {formData.aiu!.serviceLines.length > 1 && (
+                                <button type="button" onClick={() => removeAiuLine(index)} className="text-slate-400 hover:text-red-600" title="Quitar línea">✕</button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-slate-200 bg-slate-50">
+                          <td colSpan={5} className="p-2 text-right text-xs font-bold text-slate-500">Base del contrato (suma de las líneas)</td>
+                          <td className="p-2 text-right font-mono font-bold">{symOf(formData)}{fmt.money(formData.aiu.baseAmount)}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1">Administración %</label>
                     <DecimalInput value={formData.aiu.adminPercent} onValueChange={v => applyAiu({ ...formData.aiu!, adminPercent: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
@@ -1996,14 +2071,10 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                     <DecimalInput value={formData.aiu.profitPercent} onValueChange={v => applyAiu({ ...formData.aiu!, profitPercent: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1">IVA sobre la Utilidad %</label>
                     <DecimalInput value={formData.aiu.ivaRate} onValueChange={v => applyAiu({ ...formData.aiu!, ivaRate: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">IVA sobre el servicio % (0 = sin IVA)</label>
-                    <DecimalInput value={formData.aiu.serviceIvaRate} onValueChange={v => applyAiu({ ...formData.aiu!, serviceIvaRate: Math.min(v, 100) })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none font-mono text-right" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-bold text-slate-500 mb-1">Objeto del contrato</label>

@@ -52,8 +52,8 @@ romper las existentes — ej. mañana `api/mx/sat/invoices`.
 | **XML de un documento** | `/api/co/dian/documents/{id}/xml` | GET | Disponible |
 | **Resoluciones del emisor** | `/api/co/dian/resolutions` | GET | Disponible |
 | **Sincronizar resoluciones (emisores Dataico)** | `/api/co/dian/resolutions/sync` | POST | Disponible |
-| **Nota Crédito** | `/api/co/dian/credit-notes` | POST | Disponible |
-| **Nota Débito** | `/api/co/dian/debit-notes` | POST | Disponible |
+| **Nota Crédito** | `/api/co/dian/credit-notes` | POST | Disponible (contrato nuevo) |
+| **Nota Débito** | `/api/co/dian/debit-notes` | POST | Disponible (contrato nuevo) |
 | **Nómina Electrónica (emisión)** | `/api/co/dian/payroll` | POST | Disponible |
 | **Nómina Electrónica (anulación)** | `/api/co/dian/payroll/void` | POST | Disponible |
 | **Documento Soporte (emisión)** | `/api/co/dian/support-documents` | POST | Disponible |
@@ -130,26 +130,42 @@ Reglas principales:
 - Aún no se admiten AIU (responde `422 OPERATION_NOT_SUPPORTED`) ni impuestos de valor fijo por unidad (`tax_amount`, como la bolsa), que se rechazan con un mensaje claro.
 - La fecha efectiva del documento ante la DIAN es la del momento de la emisión; `issue_date` es informativa.
 
-### 4.2 Nota Crédito (`/api/co/dian/credit-notes`) — Pendiente (501)
-Requiere referenciar obligatoriamente el CUFE de la factura original.
+### 4.2 Nota Crédito y Nota Débito (`POST /api/co/dian/credit-notes` y `/debit-notes`)
+
+Se emiten sobre una factura **aprobada** del mismo emisor. El cliente, la resolución y el medio de pago salen de la factura; la respuesta es síncrona, igual que la factura. Puede enviarse directo o dentro de `{ "credit_note": { ... } }` / `{ "debit_note": { ... } }`.
+
+Nota crédito total (anula la factura: sin `items` copia sus líneas):
 ```json
 {
-  "prefix": "NC",
-  "documentNumber": "105",
-  "issueDate": "2024-05-22T08:00:00Z",
-  "billingReference": {
-    "invoiceNumber": "SETT990001",
-    "uuid": "a1b2c3d4e5f6g7h8i9j0..." // CUFE de la factura afectada
-  },
-  "discrepancyResponse": {
-    "referenceId": "SETT990001",
-    "responseCode": "2", // 2 = Anulación de factura electrónica
-    "description": "Anulación por error en los montos facturados"
-  },
-  "lines": [ ... ],
-  "totalAmount": 5950000.00
+  "invoice_number": "SFRY1005",
+  "number": "1",
+  "reason": "ANULACION",
+  "reason_description": "Anulación de la factura de prueba"
 }
 ```
+
+Nota crédito parcial o nota débito (con `items`, que lleva el valor del ajuste):
+```json
+{
+  "invoice_id": "6f1f6f7e-3b0a-4c1d-9a64-0b6d1c9f2a10",
+  "number": "2",
+  "numbering": { "prefix": "NCSF" },
+  "reason": "INTERESES",
+  "items": [
+    { "description": "Intereses de mora", "quantity": 1, "price": 5000 }
+  ]
+}
+```
+
+Reglas principales:
+
+- La factura se indica con `invoice_id` (el `id` que devolvió la emisión, o el id de Dataico) o con `invoice_number` (prefijo y número, por ejemplo `SFRY1005`). Si no existe para tu emisor responde `404 INVOICE_NOT_FOUND`; si no está aprobada, `422 INVOICE_NOT_APPROVED`.
+- `number` es tu consecutivo de notas, sin prefijo. Las notas no tienen rango autorizado por la DIAN: solo se valida que ese prefijo y número no estén usados (`409 DOCUMENT_ALREADY_EXISTS` con la información del documento existente). Sin `numbering.prefix` se usa el prefijo de notas del emisor.
+- `reason` (obligatorio). Nota crédito: `DEVOLUCION`, `ANULACION` u `OTROS`. Nota débito: `INTERESES`, `GASTOS_POR_COBRAR`, `CAMBIO_DEL_VALOR` u `OTROS`. También se acepta el código DIAN (1 a 6 en crédito, 1 a 4 en débito). `reason_description` es opcional.
+- Nota crédito sin `items`: es total. Con `items`: es parcial y el servidor calcula los totales. La suma de las notas crédito aprobadas no puede superar el total de la factura (`422 NOTE_EXCEEDS_INVOICE`).
+- La nota débito siempre necesita `items`.
+- Los `items` tienen la misma estructura de la factura (`description`, `quantity`, `price`, `taxes`, `discount_rate`...).
+- El contador de notas del portal avanza más allá del número que uses, para que el portal no lo repita.
 
 ### 4.3 Documento Equivalente POS (`/api/co/dian/equivalent-documents/pos`) — Pendiente (501)
 ```json

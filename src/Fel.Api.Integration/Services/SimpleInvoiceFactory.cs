@@ -411,7 +411,7 @@ namespace Fel.Api.Integration.Services
         // ---------------------------------------------------------------------------------------------------------------------------
         // Líneas
         // ---------------------------------------------------------------------------------------------------------------------------
-        private async Task<(List<DocumentItem> Items, ApiError? Error)> BuildItemsAsync(List<DataicoInvoiceItem> source, bool isMandate, List<string> warnings)
+        internal async Task<(List<DocumentItem> Items, ApiError? Error)> BuildItemsAsync(List<DataicoInvoiceItem> source, bool isMandate, List<string> warnings)
         {
             var units = await _db.UnitsOfMeasure.AsNoTracking().Where(u => u.IsActive).ToListAsync();
             var idTypes = await _db.IdentificationTypes.AsNoTracking().Where(t => t.IsActive).ToListAsync();

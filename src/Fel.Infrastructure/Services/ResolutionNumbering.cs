@@ -186,6 +186,35 @@ namespace Fel.Infrastructure.Services
             }
         }
 
+        // Consume el consecutivo de una nota que llegó con número propio (API): el contador de notas del portal pasa a number + 1 si estaba atrás, para que el
+        // portal no vuelva a asignar ese número. Solo avanza, y solo si el prefijo de la nota es el de la numeración que le corresponde (con otro prefijo el
+        // número no compite con el contador).
+        public static async Task CommitNoteNumberAsync(FelDbContext dbContext, Guid clientId, Guid? branchId, NoteKind kind, Guid resolutionId, Guid? noteNumberingId, string? prefix, long number)
+        {
+            var ownPrefix = await GetNotePrefixAsync(dbContext, clientId, branchId, kind, resolutionId, noteNumberingId);
+            var expected = ownPrefix ?? await dbContext.Resolutions.AsNoTracking().Where(r => r.Id == resolutionId).Select(r => r.Prefix).FirstOrDefaultAsync();
+            if (!string.Equals(expected ?? string.Empty, prefix ?? string.Empty, StringComparison.Ordinal)) return;
+
+            var clientLevelId = await ClientLevelNumberingIdAsync(dbContext, clientId, branchId, kind, noteNumberingId);
+            if (clientLevelId != null)
+            {
+                await dbContext.NoteNumberings.Where(n => n.Id == clientLevelId && (n.NextNumber == null || n.NextNumber <= number))
+                    .ExecuteUpdateAsync(s => s.SetProperty(n => n.NextNumber, number + 1));
+                return;
+            }
+
+            var resolutionIds = await SamePrefixResolutionIdsAsync(dbContext, clientId, resolutionId);
+            var rowId = await EffectiveNumbering(dbContext, clientId, branchId, kind, resolutionIds).Select(n => (Guid?)n.Id).FirstOrDefaultAsync();
+            if (rowId == null)
+            {
+                await CreateSharedNumberingAsync(dbContext, clientId, kind, resolutionId);
+                rowId = await EffectiveNumbering(dbContext, clientId, branchId, kind, resolutionIds).Select(n => (Guid?)n.Id).FirstOrDefaultAsync();
+            }
+            if (rowId == null) return;
+            await dbContext.NoteNumberings.Where(n => n.Id == rowId && (n.NextNumber == null || n.NextNumber <= number))
+                .ExecuteUpdateAsync(s => s.SetProperty(n => n.NextNumber, number + 1));
+        }
+
         // Por si a un Client le falta su contador compartido. Va por SQL directo para no guardar de paso los cambios
         // pendientes del contexto (el documento que se está publicando); si dos peticiones lo crean a la vez, el índice
         // único deja pasar una y la otra solo vuelve a leer.

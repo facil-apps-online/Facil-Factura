@@ -144,6 +144,7 @@ builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.
 builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.Infrastructure.Dian.NativeDianSubmissionProvider>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.InvoicePublishingService>();
 builder.Services.AddScoped<Fel.Api.Integration.Services.SimpleInvoiceFactory>();
+builder.Services.AddScoped<Fel.Api.Integration.Services.SimpleNoteFactory>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ResolutionBranchService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.DataicoResolutionSyncService>();
 builder.Services.ConfigureReportingServices(configurator => {

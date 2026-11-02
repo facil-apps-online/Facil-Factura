@@ -21,13 +21,19 @@ Guarda el secreto solo en tu servidor. Errores: `401` con `code` `MISSING_CREDEN
 
 ---
 
-## 2. Flujo Asíncrono (Emisión y Consulta)
+## 2. Flujo de emisión (síncrono)
 
-Dado que la DIAN puede presentar intermitencias, nuestro sistema encola tus documentos y los procesa en segundo plano.
+La emisión de la factura es síncrona: la respuesta del `POST` ya trae el resultado final ante la DIAN (o ante el integrador que tenga configurado el emisor).
 
-1.  **Emisión:** Envías el JSON al endpoint correspondiente. La API te responderá inmediatamente un `202 Accepted` con un `TrackingId`.
-2.  **Consulta (Polling):** Haces un `GET` a `/api/co/dian/documents/{id}` para verificar si la DIAN ya aceptó el documento y obtener el CUFE.
-3.  **Descarga:** Haces un `GET` a `/api/co/dian/documents/{id}/files` para obtener el XML firmado, la respuesta de la DIAN y el AttachedDocument en Base64 real (`/xml` lo descarga directo). El PDF llega en un paso posterior.
+1.  **Emisión:** `POST /api/co/dian/invoices` con el JSON de la factura. Respuesta `201` con el `id` (UUID), el número, el estado y el CUFE. El documento también aparece en el portal del emisor.
+2.  **Consulta:** `GET /api/co/dian/documents/{id}` devuelve el estado, la respuesta de la DIAN y el CUFE. Solo ves los documentos de tu propio emisor; cualquier otro `id` responde `404`.
+3.  **Descarga:** `GET /api/co/dian/documents/{id}/files` entrega el XML firmado, la respuesta de la DIAN y el AttachedDocument en Base64 real (`/xml` descarga el XML directo). El PDF (`/pdf`) llega en una entrega posterior.
+
+**Consecutivo.** El `number` lo envías tú y lo controlas desde tu sistema. Puede llegar en cualquier orden (el 5 antes que el 4) mientras esté dentro del rango de la resolución habilitada y vigente. Consulta tus resoluciones con `GET /api/co/dian/resolutions`.
+
+**Número repetido.** Si el número ya fue usado por un documento aprobado o en proceso, la respuesta es `409 DOCUMENT_ALREADY_EXISTS` con el `id`, el estado, el CUFE y la respuesta que tengamos de ese documento; no se emite uno nuevo. Si el documento anterior quedó en borrador o rechazado, reenviar el mismo número corrige y reintenta sobre el mismo `id`.
+
+**Errores en la emisión.** `400 VALIDATION_ERROR` (el arreglo `details` nombra cada campo), `422 RESOLUTION_NOT_FOUND | NUMBER_OUT_OF_RANGE | RESOLUTION_EXPIRED | PROVIDER_REJECTED | TEMPLATE_REQUIRED | CANNOT_ISSUE`, `409 DOCUMENT_ALREADY_EXISTS | REQUEST_IN_PROGRESS`, `502 PROVIDER_UNAVAILABLE` (no se pudo confirmar: no reenvíes, consulta el estado con el `id`).
 
 ---
 
@@ -40,7 +46,12 @@ romper las existentes — ej. mañana `api/mx/sat/invoices`.
 
 | Documento | Endpoint | Método | Estado |
 | :--- | :--- | :--- | :--- |
-| **Factura de Venta** | `/api/co/dian/invoices` | POST | Disponible |
+| **Factura de Venta** (estándar, mandato, exportación) | `/api/co/dian/invoices` | POST | Disponible (contrato nuevo) |
+| **Consulta de un documento por UUID** | `/api/co/dian/documents/{id}` | GET | Disponible |
+| **Archivos de un documento (Base64)** | `/api/co/dian/documents/{id}/files` | GET | Disponible |
+| **XML de un documento** | `/api/co/dian/documents/{id}/xml` | GET | Disponible |
+| **Resoluciones del emisor** | `/api/co/dian/resolutions` | GET | Disponible |
+| **Sincronizar resoluciones (emisores Dataico)** | `/api/co/dian/resolutions/sync` | POST | Disponible |
 | **Nota Crédito** | `/api/co/dian/credit-notes` | POST | Disponible |
 | **Nota Débito** | `/api/co/dian/debit-notes` | POST | Disponible |
 | **Nómina Electrónica (emisión)** | `/api/co/dian/payroll` | POST | Disponible |
@@ -65,6 +76,8 @@ romper las existentes — ej. mañana `api/mx/sat/invoices`.
 | **RIPS independiente de factura** | `/api/co/minsalud/rips/emit` | POST | Disponible |
 | **Consulta de adquirente (nombre y correo por documento)** | `/api/co/dian/acquirers` | POST | Disponible |
 
+Los demás tipos de documento (notas, nómina, soporte, equivalentes, transporte) conservan por ahora su estructura anterior y se migran al contrato nuevo por fases: mientras tanto devuelven un `TrackingId` que la consulta por UUID todavía no resuelve. El contrato de la factura de venta, las resoluciones y la consulta es el vigente.
+
 Los endpoints marcados "Pendiente" responden `501 Not Implemented` y no aparecen en el Swagger
 público — se activan a medida que se construye su generación UBL propia.
 
@@ -75,37 +88,47 @@ público — se activan a medida que se construye su generación UBL propia.
 A continuación, se presentan los esqueletos simplificados de los JSON que espera cada endpoint. 
 *(Nota: El catálogo completo de catálogos paramétricos DIAN -ciudades, impuestos, unidades de medida- se encuentra en el Anexo Técnico V1.9).*
 
-### 4.1 Factura Electrónica Estándar (`/api/co/dian/invoices`)
+### 4.1 Factura de Venta (`POST /api/co/dian/invoices`)
+
+El JSON tiene la misma estructura que usa Dataico y puede enviarse directo o dentro de `{ "invoice": { ... } }`. El emisor sale de la API Key y los totales los calcula el servidor: no se envían.
+
 ```json
 {
-  "prefix": "SETT",
-  "documentNumber": "990001",
-  "issueDate": "2024-05-21T10:30:00Z",
-  "currencyCode": "COP",
+  "number": "1001",
+  "issue_date": "01/11/2026",
+  "payment_means_type": "DEBITO",
+  "payment_means": "EFECTIVO",
+  "numbering": { "prefix": "SETT", "resolution_number": "18760000001" },
   "customer": {
-    "identificationType": "31",
-    "identificationNumber": "900123456",
-    "name": "Cliente de Ejemplo SAS",
-    "email": "facturacion@cliente.com"
+    "party_identification_type": "NIT",
+    "party_identification": "900123456",
+    "company_name": "ACME SAS",
+    "email": "facturas@acme.co",
+    "address_line": "Calle 10 # 5-20",
+    "city": "BOGOTA, D.C."
   },
-  "lines": [
+  "items": [
     {
-      "id": "1",
-      "description": "Desarrollo de Software a la medida",
-      "quantity": 1,
-      "price": 5000000.00,
-      "taxes": [
-        {
-          "taxCode": "01",
-          "taxPercent": 19.00,
-          "taxAmount": 950000.00
-        }
-      ]
+      "sku": "A1",
+      "description": "Producto de ejemplo",
+      "quantity": 2,
+      "price": 10000,
+      "taxes": [{ "tax_category": "IVA", "tax_rate": 19 }]
     }
   ],
-  "totalAmount": 5950000.00
+  "notes": ["Gracias por su compra"]
 }
 ```
+
+Reglas principales:
+
+- `number` es obligatorio, entero positivo, dentro del rango de la resolución. `numbering.prefix` identifica la resolución; `resolution_number` es opcional si el prefijo es único.
+- `payment_means_type`: `DEBITO` (contado, exige `payment_means`) o `CREDITO` (exige `payment_date`). Fechas en `dd/MM/yyyy`.
+- IVA: una línea con `tax_category: "IVA"` y tarifa mayor que 0 es gravada; con tarifa 0 es exenta; sin IVA es excluida. Retenciones en `retentions` por línea.
+- La dirección es flexible: el municipio se ubica por código DANE (`department` + `city`) o por nombre. Si no se logra ubicar, la dirección se omite y la respuesta lo avisa en `warnings`.
+- Mandato: `operation: "MANDATO"` y el mandante en cada línea. Exportación: `invoice_type_code: "FACTURA_EXPORTACION"` y moneda extranjera habilitada para el emisor.
+- Aún no se admiten AIU (responde `422 OPERATION_NOT_SUPPORTED`) ni impuestos de valor fijo por unidad (`tax_amount`, como la bolsa), que se rechazan con un mensaje claro.
+- La fecha efectiva del documento ante la DIAN es la del momento de la emisión; `issue_date` es informativa.
 
 ### 4.2 Nota Crédito (`/api/co/dian/credit-notes`) — Pendiente (501)
 Requiere referenciar obligatoriamente el CUFE de la factura original.
@@ -220,22 +243,23 @@ El documento va en el cuerpo JSON y no en la URL, para que no quede en las bitá
 
 ## 5. Respuestas del Sistema
 
-**Al Enviar un Documento (202 Accepted):**
+**Emisión exitosa (`201 Created`):**
 ```json
 {
-  "message": "Documento Equivalente POS recibido y encolado para procesamiento.",
-  "trackingId": "POS-10045",
-  "status": "PENDING"
+  "id": "6f1f6f7e-3b0a-4c1d-9a64-0b6d1c9f2a10",
+  "type": "FE-STD",
+  "number": "SETT1001",
+  "issueDate": "2026-11-01T10:30:00",
+  "total": 23800.00,
+  "status": "APPROVED",
+  "cufe": "3a4b5c6d...",
+  "dianResponse": "Documento validado por la DIAN",
+  "warnings": []
 }
 ```
 
-**Al Consultar Estado (GET /api/co/dian/documents/{TrackingId}/status):**
-```json
-{
-  "trackId": "POS-10045",
-  "status": "ACCEPTED",
-  "dianResponse": "Procesado Correctamente",
-  "cufe": "3a4b5c6d...",
-  "filesUrl": "/api/co/dian/documents/POS-10045/files"
-}
-```
+**Número ya usado (`409 DOCUMENT_ALREADY_EXISTS`):** trae `id`, `type`, `number`, `issueDate`, `total`, `status`, `cufe` y `dianResponse` del documento existente.
+
+**Consulta (`GET /api/co/dian/documents/{id}`):** `id`, `type`, `number`, `issueDate`, `total`, `status`, `dianResponse`, `cufe` y `files`.
+
+**Resoluciones (`GET /api/co/dian/resolutions`):** arreglo con `documentType`, `prefix`, `resolutionNumber`, `numberStart`, `numberEnd`, `nextNumber` (solo referencia), `validFrom`, `validTo` y `expired`. Acepta `?documentType=FE`.

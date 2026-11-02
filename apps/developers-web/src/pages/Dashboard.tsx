@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, Check, KeyRound, Building2, LayoutDashboard, Code2, Stethoscope, Globe } from 'lucide-react';
+import { Copy, Check, KeyRound, Building2, LayoutDashboard, Code2, Stethoscope, Globe, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import IntegrationGuide from './IntegrationGuide';
 import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 
 // Catálogo de países soportados y qué documentación aplica a cada uno — hoy solo Colombia.
@@ -10,8 +11,9 @@ import UserMenu, { useAccountMe } from '@shared/components/session/UserMenu';
 const COUNTRIES = [{ code: 'co', name: 'Colombia' }] as const;
 type CountryCode = typeof COUNTRIES[number]['code'];
 
-const DOC_SECTIONS: Record<CountryCode, { key: 'docs' | 'docsV1'; label: string; icon: typeof Code2 }[]> = {
+const DOC_SECTIONS: Record<CountryCode, { key: 'guide' | 'docs' | 'docsV1'; label: string; icon: typeof Code2 }[]> = {
   co: [
+    { key: 'guide', label: 'Guía de integración', icon: BookOpen },
     { key: 'docs', label: 'DIAN', icon: Code2 },
     { key: 'docsV1', label: 'MinSalud', icon: Stethoscope },
   ],
@@ -64,7 +66,7 @@ export default function Dashboard({ onLogout, onProfile }: { onLogout: () => voi
   const { me: account } = useAccountMe(api, '/developer/auth');
   const [me, setMe] = useState<DeveloperMe | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'overview' | 'docs' | 'docsV1'>('overview');
+  const [tab, setTab] = useState<'overview' | 'guide' | 'docs' | 'docsV1'>('overview');
   const [country, setCountry] = useState<CountryCode>('co');
   const sections = DOC_SECTIONS[country];
 
@@ -116,7 +118,9 @@ export default function Dashboard({ onLogout, onProfile }: { onLogout: () => voi
         </div>
       </header>
 
-      {tab === 'docs' ? (
+      {tab === 'guide' ? (
+        <IntegrationGuide />
+      ) : tab === 'docs' ? (
         <iframe
           src="https://api.facil-factura.pro/swagger"
           title="Swagger API Facil Factura"
@@ -173,7 +177,7 @@ export default function Dashboard({ onLogout, onProfile }: { onLogout: () => voi
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
                   <h2 className="text-lg font-bold text-slate-800 mb-3">Documentación de la API</h2>
                   <p className="text-sm text-slate-500 mb-4">
-                    Referencia completa de endpoints, esquemas y el mecanismo de firma HMAC para autenticar cada petición.
+                    Empieza por la Guía de integración (ejemplos en seis lenguajes); la referencia completa de endpoints y esquemas está en las pestañas de Swagger.
                     Todo lo que se emite ante la DIAN (facturas, notas, nómina, etc.) vive en una pestaña; el RIPS
                     independiente de factura, directo a MinSalud, en la otra.
                   </p>

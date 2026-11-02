@@ -162,6 +162,19 @@ namespace Fel.Api.Integration.Services
             // El servidor calcula los totales con las mismas fórmulas del portal; el integrador no los envía.
             DocumentTotalsCalculator.Apply(document, document.Items);
 
+            // En un documento ya guardado, las filas nuevas traen su Id y EF las tomaría como existentes (UPDATE sobre filas que no están);
+            // se marcan como nuevas para que se inserten.
+            if (existing != null)
+            {
+                foreach (var item in document.Items)
+                {
+                    _db.Entry(item).State = EntityState.Added;
+                    foreach (var retention in item.Retentions) _db.Entry(retention).State = EntityState.Added;
+                }
+                foreach (var retention in document.GeneralRetentions) _db.Entry(retention).State = EntityState.Added;
+                foreach (var observation in document.Observations) _db.Entry(observation).State = EntityState.Added;
+            }
+
             return new InvoiceBuildResult { Document = document, Reused = existing != null }.WithWarnings(warnings);
         }
 

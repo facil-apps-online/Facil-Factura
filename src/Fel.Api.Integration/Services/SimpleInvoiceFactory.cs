@@ -89,6 +89,9 @@ namespace Fel.Api.Integration.Services
             var itemsResult = await BuildItemsAsync(request.items, isMandate, warnings);
             if (itemsResult.Error != null) return new InvoiceBuildResult { Error = itemsResult.Error };
 
+            var paymentMeansResult = await ResolvePaymentMeansAsync(request);
+            if (paymentMeansResult.Error != null) return new InvoiceBuildResult { Error = paymentMeansResult.Error };
+
             var document = existing ?? new Document { Id = Guid.NewGuid(), ClientId = client.Id, CreatedAt = DateTime.UtcNow };
             if (existing != null)
             {
@@ -114,7 +117,7 @@ namespace Fel.Api.Integration.Services
             document.Customer = customer;
             document.IssueDate = issueDate;
             document.PaymentMeansType = request.payment_means_type.Trim().ToUpperInvariant();
-            document.PaymentMeans = string.IsNullOrWhiteSpace(request.payment_means) ? null : request.payment_means.Trim().ToUpperInvariant();
+            document.PaymentMeans = paymentMeansResult.Category;
             document.PurchaseOrderReference = string.IsNullOrWhiteSpace(request.order_reference) ? null : request.order_reference.Trim();
             var dueDate = ParseDate(request.payment_date);
             document.PaymentTermDays = dueDate.HasValue ? Math.Max(0, (int)(dueDate.Value.Date - issueDate.Date).TotalDays) : null;
@@ -185,7 +188,7 @@ namespace Fel.Api.Integration.Services
 
             var type = (r.payment_means_type ?? string.Empty).Trim().ToUpperInvariant();
             if (type != "DEBITO" && type != "CREDITO") p.Add("payment_means_type: debe ser DEBITO (contado) o CREDITO.");
-            else if (type == "DEBITO" && string.IsNullOrWhiteSpace(r.payment_means)) p.Add("payment_means: es obligatorio cuando payment_means_type es DEBITO (por ejemplo EFECTIVO o TRANSFERENCIA).");
+            else if (type == "DEBITO" && string.IsNullOrWhiteSpace(r.payment_means)) p.Add("payment_means: es obligatorio cuando payment_means_type es DEBITO (por ejemplo CASH para efectivo o DEBIT_CARD para tarjeta débito).");
             else if (type == "CREDITO" && ParseDate(r.payment_date) == null) p.Add("payment_date: es obligatorio cuando payment_means_type es CREDITO; es la fecha de vencimiento.");
 
             if (!string.IsNullOrWhiteSpace(r.invoice_type_code) && !r.invoice_type_code.Trim().ToUpperInvariant().StartsWith("FACTURA_"))
@@ -533,6 +536,24 @@ namespace Fel.Api.Integration.Services
 
         private static string TrimJoin(params string?[] parts) => string.Join(" ", parts.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!.Trim()));
         private static string FirstNonEmpty(params string?[] values) => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? string.Empty;
+
+        // El medio de pago se guarda con la clave del catálogo (CASH, DEBIT_CARD...), que es la que traduce al código DIAN. Se acepta esa clave,
+        // el código DIAN (10, 48...) o el nombre en español ("Efectivo"). A crédito no aplica.
+        private async Task<(string? Category, ApiError? Error)> ResolvePaymentMeansAsync(DataicoInvoiceRequest request)
+        {
+            if (string.Equals(request.payment_means_type?.Trim(), "CREDITO", StringComparison.OrdinalIgnoreCase)) return (null, null);
+
+            var catalog = await _db.TaxCatalogItems.AsNoTracking().Where(i => i.Kind == TaxCatalogKind.PaymentMeans && i.IsActive).ToListAsync();
+            var wanted = Normalize(request.payment_means ?? string.Empty).Replace(' ', '_');
+            var match = catalog.FirstOrDefault(i => Normalize(i.Category).Replace(' ', '_') == wanted)
+                ?? catalog.FirstOrDefault(i => i.DianCode == request.payment_means!.Trim())
+                ?? catalog.FirstOrDefault(i => Normalize(i.Name).Replace(' ', '_') == wanted);
+            if (match != null) return (match.Category, null);
+
+            var common = catalog.Where(i => i.DianCode is "10" or "30" or "31" or "42" or "48" or "49" or "ZZZ").Select(i => $"{i.Category} ({i.Name})").Distinct().ToList();
+            var detail = $"payment_means: \"{request.payment_means}\" no es un medio de pago válido. Usa la clave del catálogo, por ejemplo: {string.Join(", ", common.Count > 0 ? common : catalog.Take(8).Select(i => i.Category))}.";
+            return (null, new ApiError(400, "VALIDATION_ERROR", "El documento tiene datos inválidos o faltantes. Revisa el detalle de cada campo.", new List<string> { detail }));
+        }
 
         // Compara nombres sin tildes ni mayúsculas ("BOGOTÁ, D.C." ~ "bogota d.c.").
         private static string Normalize(string value)

@@ -17,7 +17,7 @@ export const SAMPLE_INVOICE = `{
   "number": "1001",
   "issue_date": "01/11/2026",
   "payment_means_type": "DEBITO",
-  "payment_means": "EFECTIVO",
+  "payment_means": "CASH",
   "numbering": { "prefix": "SETT", "resolution_number": "18760000001" },
   "customer": {
     "party_identification_type": "NIT",

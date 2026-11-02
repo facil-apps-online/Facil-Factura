@@ -35,6 +35,7 @@ namespace Fel.Tests
                 Db.DocumentTypes.Add(new DocumentType { Id = Guid.NewGuid(), Code = "FE-MANDATO", Name = "Mandato", IsActive = true, OperationType = "11" });
                 Db.IdentificationTypes.Add(new IdentificationType { Id = Guid.NewGuid(), Code = "31", Name = "NIT", DataicoCode = "NIT", IsActive = true });
                 Db.IdentificationTypes.Add(new IdentificationType { Id = Guid.NewGuid(), Code = "13", Name = "Cédula de Ciudadanía", DataicoCode = "CC", IsActive = true });
+                Db.TaxCatalogItems.Add(new TaxCatalogItem { Id = Guid.NewGuid(), Kind = TaxCatalogKind.PaymentMeans, Category = "CASH", Name = "Efectivo", DianCode = "10", IsActive = true });
                 Db.UnitsOfMeasure.Add(new UnitOfMeasure { Id = Guid.NewGuid(), DianCode = "94", Abbreviation = "EA", Name = "Unidad", IsActive = true });
                 Db.TaxCatalogItems.Add(new TaxCatalogItem { Id = Guid.NewGuid(), Kind = TaxCatalogKind.Retention, Category = "RET_FUENTE", IsActive = true });
                 Db.DianMunicipalities.Add(new DianMunicipality { Code = "11001", Name = "Bogotá, D.C.", DepartmentCode = "11", DepartmentName = "Bogotá D.C." });
@@ -81,6 +82,31 @@ namespace Fel.Tests
             Assert.Equal(3800m, doc.TaxAmount);
             Assert.Equal(23800m, doc.TotalAmount);
             Assert.Equal(f.Resolution.Id, doc.ResolutionId);
+        }
+
+        [Theory]
+        [InlineData("CASH")]
+        [InlineData("cash")]
+        [InlineData("10")]
+        [InlineData("Efectivo")]
+        [InlineData("EFECTIVO")]
+        public async Task Resolves_the_payment_means_to_the_catalog_key(string input)
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r => r.payment_means = input), f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            Assert.Equal("CASH", result.Document!.PaymentMeans);
+        }
+
+        [Fact]
+        public async Task Rejects_an_unknown_payment_means_and_lists_valid_ones()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r => r.payment_means = "BITCOIN"), f.Client, BranchId);
+
+            Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
+            Assert.Contains("CASH", string.Join("|", result.Error.Details!));
         }
 
         [Fact]

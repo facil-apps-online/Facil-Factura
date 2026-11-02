@@ -33,6 +33,7 @@ namespace Fel.Tests
                 Db.ResolutionBranches.Add(new ResolutionBranch { ResolutionId = Resolution.Id, BranchId = BranchId });
                 Db.DocumentTypes.Add(new DocumentType { Id = Guid.NewGuid(), Code = "FE-STD", Name = "Factura", IsActive = true });
                 Db.DocumentTypes.Add(new DocumentType { Id = Guid.NewGuid(), Code = "FE-MANDATO", Name = "Mandato", IsActive = true, OperationType = "11" });
+                Db.DocumentTypes.Add(new DocumentType { Id = Guid.NewGuid(), Code = "FE-AIU", Name = "Servicios AIU", IsActive = true, OperationType = "09" });
                 Db.IdentificationTypes.Add(new IdentificationType { Id = Guid.NewGuid(), Code = "31", Name = "NIT", DataicoCode = "NIT", IsActive = true });
                 Db.IdentificationTypes.Add(new IdentificationType { Id = Guid.NewGuid(), Code = "13", Name = "Cédula de Ciudadanía", DataicoCode = "CC", IsActive = true });
                 Db.TaxCatalogItems.Add(new TaxCatalogItem { Id = Guid.NewGuid(), Kind = TaxCatalogKind.PaymentMeans, Category = "CASH", Name = "Efectivo", DianCode = "10", IsActive = true });
@@ -261,6 +262,40 @@ namespace Fel.Tests
 
             Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
             Assert.Contains("tax_amount", string.Join("|", result.Error.Details!));
+        }
+
+        [Fact]
+        public async Task An_aiu_invoice_generates_the_four_lines_from_the_contract()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r =>
+            {
+                r.operation = "AIU";
+                r.items = new List<DataicoInvoiceItem>();
+                r.aiu = new DataicoAiuContract { base_amount = 1_000_000, contract_object = "Obra civil de adecuación de bodega" };
+            }), f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            var doc = result.Document!;
+            Assert.Equal("FE-AIU", doc.TypeCode);
+            Assert.Equal(new[] { "AIU-A", "AIU-I", "AIU-U", "SERVICIO" }, doc.Items.Select(i => i.Code).ToArray());
+            Assert.Equal(new[] { 100_000m, 50_000m, 50_000m, 1_000_000m }, doc.Items.Select(i => i.UnitPrice).ToArray());
+            var stored = Fel.Core.Models.AiuContractData.TryRead(doc.SectorExtensionData);
+            Assert.Equal(10, stored!.AdminPercent);
+            Assert.Equal(19, stored.IvaRate);
+            Assert.Equal("Obra civil de adecuación de bodega", stored.ContractObject);
+        }
+
+        [Fact]
+        public async Task An_aiu_invoice_validates_the_contract_block()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r => { r.operation = "AIU"; r.items = new List<DataicoInvoiceItem>(); r.aiu = new DataicoAiuContract { contract_object = "corto" }; }), f.Client, BranchId);
+
+            Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
+            var details = string.Join("|", result.Error.Details!);
+            Assert.Contains("aiu.base_amount", details);
+            Assert.Contains("aiu.contract_object", details);
         }
 
         [Fact]

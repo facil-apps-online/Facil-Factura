@@ -94,6 +94,12 @@ namespace Fel.Infrastructure.Dataico.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? operation { get; set; }
 
+        // Contrato de la factura AIU (operation "AIU"): la API genera las líneas de Administración, Imprevistos, Utilidad y servicio a partir de
+        // esto; el integrador no envía items. Solo lo lee la API de integración, nunca viaja a Dataico con este nombre.
+        [JsonPropertyName("aiu")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DataicoAiuContract? aiu { get; set; }
+
         // Observaciones del documento, una por entrada y en orden.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<string>? notes { get; set; }
@@ -126,5 +132,18 @@ namespace Fel.Infrastructure.Dataico.Models
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<DataicoCharge>? charges { get; set; }
+    }
+
+    // Datos del contrato AIU que envía el integrador. Los porcentajes se aplican sobre base_amount; A e I no causan IVA, la Utilidad usa
+    // utility_iva_rate (19 por defecto) y el servicio service_iva_rate (0 por defecto).
+    public class DataicoAiuContract
+    {
+        public decimal base_amount { get; set; }
+        public decimal? administration_percent { get; set; }
+        public decimal? unforeseen_percent { get; set; }
+        public decimal? utility_percent { get; set; }
+        public decimal? utility_iva_rate { get; set; }
+        public decimal? service_iva_rate { get; set; }
+        public string contract_object { get; set; } = string.Empty;
     }
 }

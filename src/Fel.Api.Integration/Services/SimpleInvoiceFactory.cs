@@ -40,6 +40,7 @@ namespace Fel.Api.Integration.Services
         public const string StandardInvoice = "FE-STD";
         public const string MandateInvoice = "FE-MANDATO";
         public const string ExportInvoice = "FE-EXP";
+        public const string AiuInvoice = "FE-AIU";
 
         private readonly FelDbContext _db;
 
@@ -56,10 +57,11 @@ namespace Fel.Api.Integration.Services
 
             var isMandate = string.Equals(request.operation, "MANDATO", StringComparison.OrdinalIgnoreCase);
             var isExport = string.Equals(request.invoice_type_code, "FACTURA_EXPORTACION", StringComparison.OrdinalIgnoreCase);
-            if (string.Equals(request.operation, "AIU", StringComparison.OrdinalIgnoreCase))
-                return Fail(422, "OPERATION_NOT_SUPPORTED", "La factura AIU todavía no está disponible por la API. Estará en una próxima entrega.");
+            var isAiu = IsAiu(request);
+            if (isAiu && (isExport || isMandate))
+                return Fail(400, "VALIDATION_ERROR", "La factura AIU no puede ser a la vez de exportación o de mandato.");
 
-            var typeCode = isExport ? ExportInvoice : isMandate ? MandateInvoice : StandardInvoice;
+            var typeCode = isExport ? ExportInvoice : isMandate ? MandateInvoice : isAiu ? AiuInvoice : StandardInvoice;
             var documentType = await _db.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Code == typeCode && t.IsActive);
             if (documentType == null)
                 return Fail(422, "DOCUMENT_TYPE_UNAVAILABLE", $"El tipo de documento {typeCode} no está disponible.");
@@ -86,7 +88,7 @@ namespace Fel.Api.Integration.Services
             if (customerResult.Error != null) return new InvoiceBuildResult { Error = customerResult.Error };
             var customer = customerResult.Customer!;
 
-            var itemsResult = await BuildItemsAsync(request.items, isMandate, warnings);
+            var itemsResult = isAiu ? (Items: BuildAiuItems(request.aiu!), Error: (ApiError?)null) : await BuildItemsAsync(request.items, isMandate, warnings);
             if (itemsResult.Error != null) return new InvoiceBuildResult { Error = itemsResult.Error };
 
             var paymentMeansResult = await ResolvePaymentMeansAsync(request);
@@ -119,6 +121,7 @@ namespace Fel.Api.Integration.Services
             document.PaymentMeansType = request.payment_means_type.Trim().ToUpperInvariant();
             document.PaymentMeans = paymentMeansResult.Category;
             document.PurchaseOrderReference = string.IsNullOrWhiteSpace(request.order_reference) ? null : request.order_reference.Trim();
+            document.SectorExtensionData = isAiu ? AiuExtensionData(request.aiu!) : "{}";
             var dueDate = ParseDate(request.payment_date);
             document.PaymentTermDays = dueDate.HasValue ? Math.Max(0, (int)(dueDate.Value.Date - issueDate.Date).TotalDays) : null;
 
@@ -178,6 +181,44 @@ namespace Fel.Api.Integration.Services
             return new InvoiceBuildResult { Document = document, Reused = existing != null }.WithWarnings(warnings);
         }
 
+        private static bool IsAiu(DataicoInvoiceRequest r) => string.Equals(r.operation, "AIU", StringComparison.OrdinalIgnoreCase);
+
+        private static AiuContractData ToContract(DataicoAiuContract a) => new()
+        {
+            BaseAmount = a.base_amount,
+            AdminPercent = a.administration_percent ?? 10,
+            UnforeseenPercent = a.unforeseen_percent ?? 5,
+            ProfitPercent = a.utility_percent ?? 5,
+            IvaRate = a.utility_iva_rate ?? 19,
+            ServiceIvaRate = a.service_iva_rate ?? 0,
+            ContractObject = (a.contract_object ?? string.Empty).Trim()
+        };
+
+        // Mismo JSON que guarda el portal ({ aiu: {...} } en camelCase): el motor y las notas lo leen igual venga de donde venga.
+        private static string AiuExtensionData(DataicoAiuContract a) =>
+            System.Text.Json.JsonSerializer.Serialize(new { aiu = ToContract(a) }, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+
+        // Las cuatro líneas que arma el formulario del portal: A, I y U como porcentaje de la base, y el servicio contratado por la base. A e I
+        // no causan IVA; la Utilidad usa su tarifa y el servicio la suya.
+        private static List<DocumentItem> BuildAiuItems(DataicoAiuContract source)
+        {
+            var aiu = ToContract(source);
+            DocumentItem Line(string code, string name, decimal price, decimal ivaRate) => new()
+            {
+                Id = Guid.NewGuid(), Code = code, Name = name, Quantity = 1, UnitPrice = price,
+                UnitOfMeasureCode = "94", UnitOfMeasureAbbreviation = "EA", UnitOfMeasureDisplayFormat = "Combined",
+                IvaTreatment = ivaRate > 0 ? IvaTreatment.Gravado : IvaTreatment.Excluido, TaxRate = ivaRate
+            };
+            decimal PercentOf(decimal percent) => Math.Round(aiu.BaseAmount * percent / 100, 2, MidpointRounding.AwayFromZero);
+            return new List<DocumentItem>
+            {
+                Line(AiuContractData.AdminCode, "Administración (A.I.U.)", PercentOf(aiu.AdminPercent), 0),
+                Line(AiuContractData.UnforeseenCode, "Imprevistos (A.I.U.)", PercentOf(aiu.UnforeseenPercent), 0),
+                Line(AiuContractData.ProfitCode, "Utilidad (A.I.U.)", PercentOf(aiu.ProfitPercent), aiu.IvaRate),
+                Line(AiuContractData.ServiceCode, string.IsNullOrWhiteSpace(aiu.ContractObject) ? "Servicio contratado" : aiu.ContractObject, aiu.BaseAmount, aiu.ServiceIvaRate)
+            };
+        }
+
         private static InvoiceBuildResult Fail(int status, string code, string message, IReadOnlyList<string>? details = null) =>
             new() { Error = new ApiError(status, code, message, details) };
 
@@ -217,7 +258,20 @@ namespace Fel.Api.Integration.Services
                     p.Add("customer: falta el nombre; envía company_name, o first_name y family_name.");
             }
 
-            if (r.items == null || r.items.Count == 0) p.Add("items: debe traer al menos una línea.");
+            if (IsAiu(r))
+            {
+                var a = r.aiu;
+                if (a == null) p.Add("aiu: es obligatorio en una factura AIU; indica base_amount, los porcentajes y contract_object.");
+                else
+                {
+                    if (a.base_amount <= 0) p.Add("aiu.base_amount: debe ser mayor que 0; es el valor del servicio contratado.");
+                    if ((a.contract_object ?? string.Empty).Trim().Length < 10) p.Add("aiu.contract_object: es obligatorio (mínimo 10 caracteres); describe el objeto del contrato.");
+                    foreach (var (name, value) in new[] { ("administration_percent", a.administration_percent), ("unforeseen_percent", a.unforeseen_percent), ("utility_percent", a.utility_percent), ("utility_iva_rate", a.utility_iva_rate), ("service_iva_rate", a.service_iva_rate) })
+                        if (value is < 0 or > 100) p.Add($"aiu.{name}: debe estar entre 0 y 100.");
+                }
+                if (r.items is { Count: > 0 }) p.Add("items: en una factura AIU no se envían líneas; se generan a partir del bloque aiu.");
+            }
+            else if (r.items == null || r.items.Count == 0) p.Add("items: debe traer al menos una línea.");
             else
             {
                 for (var i = 0; i < r.items.Count; i++)

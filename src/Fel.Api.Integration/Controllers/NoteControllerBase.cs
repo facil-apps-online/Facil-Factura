@@ -23,12 +23,14 @@ namespace Fel.Api.Integration.Controllers
         private readonly FelDbContext _dbContext;
         private readonly SimpleNoteFactory _factory;
         private readonly InvoicePublishingService _publishing;
+        private readonly DocumentPdfService _pdf;
 
-        protected NoteControllerBase(FelDbContext dbContext, SimpleNoteFactory factory, InvoicePublishingService publishing)
+        protected NoteControllerBase(FelDbContext dbContext, SimpleNoteFactory factory, InvoicePublishingService publishing, DocumentPdfService pdf)
         {
             _dbContext = dbContext;
             _factory = factory;
             _publishing = publishing;
+            _pdf = pdf;
         }
 
         protected async Task<IActionResult> IssueAsync(JsonElement body, string typeCode)
@@ -95,6 +97,9 @@ namespace Fel.Api.Integration.Controllers
 
                 var warnings = new List<string>(built.Warnings);
                 if (!string.IsNullOrWhiteSpace(outcome.Warning)) warnings.Add(outcome.Warning);
+                object? files = string.Equals(Request.Query["include"], "files", StringComparison.OrdinalIgnoreCase) && document.Status == "APPROVED"
+                    ? await DocumentFilesBuilder.BuildAsync(_dbContext, _pdf, document.Id, clientId)
+                    : null;
                 return Created($"/api/co/dian/documents/{document.Id}", new
                 {
                     id = document.Id,
@@ -104,7 +109,10 @@ namespace Fel.Api.Integration.Controllers
                     total = document.TotalAmount,
                     status = document.Status,
                     cufe = document.Cufe,
+                    qr = document.QrCode,
                     dianResponse = DataicoDianOutcome.Readable(document.DianResponseMessage),
+                    links = DocumentFilesBuilder.Links(document.Id),
+                    files,
                     warnings
                 });
             }
@@ -146,7 +154,7 @@ namespace Fel.Api.Integration.Controllers
     [Route("api/co/dian/credit-notes")]
     public class CreditNotesController : NoteControllerBase
     {
-        public CreditNotesController(FelDbContext dbContext, SimpleNoteFactory factory, InvoicePublishingService publishing) : base(dbContext, factory, publishing) { }
+        public CreditNotesController(FelDbContext dbContext, SimpleNoteFactory factory, InvoicePublishingService publishing, DocumentPdfService pdf) : base(dbContext, factory, publishing, pdf) { }
 
         /// <summary>
         /// Emite una nota crédito. La factura se indica con <c>invoice_id</c> (el id devuelto al emitirla) o <c>invoice_number</c> (por ejemplo "SFRY1005").
@@ -173,7 +181,7 @@ namespace Fel.Api.Integration.Controllers
     [Route("api/co/dian/debit-notes")]
     public class DebitNotesController : NoteControllerBase
     {
-        public DebitNotesController(FelDbContext dbContext, SimpleNoteFactory factory, InvoicePublishingService publishing) : base(dbContext, factory, publishing) { }
+        public DebitNotesController(FelDbContext dbContext, SimpleNoteFactory factory, InvoicePublishingService publishing, DocumentPdfService pdf) : base(dbContext, factory, publishing, pdf) { }
 
         /// <summary>
         /// Emite una nota débito. Igual que la nota crédito, pero <c>items</c> es obligatorio: lleva el valor que se suma a la factura.

@@ -30,12 +30,14 @@ namespace Fel.Api.Integration.Controllers
         private readonly FelDbContext _dbContext;
         private readonly SimpleInvoiceFactory _factory;
         private readonly InvoicePublishingService _publishing;
+        private readonly DocumentPdfService _pdf;
 
-        protected InvoiceControllerBase(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing)
+        protected InvoiceControllerBase(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing, DocumentPdfService pdf)
         {
             _dbContext = dbContext;
             _factory = factory;
             _publishing = publishing;
+            _pdf = pdf;
         }
 
         // forcedOperation fija el tipo de documento del endpoint (p. ej. "POS") sin depender de lo que traiga el cuerpo.
@@ -105,7 +107,10 @@ namespace Fel.Api.Integration.Controllers
                 if (document.ResolutionId.HasValue && long.TryParse(document.Number, out var issued))
                     await ResolutionNumbering.CommitNumberAsync(_dbContext, document.ResolutionId.Value, issued);
 
-                return Created($"/api/co/dian/documents/{document.Id}", Summary(document, built.Warnings, outcome.Warning));
+                object? files = string.Equals(Request.Query["include"], "files", StringComparison.OrdinalIgnoreCase) && document.Status == "APPROVED"
+                    ? await DocumentFilesBuilder.BuildAsync(_dbContext, _pdf, document.Id, clientId)
+                    : null;
+                return Created($"/api/co/dian/documents/{document.Id}", Summary(document, built.Warnings, outcome.Warning, files));
             }
 
             return outcome.Kind switch
@@ -121,7 +126,7 @@ namespace Fel.Api.Integration.Controllers
 
         private static string FullNumber(Document d) => $"{d.Prefix}{d.Number}";
 
-        private static object Summary(Document d, List<string> warnings, string? warning)
+        private static object Summary(Document d, List<string> warnings, string? warning, object? files)
         {
             var all = new List<string>(warnings);
             if (!string.IsNullOrWhiteSpace(warning)) all.Add(warning);
@@ -134,7 +139,10 @@ namespace Fel.Api.Integration.Controllers
                 total = d.TotalAmount,
                 status = d.Status,
                 cufe = d.Cufe,
+                qr = d.QrCode,
                 dianResponse = DataicoDianOutcome.Readable(d.DianResponseMessage),
+                links = DocumentFilesBuilder.Links(d.Id),
+                files,
                 warnings = all
             };
         }
@@ -176,7 +184,7 @@ namespace Fel.Api.Integration.Controllers
     [Route("api/co/dian/invoices")]
     public class InvoicesController : InvoiceControllerBase
     {
-        public InvoicesController(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing) : base(dbContext, factory, publishing) { }
+        public InvoicesController(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing, DocumentPdfService pdf) : base(dbContext, factory, publishing, pdf) { }
 
         /// <summary>
         /// Emite una factura. El consecutivo (<c>number</c>) lo lleva el integrador: puede enviarse en cualquier orden mientras esté
@@ -203,7 +211,7 @@ namespace Fel.Api.Integration.Controllers
     [Route("api/co/dian/equivalent-documents/pos")]
     public class PosDocumentsController : InvoiceControllerBase
     {
-        public PosDocumentsController(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing) : base(dbContext, factory, publishing) { }
+        public PosDocumentsController(FelDbContext dbContext, SimpleInvoiceFactory factory, InvoicePublishingService publishing, DocumentPdfService pdf) : base(dbContext, factory, publishing, pdf) { }
 
         /// <summary>
         /// Emite un tiquete POS. Requiere una resolución activa de tipo documento equivalente POS. El bloque <c>pos</c> lleva <c>box_plate</c>,

@@ -143,6 +143,7 @@ builder.Services.AddScoped<Fel.Infrastructure.Dian.AttachedDocumentService>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.Infrastructure.Dataico.DataicoSubmissionProvider>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.Infrastructure.Dian.NativeDianSubmissionProvider>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.InvoicePublishingService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.DocumentPdfService>();
 builder.Services.AddScoped<Fel.Api.Integration.Services.SimpleInvoiceFactory>();
 builder.Services.AddScoped<Fel.Api.Integration.Services.SimpleNoteFactory>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ResolutionBranchService>();

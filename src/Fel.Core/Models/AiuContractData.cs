@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
 namespace Fel.Core.Models
@@ -35,9 +37,17 @@ namespace Fel.Core.Models
         public static bool IsAiuLine(string? code) => code is AdminCode or UnforeseenCode or ProfitCode;
         public static bool IsServiceLine(string? code) => !IsAiuLine(code);
 
-        // El Anexo pide que la nota de Administración empiece por NotePrefix; lo que sigue (el objeto) no lo valida nadie ni Dataico lo exige, así que es
-        // opcional: sin objeto la nota lleva solo el texto base.
-        public string BuildAdminNote() => string.IsNullOrWhiteSpace(ContractObject) ? NotePrefix : $"{NotePrefix} {ContractObject.Trim()}";
+        // El objeto del contrato es opcional para quien factura, pero Dataico rechaza la factura AIU si el objeto va vacío y el Anexo pide que la nota de
+        // Administración lo incluya: sin objeto escrito se usa la descripción de la primera línea de servicio (o, sin ella, un texto genérico), así el XML
+        // nativo y el de Dataico dicen lo mismo.
+        public string NoteObject(IEnumerable<string?>? serviceLineNames = null)
+        {
+            if (!string.IsNullOrWhiteSpace(ContractObject)) return ContractObject.Trim();
+            var fromLine = serviceLineNames?.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+            return string.IsNullOrWhiteSpace(fromLine) ? "Servicios contratados" : fromLine.Trim();
+        }
+
+        public string BuildAdminNote(IEnumerable<string?>? serviceLineNames = null) => $"{NotePrefix} {NoteObject(serviceLineNames)}";
 
         private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
 

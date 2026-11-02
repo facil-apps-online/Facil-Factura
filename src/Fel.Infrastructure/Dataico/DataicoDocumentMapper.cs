@@ -195,8 +195,8 @@ namespace Fel.Infrastructure.Dataico
                 if (aiu != null && AiuContractData.IsServiceLine(item.Code))
                 {
                     dataicoItem.aiu_administration = true;
-                    // Sin objeto del contrato no se envía aiu_contract: Dataico no lo exige.
-                    dataicoItem.aiu_contract = string.IsNullOrWhiteSpace(aiu.ContractObject) ? null : aiu.ContractObject.Trim();
+                    // Dataico rechaza la factura si aiu_contract va vacío (probado en su sandbox): sin objeto escrito se usa la descripción de la primera línea de servicio.
+                    dataicoItem.aiu_contract = aiu.NoteObject(itemsList.Where(i => AiuContractData.IsServiceLine(i.Code)).Select(i => i.Name));
                 }
 
                 var ivaTax = BuildIvaTax(item.IvaTreatment, item.TaxRate);

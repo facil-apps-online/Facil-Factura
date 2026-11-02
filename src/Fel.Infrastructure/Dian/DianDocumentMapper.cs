@@ -225,7 +225,7 @@ namespace Fel.Infrastructure.Dian
                     LineExtensionAmount = lineBase
                 };
                 // La línea de Administración lleva la nota obligatoria con el objeto del contrato.
-                if (isAiu && item.Code == AiuContractData.AdminCode) line.Note = aiu!.BuildAdminNote();
+                if (isAiu && item.Code == AiuContractData.AdminCode) line.Note = aiu!.BuildAdminNote(itemsList.Where(i => AiuContractData.IsServiceLine(i.Code)).Select(i => i.Name));
                 // Exportación: marca, modelo y subpartida arancelaria del ítem (opcionales).
                 line.BrandName = item.BrandName;
                 line.ModelName = item.ModelName;

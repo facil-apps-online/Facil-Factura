@@ -427,8 +427,9 @@ namespace Fel.Tests
 
             Assert.Null(result.Error);
             var contract = Fel.Core.Models.AiuContractData.TryRead(result.Document!.SectorExtensionData)!;
-            // Sin objeto, la nota de Administración lleva solo el texto base que exige el Anexo.
-            Assert.Equal(Fel.Core.Models.AiuContractData.NotePrefix, contract.BuildAdminNote());
+            // Sin objeto escrito, la nota de Administración toma la descripción de la primera línea de servicio (Dataico rechaza el objeto vacío).
+            Assert.Equal($"{Fel.Core.Models.AiuContractData.NotePrefix} Servicio contratado", contract.BuildAdminNote(new[] { "Servicio contratado" }));
+            Assert.Equal($"{Fel.Core.Models.AiuContractData.NotePrefix} Servicios contratados", contract.BuildAdminNote());
         }
 
         [Fact]

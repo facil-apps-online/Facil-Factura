@@ -2108,7 +2108,7 @@ export default function DocumentsPage({ mode }: { mode: DocumentMode }) {
                   <div className="md:col-span-2">
                     <label className="block text-xs font-bold text-slate-500 mb-1">Objeto del contrato (opcional)</label>
                     <input type="text" placeholder="Ej. Obra civil de adecuación de bodega" value={formData.aiu.contractObject} onChange={e => applyAiu({ ...formData.aiu!, contractObject: e.target.value })} className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none" />
-                    <p className="text-xs text-slate-400 mt-1">Va en la línea de Administración como: "{'Contrato de servicios AIU por concepto de:'} …". El Anexo recomienda incluirlo; si lo dejas vacío, la nota lleva solo el texto base.</p>
+                    <p className="text-xs text-slate-400 mt-1">Va en la línea de Administración como: "{'Contrato de servicios AIU por concepto de:'} …". El Anexo recomienda incluirlo; si lo dejas vacío, se usa la descripción de la primera línea del servicio.</p>
                   </div>
                 </div>
                 <DataTable

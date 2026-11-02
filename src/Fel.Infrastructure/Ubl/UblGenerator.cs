@@ -42,13 +42,7 @@ namespace Fel.Infrastructure.Ubl
         {
             // Documento Equivalente Electrónico (DianCode 20 = tiquete POS) y Documento Soporte
             // (05/95) usan su propia fórmula de identificador, distinta a la de factura.
-            string cufeOrCude = data.DianCode switch
-            {
-                "20" => CalculateEquivalentDocumentCufe(data),
-                "05" or "95" => CalculateCuds(data),
-                "91" or "92" => CalculateCude(data),
-                _ => CalculateCufe(data)
-            };
+            string cufeOrCude = CalculateDocumentKey(data);
 
             Strategies.BaseUblStrategy strategy;
 
@@ -77,6 +71,15 @@ namespace Fel.Infrastructure.Ubl
             var xml = strategy.GenerateXml(data, cufeOrCude);
             return xml.ToString();
         }
+
+        // Una sola decisión de qué fórmula corresponde a cada tipo: la usan el XML (cbc:UUID) y quien guarda el identificador del documento.
+        public string CalculateDocumentKey(UblInvoiceData data) => data.DianCode switch
+        {
+            "20" => CalculateEquivalentDocumentCufe(data),
+            "05" or "95" => CalculateCuds(data),
+            "91" or "92" => CalculateCude(data),
+            _ => CalculateCufe(data)
+        };
 
         public string CalculateCufe(UblInvoiceData data)
         {

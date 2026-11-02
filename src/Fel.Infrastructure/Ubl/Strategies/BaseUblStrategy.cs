@@ -149,20 +149,23 @@ namespace Fel.Infrastructure.Ubl.Strategies
             if (data.DianCode != "20" || data.Pos == null) yield break;
             var pos = data.Pos;
 
+            // El documento equivalente POS es un Invoice: sus elementos propios heredan ese espacio de nombres por defecto, igual que <CustomTagGeneral>
+            // en los ejemplos oficiales de la DIAN.
+            XNamespace doc = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
             XElement[] Pairs(params (string Name, string Value)[] pairs) =>
-                pairs.SelectMany(p => new[] { new XElement("Name", p.Name), new XElement("Value", p.Value) }).ToArray();
+                pairs.SelectMany(p => new[] { new XElement(doc + "Name", p.Name), new XElement(doc + "Value", p.Value) }).ToArray();
 
             if (pos.HasBuyerBenefits)
             {
-                yield return new XElement("VeneficiosComprador",
-                    new XElement("InformacionVeneficiosComprador", Pairs(
+                yield return new XElement(doc + "VeneficiosComprador",
+                    new XElement(doc + "InformacionVeneficiosComprador", Pairs(
                         ("Codigo", pos.BuyerCode ?? string.Empty),
                         ("NombresApellidos", pos.BuyerName ?? string.Empty),
                         ("Puntos", (pos.BuyerPoints ?? 0m).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)))));
             }
 
-            yield return new XElement("PuntoVenta",
-                new XElement("InformacionCajaVenta", Pairs(
+            yield return new XElement(doc + "PuntoVenta",
+                new XElement(doc + "InformacionCajaVenta", Pairs(
                     ("PlacaCaja", pos.BoxPlate),
                     ("UbicaciónCaja", pos.BoxLocation),
                     ("Cajero", pos.Cashier),
@@ -381,9 +384,10 @@ namespace Fel.Infrastructure.Ubl.Strategies
         // includeAllowances=true agrega AllowanceTotalAmount/ChargeTotalAmount (FAU09/FAU10: deben
         // ser la suma de los AllowanceCharge de la factura, así que solo se piden junto con
         // BuildAllowanceCharges). PayableAmount debe ser TaxInclusiveAmount - descuentos + cargos (FAU14).
-        protected XElement BuildLegalMonetaryTotal(UblInvoiceData data, bool includeAllowances = false)
+        // elementName: la nota débito de UBL 2.1 llama a este grupo RequestedMonetaryTotal (como en el ejemplo oficial DebitNote.xml); el resto, LegalMonetaryTotal.
+        protected XElement BuildLegalMonetaryTotal(UblInvoiceData data, bool includeAllowances = false, string elementName = "LegalMonetaryTotal")
         {
-            var total = new XElement(cac + "LegalMonetaryTotal",
+            var total = new XElement(cac + elementName,
                 new XElement(cbc + "LineExtensionAmount", new XAttribute("currencyID", data.Currency), data.LineExtensionAmount.ToString("0.00").Replace(",", ".")),
                 new XElement(cbc + "TaxExclusiveAmount", new XAttribute("currencyID", data.Currency), data.TaxExclusiveAmount.ToString("0.00").Replace(",", ".")),
                 new XElement(cbc + "TaxInclusiveAmount", new XAttribute("currencyID", data.Currency), data.TaxInclusiveAmount.ToString("0.00").Replace(",", "."))
@@ -517,12 +521,11 @@ namespace Fel.Infrastructure.Ubl.Strategies
             if (!string.IsNullOrWhiteSpace(line.Note)) lineElement.Add(new XElement(cbc + "Note", line.Note));
             lineElement.Add(
                 new XElement(cbc + quantityElementName, new XAttribute("unitCode", line.UnitCode), QuantityOrPrice(line.Quantity)),
-                new XElement(cbc + "LineExtensionAmount", new XAttribute("currencyID", currency), line.LineExtensionAmount.ToString("0.00").Replace(",", ".")),
-                // Confirmado contra el ejemplo oficial Generica.xml y contra un firmador Python de
-                // referencia en producción activa — presente en cada línea de ambos. Faltaba por
-                // completo.
-                new XElement(cbc + "FreeOfChargeIndicator", "false")
+                new XElement(cbc + "LineExtensionAmount", new XAttribute("currencyID", currency), line.LineExtensionAmount.ToString("0.00").Replace(",", "."))
             );
+            // Confirmado contra el ejemplo oficial Generica.xml y contra un firmador Python de referencia en producción activa — presente en cada línea
+            // de factura y de nota crédito. La línea de nota débito (DebitNoteLine) de UBL 2.1 no lo define: el XSD y el ejemplo oficial DebitNote.xml no lo traen.
+            if (lineElementName != "DebitNoteLine") lineElement.Add(new XElement(cbc + "FreeOfChargeIndicator", "false"));
 
             // Cada línea debe declarar su propio TaxTotal (numeral 6.5.10, FAS01b) — antes faltaba
             // por completo, la DIAN rechazaba con "Tributo IVA/INC informado no coincide... Debe

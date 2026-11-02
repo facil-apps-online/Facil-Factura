@@ -1082,7 +1082,7 @@ namespace Fel.Api.Client.Controllers
                             .ToDictionaryAsync(t => t.Category, t => t.Name);
                         var ublData = DianDocumentMapper.BuildInvoiceData(invoice, invoice.Customer, invoice.Items, invoice.Resolution, client, xmlLocation, municipalities, null, resendDocType, null, resendCountryNames);
                         var xml = _ublGenerator.GenerateInvoiceXml(ublData);
-                        var recalculatedCufe = _ublGenerator.CalculateCufe(ublData);
+                        var recalculatedCufe = _ublGenerator.CalculateDocumentKey(ublData);
 
                         if (!string.Equals(recalculatedCufe, invoice.Cufe, StringComparison.OrdinalIgnoreCase))
                         {

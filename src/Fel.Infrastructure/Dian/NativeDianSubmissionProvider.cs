@@ -203,7 +203,7 @@ namespace Fel.Infrastructure.Dian
             }
 
             var xml = _ublGenerator.GenerateInvoiceXml(ublData);
-            var cufe = _ublGenerator.CalculateCufe(ublData);
+            var cufe = _ublGenerator.CalculateDocumentKey(ublData);
             invoice.Cufe = cufe;
             invoice.QrCode = _ublGenerator.BuildGraphicQrContent(ublData, cufe);
 

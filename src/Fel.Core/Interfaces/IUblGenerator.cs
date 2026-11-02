@@ -9,6 +9,11 @@ namespace Fel.Core.Interfaces
         // el XML generado.
         string CalculateCufe(Models.UblInvoiceData data);
 
+        // El identificador que de verdad lleva el XML en cbc:UUID según el tipo de documento: CUFE (factura), CUDE (notas crédito y débito),
+        // CUDS (documento soporte y su ajuste) o el CUFE del documento equivalente. Es el que hay que guardar en el Document y poner en el QR;
+        // CalculateCufe solo sirve para facturas.
+        string CalculateDocumentKey(Models.UblInvoiceData data);
+
         // Contenido completo del código QR de la representación gráfica impresa (Anexo Técnico
         // v1.9, numeral 11: NumFac/FecFac/HorFac/NitFac/DocAdq/ValFac/ValIva/ValOtroIm/ValTolFac/
         // CUFE/QRCode=<url>) — NO es lo mismo que el <sts:QRCode> del XML (solo la URL, numeral

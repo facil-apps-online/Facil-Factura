@@ -37,7 +37,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cbc + "UUID", new XAttribute("schemeID", data.Environment), new XAttribute("schemeName", "CUDE-SHA384"), cufe),
                 new XElement(cbc + "IssueDate", DianTimeFormat.IssueDate(data.IssueDate)),
                 new XElement(cbc + "IssueTime", DianTimeFormat.IssueTime(data.IssueTime)),
-                new XElement(cbc + "DebitNoteTypeCode", data.DianCode),
+                // Sin DebitNoteTypeCode: UBL 2.1 no lo define para DebitNote (el XSD y el ejemplo oficial DebitNote.xml de la DIAN no lo traen).
                 BuildNotes(data),
                 new XElement(cbc + "DocumentCurrencyCode", new XAttribute("listAgencyID", "6"), new XAttribute("listAgencyName", "United Nations Economic Commission for Europe"), new XAttribute("listID", "ISO 4217 Alpha"), data.Currency),
                 new XElement(cbc + "LineCountNumeric", data.Lines.Count.ToString()),
@@ -66,7 +66,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 BuildAllowanceCharges(data),
                 BuildPaymentExchangeRate(data),
                 BuildTaxTotals(data),
-                BuildLegalMonetaryTotal(data, includeAllowances: true)
+                BuildLegalMonetaryTotal(data, includeAllowances: true, elementName: "RequestedMonetaryTotal")
             );
 
             for (int i = 0; i < data.Lines.Count; i++)

@@ -49,6 +49,37 @@ public static class DocumentSubmissionGuard
         return SubmissionClaimResult.Claimed;
     }
 
+    // Mensaje a dar cuando no se pudo reclamar el documento (null si se reclamó y se puede enviar).
+    public static string? ClaimConflictMessage(SubmissionClaimResult result) => result switch
+    {
+        SubmissionClaimResult.Claimed => null,
+        SubmissionClaimResult.InProgress => "Este documento ya tiene un envío en curso.",
+        SubmissionClaimResult.AlreadyCompleted => "Este documento ya fue emitido.",
+        _ => "Este documento quedó con un resultado incierto: pudo haber llegado al proveedor. Comunícate con soporte antes de reintentar."
+    };
+
+    // Llama al proveedor con el documento ya reclamado. Las validaciones del integrador y la numeración agotada
+    // (NotSupportedException y su derivada ResolutionExhaustedException) se lanzan antes de enviar, así que liberan el
+    // documento para corregirlo; cualquier otra excepción lo deja incierto, porque pudo haber llegado al proveedor. La
+    // excepción sigue su curso en ambos casos.
+    public static async Task<T> SendClaimedAsync<T>(FelDbContext db, Document document, Func<Task<T>> send)
+    {
+        try
+        {
+            return await send();
+        }
+        catch (Exception ex)
+        {
+            if (ex is NotSupportedException)
+                MarkFailed(document, ex.Message);
+            else
+                MarkUnknown(document, ex.Message);
+            try { await db.SaveChangesAsync(); }
+            catch (Exception) { /* Se conserva la excepción original; el lease vencido lo deja incierto igual. */ }
+            throw;
+        }
+    }
+
     public static void MarkCompleted(Document document)
     {
         document.SubmissionState = "COMPLETED";

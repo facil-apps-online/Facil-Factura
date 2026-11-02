@@ -204,6 +204,7 @@ builder.Services.AddScoped<ClientPortalFilter>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.Infrastructure.Dataico.DataicoSubmissionProvider>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.Infrastructure.Dian.NativeDianSubmissionProvider>();
 builder.Services.AddScoped<Fel.Infrastructure.Dian.AttachedDocumentService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.InvoicePublishingService>();
 
 var app = builder.Build();
 

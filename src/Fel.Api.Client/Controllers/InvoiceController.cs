@@ -137,12 +137,15 @@ namespace Fel.Api.Client.Controllers
         private readonly IEmailOutbox _emailOutbox;
         private readonly Fel.Infrastructure.Services.DocumentLegendService _legendService;
         private readonly AttachedDocumentService _attachedDocuments;
+        private readonly InvoicePublishingService _publishingService;
 
         public InvoiceController(
             FelDbContext dbContext, IEnumerable<IDocumentSubmissionProvider> submissionProviders, IFacilReportsClient facilReportsClient,
             IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, ICryptoService cryptoService,
-            ICryptoVault cryptoVault, IUblGenerator ublGenerator, IXmlSigner xmlSigner, IEmailOutbox emailOutbox, Fel.Infrastructure.Services.DocumentLegendService legendService, AttachedDocumentService attachedDocuments)
+            ICryptoVault cryptoVault, IUblGenerator ublGenerator, IXmlSigner xmlSigner, IEmailOutbox emailOutbox, Fel.Infrastructure.Services.DocumentLegendService legendService, AttachedDocumentService attachedDocuments,
+            InvoicePublishingService publishingService)
         {
+            _publishingService = publishingService;
             _dbContext = dbContext;
             _submissionProviders = submissionProviders;
             _facilReportsClient = facilReportsClient;
@@ -719,120 +722,16 @@ namespace Fel.Api.Client.Controllers
 
                 if (invoice == null) return NotFound("Factura no encontrada.");
 
-                if (!IsEditable(invoice.Status))
-                    return BadRequest("La factura ya fue emitida o está en proceso.");
-
-                if (invoice.Customer == null)
-                    return BadRequest("La factura no tiene un cliente asociado.");
-
-                // Factura de mandato (operación 11): cada línea debe declarar su mandante, con la DIAN directa y con Dataico.
-                var operationType = invoice.DocumentTypeId.HasValue
-                    ? await _dbContext.DocumentTypes.AsNoTracking().Where(t => t.Id == invoice.DocumentTypeId.Value).Select(t => t.OperationType).FirstOrDefaultAsync()
-                    : null;
-                if (operationType == Fel.Core.Entities.DocumentType.MandateOperationType && !invoice.ReferenceDocumentId.HasValue
-                    && invoice.Items.Any(i => string.IsNullOrWhiteSpace(i.MandanteIdentification) || string.IsNullOrWhiteSpace(i.MandanteIdentificationType)))
+                var outcome = await _publishingService.PublishAsync(invoice, clientId, request?.PaymentMeans, request?.PaymentMeansType);
+                return outcome.Kind switch
                 {
-                    return BadRequest("En una factura de mandato cada línea debe tener su mandante.");
-                }
-
-                var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
-                if (client == null) return NotFound("Emisor no encontrado.");
-
-                var provider =_submissionProviders.FirstOrDefault(p => p.IntegratorCode == client.Integrator.Code);
-                if (provider == null)
-                {
-                    return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");
-                }
-
-                // Con Dataico, sin plantilla elegida el correo saldría con el diseño predeterminado de Dataico: se exige elegirla antes.
-                if (client.Integrator.Code == "DATAICO" && await _customPdfService.IsPublishedTemplateMissingAsync(clientId, invoice.DocumentTypeId, invoice.TypeCode))
-                {
-                    return TemplateRequired();
-                }
-
-                // El cliente puede tener varias resoluciones activas (una por prefijo); si no se
-                // eligió una explícitamente al crear el borrador, se usa la marcada como
-                // predeterminada para FE, y si ninguna lo está, se cae al comportamiento anterior
-                // (la más reciente por vigencia) para no romper clientes que aún no eligieron default.
-                //
-                // Esto aplica IGUAL para notas crédito/débito: la DIAN no autoriza una "resolución"
-                // propia para notas (confirmado contra el ejemplo oficial CreditNote.xml — no trae
-                // sts:InvoiceControl/Autorización/Rango — y contra el propio comentario de
-                // DataicoDocumentMapper: "Dataico no maneja numeración registrada para notas"). La
-                // resolución de facturas del emisor solo presta su Prefijo (CorporateRegistrationScheme),
-                // no un rango autorizado.
-                var resolution = invoice.ResolutionId.HasValue
-                    // La resolución elegida debe ser de factura de venta (FE): sirve para la factura estándar, la de mandato y la de exportación,
-                    // sin exigir una específica para cada una. Las de documento soporte o nómina no se pueden usar acá.
-                    ? await _dbContext.Resolutions.ForBranch(_dbContext, invoice.BranchId).FirstOrDefaultAsync(r => r.Id == invoice.ResolutionId.Value && r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
-                    : await _dbContext.Resolutions.ForBranch(_dbContext, invoice.BranchId)
-                        .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "FE")
-                        .OrderByDescending(r => r.IsDefault)
-                        .ThenByDescending(r => r.ValidTo)
-                        .FirstOrDefaultAsync();
-
-                if (resolution == null)
-                {
-                    return BadRequest("No hay una resolución de facturación activa disponible para esta sucursal.");
-                }
-
-                var paymentMeans = string.IsNullOrWhiteSpace(request?.PaymentMeans) ? invoice.PaymentMeans : request.PaymentMeans;
-                var paymentMeansType = string.IsNullOrWhiteSpace(request?.PaymentMeansType) ? invoice.PaymentMeansType : request.PaymentMeansType;
-
-                if (string.IsNullOrWhiteSpace(paymentMeansType))
-                {
-                    return BadRequest("Debes indicar la forma de pago (Contado/Crédito).");
-                }
-
-                // DEBITO ("Contado" en la UI) sí necesita el medio de pago concreto (efectivo,
-                // transferencia, etc.). CREDITO no lo captura en ningún lado del formulario — ese
-                // caso solo maneja plazo de pago — así que exigirlo aquí rechazaba toda factura a
-                // crédito antes de siquiera llegar al integrador.
-                if (paymentMeansType == "DEBITO" && string.IsNullOrWhiteSpace(paymentMeans))
-                {
-                    return BadRequest("Debes indicar el medio de pago.");
-                }
-
-                // El ajuste de centavos se recalcula con lo que realmente se va a enviar (el borrador pudo guardarse antes de activarlo en el cliente).
-                Fel.Core.Models.RoundingAdjustment.Apply(invoice, invoice.Items, client.RoundingAdjustment);
-
-                var claimConflict = await ClaimSubmissionAsync(_dbContext, invoice);
-                if (claimConflict != null) return claimConflict;
-
-                DocumentSubmissionResult result;
-                try
-                {
-                    result = await SendClaimedAsync(_dbContext, invoice,
-                        () => provider.SubmitAsync(invoice, invoice.Customer, invoice.Items, client, resolution, paymentMeans, paymentMeansType));
-                }
-                catch (NotSupportedException ex)
-                {
-                    return BadRequest(ex.Message);
-                }
-
-                if (result.Success)
-                {
-                    DocumentSubmissionGuard.MarkCompleted(invoice);
-                    // Tarifa vigente al momento de emitir, para que el corte mensual
-                    // (SuperadminBillingController.CalculateBilling) tenga con qué facturar — antes
-                    // quedaba en 0 y el corte real generaba cobros en $0 sin importar el volumen.
-                    invoice.PriceCharged = await BranchProvisioning.PricePerDocumentAsync(_dbContext, invoice.BranchId);
-                    invoice.IntegratorId = client.IntegratorId;
-                }
-                else
-                {
-                    DocumentSubmissionGuard.MarkFailed(invoice, invoice.DianResponseMessage);
-                }
-
-                await _dbContext.SaveChangesAsync();
-
-                if (!result.Success)
-                {
-                    return BadRequest(new { message = "El proveedor de documentos electrónicos rechazó la factura.", detail = Fel.Infrastructure.Dataico.DataicoDianOutcome.Readable(invoice.DianResponseMessage) });
-                }
-
-                // warning: el documento se emitió pero algo secundario falló (p. ej. el correo con los adjuntos no salió); el portal lo muestra.
-                return Ok(new { message = "Factura emitida correctamente.", warning = result.Warning, invoice });
+                    PublishOutcomeKind.Published => Ok(new { message = outcome.Message, warning = outcome.Warning, invoice }),
+                    PublishOutcomeKind.NotFound => NotFound(outcome.Message),
+                    PublishOutcomeKind.TemplateRequired => TemplateRequired(),
+                    PublishOutcomeKind.Conflict => Conflict(outcome.Message),
+                    PublishOutcomeKind.ProviderRejected => BadRequest(new { message = outcome.Message, detail = outcome.Detail }),
+                    _ => BadRequest(outcome.Message)
+                };
             }
             catch (UnauthorizedAccessException ex)
             {

@@ -88,36 +88,15 @@ namespace Fel.Api.Client.Controllers
 
         // Reclama el documento justo antes de llamar al proveedor, cuando ya pasaron todas las validaciones: así un BadRequest no
         // lo deja reclamado. Devuelve la respuesta a dar si otro envío lo tiene o quedó incierto; null si se puede enviar.
-        protected async Task<IActionResult?> ClaimSubmissionAsync(FelDbContext db, Fel.Core.Entities.Document document) =>
-            await DocumentSubmissionGuard.TryClaimAsync(db, document) switch
-            {
-                SubmissionClaimResult.Claimed => null,
-                SubmissionClaimResult.InProgress => Conflict("Este documento ya tiene un envío en curso."),
-                SubmissionClaimResult.AlreadyCompleted => Conflict("Este documento ya fue emitido."),
-                _ => Conflict("Este documento quedó con un resultado incierto: pudo haber llegado al proveedor. Comunícate con soporte antes de reintentar.")
-            };
-
-        // Llama al proveedor con el documento ya reclamado. Las validaciones del integrador y la numeración agotada
-        // (NotSupportedException y su derivada ResolutionExhaustedException) se lanzan antes de enviar, así que liberan el
-        // documento para corregirlo; cualquier otra excepción lo deja incierto, porque pudo haber llegado al proveedor. La
-        // excepción sigue su curso en ambos casos.
-        protected static async Task<T> SendClaimedAsync<T>(FelDbContext db, Fel.Core.Entities.Document document, Func<Task<T>> send)
+        protected async Task<IActionResult?> ClaimSubmissionAsync(FelDbContext db, Fel.Core.Entities.Document document)
         {
-            try
-            {
-                return await send();
-            }
-            catch (Exception ex)
-            {
-                if (ex is NotSupportedException)
-                    DocumentSubmissionGuard.MarkFailed(document, ex.Message);
-                else
-                    DocumentSubmissionGuard.MarkUnknown(document, ex.Message);
-                try { await db.SaveChangesAsync(); }
-                catch (Exception) { /* Se conserva la excepción original; el lease vencido lo deja incierto igual. */ }
-                throw;
-            }
+            var message = DocumentSubmissionGuard.ClaimConflictMessage(await DocumentSubmissionGuard.TryClaimAsync(db, document));
+            return message == null ? null : Conflict(message);
         }
+
+        // La lógica vive en DocumentSubmissionGuard para que la compartan el portal y la API de integración.
+        protected static Task<T> SendClaimedAsync<T>(FelDbContext db, Fel.Core.Entities.Document document, Func<Task<T>> send) =>
+            DocumentSubmissionGuard.SendClaimedAsync(db, document, send);
 
         // Valida la lista de un lote y la deja sin repetidos. Devuelve null si es válida.
         protected IActionResult? ValidateBatch(BatchRequest? request, out List<Guid> ids)

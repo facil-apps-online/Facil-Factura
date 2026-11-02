@@ -99,6 +99,16 @@ namespace Fel.Infrastructure.Dataico
 
             // Consecutivo de factura que se propone en este envío y todavía NO se ha consumido: solo se consume si Dataico crea el documento.
             long? proposedNumber = null;
+
+            // Consecutivo fijado desde afuera (la API de integración: el integrador lleva su propia numeración y puede enviarla en desorden). No se
+            // reclama ni se salta: solo se verifica que Dataico no lo tenga ya ocupado, porque devolvería como exitosa la factura repetida.
+            if (!string.IsNullOrEmpty(invoice.Number) && invoice.TypeCode is not ("NC" or "ND"))
+            {
+                var taken = await _dataicoApiService.GetInvoiceByNumberAsync($"{resolution.Prefix}{invoice.Number}", credentials);
+                if (taken.Success && (!string.IsNullOrWhiteSpace(taken.DataicoDocumentId) || !string.IsNullOrWhiteSpace(taken.Cufe) || !string.IsNullOrWhiteSpace(taken.DocumentNumber)))
+                    throw new NotSupportedException($"El número {resolution.Prefix}{invoice.Number} ya existe en Dataico. Usa otro consecutivo de la resolución.");
+            }
+
             if (string.IsNullOrEmpty(invoice.Number) && invoice.TypeCode is not ("NC" or "ND"))
             {
                 // Dataico puede devolver como exitosa la factura que ya existe cuando se repite el

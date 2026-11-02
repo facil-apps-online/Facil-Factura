@@ -1,13 +1,18 @@
+using System;
+using System.Text;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
 using Fel.Infrastructure.Data;
+using Fel.Infrastructure.Dian;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Integration.Controllers
 {
     /// <summary>
-    /// Consulta de estado y archivos de los documentos electrónicos que el tenant ya envió por
-    /// cualquiera de los endpoints de recepción de este API (facturas, notas, nómina, etc.).
+    /// Consulta de estado y archivos de un documento por su UUID (el <c>id</c> que devuelve la emisión).
+    /// Solo se ven los documentos del emisor autenticado por la API Key: uno de otro emisor responde 404,
+    /// igual que uno que no existe.
     /// </summary>
     [ApiController]
     [Route("api/co/dian/documents")]
@@ -20,73 +25,94 @@ namespace Fel.Api.Integration.Controllers
             _context = context;
         }
 
-        /// <summary>
-        /// Devuelve el estado actual de un documento por su <c>TrackingId</c> (el que se recibió
-        /// como respuesta al encolarlo).
-        /// </summary>
-        /// <param name="trackId">TrackingId devuelto al recibir el documento.</param>
-        /// <response code="200">Estado del documento, respuesta de la DIAN y CUFE si ya fue asignado.</response>
-        /// <response code="401">No se pudo resolver el Tenant autenticado.</response>
-        /// <response code="404">No existe un documento con ese TrackingId para este Tenant.</response>
-        [HttpGet("{trackId}/status")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> GetStatus(string trackId)
+        private bool TryGetClientId(out Guid clientId)
         {
-            // Extraer TenantId validado por el Middleware HMAC (Seguridad)
-            var tenantIdStr = HttpContext.Items["TenantId"]?.ToString();
-            
-            if (!Guid.TryParse(tenantIdStr, out var tenantId))
-                return Unauthorized();
+            clientId = Guid.Empty;
+            return HttpContext.Items["ClientId"] is string s && Guid.TryParse(s, out clientId);
+        }
 
-            var doc = await _context.Documents.FirstOrDefaultAsync(d => d.TrackingId == trackId && d.Client.TenantId == tenantId);
-            
-            if (doc == null)
-                return NotFound(new { message = "Documento no encontrado o no pertenece al Tenant." });
+        private IActionResult NotFoundDocument() => NotFound(new { code = "DOCUMENT_NOT_FOUND", message = "No existe un documento con ese id para este emisor." });
+
+        /// <summary>
+        /// Estado actual del documento: número, estado ante la DIAN, respuesta y CUFE una vez asignado.
+        /// </summary>
+        /// <param name="id">UUID devuelto al emitir el documento.</param>
+        /// <response code="200">Estado del documento.</response>
+        /// <response code="404">No existe un documento con ese id para el emisor autenticado.</response>
+        [HttpGet("{id:guid}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetStatus(Guid id)
+        {
+            if (!TryGetClientId(out var clientId)) return Unauthorized(new { code = "INVALID_API_KEY", message = "No se pudo resolver el emisor autenticado." });
+
+            var doc = await _context.Documents.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+            if (doc == null) return NotFoundDocument();
 
             return Ok(new
             {
-                TrackId = doc.TrackingId,
-                Status = doc.Status,
-                DianResponse = doc.DianResponseMessage ?? "Procesando",
-                Cufe = doc.Cufe ?? "",
-                FilesUrl = $"/api/co/dian/documents/{trackId}/files"
+                id = doc.Id,
+                type = doc.TypeCode,
+                number = $"{doc.Prefix}{doc.Number}",
+                issueDate = doc.IssueDate,
+                total = doc.TotalAmount,
+                status = doc.Status,
+                dianResponse = doc.DianResponseMessage,
+                cufe = doc.Cufe,
+                files = $"/api/co/dian/documents/{doc.Id}/files"
             });
         }
 
         /// <summary>
-        /// Devuelve el XML y PDF del documento (codificados en Base64) una vez fue procesado por la DIAN.
+        /// Archivos del documento en Base64 real, listos para guardar: el XML firmado que se envió a la DIAN, la
+        /// respuesta de la DIAN y el contenedor AttachedDocument. Cada archivo que aún no existe llega en null.
         /// </summary>
-        /// <param name="trackId">TrackingId devuelto al recibir el documento.</param>
-        /// <response code="200">Archivos del documento en Base64.</response>
-        /// <response code="401">No se pudo resolver el Tenant autenticado.</response>
-        /// <response code="404">No existe un documento con ese TrackingId para este Tenant.</response>
-        [HttpGet("{trackId}/files")]
+        /// <param name="id">UUID devuelto al emitir el documento.</param>
+        /// <response code="200">Archivos del documento.</response>
+        /// <response code="404">No existe un documento con ese id para el emisor autenticado.</response>
+        [HttpGet("{id:guid}/files")]
         [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> GetFilesBase64(string trackId)
+        public async Task<IActionResult> GetFiles(Guid id)
         {
-            var tenantIdStr = HttpContext.Items["TenantId"]?.ToString();
-            
-            if (!Guid.TryParse(tenantIdStr, out var tenantId))
-                return Unauthorized();
+            if (!TryGetClientId(out var clientId)) return Unauthorized(new { code = "INVALID_API_KEY", message = "No se pudo resolver el emisor autenticado." });
 
-            var doc = await _context.Documents.FirstOrDefaultAsync(d => d.TrackingId == trackId && d.Client.TenantId == tenantId);
-            
-            if (doc == null)
-                return NotFound();
+            var doc = await _context.Documents.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+            if (doc == null) return NotFoundDocument();
 
-            // Para producción real, leer desde S3 usando doc.XmlUrl y doc.PdfUrl.
-            // MVP: Se devuelven strings que la BD/App haya guardado o generado.
+            var stored = await DocumentSignedXmlStore.LoadAsync(_context, doc.Id);
             return Ok(new
             {
-                TrackId = doc.TrackingId,
-                PdfBase64 = doc.PdfUrl ?? "PdfNoDisponible",
-                XmlBase64 = doc.XmlUrl ?? "XmlNoDisponible",
-                ZipBase64 = ""
+                id = doc.Id,
+                number = $"{doc.Prefix}{doc.Number}",
+                status = doc.Status,
+                xmlBase64 = ToBase64(stored?.SignedXml),
+                dianResponseBase64 = ToBase64(stored?.ApplicationResponse),
+                attachedDocumentBase64 = ToBase64(stored?.AttachedDocument)
             });
         }
+
+        /// <summary>
+        /// Descarga directa del XML firmado del documento.
+        /// </summary>
+        /// <param name="id">UUID devuelto al emitir el documento.</param>
+        /// <response code="200">El archivo XML.</response>
+        /// <response code="404">No existe el documento para el emisor autenticado, o todavía no tiene XML.</response>
+        [HttpGet("{id:guid}/xml")]
+        [Produces("application/xml")]
+        public async Task<IActionResult> GetXml(Guid id)
+        {
+            if (!TryGetClientId(out var clientId)) return Unauthorized(new { code = "INVALID_API_KEY", message = "No se pudo resolver el emisor autenticado." });
+
+            var doc = await _context.Documents.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId);
+            if (doc == null) return NotFoundDocument();
+
+            var stored = await DocumentSignedXmlStore.LoadAsync(_context, doc.Id);
+            if (stored == null) return NotFound(new { code = "FILE_NOT_AVAILABLE", message = "El documento todavía no tiene XML firmado." });
+
+            return File(Encoding.UTF8.GetBytes(stored.SignedXml), "application/xml", $"{doc.Prefix}{doc.Number}.xml");
+        }
+
+        private static string? ToBase64(string? text) => string.IsNullOrEmpty(text) ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
     }
 }

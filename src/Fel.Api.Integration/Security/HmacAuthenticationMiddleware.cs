@@ -1,19 +1,23 @@
 using System;
-using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Fel.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
 using Fel.Core.Entities;
 using Fel.Infrastructure.Security;
 
 namespace Fel.Api.Security
 {
+    // Autenticación de la API de integración: la llave (x-api-key) y su secreto (x-api-secret) en los headers, siempre sobre HTTPS.
+    // No hay firma del cuerpo ni marca de tiempo: el integrador solo copia las dos credenciales que ve en el portal de developers.
+    // El nombre de la clase se conserva por historia (antes firmaba con HMAC).
     public class HmacAuthenticationMiddleware
     {
+        public const string ApiKeyHeader = "x-api-key";
+        public const string ApiSecretHeader = "x-api-secret";
+
         private readonly RequestDelegate _next;
         private readonly ILogger<HmacAuthenticationMiddleware> _logger;
 
@@ -33,7 +37,7 @@ namespace Fel.Api.Security
             }
 
             // Aplicar solo a los endpoints de la API B2B (Excluir Swagger, Docs, Superadmin y Tenant)
-            if (!context.Request.Path.StartsWithSegments("/api") || 
+            if (!context.Request.Path.StartsWithSegments("/api") ||
                 context.Request.Path.StartsWithSegments("/api/superadmin") ||
                 context.Request.Path.StartsWithSegments("/api/tenant"))
             {
@@ -41,99 +45,50 @@ namespace Fel.Api.Security
                 return;
             }
 
-            if (!context.Request.Headers.TryGetValue("x-api-key", out var extractedApiKey) ||
-                !context.Request.Headers.TryGetValue("x-api-timestamp", out var extractedTimestamp) ||
-                !context.Request.Headers.TryGetValue("x-api-signature", out var extractedSignature))
+            var apiKey = context.Request.Headers[ApiKeyHeader].ToString().Trim();
+            var apiSecret = context.Request.Headers[ApiSecretHeader].ToString().Trim();
+            if (apiKey.Length == 0 || apiSecret.Length == 0)
             {
-                context.Response.StatusCode = 401;
-                await context.Response.WriteAsync("Faltan headers de autenticación HMAC (x-api-key, x-api-timestamp, x-api-signature).");
+                var missing = apiKey.Length == 0 && apiSecret.Length == 0 ? $"{ApiKeyHeader} y {ApiSecretHeader}" : apiKey.Length == 0 ? ApiKeyHeader : ApiSecretHeader;
+                await Reject(context, 401, "MISSING_CREDENTIALS", $"Falta el header {missing}. Envía tu API Key en x-api-key y tu API Secret en x-api-secret.");
                 return;
             }
 
-            // 1. Prevención de Replay Attacks (Ataques de repetición)
-            if (!long.TryParse(extractedTimestamp, out long requestTimestamp))
-            {
-                context.Response.StatusCode = 400;
-                await context.Response.WriteAsync("El x-api-timestamp es inválido.");
-                return;
-            }
-
-            var requestTime = DateTimeOffset.FromUnixTimeSeconds(requestTimestamp);
-            if (Math.Abs((DateTimeOffset.UtcNow - requestTime).TotalMinutes) > 5)
-            {
-                context.Response.StatusCode = 401;
-                await context.Response.WriteAsync("El timestamp ha expirado. (Replay Attack Protection)");
-                return;
-            }
-
-            // 2. Cargar el API Secret conectando a la base de datos (EF Core) y determinar el entorno
-            var apiKeyStr = extractedApiKey.ToString();
             // Las llaves son de la sucursal: de ahí salen el cliente, la sucursal y el entorno (llaves "test_" = sandbox).
-            var credentials = await ApiCredentialResolver.ResolveAsync(dbContext, apiKeyStr);
-
+            var credentials = await ApiCredentialResolver.ResolveAsync(dbContext, apiKey);
             if (credentials == null)
             {
-                context.Response.StatusCode = 401;
-                await context.Response.WriteAsync("API Key no válida, o el cliente o la sucursal están inactivos.");
+                await Reject(context, 401, "INVALID_API_KEY", "La API Key no existe, o el cliente o la sucursal están inactivos. Las llaves de pruebas empiezan por test_.");
+                return;
+            }
+
+            // Comparación en tiempo constante, para que la demora no revele cuánto del secreto coincide.
+            if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(credentials.Secret ?? string.Empty), Encoding.UTF8.GetBytes(apiSecret)))
+            {
+                _logger.LogWarning("Acceso denegado: API Secret incorrecto para la llave {ApiKey} desde IP {IP}.", apiKey, context.Connection.RemoteIpAddress);
+                await Reject(context, 401, "INVALID_API_SECRET", "El API Secret no corresponde a esta API Key. Verifica que uses el secreto del mismo ambiente (producción o pruebas).");
                 return;
             }
 
             if (credentials.Block != TenantBlockLevel.None)
             {
-                context.Response.StatusCode = 403;
-                await context.Response.WriteAsync(TenantBlocks.ClientMessage);
+                await Reject(context, 403, "ACCOUNT_BLOCKED", TenantBlocks.ClientMessage);
                 return;
             }
 
-            var client = credentials.Client;
-            bool isSandbox = credentials.IsSandbox;
-            string clientSecret = credentials.Secret;
-
-            // 3. Leer el cuerpo de la petición JSON
-            context.Request.EnableBuffering();
-            string bodyContent = string.Empty;
-            using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8, true, 1024, true))
-            {
-                bodyContent = await reader.ReadToEndAsync();
-            }
-            context.Request.Body.Position = 0; // Resetear para que los controladores puedan leerlo
-
-            // 4. Calcular el Hash del Payload
-            // Payload estandarizado = Timestamp + "." + JSON Body
-            string payloadToSign = $"{extractedTimestamp}.{bodyContent}";
-            string computedSignature = ComputeHmacSha256(payloadToSign, clientSecret);
-
-            // 5. Comparar firmas evitando vulnerabilidades de 'Timing Attacks'
-            if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(computedSignature), 
-                Encoding.UTF8.GetBytes(extractedSignature.ToString())))
-            {
-                _logger.LogWarning("Acceso denegado: Fallo de integridad HMAC desde IP {IP}.", context.Connection.RemoteIpAddress);
-                context.Response.StatusCode = 401;
-                await context.Response.WriteAsync("Fallo de integridad HMAC. La firma no coincide (El payload fue alterado o el secret es incorrecto).");
-                return;
-            }
-
-            // 6. Autorizado: Guardar info del cliente y del entorno en el contexto de la request
-            context.Items["ClientId"] = client.Id.ToString();
+            // Autorizado: Guardar info del cliente y del entorno en el contexto de la request
+            context.Items["ClientId"] = credentials.Client.Id.ToString();
             context.Items["BranchId"] = credentials.Branch.Id.ToString();
-            context.Items["TenantId"] = client.TenantId.ToString();
-            context.Items["IsSandbox"] = isSandbox;
+            context.Items["TenantId"] = credentials.Client.TenantId.ToString();
+            context.Items["IsSandbox"] = credentials.IsSandbox;
 
             await _next(context);
         }
 
-        private string ComputeHmacSha256(string payload, string secret)
+        private static Task Reject(HttpContext context, int status, string code, string message)
         {
-            var encoding = new System.Text.UTF8Encoding();
-            byte[] keyByte = encoding.GetBytes(secret);
-            byte[] messageBytes = encoding.GetBytes(payload);
-
-            using (var hmacsha256 = new System.Security.Cryptography.HMACSHA256(keyByte))
-            {
-                byte[] hashMessage = hmacsha256.ComputeHash(messageBytes);
-                return System.Convert.ToBase64String(hashMessage);
-            }
+            context.Response.StatusCode = status;
+            return context.Response.WriteAsJsonAsync(new { code, message });
         }
     }
 }

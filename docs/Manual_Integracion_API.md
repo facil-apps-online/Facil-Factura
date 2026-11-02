@@ -2,28 +2,22 @@
 
 Bienvenido al manual de integración técnica para la emisión de Documentos Electrónicos (DIAN y MinSalud) a través de Facil-Factura.pro. Esta API RESTful está diseñada para procesar altos volúmenes de documentos de forma asíncrona, garantizando tiempos de respuesta instantáneos.
 
-## 1. Seguridad y Autenticación (HMAC)
+## 1. Autenticación
 
-Para garantizar la integridad y el origen de las peticiones, la API utiliza un esquema de seguridad basado en firmas HMAC SHA-256 y control de tasa (Rate Limiting de 100 req/seg).
+La API usa dos credenciales por sucursal, que se envían en headers sobre HTTPS, y un control de tasa (Rate Limiting de 100 req/seg). No hay firma ni marca de tiempo.
 
-Todas las peticiones `POST` y `GET` a la API deben incluir los siguientes **Headers**:
+Todas las peticiones deben incluir:
 
-*   `x-api-key`: Tu llave pública (identificador del Tenant/Empresa).
-*   `x-api-timestamp`: Marca de tiempo UNIX actual en segundos (ej. `1716301234`). Prevención contra Replay Attacks.
-*   `x-api-signature`: Firma HMAC calculada sobre el cuerpo de la petición.
+*   `x-api-key`: tu API Key (la de pruebas empieza por `test_`).
+*   `x-api-secret`: el API Secret de esa misma llave.
 
-### ¿Cómo calcular el `x-api-signature`?
-Debes concatenar el timestamp, un punto `.` y el cuerpo (JSON) exacto de la petición, y luego hashearlo usando tu `API_SECRET` (Llave privada).
-
-**Ejemplo en C#:**
-```csharp
-string payload = $"{timestamp}.{jsonBody}";
-using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(apiSecret)))
-{
-    var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
-    string signature = Convert.ToBase64String(hash);
-}
+```bash
+curl https://api.facil-factura.pro/api/co/dian/documents/{uuid} \
+  -H "x-api-key: TU_API_KEY" \
+  -H "x-api-secret: TU_API_SECRET"
 ```
+
+Guarda el secreto solo en tu servidor. Errores: `401` con `code` `MISSING_CREDENTIALS`, `INVALID_API_KEY` o `INVALID_API_SECRET`, y `403` `ACCOUNT_BLOCKED`.
 
 ---
 
@@ -32,8 +26,8 @@ using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(apiSecret)))
 Dado que la DIAN puede presentar intermitencias, nuestro sistema encola tus documentos y los procesa en segundo plano.
 
 1.  **Emisión:** Envías el JSON al endpoint correspondiente. La API te responderá inmediatamente un `202 Accepted` con un `TrackingId`.
-2.  **Consulta (Polling):** Haces un `GET` a `/api/co/dian/documents/{TrackingId}/status` para verificar si la DIAN ya aceptó el documento y obtener el CUFE.
-3.  **Descarga:** Haces un `GET` a `/api/co/dian/documents/{TrackingId}/files` para obtener los Base64 del XML oficial y el PDF.
+2.  **Consulta (Polling):** Haces un `GET` a `/api/co/dian/documents/{id}` para verificar si la DIAN ya aceptó el documento y obtener el CUFE.
+3.  **Descarga:** Haces un `GET` a `/api/co/dian/documents/{id}/files` para obtener el XML firmado, la respuesta de la DIAN y el AttachedDocument en Base64 real (`/xml` lo descarga directo). El PDF llega en un paso posterior.
 
 ---
 

@@ -162,8 +162,7 @@ export default function Dashboard({ onLogout, onProfile }: { onLogout: () => voi
                       <CopyField label="Test API Key" value={me.sandboxCredentials.testApiKey} />
                       <CopyField label="Test API Secret" value={me.sandboxCredentials.testApiSecret} />
                       <p className="text-xs text-slate-400">
-                        Úsalas en los headers <code className="font-mono">x-api-key</code>, <code className="font-mono">x-api-timestamp</code> y{' '}
-                        <code className="font-mono">x-api-signature</code> — la firma HMAC está documentada en la pestaña "Documentación".
+                        Envíalas en los headers <code className="font-mono">x-api-key</code> y <code className="font-mono">x-api-secret</code>, siempre por HTTPS. No hay firma ni marca de tiempo.
                       </p>
                     </div>
                   ) : (

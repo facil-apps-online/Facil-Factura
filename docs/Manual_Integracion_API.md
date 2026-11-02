@@ -161,7 +161,7 @@ Reglas principales:
 
 - La factura se indica con `invoice_id` (el `id` que devolvió la emisión, o el id de Dataico) o con `invoice_number` (prefijo y número, por ejemplo `SFRY1005`). Si no existe para tu emisor responde `404 INVOICE_NOT_FOUND`; si no está aprobada, `422 INVOICE_NOT_APPROVED`.
 - `number` es tu consecutivo de notas, sin prefijo. Las notas no tienen rango autorizado por la DIAN: solo se valida que ese prefijo y número no estén usados (`409 DOCUMENT_ALREADY_EXISTS` con la información del documento existente). Sin `numbering.prefix` se usa el prefijo de notas del emisor.
-- `reason` (obligatorio). Nota crédito: `DEVOLUCION`, `ANULACION` u `OTROS`. Nota débito: `INTERESES`, `GASTOS_POR_COBRAR`, `CAMBIO_DEL_VALOR` u `OTROS`. También se acepta el código DIAN (1 a 6 en crédito, 1 a 4 en débito). `reason_description` es opcional.
+- `reason` (obligatorio). Nota crédito: `DEVOLUCION`, `ANULACION` u `OTROS`. Nota débito: `INTERESES`, `GASTOS_POR_COBRAR`, `CAMBIO_DEL_VALOR` u `OTROS`. También se acepta el código DIAN (1 a 6 en crédito, 1 a 4 en débito). `reason_description` es opcional: es un texto libre que se agrega a las observaciones de la nota (la descripción oficial del motivo la pone el sistema, porque la DIAN la valida contra su lista).
 - Nota crédito sin `items`: es total. Con `items`: es parcial y el servidor calcula los totales. La suma de las notas crédito aprobadas no puede superar el total de la factura (`422 NOTE_EXCEEDS_INVOICE`).
 - La nota débito siempre necesita `items`.
 - Los `items` tienen la misma estructura de la factura (`description`, `quantity`, `price`, `taxes`, `discount_rate`...).

@@ -133,8 +133,10 @@ namespace Fel.Api.Integration.Services
             document.ExchangeRateDate = original.ExchangeRateDate;
             document.ReferenceDocumentId = original.Id;
             document.DiscrepancyResponseCode = reasonResult.Code;
-            document.ReferenceConcept = string.IsNullOrWhiteSpace(request.reason_description) ? reasonResult.Name : request.reason_description.Trim();
-            document.Notes = string.Join(" ", (request.notes ?? new List<string>()).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()));
+            // La DIAN valida la descripción del motivo contra su lista (CBF04), así que va siempre la oficial; el texto libre del integrador va en las notas.
+            document.ReferenceConcept = reasonResult.Name ?? string.Empty;
+            document.Notes = string.Join(" ", (request.notes ?? new List<string>()).Append(request.reason_description ?? string.Empty)
+                .Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()));
 
             var line = 0;
             foreach (var item in items)

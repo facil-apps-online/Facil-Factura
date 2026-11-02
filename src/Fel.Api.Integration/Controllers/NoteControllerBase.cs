@@ -39,10 +39,12 @@ namespace Fel.Api.Integration.Controllers
                 return Unauthorized(new { code = "INVALID_API_KEY", message = "No se pudo resolver el emisor autenticado." });
 
             ApiNoteRequest? request;
+            var suppressEmail = false;
             try
             {
                 var wrapper = typeCode == SimpleNoteFactory.CreditNote ? "credit_note" : "debit_note";
                 var payload = body.ValueKind == JsonValueKind.Object && body.TryGetProperty(wrapper, out var inner) && inner.ValueKind == JsonValueKind.Object ? inner : body;
+                suppressEmail = SuppressesEmail(payload);
                 request = payload.Deserialize<ApiNoteRequest>(JsonOptions);
             }
             catch (JsonException ex)
@@ -66,6 +68,7 @@ namespace Fel.Api.Integration.Controllers
             if (built.ExistingLocked != null) return AlreadyExists(built.ExistingLocked);
 
             var document = built.Document!;
+            document.SuppressEmail = suppressEmail;
             if (!built.Reused) _dbContext.Documents.Add(document);
             await _dbContext.SaveChangesAsync();
 
@@ -129,6 +132,11 @@ namespace Fel.Api.Integration.Controllers
         }
 
         private static string FullNumber(Document d) => $"{d.Prefix}{d.Number}";
+
+        // send_email: false en el cuerpo = emitir sin enviar el correo al adquirente (el integrador manda después su propio PDF con POST documents/{id}/send).
+        // Sin el campo, o en true, se envía como siempre según la configuración del emisor.
+        private static bool SuppressesEmail(JsonElement payload) =>
+            payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("send_email", out var flag) && flag.ValueKind == JsonValueKind.False;
 
         private static object Rejected(Document d, string code, string? message, string? detail) => new { code, message, detail, id = d.Id, number = FullNumber(d), status = d.Status };
 

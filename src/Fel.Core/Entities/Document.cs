@@ -182,5 +182,10 @@ namespace Fel.Core.Entities
         // Solo para el listado: las notas crédito aceptadas suman el total de la factura (ver InvoiceAnnulment). Tampoco se guarda.
         [NotMapped]
         public bool IsAnnulled { get; set; }
+
+        // El integrador pidió emitir sin enviar el correo al adquirente (send_email: false en la API): el PDF y el correo los maneja él después. Solo
+        // vive durante la emisión; no se guarda.
+        [NotMapped]
+        public bool SuppressEmail { get; set; }
     }
 }

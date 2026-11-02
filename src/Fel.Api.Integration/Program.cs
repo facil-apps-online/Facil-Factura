@@ -144,6 +144,10 @@ builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.
 builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.Infrastructure.Dian.NativeDianSubmissionProvider>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.InvoicePublishingService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.DocumentPdfService>();
+// Correo saliente propio (nativo): bandeja de salida con aviso por Redis; el worker lo envía por el SMTP del cliente, el del tenant o SendPulse.
+builder.Services.AddSingleton<Fel.Core.Interfaces.IEmailSignal, Fel.Infrastructure.Messaging.RedisEmailSignal>();
+builder.Services.AddScoped<Fel.Core.Interfaces.IEmailOutbox, Fel.Infrastructure.Email.EmailOutboxService>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.DocumentDeliveryService>();
 builder.Services.AddScoped<Fel.Api.Integration.Services.SimpleInvoiceFactory>();
 builder.Services.AddScoped<Fel.Api.Integration.Services.SimpleNoteFactory>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.ResolutionBranchService>();

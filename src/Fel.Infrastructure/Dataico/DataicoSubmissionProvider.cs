@@ -294,7 +294,7 @@ namespace Fel.Infrastructure.Dataico
             invoice.ProcessedAt = DateTime.UtcNow;
 
             string? warning = null;
-            if (result.Success)
+            if (result.Success && !invoice.SuppressEmail)
             {
                 var leyenda = await _legendService.ResolveAsync(client, resolution, invoice.TypeCode);
                 var currencyWords = await CurrencyWords.LoadAsync(_dbContext);

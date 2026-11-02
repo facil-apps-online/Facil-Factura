@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Fel.Api.Integration.Services;
@@ -23,11 +25,13 @@ namespace Fel.Api.Integration.Controllers
     {
         private readonly FelDbContext _context;
         private readonly DocumentPdfService _pdf;
+        private readonly DocumentDeliveryService _delivery;
 
-        public DocumentTrackingController(FelDbContext context, DocumentPdfService pdf)
+        public DocumentTrackingController(FelDbContext context, DocumentPdfService pdf, DocumentDeliveryService delivery)
         {
             _context = context;
             _pdf = pdf;
+            _delivery = delivery;
         }
 
         private bool TryGetClientId(out Guid clientId)
@@ -140,6 +144,102 @@ namespace Fel.Api.Integration.Controllers
             return File(Encoding.UTF8.GetBytes(stored.SignedXml), "application/xml", $"{doc.Prefix}{doc.Number}.xml");
         }
 
+        /// <summary>
+        /// Envía por correo al adquirente el PDF propio del integrador. Es el segundo paso de la factura personalizada: se emite con
+        /// <c>send_email: false</c> (sin correo), se arma el PDF con el CUFE y el QR y se manda aquí. Con Dataico el correo sale por su servicio de
+        /// reenvío; en nativo, por el correo propio como ZIP (contenedor firmado + PDF) con los PDF extra aparte y un tope de 5 envíos por documento cada 24 horas.
+        /// </summary>
+        /// <param name="id">UUID devuelto al emitir el documento.</param>
+        /// <param name="body"><c>to</c> (opcional: por defecto el correo del adquirente), <c>cc</c> (hasta 3, solo nativo), <c>subject</c> (solo nativo),
+        /// <c>pdf_base64</c> (opcional: sin él se usa el de la plantilla del emisor) y <c>attachments</c> (PDF extra con <c>name</c> y <c>content_base64</c>).</param>
+        /// <response code="200">Envío hecho (Dataico) o en cola (nativo).</response>
+        /// <response code="400">Datos inválidos: correo, PDF o adjuntos.</response>
+        /// <response code="404">No existe un documento con ese id para el emisor autenticado.</response>
+        /// <response code="422">El documento no está aprobado, el proveedor rechazó el envío o no hay a quién enviarlo.</response>
+        /// <response code="429">Tope de envíos por documento alcanzado (nativo).</response>
+        [HttpPost("{id:guid}/send")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+        [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+        public async Task<IActionResult> Send(Guid id, [FromBody] SendDocumentBody? body)
+        {
+            if (!TryGetClientId(out var clientId)) return Unauthorized(new { code = "INVALID_API_KEY", message = "No se pudo resolver el emisor autenticado." });
+            if (!await _context.Documents.AnyAsync(d => d.Id == id && d.ClientId == clientId)) return NotFoundDocument();
+            body ??= new SendDocumentBody();
+
+            var problems = new List<string>();
+            byte[]? pdf = null;
+            if (!string.IsNullOrWhiteSpace(body.pdf_base64))
+            {
+                pdf = DecodePdf(body.pdf_base64, "pdf_base64", problems);
+            }
+            var extras = new List<(string Name, byte[] Content)>();
+            var total = pdf?.Length ?? 0;
+            for (var i = 0; i < (body.attachments?.Count ?? 0); i++)
+            {
+                var a = body.attachments![i];
+                var name = (a.name ?? string.Empty).Trim();
+                if (name.Length == 0) { problems.Add($"attachments[{i}].name: es obligatorio."); continue; }
+                if (!name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) name += ".pdf";
+                var content = DecodePdf(a.content_base64, $"attachments[{i}].content_base64", problems);
+                if (content == null) continue;
+                total += content.Length;
+                extras.Add((Path.GetFileName(name), content));
+            }
+            if (total > Fel.Core.Entities.DocumentAttachment.MaxTotalBytes)
+                problems.Add($"El PDF y los adjuntos suman más de {Fel.Core.Entities.DocumentAttachment.MaxTotalBytes / (1024 * 1024)} MB.");
+            if (problems.Count > 0)
+                return BadRequest(new { code = "VALIDATION_ERROR", message = "El envío tiene datos inválidos. Revisa el detalle.", details = problems });
+
+            var result = await _delivery.SendAsync(id, clientId, new DocumentSendRequest(body.to, body.cc ?? new List<string>(), body.subject, pdf, extras));
+            if (result.Success)
+                return Ok(new { id, status = "SENT", provider = result.Provider, message = result.Message, emailId = result.EmailId, warnings = result.Warnings });
+
+            var status = result.Code switch
+            {
+                "DOCUMENT_NOT_FOUND" => StatusCodes.Status404NotFound,
+                "SEND_LIMIT" => StatusCodes.Status429TooManyRequests,
+                "INVALID_EMAIL" or "TOO_MANY_RECIPIENTS" => StatusCodes.Status400BadRequest,
+                _ => StatusCodes.Status422UnprocessableEntity
+            };
+            return StatusCode(status, new { code = result.Code, message = result.Message });
+        }
+
+        // Solo se aceptan PDF reales: Base64 válido y encabezado %PDF.
+        private static byte[]? DecodePdf(string? base64, string field, List<string> problems)
+        {
+            if (string.IsNullOrWhiteSpace(base64)) { problems.Add($"{field}: es obligatorio."); return null; }
+            try
+            {
+                var bytes = Convert.FromBase64String(base64.Trim());
+                if (bytes.Length < 5 || bytes[0] != '%' || bytes[1] != 'P' || bytes[2] != 'D' || bytes[3] != 'F') { problems.Add($"{field}: no es un PDF (debe empezar con %PDF)."); return null; }
+                return bytes;
+            }
+            catch (FormatException)
+            {
+                problems.Add($"{field}: no es Base64 válido.");
+                return null;
+            }
+        }
+
         private static string? ToBase64(string? text) => string.IsNullOrEmpty(text) ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+    }
+
+    /// <summary>Cuerpo de <c>POST documents/{id}/send</c>.</summary>
+    public class SendDocumentBody
+    {
+        public string? to { get; set; }
+        public List<string>? cc { get; set; }
+        public string? subject { get; set; }
+        public string? pdf_base64 { get; set; }
+        public List<SendAttachment>? attachments { get; set; }
+    }
+
+    public class SendAttachment
+    {
+        public string? name { get; set; }
+        public string? content_base64 { get; set; }
     }
 }

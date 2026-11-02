@@ -318,7 +318,7 @@ namespace Fel.Api.Integration.Services
             else if (IsAiu(r))
             {
                 var a = r.aiu;
-                if (a == null) p.Add("aiu: es obligatorio en una factura AIU; indica contract_object y la base (base_amount, o las líneas del servicio en aiu.items).");
+                if (a == null) p.Add("aiu: es obligatorio en una factura AIU; indica la base (base_amount, o las líneas del servicio en aiu.items); contract_object es opcional.");
                 else
                 {
                     if (a.items is { Count: > 0 })
@@ -327,7 +327,6 @@ namespace Fel.Api.Integration.Services
                         if (a.base_amount > 0) p.Add("aiu.base_amount: no se envía junto con aiu.items; la base es la suma de las líneas.");
                     }
                     else if (a.base_amount <= 0) p.Add("aiu.base_amount: debe ser mayor que 0 (el valor del servicio contratado), o envía las líneas del servicio en aiu.items.");
-                    if ((a.contract_object ?? string.Empty).Trim().Length < 10) p.Add("aiu.contract_object: es obligatorio (mínimo 10 caracteres); describe el objeto del contrato.");
                     foreach (var (name, value) in new[] { ("administration_percent", a.administration_percent), ("unforeseen_percent", a.unforeseen_percent), ("utility_percent", a.utility_percent), ("utility_iva_rate", a.utility_iva_rate), ("service_iva_rate", a.service_iva_rate) })
                         if (value is < 0 or > 100) p.Add($"aiu.{name}: debe estar entre 0 y 100.");
                 }

@@ -35,7 +35,9 @@ namespace Fel.Core.Models
         public static bool IsAiuLine(string? code) => code is AdminCode or UnforeseenCode or ProfitCode;
         public static bool IsServiceLine(string? code) => !IsAiuLine(code);
 
-        public string BuildAdminNote() => $"{NotePrefix} {ContractObject.Trim()}";
+        // El Anexo pide que la nota de Administración empiece por NotePrefix; lo que sigue (el objeto) no lo valida nadie ni Dataico lo exige, así que es
+        // opcional: sin objeto la nota lleva solo el texto base.
+        public string BuildAdminNote() => string.IsNullOrWhiteSpace(ContractObject) ? NotePrefix : $"{NotePrefix} {ContractObject.Trim()}";
 
         private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
 

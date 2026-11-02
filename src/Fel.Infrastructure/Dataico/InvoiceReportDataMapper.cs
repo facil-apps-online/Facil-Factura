@@ -312,7 +312,7 @@ namespace Fel.Infrastructure.Dataico
                     ["Notas"] = string.Join("\n", observaciones.Select(o => o.Text)),
                     ["TipoOperacion"] = esMandato ? "Mandatos" : invoice.TypeCode == "FE-EXP" ? "Exportación" : aiu != null ? "AIU" : "Estándar",
                     // Factura AIU: objeto del contrato ya listo para imprimir; vacío en cualquier otra factura.
-                    ["AiuObjeto"] = aiu == null ? null : $"Objeto del contrato: {aiu.ContractObject.Trim()}",
+                    ["AiuObjeto"] = aiu == null || string.IsNullOrWhiteSpace(aiu.ContractObject) ? null : $"Objeto del contrato: {aiu.ContractObject.Trim()}",
                     // Factura de exportación: condición de entrega lista para imprimir ("CFR - Costo y flete"); vacía en otra factura.
                     ["Incoterm"] = string.IsNullOrWhiteSpace(invoice.DeliveryTermsCode) ? null
                         : string.IsNullOrWhiteSpace(invoice.DeliveryTermsName) ? invoice.DeliveryTermsCode : $"{invoice.DeliveryTermsCode} - {invoice.DeliveryTermsName}",

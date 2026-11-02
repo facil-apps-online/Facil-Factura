@@ -72,6 +72,9 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
 
   const [results, setResults] = useState<SearchableSelectOption[]>([]);
   const [searching, setSearching] = useState(false);
+  // La última búsqueda falló (red, sesión, servidor): se avisa y se puede reintentar sin tener que cambiar el texto. reloadKey fuerza una búsqueda nueva.
+  const [searchError, setSearchError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [chosen, setChosen] = useState<SearchableSelectOption | null>(null);
 
   const selectedOption: SearchableSelectOption | undefined = (loadOptions ? undefined : options.find(o => o.value === value))
@@ -89,15 +92,15 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
     const timer = setTimeout(async () => {
       try {
         const found = await loadOptions(q);
-        if (!cancelled) setResults(found);
+        if (!cancelled) { setResults(found); setSearchError(false); }
       } catch {
-        if (!cancelled) setResults([]);
+        if (!cancelled) { setResults([]); setSearchError(true); }
       } finally {
         if (!cancelled) setSearching(false);
       }
-    }, q === '' ? 0 : 250);
+    }, q === '' || reloadKey > 0 ? 0 : 250);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [isOpen, query]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, query, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // También cuando cambia el texto de la opción elegida sin cambiar su valor (p. ej. el tercero se editó y cambió de nombre).
   const closedText = selectedOption ? closedValueOf(selectedOption) : '';
@@ -186,6 +189,15 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
           readOnly={disabled}
           autoComplete="off"
           onFocus={() => { if (disabled) return; setIsOpen(true); setHighlighted(0); }}
+          // Un campo que ya tiene el foco no vuelve a disparar onFocus (tras elegir una opción, Escape o un error): el clic lo reabre, y si la última búsqueda
+          // falló la repite.
+          onClick={() => {
+            if (disabled) return;
+            if (!isOpen) { setIsOpen(true); setHighlighted(0); }
+            else if (searchError) setReloadKey(k => k + 1);
+          }}
+          // Salir con Tab deja de mostrar la lista (el clic fuera ya la cerraba).
+          onBlur={() => { setIsOpen(false); setQuery(selectedOption ? closedValueOf(selectedOption) : ''); }}
           onChange={e => { if (disabled) return; setQuery(e.target.value); setIsOpen(true); setHighlighted(0); if (value) onChange(''); }}
           onKeyDown={handleKeyDown}
           className={inputClassName || 'w-full px-4 py-2 pr-8 border rounded-xl focus:ring-2 focus:ring-primary outline-none bg-white'}
@@ -196,9 +208,19 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
         <div
           ref={dropdownRef}
           style={{ position: 'fixed', top: coords.top, left: coords.left, width: coords.width, zIndex: 9999 }}
+          // Tocar la lista (barra de desplazamiento, márgenes) no debe quitarle el foco al campo: con onBlur cerraría la lista a media búsqueda.
+          onMouseDown={e => e.preventDefault()}
           className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg py-1"
         >
-          {filtered.length === 0 && !showCreateNew && (
+          {loadOptions && searchError && !searching && filtered.length === 0 && (
+            <div
+              onMouseDown={e => { e.preventDefault(); setReloadKey(k => k + 1); }}
+              className="px-4 py-2 text-sm cursor-pointer text-red-600 hover:bg-red-50"
+            >
+              No se pudo buscar. Toca aquí para reintentar.
+            </div>
+          )}
+          {filtered.length === 0 && !showCreateNew && !(loadOptions && searchError && !searching) && (
             <div className="px-4 py-2 text-sm text-slate-400">{loadOptions && searching ? 'Buscando…' : (emptyLabel || 'Sin resultados')}</div>
           )}
           {filtered.map((opt, idx) => (

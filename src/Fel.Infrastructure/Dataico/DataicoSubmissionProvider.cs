@@ -82,8 +82,8 @@ namespace Fel.Infrastructure.Dataico
                 {
                     // Mismas exigencias que la vía directa: el objeto del contrato y las tres líneas A, I y U.
                     aiu = Fel.Core.Models.AiuContractData.TryRead(invoice.SectorExtensionData);
-                    if (aiu == null || string.IsNullOrWhiteSpace(aiu.ContractObject))
-                        throw new NotSupportedException("La factura AIU debe indicar el objeto del contrato.");
+                    if (aiu == null)
+                        throw new NotSupportedException("La factura AIU debe llevar los datos del contrato (porcentajes de Administración, Imprevistos y Utilidad).");
                     var codes = items.Select(i => i.Code).ToHashSet();
                     // Dataico pide además la línea del servicio contratado: un borrador AIU creado antes de que existiera no la tiene.
                     if (!codes.Any(Fel.Core.Models.AiuContractData.IsServiceLine))

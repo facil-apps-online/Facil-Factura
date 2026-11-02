@@ -96,8 +96,9 @@ namespace Fel.Infrastructure.Dian
             if (documentType?.OperationType == "09")
             {
                 var aiu = Fel.Core.Models.AiuContractData.TryRead(invoice.SectorExtensionData);
-                if (aiu == null || string.IsNullOrWhiteSpace(aiu.ContractObject))
-                    throw new NotSupportedException("La factura AIU debe indicar el objeto del contrato (es obligatorio en la línea de Administración).");
+                // El objeto del contrato es opcional: lo que la DIAN exige es la nota de Administración con su texto base, que se arma sola.
+                if (aiu == null)
+                    throw new NotSupportedException("La factura AIU debe llevar los datos del contrato (porcentajes de Administración, Imprevistos y Utilidad).");
                 var codes = items.Select(i => i.Code).ToHashSet();
                 if (!codes.Contains(Fel.Core.Models.AiuContractData.AdminCode) || !codes.Contains(Fel.Core.Models.AiuContractData.UnforeseenCode) || !codes.Contains(Fel.Core.Models.AiuContractData.ProfitCode))
                     throw new NotSupportedException("La factura AIU debe llevar las líneas de Administración, Imprevistos y Utilidad.");

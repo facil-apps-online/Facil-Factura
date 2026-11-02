@@ -416,6 +416,22 @@ namespace Fel.Tests
         }
 
         [Fact]
+        public async Task An_aiu_invoice_does_not_need_the_contract_object()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r =>
+            {
+                r.operation = "AIU"; r.items = new List<DataicoInvoiceItem>();
+                r.aiu = new DataicoAiuContract { base_amount = 1_000_000 };
+            }), f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            var contract = Fel.Core.Models.AiuContractData.TryRead(result.Document!.SectorExtensionData)!;
+            // Sin objeto, la nota de Administración lleva solo el texto base que exige el Anexo.
+            Assert.Equal(Fel.Core.Models.AiuContractData.NotePrefix, contract.BuildAdminNote());
+        }
+
+        [Fact]
         public async Task An_aiu_invoice_does_not_take_both_a_base_amount_and_service_lines()
         {
             var f = new Fixture();
@@ -439,7 +455,8 @@ namespace Fel.Tests
             Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
             var details = string.Join("|", result.Error.Details!);
             Assert.Contains("aiu.base_amount", details);
-            Assert.Contains("aiu.contract_object", details);
+            // El objeto del contrato es opcional: su ausencia o brevedad no es un error.
+            Assert.DoesNotContain("contract_object", details);
         }
 
         [Fact]

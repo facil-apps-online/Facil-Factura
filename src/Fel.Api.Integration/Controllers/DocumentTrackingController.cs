@@ -103,7 +103,9 @@ namespace Fel.Api.Integration.Controllers
         /// <response code="404">No existe el documento para el emisor autenticado.</response>
         /// <response code="422">El PDF no se pudo generar; el mensaje dice por qué (por ejemplo, falta elegir la plantilla).</response>
         [HttpGet("{id:guid}/pdf")]
-        [Produces("application/pdf")]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "application/pdf")]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
         public async Task<IActionResult> GetPdf(Guid id)
         {
             if (!TryGetClientId(out var clientId)) return Unauthorized(new { code = "INVALID_API_KEY", message = "No se pudo resolver el emisor autenticado." });

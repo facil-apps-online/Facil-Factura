@@ -119,6 +119,8 @@
       - CertificateStoragePath=/app/secure-storage
       - Certificates__KeyAlgorithm=${CERTIFICATES_KEY_ALGORITHM}
       - Certificates__RsaKeySize=${CERTIFICATES_RSA_KEY_SIZE}
+      # PDF de los documentos por UUID: las plantillas viven en Facil Reports.
+      - FacilReports__ApiKey=${FACIL_REPORTS_API_KEY}
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates

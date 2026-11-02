@@ -286,8 +286,8 @@ namespace Fel.Tests
             Assert.Null(result.Error);
             var doc = result.Document!;
             Assert.Equal("FE-AIU", doc.TypeCode);
-            Assert.Equal(new[] { "AIU-A", "AIU-I", "AIU-U", "SERVICIO" }, doc.Items.Select(i => i.Code).ToArray());
-            Assert.Equal(new[] { 100_000m, 50_000m, 50_000m, 1_000_000m }, doc.Items.Select(i => i.UnitPrice).ToArray());
+            Assert.Equal(new[] { "SERVICIO", "AIU-A", "AIU-I", "AIU-U" }, doc.Items.Select(i => i.Code).ToArray());
+            Assert.Equal(new[] { 1_000_000m, 100_000m, 50_000m, 50_000m }, doc.Items.Select(i => i.UnitPrice).ToArray());
             var stored = Fel.Core.Models.AiuContractData.TryRead(doc.SectorExtensionData);
             Assert.Equal(10, stored!.AdminPercent);
             Assert.Equal(19, stored.IvaRate);
@@ -379,6 +379,55 @@ namespace Fel.Tests
             Assert.Contains("<Name>SubTotal</Name><Value>10000.00</Value>", flat);
             Assert.Contains("<InformacionVeneficiosComprador>", xml);
             Assert.True(xml.IndexOf("SignaturePlaceholder", StringComparison.Ordinal) < xml.IndexOf("InformacionCajaVenta", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task An_aiu_invoice_with_several_service_lines_takes_the_sum_as_the_base_and_keeps_the_charges()
+        {
+            var f = new Fixture();
+            DataicoInvoiceItem Cost(string sku, string name, decimal price) => new() { sku = sku, description = name, quantity = 1, price = price };
+            var result = await f.Factory.BuildAsync(Request(tweak: r =>
+            {
+                r.operation = "AIU";
+                r.items = new List<DataicoInvoiceItem>();
+                r.charges = new List<DataicoCharge> { new() { discount = false, reason = "VIATICOS", base_amount = 48_526_955m } };
+                r.aiu = new DataicoAiuContract
+                {
+                    contract_object = "Obra civil y electrica de adecuacion", administration_percent = 11, unforeseen_percent = 2, utility_percent = 4,
+                    items = new List<DataicoInvoiceItem>
+                    {
+                        Cost("C02", "COSTO DIRECTO OBRA CIVIL", 175_144_084m), Cost("R02", "RECARGO NOCTURNO Y FESTIVO OC", 12_351_982m),
+                        Cost("C03", "COSTO DIRECTO OBRA ELECTRICA", 12_027_872m), Cost("R03", "RECARGO NOCTURNO Y FESTIVO OE", 1_539_568m)
+                    }
+                };
+            }), f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            var doc = result.Document!;
+            Assert.Equal(new[] { "C02", "R02", "C03", "R03", "AIU-A", "AIU-I", "AIU-U" }, doc.Items.Select(i => i.Code).ToArray());
+            Assert.Equal(new[] { 22_116_985.66m, 4_021_270.12m, 8_042_540.24m }, doc.Items.Skip(4).Select(i => i.UnitPrice).ToArray());
+            Assert.Equal(201_063_506m, Fel.Core.Models.AiuContractData.TryRead(doc.SectorExtensionData)!.BaseAmount);
+            // Subtotal 235.244.302,02; el IVA de la Utilidad es 8.042.540,24 x 19 % = 1.528.082,6456 y se redondea a 1.528.082,65 (la factura de
+            // referencia del cliente muestra ,64: su sistema trunca). Con los viaticos (48.526.955) el total a pagar es 285.299.339,67.
+            Assert.Equal(235_244_302.02m, doc.Subtotal);
+            Assert.Equal(1_528_082.65m, Math.Round(doc.TaxAmount, 2));
+            Assert.Equal(48_526_955m, doc.GeneralChargeAmount);
+            Assert.Equal("VIATICOS", doc.GeneralChargeReason);
+        }
+
+        [Fact]
+        public async Task An_aiu_invoice_does_not_take_both_a_base_amount_and_service_lines()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(tweak: r =>
+            {
+                r.operation = "AIU"; r.items = new List<DataicoInvoiceItem>();
+                r.aiu = new DataicoAiuContract { base_amount = 1000, contract_object = "Obra civil de adecuacion", items = new List<DataicoInvoiceItem> { new() { sku = "AIU-A", description = "x", quantity = 1, price = 10 } } };
+            }), f.Client, BranchId);
+
+            var details = string.Join("|", result.Error!.Details!);
+            Assert.Contains("aiu.base_amount", details);
+            Assert.Contains("reservado", details);
         }
 
         [Fact]

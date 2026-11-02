@@ -86,7 +86,7 @@ namespace Fel.Infrastructure.Dataico
                         throw new NotSupportedException("La factura AIU debe indicar el objeto del contrato.");
                     var codes = items.Select(i => i.Code).ToHashSet();
                     // Dataico pide además la línea del servicio contratado: un borrador AIU creado antes de que existiera no la tiene.
-                    if (!codes.Contains(Fel.Core.Models.AiuContractData.ServiceCode))
+                    if (!codes.Any(Fel.Core.Models.AiuContractData.IsServiceLine))
                         throw new NotSupportedException("La factura AIU debe llevar la línea del servicio contratado. Abre el borrador y vuelve a indicar el valor del servicio para regenerar las líneas.");
                     if (!codes.Contains(Fel.Core.Models.AiuContractData.AdminCode) || !codes.Contains(Fel.Core.Models.AiuContractData.UnforeseenCode) || !codes.Contains(Fel.Core.Models.AiuContractData.ProfitCode))
                         throw new NotSupportedException("La factura AIU debe llevar las líneas de Administración, Imprevistos y Utilidad.");

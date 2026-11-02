@@ -157,7 +157,9 @@ namespace Fel.Infrastructure.Dataico.Models
     // utility_iva_rate (19 por defecto) y el servicio service_iva_rate (0 por defecto).
     public class DataicoAiuContract
     {
+        // La base del contrato: o base_amount (una sola línea de servicio) o las líneas del servicio en items; con items la base es su suma.
         public decimal base_amount { get; set; }
+        public List<DataicoInvoiceItem>? items { get; set; }
         public decimal? administration_percent { get; set; }
         public decimal? unforeseen_percent { get; set; }
         public decimal? utility_percent { get; set; }

@@ -94,7 +94,7 @@ namespace Fel.Api.Integration.Services
             if (customerResult.Error != null) return new InvoiceBuildResult { Error = customerResult.Error };
             var customer = customerResult.Customer!;
 
-            var itemsResult = isAiu ? (Items: BuildAiuItems(request.aiu!), Error: (ApiError?)null) : await BuildItemsAsync(request.items, isMandate, warnings);
+            var itemsResult = isAiu ? await BuildAiuItemsAsync(request.aiu!, warnings) : await BuildItemsAsync(request.items, isMandate, warnings);
             if (itemsResult.Error != null) return new InvoiceBuildResult { Error = itemsResult.Error };
 
             var paymentMeansResult = await ResolvePaymentMeansAsync(request);
@@ -127,7 +127,7 @@ namespace Fel.Api.Integration.Services
             document.PaymentMeansType = request.payment_means_type.Trim().ToUpperInvariant();
             document.PaymentMeans = paymentMeansResult.Category;
             document.PurchaseOrderReference = string.IsNullOrWhiteSpace(request.order_reference) ? null : request.order_reference.Trim();
-            document.SectorExtensionData = isAiu ? AiuExtensionData(request.aiu!) : isPos ? PosExtensionData(request.pos!) : "{}";
+            document.SectorExtensionData = isAiu ? AiuExtensionData(request.aiu!, itemsResult.Items) : isPos ? PosExtensionData(request.pos!) : "{}";
             var dueDate = ParseDate(request.payment_date);
             document.PaymentTermDays = dueDate.HasValue ? Math.Max(0, (int)(dueDate.Value.Date - issueDate.Date).TotalDays) : null;
 
@@ -203,9 +203,9 @@ namespace Fel.Api.Integration.Services
 
         private static bool IsAiu(DataicoInvoiceRequest r) => string.Equals(r.operation, "AIU", StringComparison.OrdinalIgnoreCase);
 
-        private static AiuContractData ToContract(DataicoAiuContract a) => new()
+        private static AiuContractData ToContract(DataicoAiuContract a, decimal baseAmount) => new()
         {
-            BaseAmount = a.base_amount,
+            BaseAmount = baseAmount,
             AdminPercent = a.administration_percent ?? 10,
             UnforeseenPercent = a.unforeseen_percent ?? 5,
             ProfitPercent = a.utility_percent ?? 5,
@@ -214,30 +214,47 @@ namespace Fel.Api.Integration.Services
             ContractObject = (a.contract_object ?? string.Empty).Trim()
         };
 
-        // Mismo JSON que guarda el portal ({ aiu: {...} } en camelCase): el motor y las notas lo leen igual venga de donde venga.
-        private static string AiuExtensionData(DataicoAiuContract a) =>
-            System.Text.Json.JsonSerializer.Serialize(new { aiu = ToContract(a) }, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+        // Base de las líneas de servicio (antes de IVA): lo que se factura por el contrato, sobre lo que se calculan A, I y U.
+        private static decimal ServiceBase(IEnumerable<DocumentItem> serviceLines) =>
+            Math.Round(serviceLines.Sum(i => i.Quantity * i.UnitPrice * (1 - i.DiscountRate / 100m)), 2, MidpointRounding.AwayFromZero);
 
-        // Las cuatro líneas que arma el formulario del portal: A, I y U como porcentaje de la base, y el servicio contratado por la base. A e I
-        // no causan IVA; la Utilidad usa su tarifa y el servicio la suya.
-        private static List<DocumentItem> BuildAiuItems(DataicoAiuContract source)
+        // Mismo JSON que guarda el portal ({ aiu: {...} } en camelCase): el motor y las notas lo leen igual venga de donde venga.
+        private static string AiuExtensionData(DataicoAiuContract a, IEnumerable<DocumentItem> lines) =>
+            System.Text.Json.JsonSerializer.Serialize(new { aiu = ToContract(a, ServiceBase(lines.Where(i => AiuContractData.IsServiceLine(i.Code)))) },
+                new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+
+        // Las líneas de la AIU: las de servicio y, después, Administración, Imprevistos y Utilidad como porcentaje de la base. Sin aiu.items se arma
+        // una sola línea de servicio por base_amount (como el formulario antiguo); con aiu.items las líneas del integrador son las de servicio y la
+        // base es su suma. A e I no causan IVA; la Utilidad usa su tarifa y cada línea de servicio la suya (sin impuestos, excluida).
+        private async Task<(List<DocumentItem> Items, ApiError? Error)> BuildAiuItemsAsync(DataicoAiuContract source, List<string> warnings)
         {
-            var aiu = ToContract(source);
-            DocumentItem Line(string code, string name, decimal price, decimal ivaRate) => new()
+            List<DocumentItem> service;
+            if (source.items is { Count: > 0 })
             {
-                Id = Guid.NewGuid(), Code = code, Name = name, Quantity = 1, UnitPrice = price,
-                UnitOfMeasureCode = "94", UnitOfMeasureAbbreviation = "EA", UnitOfMeasureDisplayFormat = "Combined",
-                IvaTreatment = ivaRate > 0 ? IvaTreatment.Gravado : IvaTreatment.Excluido, TaxRate = ivaRate
-            };
+                var built = await BuildItemsAsync(source.items, false, warnings, "aiu.items");
+                if (built.Error != null) return built;
+                service = built.Items;
+            }
+            else
+            {
+                var contract = ToContract(source, source.base_amount);
+                service = new List<DocumentItem> { AiuLine(AiuContractData.ServiceCode, string.IsNullOrWhiteSpace(contract.ContractObject) ? "Servicio contratado" : contract.ContractObject, contract.BaseAmount, contract.ServiceIvaRate) };
+            }
+
+            var aiu = ToContract(source, ServiceBase(service));
             decimal PercentOf(decimal percent) => Math.Round(aiu.BaseAmount * percent / 100, 2, MidpointRounding.AwayFromZero);
-            return new List<DocumentItem>
-            {
-                Line(AiuContractData.AdminCode, "Administración (A.I.U.)", PercentOf(aiu.AdminPercent), 0),
-                Line(AiuContractData.UnforeseenCode, "Imprevistos (A.I.U.)", PercentOf(aiu.UnforeseenPercent), 0),
-                Line(AiuContractData.ProfitCode, "Utilidad (A.I.U.)", PercentOf(aiu.ProfitPercent), aiu.IvaRate),
-                Line(AiuContractData.ServiceCode, string.IsNullOrWhiteSpace(aiu.ContractObject) ? "Servicio contratado" : aiu.ContractObject, aiu.BaseAmount, aiu.ServiceIvaRate)
-            };
+            service.Add(AiuLine(AiuContractData.AdminCode, "Administración (A.I.U.)", PercentOf(aiu.AdminPercent), 0));
+            service.Add(AiuLine(AiuContractData.UnforeseenCode, "Imprevistos (A.I.U.)", PercentOf(aiu.UnforeseenPercent), 0));
+            service.Add(AiuLine(AiuContractData.ProfitCode, "Utilidad (A.I.U.)", PercentOf(aiu.ProfitPercent), aiu.IvaRate));
+            return (service, null);
         }
+
+        private static DocumentItem AiuLine(string code, string name, decimal price, decimal ivaRate) => new()
+        {
+            Id = Guid.NewGuid(), Code = code, Name = name, Quantity = 1, UnitPrice = price,
+            UnitOfMeasureCode = "94", UnitOfMeasureAbbreviation = "EA", UnitOfMeasureDisplayFormat = "Combined",
+            IvaTreatment = ivaRate > 0 ? IvaTreatment.Gravado : IvaTreatment.Excluido, TaxRate = ivaRate
+        };
 
         private static InvoiceBuildResult Fail(int status, string code, string message, IReadOnlyList<string>? details = null) =>
             new() { Error = new ApiError(status, code, message, details) };
@@ -301,10 +318,15 @@ namespace Fel.Api.Integration.Services
             else if (IsAiu(r))
             {
                 var a = r.aiu;
-                if (a == null) p.Add("aiu: es obligatorio en una factura AIU; indica base_amount, los porcentajes y contract_object.");
+                if (a == null) p.Add("aiu: es obligatorio en una factura AIU; indica contract_object y la base (base_amount, o las líneas del servicio en aiu.items).");
                 else
                 {
-                    if (a.base_amount <= 0) p.Add("aiu.base_amount: debe ser mayor que 0; es el valor del servicio contratado.");
+                    if (a.items is { Count: > 0 })
+                    {
+                        ValidateItemLines(a.items, "aiu.items", p);
+                        if (a.base_amount > 0) p.Add("aiu.base_amount: no se envía junto con aiu.items; la base es la suma de las líneas.");
+                    }
+                    else if (a.base_amount <= 0) p.Add("aiu.base_amount: debe ser mayor que 0 (el valor del servicio contratado), o envía las líneas del servicio en aiu.items.");
                     if ((a.contract_object ?? string.Empty).Trim().Length < 10) p.Add("aiu.contract_object: es obligatorio (mínimo 10 caracteres); describe el objeto del contrato.");
                     foreach (var (name, value) in new[] { ("administration_percent", a.administration_percent), ("unforeseen_percent", a.unforeseen_percent), ("utility_percent", a.utility_percent), ("utility_iva_rate", a.utility_iva_rate), ("service_iva_rate", a.service_iva_rate) })
                         if (value is < 0 or > 100) p.Add($"aiu.{name}: debe estar entre 0 y 100.");
@@ -312,28 +334,32 @@ namespace Fel.Api.Integration.Services
                 if (r.items is { Count: > 0 }) p.Add("items: en una factura AIU no se envían líneas; se generan a partir del bloque aiu.");
             }
             else if (r.items == null || r.items.Count == 0) p.Add("items: debe traer al menos una línea.");
-            else
-            {
-                for (var i = 0; i < r.items.Count; i++)
-                {
-                    var it = r.items[i];
-                    var at = $"items[{i}]";
-                    if (string.IsNullOrWhiteSpace(it.description)) p.Add($"{at}.description: es obligatorio.");
-                    if (it.quantity <= 0) p.Add($"{at}.quantity: debe ser mayor que 0.");
-                    if (it.price < 0) p.Add($"{at}.price: no puede ser negativo.");
-                    if (it.discount_rate < 0 || it.discount_rate > 100) p.Add($"{at}.discount_rate: debe estar entre 0 y 100.");
-                    foreach (var tax in it.taxes ?? new List<DataicoTax>())
-                    {
-                        if (tax.tax_rate == null && tax.tax_amount != null)
-                            p.Add($"{at}.taxes: el impuesto {tax.tax_category} llegó con valor fijo (tax_amount); por ahora solo se aceptan impuestos con porcentaje (tax_rate).");
-                        else if (tax.tax_rate is < 0 or > 100) p.Add($"{at}.taxes: la tarifa de {tax.tax_category} debe estar entre 0 y 100.");
-                    }
-                    foreach (var ret in it.retentions ?? new List<DataicoTax>())
-                        if (ret.tax_rate is null or < 0 or > 100) p.Add($"{at}.retentions: la retención {ret.tax_category} necesita tax_rate entre 0 y 100.");
-                }
-            }
+            else ValidateItemLines(r.items, "items", p);
 
             return p;
+        }
+
+        // Forma de cada línea: la misma regla para los items de una factura y para las líneas de servicio de una AIU (path dice dónde están).
+        private static void ValidateItemLines(List<DataicoInvoiceItem> items, string path, List<string> p)
+        {
+            for (var i = 0; i < items.Count; i++)
+            {
+                var it = items[i];
+                var at = $"{path}[{i}]";
+                if (string.IsNullOrWhiteSpace(it.description)) p.Add($"{at}.description: es obligatorio.");
+                if (it.quantity <= 0) p.Add($"{at}.quantity: debe ser mayor que 0.");
+                if (it.price < 0) p.Add($"{at}.price: no puede ser negativo.");
+                if (it.discount_rate < 0 || it.discount_rate > 100) p.Add($"{at}.discount_rate: debe estar entre 0 y 100.");
+                foreach (var tax in it.taxes ?? new List<DataicoTax>())
+                {
+                    if (tax.tax_rate == null && tax.tax_amount != null)
+                        p.Add($"{at}.taxes: el impuesto {tax.tax_category} llegó con valor fijo (tax_amount); por ahora solo se aceptan impuestos con porcentaje (tax_rate).");
+                    else if (tax.tax_rate is < 0 or > 100) p.Add($"{at}.taxes: la tarifa de {tax.tax_category} debe estar entre 0 y 100.");
+                }
+                foreach (var ret in it.retentions ?? new List<DataicoTax>())
+                    if (ret.tax_rate is null or < 0 or > 100) p.Add($"{at}.retentions: la retención {ret.tax_category} necesita tax_rate entre 0 y 100.");
+                if (AiuContractData.IsAiuLine(it.sku)) p.Add($"{at}.sku: \"{it.sku}\" está reservado para las líneas de Administración, Imprevistos y Utilidad.");
+            }
         }
 
         // ---------------------------------------------------------------------------------------------------------------------------
@@ -505,7 +531,7 @@ namespace Fel.Api.Integration.Services
         // ---------------------------------------------------------------------------------------------------------------------------
         // Líneas
         // ---------------------------------------------------------------------------------------------------------------------------
-        internal async Task<(List<DocumentItem> Items, ApiError? Error)> BuildItemsAsync(List<DataicoInvoiceItem> source, bool isMandate, List<string> warnings)
+        internal async Task<(List<DocumentItem> Items, ApiError? Error)> BuildItemsAsync(List<DataicoInvoiceItem> source, bool isMandate, List<string> warnings, string path = "items")
         {
             var units = await _db.UnitsOfMeasure.AsNoTracking().Where(u => u.IsActive).ToListAsync();
             var idTypes = await _db.IdentificationTypes.AsNoTracking().Where(t => t.IsActive).ToListAsync();
@@ -519,7 +545,7 @@ namespace Fel.Api.Integration.Services
             for (var i = 0; i < source.Count; i++)
             {
                 var s = source[i];
-                var at = $"items[{i}]";
+                var at = $"{path}[{i}]";
 
                 var unitCode = string.IsNullOrWhiteSpace(s.measuring_unit) ? "94" : s.measuring_unit.Trim();
                 var unit = units.FirstOrDefault(u => string.Equals(u.DianCode, unitCode, StringComparison.OrdinalIgnoreCase))

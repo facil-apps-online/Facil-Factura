@@ -192,7 +192,7 @@ namespace Fel.Infrastructure.Dataico
 
                 // Factura AIU: la línea del servicio contratado se marca para Dataico. Con aiu_contract arma el cbc:Note del contrato
                 // ("Contrato de servicios AIU por concepto de: ..."); probado en su sandbox.
-                if (aiu != null && item.Code == AiuContractData.ServiceCode)
+                if (aiu != null && AiuContractData.IsServiceLine(item.Code))
                 {
                     dataicoItem.aiu_administration = true;
                     dataicoItem.aiu_contract = aiu.ContractObject.Trim();

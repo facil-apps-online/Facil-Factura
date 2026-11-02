@@ -426,9 +426,9 @@ namespace Fel.Infrastructure.Dataico
                 new() { ["Concepto"] = concept, ["Porcentaje"] = percent, ["Valor"] = money(value) };
 
             var rows = new List<Dictionary<string, object?>>();
-            var service = items.FirstOrDefault(i => i.Code == AiuContractData.ServiceCode);
+            var service = items.Where(i => AiuContractData.IsServiceLine(i.Code)).ToList();
             // Los borradores AIU anteriores no tienen línea de servicio: en ese caso la fila no se imprime.
-            if (service != null) rows.Add(Row("Valor del servicio (base del contrato)", string.Empty, LineBase(service)));
+            if (service.Count > 0) rows.Add(Row("Valor del servicio (base del contrato)", string.Empty, service.Sum(LineBase)));
             void Add(string concept, string code, decimal percent)
             {
                 var line = items.FirstOrDefault(i => i.Code == code);

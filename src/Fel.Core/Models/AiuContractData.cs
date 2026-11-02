@@ -31,6 +31,10 @@ namespace Fel.Core.Models
         public decimal ServiceIvaRate { get; set; }
         public string ContractObject { get; set; } = string.Empty;
 
+        // Administración, Imprevistos y Utilidad se calculan sobre la base; cualquier otra línea de la factura AIU es una línea del servicio contratado.
+        public static bool IsAiuLine(string? code) => code is AdminCode or UnforeseenCode or ProfitCode;
+        public static bool IsServiceLine(string? code) => !IsAiuLine(code);
+
         public string BuildAdminNote() => $"{NotePrefix} {ContractObject.Trim()}";
 
         private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };

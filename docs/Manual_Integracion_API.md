@@ -278,4 +278,4 @@ El documento va en el cuerpo JSON y no en la URL, para que no quede en las bitá
 
 **Consulta (`GET /api/co/dian/documents/{id}`):** `id`, `type`, `number`, `issueDate`, `total`, `status`, `dianResponse`, `cufe` y `files`.
 
-**Resoluciones (`GET /api/co/dian/resolutions`):** arreglo con `documentType`, `prefix`, `resolutionNumber`, `numberStart`, `numberEnd`, `nextNumber` (solo referencia), `validFrom`, `validTo` y `expired`. Acepta `?documentType=FE`.
+**Resoluciones (`GET /api/co/dian/resolutions`):** objeto con dos bloques. `resolutions` es un arreglo con `documentType`, `prefix`, `resolutionNumber`, `numberStart`, `numberEnd`, `nextNumber` (solo referencia), `validFrom`, `validTo` y `expired`; acepta `?documentType=FE`. `noteNumberings` (siempre completo, sin filtro) trae las numeraciones de las notas crédito, débito y de ajuste de la sucursal: `kind` (`CREDIT_NOTE`, `DEBIT_NOTE`, `SUPPORT_ADJUSTMENT`), `scope` (`branch` propia de la sucursal, `client` del emisor o `shared` compartida), `prefix` (si la numeración no tiene uno propio, el de su resolución), `nextNumber`, `isDefault` y `resolutionNumber`.

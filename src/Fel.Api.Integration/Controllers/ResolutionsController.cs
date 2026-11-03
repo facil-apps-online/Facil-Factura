@@ -1,7 +1,9 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using Fel.Api.Integration.Security;
+using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
 using Fel.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -30,13 +32,16 @@ namespace Fel.Api.Integration.Controllers
         /// consecutivo lo lleva el integrador.
         /// </summary>
         /// <param name="documentType">Opcional. Tipo de documento de la resolución, por ejemplo FE (factura de venta) o DS (documento soporte).</param>
-        /// <response code="200">Lista de resoluciones activas.</response>
+        /// <response code="200">
+        /// <c>resolutions</c>: las resoluciones activas. <c>noteNumberings</c>: prefijo y próximo consecutivo de las notas crédito, débito y de ajuste que
+        /// aplican a la sucursal (siempre se devuelve, sin importar <c>documentType</c>).
+        /// </response>
         [HttpGet]
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> List([FromQuery] string? documentType = null)
         {
             if (!TryGetIssuer(out var clientId, out var branchId, out var unauthorized)) return unauthorized!;
-            return Ok(await QueryAsync(clientId, branchId, documentType));
+            return Ok(new { resolutions = await QueryAsync(clientId, branchId, documentType), noteNumberings = await NoteNumberingsAsync(clientId, branchId) });
         }
 
         /// <summary>
@@ -68,7 +73,8 @@ namespace Fel.Api.Integration.Controllers
                 unchanged = report.Unchanged,
                 notes = report.Notes,
                 errors = report.Errors,
-                resolutions = await QueryAsync(clientId, branchId, null)
+                resolutions = await QueryAsync(clientId, branchId, null),
+                noteNumberings = await NoteNumberingsAsync(clientId, branchId)
             });
         }
 
@@ -93,6 +99,43 @@ namespace Fel.Api.Integration.Controllers
                 expired = r.ValidTo.Date < today
             }).ToList();
         }
+
+        // Numeraciones de nota que aplican a la sucursal, en el orden en que la emisión las elige: la propia de la sucursal, las del Client (la
+        // predeterminada se usa si la nota no elige una) y la compartida. Sin prefijo propio la nota sale con el de su resolución, que es el que se muestra.
+        // Las compartidas de resoluciones con el mismo prefijo son un solo contador (manda el más adelantado).
+        private async Task<object> NoteNumberingsAsync(Guid clientId, Guid branchId)
+        {
+            var rows = await _dbContext.NoteNumberings.AsNoTracking().Include(n => n.Resolution)
+                .Where(n => n.ClientId == clientId && (n.BranchId == null || n.BranchId == branchId))
+                .ToListAsync();
+
+            var result = new List<(int Order, NoteKind Kind, object Item)>();
+            foreach (var group in rows.GroupBy(n => n.Kind))
+            {
+                var kind = group.Key;
+                foreach (var n in group.Where(n => n.BranchId == branchId))
+                    result.Add((0, kind, Row(kind, "branch", n.Prefix, n.NextNumber, false, null)));
+                foreach (var n in group.Where(n => n.IsClientLevel).OrderByDescending(n => n.IsDefault).ThenBy(n => n.Prefix))
+                    result.Add((1, kind, Row(kind, "client", n.Prefix, n.NextNumber, n.IsDefault, null)));
+                var shared = group.Where(n => n.BranchId == null && !n.IsClientLevel)
+                    .GroupBy(n => n.Prefix ?? n.Resolution?.Prefix ?? string.Empty)
+                    .Select(g => g.OrderByDescending(n => n.NextNumber ?? 0).First())
+                    .OrderBy(n => n.Prefix ?? n.Resolution?.Prefix);
+                foreach (var n in shared)
+                    result.Add((2, kind, Row(kind, "shared", n.Prefix ?? n.Resolution?.Prefix, n.NextNumber, false, n.Resolution?.ResolutionNumber)));
+            }
+            return result.OrderBy(r => r.Kind).ThenBy(r => r.Order).Select(r => r.Item).ToList();
+        }
+
+        private static object Row(NoteKind kind, string scope, string? prefix, long? next, bool isDefault, string? resolutionNumber) => new
+        {
+            kind = kind switch { NoteKind.CreditNote => "CREDIT_NOTE", NoteKind.DebitNote => "DEBIT_NOTE", _ => "SUPPORT_ADJUSTMENT" },
+            scope,
+            prefix = string.IsNullOrWhiteSpace(prefix) ? null : prefix,
+            nextNumber = next ?? 1,
+            isDefault,
+            resolutionNumber
+        };
 
         private bool TryGetIssuer(out Guid clientId, out Guid branchId, out IActionResult? unauthorized)
         {

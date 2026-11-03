@@ -593,13 +593,17 @@ namespace Fel.Infrastructure.Dataico
             var allowed = type != null ? FieldsOf(type) : UnknownConceptFields;
             bool Has(ConceptField f) => (allowed & f) != 0;
 
+            // El salario básico (base-salary) exige days y amount siempre: con un mes completo de licencia no remunerada sale en 0 y Dataico rechaza
+            // el documento con "missing-key" si se omiten. Es el único concepto donde el cero se envía explícito.
+            var isBasic = section == PayrollConceptSection.Accrual && string.Equals(code, "BASICO", StringComparison.OrdinalIgnoreCase);
+
             return new DataicoPayrollConcept
             {
                 code = code,
                 description = Has(ConceptField.Description) ? NullIfBlank(input.Description) : null,
-                amount = Has(ConceptField.Amount) ? NullIfZero(input.Amount) : null,
+                amount = Has(ConceptField.Amount) ? (isBasic ? input.Amount ?? 0m : NullIfZero(input.Amount)) : null,
                 amount_ns = Has(ConceptField.AmountNs) ? NullIfZero(input.AmountNs) : null,
-                days = Has(ConceptField.Days) ? input.Days : null,
+                days = Has(ConceptField.Days) ? (isBasic ? input.Days ?? 0 : input.Days) : null,
                 percentage = Has(ConceptField.Percentage) ? input.Percentage : null,
                 hours = Has(ConceptField.Hours) ? input.Hours : null,
                 initial_date = Has(ConceptField.Dates) ? NullIfBlank(input.InitialDate) : null,

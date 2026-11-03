@@ -97,6 +97,47 @@ namespace Fel.Tests
         }
 
         [Fact]
+        public async Task The_seller_is_created_as_a_supplier()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Request(), false, f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            Assert.Equal(PartyType.Proveedor, result.Document!.Customer!.PartyType);
+        }
+
+        [Fact]
+        public async Task A_customer_with_the_same_identification_is_not_reused_as_the_seller()
+        {
+            var f = new Fixture();
+            var asCustomer = new Customer { Id = Guid.NewGuid(), ClientId = f.Client.Id, PartyType = PartyType.Cliente, IdentificationType = "13", IdentificationNumber = "16000111", Name = "José Vicente Zapata Estrada", CountryCode = "CO" };
+            f.Db.Customers.Add(asCustomer);
+            await f.Db.SaveChangesAsync();
+
+            var result = await f.Factory.BuildAsync(Request(), false, f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            var seller = result.Document!.Customer!;
+            Assert.NotEqual(asCustomer.Id, seller.Id);
+            Assert.Equal(PartyType.Proveedor, seller.PartyType);
+            Assert.Equal(PartyType.Cliente, asCustomer.PartyType);
+        }
+
+        [Fact]
+        public async Task An_existing_supplier_is_reused_as_the_seller()
+        {
+            var f = new Fixture();
+            var supplier = new Customer { Id = Guid.NewGuid(), ClientId = f.Client.Id, PartyType = PartyType.Proveedor, IdentificationType = "13", IdentificationNumber = "16000111", Name = "José Vicente Zapata Estrada", CountryCode = "CO" };
+            f.Db.Customers.Add(supplier);
+            await f.Db.SaveChangesAsync();
+
+            var result = await f.Factory.BuildAsync(Request(), false, f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            Assert.Equal(supplier.Id, result.Document!.Customer!.Id);
+        }
+
+        [Fact]
         public async Task Rejects_taxes_on_the_lines()
         {
             var f = new Fixture();

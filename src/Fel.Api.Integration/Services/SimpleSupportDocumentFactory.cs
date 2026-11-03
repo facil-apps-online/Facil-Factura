@@ -117,7 +117,7 @@ namespace Fel.Api.Integration.Services
             }
             else
             {
-                var customerResult = await _invoiceFactory.EnsureCustomerAsync(client.Id, request.customer, warnings);
+                var customerResult = await _invoiceFactory.EnsureCustomerAsync(client.Id, request.customer, warnings, PartyType.Proveedor);
                 if (customerResult.Error != null) return new InvoiceBuildResult { Error = customerResult.Error };
                 seller = customerResult.Customer!;
             }

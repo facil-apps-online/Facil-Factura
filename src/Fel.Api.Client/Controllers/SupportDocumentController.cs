@@ -211,6 +211,35 @@ namespace Fel.Api.Client.Controllers
             }
         }
 
+        // El vendedor del documento soporte es siempre un Proveedor. Si se eligió un tercero de otro rol, no se bloquea: se usa el proveedor con esa
+        // misma identificación y, si no existe, se crea copiando sus datos de contacto y fiscales (igual que hace la API de integración).
+        private async Task<Customer?> ResolveSupplierAsync(Guid clientId, Guid customerId)
+        {
+            var selected = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == customerId && c.ClientId == clientId);
+            if (selected == null || selected.PartyType == PartyType.Proveedor) return selected;
+
+            var supplier = await _dbContext.Customers.FirstOrDefaultAsync(c =>
+                c.ClientId == clientId && c.IdentificationNumber == selected.IdentificationNumber && c.PartyType == PartyType.Proveedor);
+            if (supplier != null) return supplier;
+
+            supplier = new Customer
+            {
+                Id = Guid.NewGuid(), ClientId = clientId, PartyType = PartyType.Proveedor,
+                Name = selected.Name, FirstName = selected.FirstName, SecondName = selected.SecondName,
+                FirstLastName = selected.FirstLastName, SecondLastName = selected.SecondLastName,
+                IdentificationType = selected.IdentificationType, IdentificationNumber = selected.IdentificationNumber, VerificationDigit = selected.VerificationDigit,
+                Email = selected.Email, Phone = selected.Phone, Address = selected.Address, CountryCode = selected.CountryCode, StateName = selected.StateName,
+                CityCode = selected.CityCode, CityName = selected.CityName, PostalCode = selected.PostalCode,
+                TaxRegime = selected.TaxRegime, FiscalResponsibilities = selected.FiscalResponsibilities,
+                DataicoTaxLevelCode = selected.DataicoTaxLevelCode, DataicoRegimen = selected.DataicoRegimen,
+                IsGranContribuyente = selected.IsGranContribuyente, IsAgenteRetenedorIva = selected.IsAgenteRetenedorIva,
+                IsAutorretenedorRenta = selected.IsAutorretenedorRenta, IncomeTaxRegime = selected.IncomeTaxRegime,
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            };
+            _dbContext.Customers.Add(supplier);
+            return supplier;
+        }
+
         [HttpPost("draft")]
         public async Task<IActionResult> CreateDraft([FromBody] CreateSupportDocumentRequest request)
         {
@@ -218,7 +247,7 @@ namespace Fel.Api.Client.Controllers
             {
                 var clientId = GetCurrentClientId();
 
-                var provider = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == request.CustomerId && c.ClientId == clientId);
+                var provider = await ResolveSupplierAsync(clientId, request.CustomerId);
                 if (provider == null) return BadRequest("El proveedor/tercero seleccionado no existe.");
 
                 if (request.Items == null || request.Items.Count == 0)
@@ -264,7 +293,7 @@ namespace Fel.Api.Client.Controllers
                 if (document == null) return NotFound("Documento soporte no encontrado.");
                 if (!IsEditable(document.Status)) return BadRequest("Solo se pueden modificar borradores o documentos rechazados.");
 
-                var provider = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Id == request.CustomerId && c.ClientId == clientId);
+                var provider = await ResolveSupplierAsync(clientId, request.CustomerId);
                 if (provider == null) return BadRequest("El proveedor/tercero seleccionado no existe.");
 
                 var dateError = await ValidateSupportDatesAsync(

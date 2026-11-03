@@ -402,7 +402,9 @@ namespace Fel.Api.Integration.Services
         // ---------------------------------------------------------------------------------------------------------------------------
         // Tercero
         // ---------------------------------------------------------------------------------------------------------------------------
-        internal async Task<(Customer? Customer, ApiError? Error)> EnsureCustomerAsync(Guid clientId, DataicoParty party, List<string> warnings)
+        // El rol (Cliente en la factura, Proveedor en el documento soporte) se respeta: se reutiliza solo un tercero de ese rol y, si no hay, se crea uno
+        // nuevo con él aunque la misma identificación exista con otro rol (el índice único incluye el rol).
+        internal async Task<(Customer? Customer, ApiError? Error)> EnsureCustomerAsync(Guid clientId, DataicoParty party, List<string> warnings, PartyType role = PartyType.Cliente)
         {
             var idTypes = await _db.IdentificationTypes.AsNoTracking().Where(t => t.IsActive).ToListAsync();
             var idType = IdentificationTypeResolver.Find(idTypes, party.party_identification_type);
@@ -419,12 +421,11 @@ namespace Fel.Api.Integration.Services
             if (isNit && verification.Length == 0) verification = NitValidation.CalculateCheckDigit(number).ToString(CultureInfo.InvariantCulture);
 
             var customer = await _db.Customers
-                .Where(c => c.ClientId == clientId && c.IdentificationNumber == number)
-                .OrderBy(c => c.PartyType == PartyType.Cliente ? 0 : 1)
+                .Where(c => c.ClientId == clientId && c.IdentificationNumber == number && c.PartyType == role)
                 .FirstOrDefaultAsync();
             if (customer == null)
             {
-                customer = new Customer { Id = Guid.NewGuid(), ClientId = clientId, PartyType = PartyType.Cliente, CountryCode = "CO", CreatedAt = DateTime.UtcNow };
+                customer = new Customer { Id = Guid.NewGuid(), ClientId = clientId, PartyType = role, CountryCode = "CO", CreatedAt = DateTime.UtcNow };
                 _db.Customers.Add(customer);
             }
 

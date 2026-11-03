@@ -74,6 +74,8 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
   const [searching, setSearching] = useState(false);
   // La última búsqueda falló (red, sesión, servidor): se avisa y se puede reintentar sin tener que cambiar el texto. reloadKey fuerza una búsqueda nueva.
   const [searchError, setSearchError] = useState(false);
+  // Texto con el que se obtuvieron los resultados que hay en pantalla: sirve para saber si el Enter actuaría sobre una lista vieja.
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [chosen, setChosen] = useState<SearchableSelectOption | null>(null);
 
@@ -92,9 +94,9 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
     const timer = setTimeout(async () => {
       try {
         const found = await loadOptions(q);
-        if (!cancelled) { setResults(found); setSearchError(false); }
+        if (!cancelled) { setResults(found); setSearchError(false); setLoadedQuery(q); }
       } catch {
-        if (!cancelled) { setResults([]); setSearchError(true); }
+        if (!cancelled) { setResults([]); setSearchError(true); setLoadedQuery(q); }
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -171,7 +173,12 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
       setHighlighted(h => Math.max(h - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (isOpen && filtered[highlighted]) selectOption(filtered[highlighted]);
+      // Un lector de códigos de barras escribe todo el código y cierra con Enter antes de que termine la búsqueda de ese texto: la lista en pantalla
+      // todavía es la de otro texto, y elegir su primer ítem insertaba un producto equivocado. Mientras la búsqueda esté pendiente, el Enter no elige.
+      const text = query.trim();
+      const currentQuery = selectedOption && text === closedValueOf(selectedOption) ? '' : text;
+      const resultsAreStale = !!loadOptions && (searching || loadedQuery !== currentQuery);
+      if (isOpen && !resultsAreStale && filtered[highlighted]) selectOption(filtered[highlighted]);
     } else if (e.key === 'Escape') {
       setIsOpen(false);
       setQuery(selectedOption ? closedValueOf(selectedOption) : '');

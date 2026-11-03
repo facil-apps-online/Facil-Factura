@@ -19,7 +19,10 @@ const DIAN_RESPONSE_DISPLAY_FIELDS: { key: string; label: string }[] = [
   { key: 'payment_means_type', label: 'Forma de pago' },
 ];
 
-const parseDianResponse = (raw: string): { errors?: { path?: string[]; error: string }[] } | { fields: Record<string, any> } | null => {
+// Dataico responde el texto en `error` (formato viejo) o en `message` con un `error-code` (formato nuevo): se acepta cualquiera de los dos.
+type DianError = { path?: (string | number)[]; error?: string; message?: string; 'error-code'?: string };
+
+const parseDianResponse = (raw: string): { errors?: DianError[] } | { fields: Record<string, any> } | null => {
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed?.errors)) return { errors: parsed.errors };
@@ -66,7 +69,8 @@ export default function DianResponseDialog({ doc, label, onClose }: {
               {e.path && e.path.length > 0 && (
                 <p className="text-[10px] font-bold text-rose-400 uppercase mb-1 break-words">{e.path.join(' → ')}</p>
               )}
-              <p className="text-sm text-rose-700 break-words">{e.error}</p>
+              <p className="text-sm text-rose-700 break-words">{e.error ?? e.message}</p>
+              {e['error-code'] && <p className="mt-1 font-mono text-[10px] text-rose-400 break-words">{e['error-code']}</p>}
             </div>
           ))
         ) : parsedResponse && 'fields' in parsedResponse ? (

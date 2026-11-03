@@ -12,7 +12,7 @@ namespace Fel.Tests
     // Si la caja de herramientas no está en el árbol (otro equipo, CI), las pruebas se saltan solas.
     public class XmlSchemaConformanceTests
     {
-        private sealed class FakeCrypto : Fel.Core.Interfaces.ICryptoService
+        internal sealed class FakeCrypto : Fel.Core.Interfaces.ICryptoService
         {
             public string Encrypt(string plainText) => plainText;
             public string Decrypt(string cipherText) => cipherText;
@@ -20,7 +20,7 @@ namespace Fel.Tests
                 Convert.ToHexString(System.Security.Cryptography.SHA384.HashData(System.Text.Encoding.UTF8.GetBytes(dataToHash))).ToLowerInvariant();
         }
 
-        private static string? ToolboxXsdFolder()
+        internal static string? ToolboxXsdFolder()
         {
             var dir = new DirectoryInfo(AppContext.BaseDirectory);
             while (dir != null)
@@ -32,7 +32,7 @@ namespace Fel.Tests
             return null;
         }
 
-        private static XmlSchemaSet LoadSchemas(string xsdFolder)
+        internal static XmlSchemaSet LoadSchemas(string xsdFolder)
         {
             var set = new XmlSchemaSet { XmlResolver = new XmlUrlResolver() };
             // El esquema de xmldsig trae un DOCTYPE: se lee con DTD habilitado (solo los XSD del proyecto, nunca el XML que se valida).
@@ -50,7 +50,7 @@ namespace Fel.Tests
             return set;
         }
 
-        private static List<string> Validate(string xml, XmlSchemaSet schemas)
+        internal static List<string> Validate(string xml, XmlSchemaSet schemas)
         {
             var errors = new List<string>();
             var settings = new XmlReaderSettings { ValidationType = ValidationType.Schema, Schemas = schemas, DtdProcessing = DtdProcessing.Prohibit };

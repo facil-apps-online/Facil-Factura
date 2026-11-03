@@ -127,8 +127,29 @@ Reglas principales:
 - IVA: una línea con `tax_category: "IVA"` y tarifa mayor que 0 es gravada; con tarifa 0 es exenta; sin IVA es excluida. Retenciones en `retentions` por línea.
 - La dirección es flexible: el municipio se ubica por código DANE (`department` + `city`) o por nombre. Si no se logra ubicar, la dirección se omite y la respuesta lo avisa en `warnings`.
 - Mandato: `operation: "MANDATO"` y el mandante en cada línea. Exportación: `invoice_type_code: "FACTURA_EXPORTACION"` y moneda extranjera habilitada para el emisor.
-- Aún no se admiten AIU (responde `422 OPERATION_NOT_SUPPORTED`) ni impuestos de valor fijo por unidad (`tax_amount`, como la bolsa), que se rechazan con un mensaje claro.
+- AIU: se envía el bloque `aiu` en lugar de `items`; el servidor genera las líneas de Administración, Imprevistos y Utilidad. El valor del servicio va en `aiu.base_amount` (un solo valor) o en `aiu.items` (varias líneas de servicio, con la misma forma que `items`), nunca en ambos. Los porcentajes (`administration_percent`, `unforeseen_percent`, `utility_percent`, `utility_iva_rate`, `service_iva_rate`) van entre 0 y 100. El objeto del contrato es opcional.
+- Impuestos de la línea: ver la sección «Impuestos de la línea» más abajo.
 - La fecha efectiva del documento ante la DIAN es la del momento de la emisión; `issue_date` es informativa.
+
+#### Impuestos de la línea
+
+Cada línea lleva sus impuestos en `taxes` y sus retenciones en `retentions`. El servidor calcula las bases y los valores; el integrador solo envía la categoría y la tarifa.
+
+| Categoría (`tax_category`) | Qué es | Cómo se envía | Estado |
+|---|---|---|---|
+| `IVA` | Impuesto sobre las ventas | `tax_rate` (porcentaje). 0 es exento; sin la línea de IVA, excluido | Disponible |
+| `IMP_CONSUMO` | Impuesto nacional al consumo (INC, tributo 04 del anexo técnico) | `tax_rate` (porcentaje) | Disponible. La base es la de la línea después del descuento y el valor se suma al total de la línea y del documento |
+| `IMP_CONSUMO_LICOR` | Consumo de licores | `tax_rate` | En revisión: su código ante la DIAN (ICL, 32) se está confirmando; no lo uses en producción todavía |
+| `IMP_BOLSA_PLASTICA` | Impuesto a la bolsa plástica (INC Bolsas, 22) | `tax_rate` | En revisión: igual que el anterior. El valor fijo por unidad aún no se admite |
+
+Reglas:
+
+- La categoría debe estar en el catálogo activo del sistema. Con una categoría desconocida la respuesta es `400 VALIDATION_ERROR` e incluye la lista de las aceptadas.
+- `tax_rate` va entre 0 y 100. Un impuesto con valor fijo (`tax_amount`, por ejemplo la bolsa o el ICUI) se rechaza hoy con un mensaje claro.
+- El texto de la categoría se normaliza a mayúsculas. Se usa el nombre de la tabla, no el código numérico del anexo técnico (04, 22...): el sistema hace esa traducción al armar el documento.
+- Las retenciones (`RET_FUENTE`, `RET_ICA`, `RET_IVA`) van en `retentions` con `tax_rate`.
+
+Pendiente de definir, y se documentará aquí cuando exista: el resto de los tributos del anexo (IBUA, ICUI, combustibles, carbono, timbre, impuestos al consumo departamentales y otros), el valor fijo por unidad (`tax_amount`) y la cantidad base de los tributos que se calculan por contenido.
 
 ### 4.2 Nota Crédito y Nota Débito (`POST /api/co/dian/credit-notes` y `/debit-notes`)
 
@@ -164,6 +185,7 @@ Reglas principales:
 - `reason` (obligatorio). Nota crédito: `DEVOLUCION`, `ANULACION` u `OTROS`. Nota débito: `INTERESES`, `GASTOS_POR_COBRAR`, `CAMBIO_DEL_VALOR` u `OTROS`. También se acepta el código DIAN (1 a 6 en crédito, 1 a 4 en débito). `reason_description` es opcional: es un texto libre que se agrega a las observaciones de la nota (la descripción oficial del motivo la pone el sistema, porque la DIAN la valida contra su lista).
 - Nota crédito sin `items`: es total. Con `items`: es parcial y el servidor calcula los totales. La suma de las notas crédito aprobadas no puede superar el total de la factura (`422 NOTE_EXCEEDS_INVOICE`).
 - La nota débito siempre necesita `items`.
+- **Nota crédito sin factura de referencia:** si no envías `invoice_id` ni `invoice_number`, la nota no afecta a ninguna factura. Entonces son obligatorios `customer` (con `party_identification_type` y `party_identification`, igual que en la factura), `items` y `reason`. `payment_means_type` y `payment_means` son opcionales (por defecto contado en efectivo). Usa la resolución de factura vigente de la sucursal (la predeterminada, o la que indiques en `numbering.resolution_number`) solo para identificar al emisor: el consecutivo es el de notas. El período que se informa a la DIAN es el mes de la emisión, y no aplica el tope de `NOTE_EXCEEDS_INVOICE`. La nota débito sin factura todavía no está disponible (`422 UNREFERENCED_DEBIT_NOT_AVAILABLE`).
 - Los `items` tienen la misma estructura de la factura (`description`, `quantity`, `price`, `taxes`, `discount_rate`...).
 - El contador de notas del portal avanza más allá del número que uses, para que el portal no lo repita.
 

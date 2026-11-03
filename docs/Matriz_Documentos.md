@@ -20,8 +20,8 @@ Leyenda: ✅ funciona · ⚠️ por verificar · ❌ no existe · — no aplica
 | Factura de transporte | FE-TRANSP | 01 / op 15 | ❌ (no está en `SupportedDianCodes`) | ❌ (solo directo) | ✅ 202, solo NATIVE | |
 | Factura sector salud (RIPS) | FE-SALUD | 01 / op 10 | ❌ | ❌ | ❌ 501 | |
 | Contingencia facturador / DIAN | FC-FACT, FC-DIAN | 03 / 04 | ❌ | ❌ | ❌ sin endpoint | Definir si se expone |
-| Nota crédito | NC | 91 | ✅ | ✅ | ✅ 202, solo NATIVE | |
-| Nota débito | ND | 92 | ✅ | ✅ | ✅ 202, solo NATIVE | |
+| Nota crédito | NC | 91 | ✅ (con y sin factura) | ✅ (con y sin factura) | ✅ síncrono 201, Dataico y NATIVE; con y sin factura | Sin factura: `customer` + `items` + `reason` |
+| Nota débito | ND | 92 | ✅ (solo con factura) | ✅ (solo con factura) | ✅ síncrono 201, Dataico y NATIVE; solo con factura | Sin factura: pendiente (motor nativo y confirmar Dataico) |
 
 ## 2. Documento soporte y nómina
 

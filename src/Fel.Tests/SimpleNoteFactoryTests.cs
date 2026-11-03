@@ -207,16 +207,97 @@ namespace Fel.Tests
         }
 
         [Fact]
-        public async Task Requires_the_invoice_reference_and_the_number()
+        public async Task Without_an_invoice_reference_it_asks_for_the_customer_the_items_the_number_and_the_reason()
         {
             var f = new Fixture();
             var result = await f.Factory.BuildAsync(new ApiNoteRequest(), "NC", f.Client, BranchId);
 
             Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
             var details = string.Join("|", result.Error.Details!);
-            Assert.Contains("invoice_id o invoice_number", details);
+            Assert.Contains("customer:", details);
+            Assert.Contains("items:", details);
             Assert.Contains("number:", details);
             Assert.Contains("reason:", details);
+        }
+
+        private static ApiNoteRequest Unreferenced(Action<ApiNoteRequest>? tweak = null)
+        {
+            var request = new ApiNoteRequest
+            {
+                number = "7", reason = "DEVOLUCION",
+                customer = new DataicoParty { party_identification_type = "NIT", party_identification = "900999888", company_name = "OTRA SAS" },
+                items = new List<DataicoInvoiceItem> { new DataicoInvoiceItem { sku = "A1", description = "Producto devuelto", quantity = 1, price = 50000, taxes = { new DataicoTax { tax_category = "IVA", tax_rate = 19 } } } }
+            };
+            tweak?.Invoke(request);
+            return request;
+        }
+
+        [Fact]
+        public async Task An_unreferenced_credit_note_uses_its_own_customer_items_and_the_invoice_resolution()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Unreferenced(), "NC", f.Client, BranchId);
+
+            Assert.Null(result.Error);
+            var note = result.Document!;
+            Assert.Equal("NC", note.TypeCode);
+            Assert.Null(note.ReferenceDocumentId);
+            Assert.Equal("900999888", note.Customer!.IdentificationNumber);
+            Assert.Equal(PartyType.Cliente, note.Customer.PartyType);
+            Assert.Equal(f.Invoice.ResolutionId, note.ResolutionId);
+            Assert.Equal("SETT", note.Prefix);
+            Assert.Equal("7", note.Number);
+            Assert.Equal("1", note.DiscrepancyResponseCode);
+            Assert.Equal(50000m, note.Subtotal);
+            Assert.Equal(59500m, note.TotalAmount);
+            Assert.Equal("DEBITO", note.PaymentMeansType);
+            Assert.Equal("CASH", note.PaymentMeans);
+        }
+
+        [Fact]
+        public async Task An_unreferenced_credit_note_is_not_limited_by_the_invoices_total()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Unreferenced(r => r.items![0].price = 9_000_000), "NC", f.Client, BranchId);
+
+            Assert.Null(result.Error);
+        }
+
+        [Fact]
+        public async Task An_unreferenced_credit_note_needs_a_current_invoice_resolution()
+        {
+            var f = new Fixture();
+            foreach (var r in f.Db.Resolutions) r.ValidTo = DateTime.Today.AddDays(-1);
+            await f.Db.SaveChangesAsync();
+
+            var result = await f.Factory.BuildAsync(Unreferenced(), "NC", f.Client, BranchId);
+
+            Assert.Equal("RESOLUTION_NOT_FOUND", result.Error!.Code);
+        }
+
+        [Fact]
+        public async Task An_unreferenced_debit_note_is_not_available_yet()
+        {
+            var f = new Fixture();
+            var result = await f.Factory.BuildAsync(Unreferenced(r => r.reason = "INTERESES"), "ND", f.Client, BranchId);
+
+            Assert.Equal("UNREFERENCED_DEBIT_NOT_AVAILABLE", result.Error!.Code);
+        }
+
+        [Fact]
+        public async Task Retrying_an_unreferenced_credit_note_reuses_the_same_document()
+        {
+            var f = new Fixture();
+            var first = await f.Factory.BuildAsync(Unreferenced(), "NC", f.Client, BranchId);
+            first.Document!.Status = "REJECTED";
+            f.Db.Documents.Add(first.Document);
+            await f.Db.SaveChangesAsync();
+
+            var retry = await f.Factory.BuildAsync(Unreferenced(r => r.items![0].price = 60000), "NC", f.Client, BranchId);
+
+            Assert.Null(retry.Error);
+            Assert.True(retry.Reused);
+            Assert.Equal(first.Document.Id, retry.Document!.Id);
         }
     }
 }

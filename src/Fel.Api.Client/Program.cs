@@ -203,6 +203,9 @@ builder.Services.AddScoped<ClientPortalFilter>();
 // resuelve cuál usar en tiempo de ejecución, así se agrega un integrador nuevo sin tocarlo.
 builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.Infrastructure.Dataico.DataicoSubmissionProvider>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IDocumentSubmissionProvider, Fel.Infrastructure.Dian.NativeDianSubmissionProvider>();
+builder.Services.AddScoped<Fel.Core.Interfaces.ISupportDocumentSubmissionProvider, Fel.Infrastructure.Dataico.DataicoSubmissionProvider>();
+builder.Services.AddScoped<Fel.Core.Interfaces.ISupportDocumentSubmissionProvider, Fel.Infrastructure.Dian.NativeDianSubmissionProvider>();
+builder.Services.AddScoped<Fel.Infrastructure.Services.SupportDocumentPublishingService>();
 builder.Services.AddScoped<Fel.Infrastructure.Dian.AttachedDocumentService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.InvoicePublishingService>();
 

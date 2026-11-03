@@ -14,6 +14,8 @@ namespace Fel.Core.Interfaces
         public string? ResponseMessage { get; set; }
         // Aviso para el usuario cuando el documento se emitió pero algo secundario falló (p. ej. el correo con adjuntos no salió).
         public string? Warning { get; set; }
+        // JSON exacto enviado al integrador cuando rechazó el documento (solo el documento soporte lo llena): sirve para compararlo con un envío aceptado.
+        public string? RequestBody { get; set; }
     }
 
     // Sabe cómo tramitar un documento ante la DIAN (directamente o vía un integrador) y devolver

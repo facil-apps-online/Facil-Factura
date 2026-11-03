@@ -21,7 +21,7 @@ namespace Fel.Infrastructure.Dian
     // con ciudad/departamento vacíos, y SendBillAsync es asíncrono del lado de la DIAN — el
     // resultado de esta llamada solo confirma que el envío llegó, no que fue aceptado (falta
     // consumir GetStatus para eso), así que el documento queda en PROCESSING, no APPROVED.
-    public class NativeDianSubmissionProvider : IDocumentSubmissionProvider
+    public class NativeDianSubmissionProvider : IDocumentSubmissionProvider, ISupportDocumentSubmissionProvider
     {
         private readonly FelDbContext _dbContext;
         private readonly IUblGenerator _ublGenerator;
@@ -53,38 +53,8 @@ namespace Fel.Infrastructure.Dian
             // Con la emisión directa no hay ambiente de pruebas real: solo un cliente de demostración o un sandbox de developers es sandbox.
             invoice.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForNative(client);
 
-            var certificate = await _dbContext.Certificates
-                .FirstOrDefaultAsync(c => c.ClientId == client.Id && c.IsActive);
-            if (certificate == null)
-            {
-                throw new NotSupportedException("Este emisor no tiene un certificado digital activo cargado para facturar directo a la DIAN.");
-            }
-
-            X509Certificate2 cert;
-            try
-            {
-                cert = _cryptoVault.GetCertificate(certificate.FileName, certificate.EncryptedPassword);
-            }
-            catch (Exception ex)
-            {
-                invoice.Status = "REJECTED";
-                invoice.DianResponseMessage = $"No se pudo cargar el certificado: {ex.Message}";
-                invoice.ProcessedAt = DateTime.UtcNow;
-                return new DocumentSubmissionResult { Success = false, Status = invoice.Status, Cufe = string.Empty, ResponseMessage = invoice.DianResponseMessage };
-            }
-
-            // Doble verificación: en esta arquitectura el Client siempre factura con su propio NIT,
-            // nunca a nombre de otro — si el certificado cargado no es del mismo titular que el
-            // Client registrado, es un error de datos (certificado equivocado, o Client mal
-            // registrado) y no se debe firmar nada con esa inconsistencia.
-            var certificateNit = _cryptoVault.ExtractNit(cert);
-            if (!NitValidation.Matches(certificateNit, client.TaxId))
-            {
-                invoice.Status = "REJECTED";
-                invoice.DianResponseMessage = $"El NIT del certificado ({certificateNit ?? "no encontrado"}) no coincide con el NIT registrado del emisor ({client.TaxId}).";
-                invoice.ProcessedAt = DateTime.UtcNow;
-                return new DocumentSubmissionResult { Success = false, Status = invoice.Status, Cufe = string.Empty, ResponseMessage = invoice.DianResponseMessage };
-            }
+            var (certificate, cert, certificateFailure) = await LoadCertificateAsync(invoice, client);
+            if (certificateFailure != null) return certificateFailure;
 
             var documentType = invoice.DocumentTypeId.HasValue
                 ? await _dbContext.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == invoice.DocumentTypeId.Value)
@@ -154,6 +124,8 @@ namespace Fel.Infrastructure.Dian
             var paymentMeansDianCodes = await _dbContext.TaxCatalogItems.AsNoTracking()
                 .Where(t => t.Kind == TaxCatalogKind.PaymentMeans && t.DianCode != null)
                 .ToDictionaryAsync(t => t.Category, t => t.DianCode!);
+            var locationProblem = DianDocumentMapper.IssuerLocationProblem(location, municipalities);
+            if (locationProblem != null) throw new NotSupportedException(locationProblem);
 
             // ReferenceDocumentId solo tiene valor en notas crédito/débito — antes esto siempre caía
             // en BuildInvoiceData sin importar el tipo real, así que una nota salía literalmente como
@@ -203,6 +175,88 @@ namespace Fel.Infrastructure.Dian
                 }
             }
 
+            return await SignAndSendAsync(invoice, client, certificate!, cert!, ublData, filePrefix);
+        }
+
+        // Documento Soporte (05) o su Nota de Ajuste (95): la numeración, las fechas y la resolución ya las resolvió quien llama.
+        public async Task<DocumentSubmissionResult> SubmitSupportAsync(
+            Document document, Customer seller, ICollection<DocumentItem> items,
+            Client client, Resolution resolution, Document? adjustedDocument)
+        {
+            document.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForNative(client);
+
+            // El vendedor sin ciudad válida en su dirección haría fallar el grupo de ubicación, que en el soporte es obligatorio.
+            var cityMessage = Fel.Infrastructure.Dian.CustomerAddressRules.IncompleteCityMessage(
+                !string.IsNullOrWhiteSpace(seller.CountryCode) && seller.CountryCode != "CO", seller.Address, seller.CityCode, seller.CityName, seller.StateName);
+            if (cityMessage != null) throw new NotSupportedException(cityMessage);
+            if (string.IsNullOrWhiteSpace(seller.Address) && string.IsNullOrWhiteSpace(seller.CityCode))
+                throw new NotSupportedException("El documento soporte necesita la dirección del vendedor (ciudad y dirección): la DIAN la exige.");
+
+            var (certificate, cert, certificateFailure) = await LoadCertificateAsync(document, client);
+            if (certificateFailure != null) return certificateFailure;
+
+            var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
+            var countryNames = await _dbContext.TaxCatalogItems.AsNoTracking()
+                .Where(t => t.Kind == TaxCatalogKind.Country)
+                .ToDictionaryAsync(t => t.Category, t => t.Name);
+            var location = await Fel.Infrastructure.Services.BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
+            var paymentMeansDianCodes = await _dbContext.TaxCatalogItems.AsNoTracking()
+                .Where(t => t.Kind == TaxCatalogKind.PaymentMeans && t.DianCode != null)
+                .ToDictionaryAsync(t => t.Category, t => t.DianCode!);
+            var locationProblem = DianDocumentMapper.IssuerLocationProblem(location, municipalities);
+            if (locationProblem != null) throw new NotSupportedException(locationProblem);
+
+            // La DIAN exige que la fecha de emisión sea la de la firma: se refresca al enviar.
+            document.IssueDate = Fel.Core.Models.ColombiaTime.Now;
+
+            var ublData = DianDocumentMapper.BuildSupportDocumentData(document, seller, items, resolution, client, location, municipalities, paymentMeansDianCodes, countryNames, adjustedDocument);
+            return await SignAndSendAsync(document, client, certificate!, cert!, ublData,
+                adjustedDocument == null ? Fel.Infrastructure.Services.DianFileNaming.DocumentoSoporte : Fel.Infrastructure.Services.DianFileNaming.NotaAjusteSoporte);
+        }
+
+        // Certificado activo del emisor, validado contra su NIT. Devuelve el resultado de rechazo ya aplicado al documento cuando no se puede usar.
+        private async Task<(Certificate? Certificate, X509Certificate2? Cert, DocumentSubmissionResult? Failure)> LoadCertificateAsync(Document invoice, Client client)
+        {
+            var certificate = await _dbContext.Certificates
+                .FirstOrDefaultAsync(c => c.ClientId == client.Id && c.IsActive);
+            if (certificate == null)
+            {
+                throw new NotSupportedException("Este emisor no tiene un certificado digital activo cargado para facturar directo a la DIAN.");
+            }
+
+            X509Certificate2 cert;
+            try
+            {
+                cert = _cryptoVault.GetCertificate(certificate.FileName, certificate.EncryptedPassword);
+            }
+            catch (Exception ex)
+            {
+                invoice.Status = "REJECTED";
+                invoice.DianResponseMessage = $"No se pudo cargar el certificado: {ex.Message}";
+                invoice.ProcessedAt = DateTime.UtcNow;
+                return (null, null, new DocumentSubmissionResult { Success = false, Status = invoice.Status, Cufe = string.Empty, ResponseMessage = invoice.DianResponseMessage });
+            }
+
+            // Doble verificación: en esta arquitectura el Client siempre factura con su propio NIT,
+            // nunca a nombre de otro — si el certificado cargado no es del mismo titular que el
+            // Client registrado, es un error de datos (certificado equivocado, o Client mal
+            // registrado) y no se debe firmar nada con esa inconsistencia.
+            var certificateNit = _cryptoVault.ExtractNit(cert);
+            if (!NitValidation.Matches(certificateNit, client.TaxId))
+            {
+                invoice.Status = "REJECTED";
+                invoice.DianResponseMessage = $"El NIT del certificado ({certificateNit ?? "no encontrado"}) no coincide con el NIT registrado del emisor ({client.TaxId}).";
+                invoice.ProcessedAt = DateTime.UtcNow;
+                return (null, null, new DocumentSubmissionResult { Success = false, Status = invoice.Status, Cufe = string.Empty, ResponseMessage = invoice.DianResponseMessage });
+            }
+
+            return (certificate, cert, null);
+        }
+
+        // Arma el XML, lo firma, lo envía a la DIAN (síncrono) y deja en el documento el identificador, el QR y el veredicto.
+        private async Task<DocumentSubmissionResult> SignAndSendAsync(
+            Document invoice, Client client, Certificate certificate, X509Certificate2 cert, Fel.Core.Models.UblInvoiceData ublData, string filePrefix)
+        {
             var xml = _ublGenerator.GenerateInvoiceXml(ublData);
             var cufe = _ublGenerator.CalculateDocumentKey(ublData);
             invoice.Cufe = cufe;

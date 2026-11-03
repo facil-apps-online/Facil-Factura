@@ -178,7 +178,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
         {
             var issuerDv = NitValidation.CalculateCheckDigit(data.Issuer.TaxId).ToString();
             return new XElement(cac + "AccountingSupplierParty",
-                new XElement(cbc + "AdditionalAccountID", "1"),
+                new XElement(cbc + "AdditionalAccountID", data.Issuer.AdditionalAccountId),
                 new XElement(cac + "Party",
                     new XElement(cac + "PartyName", new XElement(cbc + "Name", data.Issuer.Name)),
                     new XElement(cac + "PhysicalLocation",
@@ -212,7 +212,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                         // referencia en producción activa — la factura de Comcel trae "48", un
                         // valor no estándar de ese proveedor específico) faltaba por completo.
                         new XElement(cbc + "TaxLevelCode", new XAttribute("listName", "04"), string.Join(";", data.Issuer.TaxLevelCodes)),
-                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", data.Issuer.TaxSchemeId), new XElement(cbc + "Name", "IVA"))
+                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", data.Issuer.TaxSchemeId), new XElement(cbc + "Name", data.Issuer.TaxSchemeName))
                     ),
                     // Grupo obligatorio (numeral 6.5.10, FAJ42-48) — antes faltaba por completo, la
                     // DIAN rechazaba con "No se encuentra el grupo PartyLegalEntity del emisor".
@@ -232,7 +232,8 @@ namespace Fel.Infrastructure.Ubl.Strategies
                         // real para clientes, se deja un valor de relleno.
                         new XElement(cac + "CorporateRegistrationScheme",
                             new XElement(cbc + "ID", data.Prefix),
-                            new XElement(cbc + "Name", "0000000")
+                            // Matrícula mercantil del emisor (dato del Client); si no la tiene registrada no se inventa un valor.
+                            string.IsNullOrWhiteSpace(data.Issuer.MercantileRegistration) ? null : new XElement(cbc + "Name", data.Issuer.MercantileRegistration.Trim())
                         )
                     ),
                     // Correo de recepción de documentos electrónicos (numeral 6.5.10, FAJ71) —
@@ -243,6 +244,66 @@ namespace Fel.Infrastructure.Ubl.Strategies
                     new XElement(cac + "Contact", new XElement(cbc + "ElectronicMail", data.Issuer.Email))
                 )
             );
+        }
+
+        // Vendedor de un documento soporte (el sujeto no obligado a facturar, Issuer): a diferencia del emisor de una factura no es siempre una persona jurídica
+        // con NIT. Lleva su tipo de documento (31 con dígito de verificación, 13 cédula, 42 extranjero...), el tipo de persona, la ubicación y solo el grupo
+        // PartyTaxScheme (el Anexo del documento soporte, DSAJ, no pide PartyName, PartyLegalEntity ni Contact). Residente (operación 10): ubicación con códigos
+        // DANE; no residente (11): ciudad y país como texto.
+        protected XElement BuildSupportSellerParty(UblInvoiceData data)
+        {
+            var seller = data.Issuer;
+            var identificationCode = string.IsNullOrWhiteSpace(seller.IdentificationCode) ? "31" : seller.IdentificationCode;
+            var isNit = identificationCode == "31";
+            var resident = data.OperationType != "11";
+            var organizationType = identificationCode is "31" or "50" ? "1" : "2";
+
+            var address = new XElement(cac + "Address");
+            if (resident) address.Add(new XElement(cbc + "ID", seller.CityCode));
+            address.Add(new XElement(cbc + "CityName", seller.CityName));
+            if (resident) address.Add(new XElement(cbc + "CountrySubentity", seller.DepartmentName), new XElement(cbc + "CountrySubentityCode", seller.DepartmentCode));
+            address.Add(
+                new XElement(cac + "AddressLine", new XElement(cbc + "Line", seller.Address)),
+                new XElement(cac + "Country",
+                    new XElement(cbc + "IdentificationCode", resident ? "CO" : seller.CountryCode),
+                    new XElement(cbc + "Name", new XAttribute("languageID", "es"), resident ? "Colombia" : seller.CountryName)));
+
+            var companyId = new XElement(cbc + "CompanyID",
+                new XAttribute("schemeAgencyID", "195"),
+                new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"));
+            if (isNit) companyId.Add(new XAttribute("schemeID", NitValidation.CalculateCheckDigit(seller.TaxId)));
+            companyId.Add(new XAttribute("schemeName", identificationCode), seller.TaxId);
+
+            return new XElement(cac + "AccountingSupplierParty",
+                new XElement(cbc + "AdditionalAccountID", organizationType),
+                new XElement(cac + "Party",
+                    new XElement(cac + "PhysicalLocation", address),
+                    new XElement(cac + "PartyTaxScheme",
+                        new XElement(cbc + "RegistrationName", seller.Name),
+                        companyId,
+                        new XElement(cbc + "TaxLevelCode", new XAttribute("listName", "04"), string.Join(";", seller.TaxLevelCodes)),
+                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", seller.TaxSchemeId), new XElement(cbc + "Name", seller.TaxSchemeName)))));
+        }
+
+        // Adquirente de un documento soporte (nuestro Client, el ABS, siempre con NIT): solo el grupo PartyTaxScheme (DSAK del Anexo).
+        protected XElement BuildSupportBuyerParty(UblInvoiceData data)
+        {
+            var buyer = data.Customer;
+            var identificationCode = string.IsNullOrWhiteSpace(buyer.IdentificationCode) ? "31" : buyer.IdentificationCode;
+            var companyId = new XElement(cbc + "CompanyID",
+                new XAttribute("schemeAgencyID", "195"),
+                new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"));
+            if (identificationCode == "31") companyId.Add(new XAttribute("schemeID", NitValidation.CalculateCheckDigit(buyer.TaxId)));
+            companyId.Add(new XAttribute("schemeName", identificationCode), buyer.TaxId);
+
+            return new XElement(cac + "AccountingCustomerParty",
+                new XElement(cbc + "AdditionalAccountID", buyer.AdditionalAccountId ?? (identificationCode is "31" or "50" ? "1" : "2")),
+                new XElement(cac + "Party",
+                    new XElement(cac + "PartyTaxScheme",
+                        new XElement(cbc + "RegistrationName", buyer.Name),
+                        companyId,
+                        new XElement(cbc + "TaxLevelCode", new XAttribute("listName", "04"), string.Join(";", buyer.TaxLevelCodes)),
+                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", buyer.TaxSchemeId), new XElement(cbc + "Name", buyer.TaxSchemeName)))));
         }
 
         // Adquirente. El tipo de documento (schemeName) sale del documento del tercero (13 cédula, 31 NIT, 42 extranjero, 50 NIT de otro país...)
@@ -294,7 +355,7 @@ namespace Fel.Infrastructure.Ubl.Strategies
                         new XElement(cbc + "RegistrationName", customer.Name),
                         CustomerId(cbc + "CompanyID", true),
                         new XElement(cbc + "TaxLevelCode", new XAttribute("listName", "04"), string.Join(";", customer.TaxLevelCodes)),
-                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", customer.TaxSchemeId), new XElement(cbc + "Name", "No aplica"))
+                        new XElement(cac + "TaxScheme", new XElement(cbc + "ID", customer.TaxSchemeId), new XElement(cbc + "Name", customer.TaxSchemeName))
                     ),
                     // PartyLegalEntity (confirmado contra el ejemplo oficial Generica.xml): a diferencia del emisor, no lleva
                     // CorporateRegistrationScheme.

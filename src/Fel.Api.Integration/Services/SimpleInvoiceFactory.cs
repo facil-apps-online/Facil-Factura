@@ -339,7 +339,7 @@ namespace Fel.Api.Integration.Services
         }
 
         // Forma de cada línea: la misma regla para los items de una factura y para las líneas de servicio de una AIU (path dice dónde están).
-        private static void ValidateItemLines(List<DataicoInvoiceItem> items, string path, List<string> p)
+        internal static void ValidateItemLines(List<DataicoInvoiceItem> items, string path, List<string> p)
         {
             for (var i = 0; i < items.Count; i++)
             {
@@ -364,7 +364,7 @@ namespace Fel.Api.Integration.Services
         // ---------------------------------------------------------------------------------------------------------------------------
         // Resolución
         // ---------------------------------------------------------------------------------------------------------------------------
-        private async Task<(Resolution? Resolution, ApiError? Error)> FindResolutionAsync(Guid clientId, Guid branchId, DataicoNumbering numbering, string prefix, long number, string resolutionType)
+        internal async Task<(Resolution? Resolution, ApiError? Error)> FindResolutionAsync(Guid clientId, Guid branchId, DataicoNumbering numbering, string prefix, long number, string resolutionType)
         {
             var candidates = await _db.Resolutions.ForBranch(_db, branchId)
                 .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == resolutionType)
@@ -402,7 +402,7 @@ namespace Fel.Api.Integration.Services
         // ---------------------------------------------------------------------------------------------------------------------------
         // Tercero
         // ---------------------------------------------------------------------------------------------------------------------------
-        private async Task<(Customer? Customer, ApiError? Error)> EnsureCustomerAsync(Guid clientId, DataicoParty party, List<string> warnings)
+        internal async Task<(Customer? Customer, ApiError? Error)> EnsureCustomerAsync(Guid clientId, DataicoParty party, List<string> warnings)
         {
             var idTypes = await _db.IdentificationTypes.AsNoTracking().Where(t => t.IsActive).ToListAsync();
             var idType = IdentificationTypeResolver.Find(idTypes, party.party_identification_type);
@@ -648,7 +648,7 @@ namespace Fel.Api.Integration.Services
             return null;
         }
 
-        private static void ApplyCharges(Document document, List<DataicoCharge>? charges)
+        internal static void ApplyCharges(Document document, List<DataicoCharge>? charges)
         {
             document.GeneralDiscountAmount = document.GeneralChargeAmount = null;
             document.GeneralDiscountReason = document.GeneralChargeReason = null;
@@ -663,7 +663,7 @@ namespace Fel.Api.Integration.Services
         // ---------------------------------------------------------------------------------------------------------------------------
         // Utilidades
         // ---------------------------------------------------------------------------------------------------------------------------
-        private static DateTime? ParseDate(string? value) =>
+        internal static DateTime? ParseDate(string? value) =>
             DateTime.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy", "yyyy-MM-dd" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? date : null;
 
         private static string TrimJoin(params string?[] parts) => string.Join(" ", parts.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!.Trim()));
@@ -671,7 +671,7 @@ namespace Fel.Api.Integration.Services
 
         // El medio de pago se guarda con la clave del catálogo (CASH, DEBIT_CARD...), que es la que traduce al código DIAN. Se acepta esa clave,
         // el código DIAN (10, 48...) o el nombre en español ("Efectivo"). A crédito no aplica.
-        private async Task<(string? Category, ApiError? Error)> ResolvePaymentMeansAsync(DataicoInvoiceRequest request)
+        internal async Task<(string? Category, ApiError? Error)> ResolvePaymentMeansAsync(DataicoInvoiceRequest request)
         {
             if (string.Equals(request.payment_means_type?.Trim(), "CREDITO", StringComparison.OrdinalIgnoreCase)) return (null, null);
 

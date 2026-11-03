@@ -61,9 +61,44 @@ namespace Fel.Infrastructure.Dian
                 CityName = isForeign ? customer.CityName : municipality?.Name ?? customer.CityName,
                 Address = customer.Address,
                 Email = customer.Email,
-                TaxLevelCodes = TaxLevelCodesFor(customer)
+                TaxLevelCodes = TaxLevelCodesFor(customer),
+                // Responsable de IVA (48) = esquema 01 IVA; en cualquier otro caso, no aplica.
+                TaxSchemeId = customer.TaxRegime == "48" ? "01" : "ZZ",
+                TaxSchemeName = customer.TaxRegime == "48" ? "IVA" : "No aplica"
             };
         }
+
+        // El emisor sale por completo del Client y de la ubicación de la sucursal que emite: responsabilidades fiscales (lista 04), esquema tributario según
+        // sea o no responsable de IVA (casilla 53 del RUT: 48 responsable, 49 no responsable), tipo de organización según su tipo de persona y matrícula
+        // mercantil. No lleva valores por defecto: lo que el Client no tenga parametrizado no se inventa.
+        public static IssuerData BuildIssuerData(Client client, EmitterLocation location, IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
+        {
+            municipalitiesByCode.TryGetValue(location.CityCode ?? string.Empty, out var muni);
+            var nonResponsible = client.TaxRegime == "49";
+            return new IssuerData
+            {
+                TaxId = client.TaxId,
+                IdentificationCode = "31",
+                Name = client.CompanyName,
+                TaxLevelCodes = TaxLevelCodesFor(client),
+                TaxSchemeId = nonResponsible ? "ZZ" : "01",
+                TaxSchemeName = nonResponsible ? "No aplica" : "IVA",
+                AdditionalAccountId = client.PersonType == "PN" ? "2" : "1",
+                MercantileRegistration = client.MercantileRegistration,
+                DepartmentCode = muni?.DepartmentCode ?? DeriveDepartmentCode(location.CityCode),
+                DepartmentName = muni?.DepartmentName ?? string.Empty,
+                CityCode = location.CityCode ?? string.Empty,
+                CityName = muni?.Name ?? location.City,
+                Address = location.Address,
+                Email = location.Email
+            };
+        }
+
+        // El emisor debe tener su municipio DANE en el catálogo: sin él el grupo de ubicación del XML queda incompleto y la DIAN rechaza el documento.
+        public static string? IssuerLocationProblem(EmitterLocation location, IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode) =>
+            string.IsNullOrWhiteSpace(location.CityCode) || !municipalitiesByCode.ContainsKey(location.CityCode)
+                ? "El emisor no tiene un municipio válido (código DANE) en su dirección. Completa la ciudad del emisor o de la sucursal antes de emitir."
+                : null;
 
         // Responsabilidades fiscales del adquirente para el XML (lista 04 de la DIAN): O-13 gran contribuyente, O-15 autorretenedor, O-23 agente de
         // retención de IVA y O-47 régimen simple. Sin ninguna, R-99-PN (no aplica), que es lo que se enviaba siempre.
@@ -99,7 +134,6 @@ namespace Fel.Infrastructure.Dian
             var isAiu = aiu != null && (documentType?.OperationType == "09" || aiuSource != null);
             var isMandate = documentType?.OperationType == DocumentType.MandateOperationType && aiuSource == null;
 
-            municipalitiesByCode.TryGetValue(location.CityCode ?? string.Empty, out var issuerMuni);
             municipalitiesByCode.TryGetValue(customer.CityCode ?? string.Empty, out var customerMuni);
 
             var data = new UblInvoiceData
@@ -139,18 +173,7 @@ namespace Fel.Infrastructure.Dian
                         Date = document.ExchangeRateDate.Value
                     }
                     : null,
-                Issuer = new IssuerData
-                {
-                    TaxId = client.TaxId,
-                    IdentificationCode = "31",
-                    Name = client.CompanyName,
-                    DepartmentCode = issuerMuni?.DepartmentCode ?? DeriveDepartmentCode(location.CityCode),
-                    DepartmentName = issuerMuni?.DepartmentName ?? string.Empty,
-                    CityCode = location.CityCode ?? string.Empty,
-                    CityName = issuerMuni?.Name ?? location.City,
-                    Address = location.Address,
-                    Email = location.Email
-                },
+                Issuer = BuildIssuerData(client, location, municipalitiesByCode),
                 Customer = BuildCustomerData(customer, customerMuni, countryNames)
             };
 
@@ -359,7 +382,8 @@ namespace Fel.Infrastructure.Dian
                 return data;
             }
             data.BillingReferenceCufe = originalDocument.Cufe ?? string.Empty;
-            data.BillingReferenceDocumentNumber = originalDocument.Number;
+            // El documento referenciado se identifica con su número completo (prefijo + consecutivo), como en el ejemplo oficial CreditNote.xml.
+            data.BillingReferenceDocumentNumber = $"{originalDocument.Prefix}{originalDocument.Number}";
             data.BillingReferenceDate = originalDocument.IssueDate;
             return data;
         }
@@ -397,7 +421,6 @@ namespace Fel.Infrastructure.Dian
             Resolution resolution,
             IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode)
         {
-            municipalitiesByCode.TryGetValue(location.CityCode ?? string.Empty, out var issuerMuni);
 
             var lineExtension = request.Lines.Sum(l => l.LineExtensionAmount);
             var totalTax = request.Taxes.Sum(t => t.TaxAmount);
@@ -421,18 +444,7 @@ namespace Fel.Infrastructure.Dian
                 ResolutionNumberEnd = resolution.NumberEnd,
                 Currency = request.Currency,
                 ExchangeRate = request.ExchangeRate,
-                Issuer = new IssuerData
-                {
-                    TaxId = client.TaxId,
-                    IdentificationCode = "31",
-                    Name = client.CompanyName,
-                    DepartmentCode = issuerMuni?.DepartmentCode ?? DeriveDepartmentCode(location.CityCode),
-                    DepartmentName = issuerMuni?.DepartmentName ?? string.Empty,
-                    CityCode = location.CityCode ?? string.Empty,
-                    CityName = issuerMuni?.Name ?? location.City,
-                    Address = location.Address,
-                    Email = location.Email
-                },
+                Issuer = BuildIssuerData(client, location, municipalitiesByCode),
                 Customer = request.Customer,
                 PaymentMeans = request.PaymentMeans,
                 AllowanceCharges = request.AllowanceCharges,
@@ -511,6 +523,90 @@ namespace Fel.Infrastructure.Dian
             // El POS lleva tipo de operación 10 (código único, numeral 16.4.1); onSite se conserva por compatibilidad con la ruta anterior pero ya no cambia el XML.
             data.OperationType = "10";
             return data;
+        }
+
+        // Documento Soporte (05) o su Nota de Ajuste (95) guardados en el portal o creados por la API: roles invertidos respecto a los demás documentos. El Client
+        // es el ADQUIRENTE (Customer del UBL) y el tercero del documento es el VENDEDOR no obligado a facturar (Issuer). Reusa BuildInvoiceData para las líneas,
+        // los impuestos, el medio de pago y los totales, y luego cambia los roles. adjustedDocument = el documento soporte que ajusta (null en el soporte).
+        public static UblInvoiceData BuildSupportDocumentData(
+            Document document,
+            Customer seller,
+            IEnumerable<DocumentItem> items,
+            Resolution resolution,
+            Client client,
+            EmitterLocation location,
+            IReadOnlyDictionary<string, DianMunicipality> municipalitiesByCode,
+            IReadOnlyDictionary<string, string>? paymentMeansDianCodes,
+            IReadOnlyDictionary<string, string>? countryNames,
+            Document? adjustedDocument)
+        {
+            var data = BuildInvoiceData(document, seller, items, resolution, client, location, municipalitiesByCode, paymentMeansDianCodes, null, null, countryNames);
+            var sellerData = data.Customer;
+            var foreignSeller = !string.IsNullOrWhiteSpace(seller.CountryCode) && seller.CountryCode != "CO";
+
+            data.DianCode = adjustedDocument == null ? "05" : "95";
+            // Procedencia del vendedor: 10 residente en Colombia, 11 no residente.
+            data.OperationType = foreignSeller ? "11" : "10";
+            data.Issuer = new IssuerData
+            {
+                TaxId = sellerData.TaxId,
+                IdentificationCode = sellerData.IdentificationCode,
+                Name = sellerData.Name,
+                // El vendedor no obligado a facturar no tiene responsabilidades de IVA: "No aplica" (R-99-PN) y esquema tributario ZZ.
+                TaxLevelCodes = new List<string> { "R-99-PN" },
+                TaxSchemeId = "ZZ",
+                TaxSchemeName = "No aplica",
+                AdditionalAccountId = sellerData.IdentificationCode is "31" or "50" ? "1" : "2",
+                DepartmentCode = sellerData.DepartmentCode,
+                DepartmentName = sellerData.DepartmentName,
+                CityCode = sellerData.CityCode,
+                CityName = sellerData.CityName,
+                Address = sellerData.Address,
+                Email = sellerData.Email,
+                CountryCode = sellerData.CountryCode,
+                CountryName = sellerData.CountryName
+            };
+
+            municipalitiesByCode.TryGetValue(location.CityCode ?? string.Empty, out var buyerMuni);
+            data.Customer = new CustomerData
+            {
+                TaxId = client.TaxId,
+                IdentificationCode = "31",
+                Name = client.CompanyName,
+                DepartmentCode = buyerMuni?.DepartmentCode ?? DeriveDepartmentCode(location.CityCode),
+                DepartmentName = buyerMuni?.DepartmentName ?? string.Empty,
+                CityCode = location.CityCode ?? string.Empty,
+                CityName = buyerMuni?.Name ?? location.City,
+                Address = location.Address,
+                Email = location.Email,
+                TaxLevelCodes = TaxLevelCodesFor(client),
+                TaxSchemeId = client.TaxRegime == "48" ? "01" : "ZZ",
+                TaxSchemeName = client.TaxRegime == "48" ? "IVA" : "No aplica",
+                AdditionalAccountId = client.PersonType == "PN" ? "2" : "1"
+            };
+
+            if (adjustedDocument != null)
+            {
+                // Conceptos de corrección de la nota de ajuste (16.2.4 del Anexo): sin uno elegido, 4 = ajuste de precio.
+                data.DiscrepancyResponseCode = string.IsNullOrWhiteSpace(document.DiscrepancyResponseCode) ? "4" : document.DiscrepancyResponseCode;
+                data.DiscrepancyDescription = string.IsNullOrWhiteSpace(document.ReferenceConcept) ? "Ajuste de precio" : document.ReferenceConcept;
+                data.BillingReferenceCufe = adjustedDocument.Cufe ?? string.Empty;
+                data.BillingReferenceDocumentNumber = $"{(string.IsNullOrWhiteSpace(adjustedDocument.Prefix) ? resolution.Prefix : adjustedDocument.Prefix)}{adjustedDocument.Number}";
+                data.BillingReferenceDate = adjustedDocument.IssueDate;
+            }
+            return data;
+        }
+
+        // Responsabilidades fiscales del Client como adquirente de un documento soporte (lista 04), con el mismo criterio que las del tercero.
+        public static List<string> TaxLevelCodesFor(Client client)
+        {
+            var codes = new List<string>();
+            if (client.IsGranContribuyente) codes.Add("O-13");
+            if (client.IsAutorretenedorRenta) codes.Add("O-15");
+            if (client.IsAgenteRetenedorIva) codes.Add("O-23");
+            if (client.IncomeTaxRegime == "47") codes.Add("O-47");
+            if (codes.Count == 0) codes.Add("R-99-PN");
+            return codes;
         }
 
         // Documento Soporte (DianCode 05): roles invertidos respecto a los demás mappers de esta

@@ -22,7 +22,7 @@ namespace Fel.Infrastructure.Services
         ProviderRejected
     }
 
-    public sealed record PublishOutcome(PublishOutcomeKind Kind, string? Message = null, string? Detail = null, string? Warning = null)
+    public sealed record PublishOutcome(PublishOutcomeKind Kind, string? Message = null, string? Detail = null, string? Warning = null, object? Sent = null)
     {
         public bool Success => Kind == PublishOutcomeKind.Published;
     }

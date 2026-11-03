@@ -27,8 +27,8 @@ Leyenda: ✅ funciona · ⚠️ por verificar · ❌ no existe · — no aplica
 
 | Documento | Código catálogo | DIAN | Portal nativo | Portal Dataico | API hoy | Notas |
 |---|---|---|---|---|---|---|
-| Documento soporte | DS | 05 | ❌ (el portal exige Dataico) | ✅ | ✅ síncrono 200, solo NATIVE | |
-| Nota de ajuste de doc. soporte | DS-AJUSTE | 95 | ❌ | ✅ | ✅ síncrono, solo NATIVE | |
+| Documento soporte | DS | 05 | ✅ | ✅ | ✅ síncrono 201, Dataico y NATIVE | Mismo motor (`SupportDocumentPublishingService`) para portal y API; vendedor en `customer`, sin impuestos en líneas |
+| Nota de ajuste de doc. soporte | DS-AJUSTE | 95 | ✅ | ✅ | ✅ síncrono 201, Dataico y NATIVE | `support-documents/adjustment`; sin `items` replica las líneas del documento |
 | Nómina electrónica | NE-PAGO | 102 | ❌ (el portal exige Dataico) | ✅ | ✅ síncrono, solo NATIVE | XML nativo ya toma conceptos del catálogo |
 | Nota de ajuste de nómina (reemplazo / eliminación) | NE-AJUSTE | 103 | ❌ | ✅ | ✅ `payroll` y `payroll/void` | |
 

@@ -1,150 +1,196 @@
 using System;
-using System.Security.Cryptography.X509Certificates;
+using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading.Tasks;
-using Fel.Core.Interfaces;
-using Fel.Core.Models;
+using Fel.Api.Integration.Security;
+using Fel.Api.Integration.Services;
+using Fel.Core.Entities;
 using Fel.Infrastructure.Data;
-using Fel.Infrastructure.Dian;
+using Fel.Infrastructure.Dataico;
+using Fel.Infrastructure.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fel.Api.Integration.Controllers
 {
     /// <summary>
-    /// Recepción de Documento Soporte electrónico (adquisiciones a sujetos no obligados a
-    /// facturar) y su Nota de Ajuste. Igual que Nómina y Documento Equivalente, la DIAN valida
-    /// este documento de forma síncrona (SendBillSync).
+    /// Documento Soporte electrónico (adquisiciones a sujetos no obligados a facturar) y su Nota de Ajuste. Igual que la factura, la emisión es síncrona y
+    /// pasa por el mismo motor del portal: el documento se ve allí y sale por Dataico o por la DIAN directa según el emisor. El emisor es siempre el
+    /// COMPRADOR (el de la API Key); el vendedor va en <c>customer</c>.
     /// </summary>
     [ApiController]
     [Route("api/co/dian/support-documents")]
     public class SupportDocumentsController : ControllerBase
     {
-        private readonly FelDbContext _dbContext;
-        private readonly ICryptoVault _cryptoVault;
-        private readonly IUblGenerator _ublGenerator;
-        private readonly IXmlSigner _xmlSigner;
-        private readonly IDianSoapClient _dianSoapClient;
+        private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-        public SupportDocumentsController(
-            FelDbContext dbContext, ICryptoVault cryptoVault, IUblGenerator ublGenerator,
-            IXmlSigner xmlSigner, IDianSoapClient dianSoapClient)
+        private readonly FelDbContext _dbContext;
+        private readonly SimpleSupportDocumentFactory _factory;
+        private readonly SupportDocumentPublishingService _publishing;
+        private readonly DocumentPdfService _pdf;
+
+        public SupportDocumentsController(FelDbContext dbContext, SimpleSupportDocumentFactory factory, SupportDocumentPublishingService publishing, DocumentPdfService pdf)
         {
             _dbContext = dbContext;
-            _cryptoVault = cryptoVault;
-            _ublGenerator = ublGenerator;
-            _xmlSigner = xmlSigner;
-            _dianSoapClient = dianSoapClient;
+            _factory = factory;
+            _publishing = publishing;
+            _pdf = pdf;
         }
 
         /// <summary>
-        /// Emite un Documento Soporte por una adquisición a un vendedor no obligado a facturar. El
-        /// Client autenticado es siempre el ADQUIRENTE, no el vendedor — los datos del vendedor
-        /// (<c>Seller</c>) van en el request porque no viven en nuestra base.
+        /// Emite un documento soporte. <c>customer</c> es el vendedor no obligado a facturar; <c>numbering</c> indica el prefijo de tu resolución de
+        /// documento soporte y <c>number</c> es tu consecutivo. Las líneas no llevan impuestos. El servidor calcula los totales.
         /// </summary>
-        /// <response code="200">La DIAN validó y aceptó el documento. Incluye el CUDS.</response>
-        /// <response code="400">Falta el prefijo o el número de documento.</response>
-        /// <response code="401">No se pudo resolver el emisor autenticado.</response>
-        /// <response code="422">El emisor no está listo para facturar directo a la DIAN, o la DIAN rechazó el documento.</response>
+        /// <response code="201">Documento emitido. Trae el <c>id</c> (UUID), el número, el estado y el CUDS (<c>cufe</c>).</response>
+        /// <response code="400">Datos inválidos o faltantes; <c>details</c> lista cada campo.</response>
+        /// <response code="409">El número ya fue usado; trae la información del documento existente.</response>
+        /// <response code="422">La resolución no existe o no está vigente, o la DIAN o el integrador rechazaron el documento.</response>
         [HttpPost]
-        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-        public async Task<IActionResult> ReceiveSupportDocument([FromBody] SupportDocumentRequest request)
-        {
-            if (string.IsNullOrWhiteSpace(request.DocumentNumber) || string.IsNullOrWhiteSpace(request.Prefix))
-                return BadRequest("El número de documento soporte es obligatorio.");
-
-            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
-
-            var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(
-                this, _dbContext, _cryptoVault, "DS", request.Prefix, "Documento Soporte");
-            if (resolved.Error != null) return resolved.Error;
-
-            var resolution = resolved.Resolution ?? ResolucionDeRelleno(resolved.Client!.Id, "DS", request.Prefix, request.DocumentNumber);
-            var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-            var ublData = DianDocumentMapper.BuildSupportDocumentDataFromRequest(request, resolved.Client!, resolved.Location!, resolution, municipalities);
-
-            return await SignAndSendAsync(ublData, resolved.Certificate, resolved.CertificateChain, $"DS{request.Prefix}{request.DocumentNumber}.xml", resolved.EsSandbox);
-        }
+        public Task<IActionResult> Issue([FromBody] JsonElement body) => IssueAsync(body, false);
 
         /// <summary>
-        /// Emite una Nota de Ajuste al Documento Soporte, referenciando el CUDS del documento original.
+        /// Emite la nota de ajuste a un documento soporte aprobado. El documento se indica con <c>source_document_id</c> o <c>source_document_number</c>;
+        /// <c>reason</c> es DEVOLUCION_PARCIAL, ANULACION, REBAJA, AJUSTE_DE_PRECIO u OTROS. Sin <c>items</c> la nota replica las líneas del documento.
         /// </summary>
-        /// <response code="200">La DIAN validó y aceptó la nota. Incluye el nuevo CUDS.</response>
-        /// <response code="400">Falta el prefijo o el número de documento.</response>
-        /// <response code="401">No se pudo resolver el emisor autenticado.</response>
-        /// <response code="422">El emisor no está listo para facturar directo a la DIAN, o la DIAN rechazó el documento.</response>
+        /// <response code="201">Nota emitida. Trae el <c>id</c> (UUID), el número, el estado y el CUDS.</response>
+        /// <response code="400">Datos inválidos o faltantes; <c>details</c> lista cada campo.</response>
+        /// <response code="404">El documento soporte no existe para este emisor.</response>
+        /// <response code="409">El número de la nota ya fue usado; trae la información del documento existente.</response>
+        /// <response code="422">El documento no está aprobado, o la DIAN o el integrador rechazaron la nota.</response>
         [HttpPost("adjustment")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-        public async Task<IActionResult> ReceiveSupportDocumentAdjustment([FromBody] SupportDocumentAdjustmentRequest request)
+        public Task<IActionResult> IssueAdjustment([FromBody] JsonElement body) => IssueAsync(body, true);
+
+        private async Task<IActionResult> IssueAsync(JsonElement body, bool isAdjustment)
         {
-            if (string.IsNullOrWhiteSpace(request.DocumentNumber) || string.IsNullOrWhiteSpace(request.Prefix))
-                return BadRequest("El número de documento es obligatorio.");
+            if (HttpContext.Items["ClientId"] is not string clientIdText || !Guid.TryParse(clientIdText, out var clientId))
+                return Unauthorized(new { code = "INVALID_API_KEY", message = "No se pudo resolver el emisor autenticado." });
 
-            if (request.IssueDate == default) request.IssueDate = Fel.Core.Models.ColombiaTime.Now;
-
-            var resolved = await Fel.Api.Integration.Security.EmisorResolver.ResolverAsync(
-                this, _dbContext, _cryptoVault, "DS-AJUSTE", request.Prefix, "Documento Soporte");
-            if (resolved.Error != null) return resolved.Error;
-
-            var resolution = resolved.Resolution ?? ResolucionDeRelleno(resolved.Client!.Id, "DS-AJUSTE", request.Prefix, request.DocumentNumber);
-            var municipalities = await _dbContext.DianMunicipalities.AsNoTracking().ToDictionaryAsync(m => m.Code);
-            var ublData = DianDocumentMapper.BuildSupportDocumentAdjustmentDataFromRequest(request, resolved.Client!, resolved.Location!, resolution, municipalities);
-
-            return await SignAndSendAsync(ublData, resolved.Certificate, resolved.CertificateChain, $"DSAJ{request.Prefix}{request.DocumentNumber}.xml", resolved.EsSandbox);
-        }
-
-        // Resolución ficticia para Clients de prueba que no tienen una cargada: solo permite armar
-        // el UBL para que el developer vea el XML de su documento. No se persiste.
-        private static Fel.Core.Entities.Resolution ResolucionDeRelleno(Guid clientId, string documentType, string? prefix, string documentNumber) =>
-            Fel.Infrastructure.Services.SandboxSimulation.ResolucionDePrueba(
-                clientId, documentType, prefix, long.TryParse(documentNumber, out var n) ? n : 1);
-
-        private async Task<IActionResult> SignAndSendAsync(UblInvoiceData ublData, X509Certificate2? cert, X509Certificate2Collection? certChain, string fileName, bool esSandbox)
-        {
-            var cuds = _ublGenerator.CalculateCuds(ublData);
-            var xml = _ublGenerator.GenerateInvoiceXml(ublData);
-
-            // Camino simulado: se devuelve el CUDS real (es determinístico, no necesita
-            // certificado) y el XML que se habría transmitido, sin firmar ni enviar nada.
-            if (esSandbox)
+            ApiSupportRequest? request;
+            var suppressEmail = false;
+            try
             {
-                return Ok(new
+                var wrapper = isAdjustment ? "support_document_adjustment" : "support_document";
+                var payload = body.ValueKind == JsonValueKind.Object && body.TryGetProperty(wrapper, out var inner) && inner.ValueKind == JsonValueKind.Object ? inner : body;
+                suppressEmail = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("send_email", out var flag) && flag.ValueKind == JsonValueKind.False;
+                request = isAdjustment ? payload.Deserialize<ApiSupportAdjustmentRequest>(JsonOptions) : payload.Deserialize<ApiSupportRequest>(JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                return BadRequest(new { code = "INVALID_JSON", message = "El cuerpo no tiene la estructura esperada.", details = new[] { ex.Message } });
+            }
+            if (request == null) return BadRequest(new { code = "INVALID_JSON", message = "El cuerpo está vacío." });
+
+            var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
+            if (client == null) return Unauthorized(new { code = "INVALID_API_KEY", message = "Emisor no encontrado." });
+            if (HttpContext.GetBranchId() is not Guid branchId)
+                return Unauthorized(new { code = "INVALID_API_KEY", message = "La API Key no corresponde a una sucursal." });
+
+            var lockKey = $"ApiSupport:{clientId}:{(isAdjustment ? "A" : "D")}:{request.numbering?.prefix?.Trim()}:{request.number?.Trim()}";
+            await using var numberLock = await SqlAppLock.AcquireAsync(_dbContext, lockKey);
+            if (numberLock == null)
+                return Conflict(new { code = "REQUEST_IN_PROGRESS", message = "Ese número ya se está procesando. Consulta su estado en unos segundos." });
+
+            var built = await _factory.BuildAsync(request, isAdjustment, client, branchId);
+            if (built.Error != null) return StatusCode(built.Error.Status, new { code = built.Error.Code, message = built.Error.Message, details = built.Error.Details });
+            if (built.ExistingLocked != null) return AlreadyExists(built.ExistingLocked);
+
+            var document = built.Document!;
+            document.SuppressEmail = suppressEmail;
+            if (!built.Reused) _dbContext.Documents.Add(document);
+            await _dbContext.SaveChangesAsync();
+
+            // El publicador espera el tipo y el vendedor cargados.
+            document.DocumentType = await _dbContext.DocumentTypes.FirstOrDefaultAsync(t => t.Id == document.DocumentTypeId);
+
+            PublishOutcome outcome;
+            try
+            {
+                outcome = await _publishing.PublishAsync(document, clientId);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status502BadGateway, new
                 {
-                    cuds,
-                    status = "PROCESSED",
-                    simulated = true,
-                    message = Fel.Infrastructure.Services.SandboxSimulation.Mensaje(
-                        usoClaveTecnicaDeRelleno: ublData.TechnicalKey == Fel.Infrastructure.Services.SandboxSimulation.ClaveTecnicaDeRelleno),
-                    trackId = Fel.Infrastructure.Services.SandboxSimulation.NuevoTrackId(),
-                    xml
+                    code = "PROVIDER_UNAVAILABLE",
+                    message = "No se pudo confirmar la emisión con el proveedor. No reenvíes el mismo número: consulta el estado del documento.",
+                    detail = ex.Message,
+                    id = document.Id,
+                    number = FullNumber(document),
+                    status = document.Status,
+                    statusUrl = $"/api/co/dian/documents/{document.Id}"
                 });
             }
 
-            string signedXml;
-            try
+            if (outcome.Success)
             {
-                signedXml = _xmlSigner.SignXml(xml, cert!, certChain);
-            }
-            catch (Exception ex)
-            {
-                return UnprocessableEntity(new { message = $"No se pudo firmar el documento: {ex.Message}" });
+                // El contador del portal solo avanza, así que un número enviado antes que otro no lo retrasa.
+                if (document.ResolutionId.HasValue && long.TryParse(document.Number, out var issued))
+                {
+                    if (isAdjustment)
+                        await ResolutionNumbering.CommitNoteNumberAsync(_dbContext, clientId, document.BranchId, NoteKind.SupportAdjustment, document.ResolutionId.Value, document.NoteNumberingId, document.Prefix, issued);
+                    else
+                        await ResolutionNumbering.CommitNumberAsync(_dbContext, document.ResolutionId.Value, issued);
+                }
+
+                var warnings = new List<string>(built.Warnings);
+                if (!string.IsNullOrWhiteSpace(outcome.Warning)) warnings.Add(outcome.Warning);
+                object? files = string.Equals(Request.Query["include"], "files", StringComparison.OrdinalIgnoreCase) && document.Status == "APPROVED"
+                    ? await DocumentFilesBuilder.BuildAsync(_dbContext, _pdf, document.Id, clientId)
+                    : null;
+                return Created($"/api/co/dian/documents/{document.Id}", new
+                {
+                    id = document.Id,
+                    type = document.TypeCode,
+                    number = FullNumber(document),
+                    issueDate = document.IssueDate,
+                    total = document.TotalAmount,
+                    status = document.Status,
+                    cufe = document.Cufe,
+                    qr = document.QrCode,
+                    dianResponse = DataicoDianOutcome.Readable(document.DianResponseMessage),
+                    links = DocumentFilesBuilder.Links(document.Id),
+                    files,
+                    warnings
+                });
             }
 
-            try
+            return outcome.Kind switch
             {
-                var dianResponse = await _dianSoapClient.SendDocumentSyncAsync(fileName, signedXml, cert!, ublData.Environment);
-                return Ok(new { cuds, status = "PROCESSED", dianResponse });
-            }
-            catch (Exception ex)
-            {
-                return UnprocessableEntity(new { message = $"La DIAN rechazó el documento soporte: {ex.Message}", cuds });
-            }
+                PublishOutcomeKind.ProviderRejected => StatusCode(StatusCodes.Status422UnprocessableEntity, Rejected(document, "PROVIDER_REJECTED", outcome.Message, outcome.Detail)),
+                PublishOutcomeKind.Conflict => AlreadyExists(document),
+                PublishOutcomeKind.TemplateRequired => StatusCode(StatusCodes.Status422UnprocessableEntity, Rejected(document, "TEMPLATE_REQUIRED",
+                    "Falta seleccionar la plantilla de esta clase de documento en Diseño de mis Facturas del portal.", null)),
+                PublishOutcomeKind.NotFound => NotFound(new { code = "ISSUER_NOT_FOUND", message = outcome.Message }),
+                _ => StatusCode(StatusCodes.Status422UnprocessableEntity, Rejected(document, "CANNOT_ISSUE", outcome.Message, null))
+            };
         }
 
+        private static string FullNumber(Document d) => $"{d.Prefix}{d.Number}";
+
+        private static object Rejected(Document d, string code, string? message, string? detail) => new { code, message, detail, id = d.Id, number = FullNumber(d), status = d.Status };
+
+        private IActionResult AlreadyExists(Document d) => Conflict(new
+        {
+            code = "DOCUMENT_ALREADY_EXISTS",
+            message = $"El número {FullNumber(d)} ya fue usado por un documento en estado {d.Status}. Se devuelve su información; no se emitió uno nuevo.",
+            id = d.Id,
+            type = d.TypeCode,
+            number = FullNumber(d),
+            issueDate = d.IssueDate,
+            total = d.TotalAmount,
+            status = d.Status,
+            cufe = d.Cufe,
+            dianResponse = DataicoDianOutcome.Readable(d.DianResponseMessage)
+        });
     }
 }

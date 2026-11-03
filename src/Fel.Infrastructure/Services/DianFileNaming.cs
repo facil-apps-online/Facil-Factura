@@ -24,6 +24,9 @@ namespace Fel.Infrastructure.Services
         public const string NotaDebito = "nd";
         // Documento equivalente electrónico (Anexo Técnico de Documento Equivalente, numeral 8.13.5).
         public const string DocumentoEquivalente = "ds";
+        // Documento soporte y su nota de ajuste (Anexo Técnico del Documento Soporte, numeral 8.4).
+        public const string DocumentoSoporte = "ds";
+        public const string NotaAjusteSoporte = "nas";
 
         // Mismo patrón optimista de ResolutionNumbering.ClaimNextNumberAsync — el consecutivo se
         // reinicia a 1 cada 1 de enero (numeral 6.5.7, última nota).

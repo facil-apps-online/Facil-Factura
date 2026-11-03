@@ -59,10 +59,13 @@ namespace Fel.Infrastructure.Ubl.Strategies
 
                 // Igual que en la emisión: Supplier = Vendedor No Obligado (SNO), Customer = nuestro
                 // Client como Adquirente (ABS) — ver DocumentoSoporteUblStrategy.
-                BuildAccountingSupplierParty(data),
-                BuildAccountingCustomerParty(data),
+                BuildSupportSellerParty(data),
+                BuildSupportBuyerParty(data),
+                // Medio de pago (DSAN, obligatorio) y descuentos o cargos generales del documento.
+                BuildPaymentMeans(data),
+                BuildAllowanceCharges(data),
                 BuildTaxTotals(data),
-                BuildLegalMonetaryTotal(data)
+                BuildLegalMonetaryTotal(data, includeAllowances: true)
             );
 
             for (int i = 0; i < data.Lines.Count; i++)

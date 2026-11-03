@@ -267,6 +267,12 @@ export default function ClientFormFields({ client, setClient, associates, showBi
             </div>
 
             <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Matrícula mercantil</label>
+              <input type="text" placeholder="Número de matrícula en la Cámara de Comercio" maxLength={50} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={client.mercantileRegistration ?? ''} onChange={e => setClient({ ...client, mercantileRegistration: e.target.value })} />
+              <p className="text-xs text-slate-500 mt-1">Va en el XML de las facturas. Si no la tienes, déjala vacía.</p>
+            </div>
+
+            <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Régimen de renta</label>
               <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none" value={client.incomeTaxRegime || ''} onChange={e => setClient({ ...client, incomeTaxRegime: e.target.value })}>
                 <option value="">Sin definir</option>

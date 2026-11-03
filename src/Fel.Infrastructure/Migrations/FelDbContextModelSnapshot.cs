@@ -1278,6 +1278,9 @@ namespace Fel.Infrastructure.Migrations
                     b.Property<double?>("Longitude")
                         .HasColumnType("float");
 
+                    b.Property<string>("MercantileRegistration")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("OrganizationDepartment")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");

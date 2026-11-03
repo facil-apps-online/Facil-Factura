@@ -51,6 +51,9 @@ namespace Fel.Core.Entities
         public string TaxRegime { get; set; } = string.Empty;
         public string EconomicActivity { get; set; } = string.Empty;
 
+        // Número de matrícula mercantil del emisor (Cámara de Comercio): va en el XML dentro de CorporateRegistrationScheme/Name. Vacío = no se informa.
+        public string? MercantileRegistration { get; set; }
+
         // Responsabilidades del RUT (casilla 53) que la representación gráfica debe declarar
         // explícitamente además del régimen de IVA — 13 = Gran Contribuyente, 09 = Agente
         // Retenedor de IVA, 15 = Autorretenedor de renta.

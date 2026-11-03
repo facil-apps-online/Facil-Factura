@@ -200,6 +200,7 @@ namespace Fel.Api.Tenant.Controllers
                  client.LegalRepresentativeStartDate,
                  client.TaxRegime,
                 client.EconomicActivity,
+                client.MercantileRegistration,
                 client.IsGranContribuyente,
                 client.IsAgenteRetenedorIva,
                 client.IsAutorretenedorRenta,
@@ -293,6 +294,7 @@ namespace Fel.Api.Tenant.Controllers
                 LegalRepresentativeStartDate = request.LegalRepresentativeStartDate,
                 TaxRegime = request.TaxRegime,
                 EconomicActivity = request.EconomicActivity,
+                MercantileRegistration = string.IsNullOrWhiteSpace(request.MercantileRegistration) ? null : request.MercantileRegistration.Trim(),
                 IsGranContribuyente = request.IsGranContribuyente,
                 IsAgenteRetenedorIva = request.IsAgenteRetenedorIva,
                 IsAutorretenedorRenta = request.IsAutorretenedorRenta,
@@ -396,6 +398,7 @@ namespace Fel.Api.Tenant.Controllers
             client.LegalRepresentativeStartDate = request.LegalRepresentativeStartDate;
             client.TaxRegime = request.TaxRegime;
             client.EconomicActivity = request.EconomicActivity;
+            client.MercantileRegistration = string.IsNullOrWhiteSpace(request.MercantileRegistration) ? null : request.MercantileRegistration.Trim();
             client.IsGranContribuyente = request.IsGranContribuyente;
             client.IsAgenteRetenedorIva = request.IsAgenteRetenedorIva;
             client.IsAutorretenedorRenta = request.IsAutorretenedorRenta;
@@ -948,6 +951,7 @@ namespace Fel.Api.Tenant.Controllers
         public DateTime? LegalRepresentativeStartDate { get; set; }
         public string TaxRegime { get; set; } = string.Empty;
         public string EconomicActivity { get; set; } = string.Empty;
+        public string? MercantileRegistration { get; set; }
         public bool IsGranContribuyente { get; set; }
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }
@@ -1020,6 +1024,7 @@ namespace Fel.Api.Tenant.Controllers
         public DateTime? LegalRepresentativeStartDate { get; set; }
         public string TaxRegime { get; set; } = string.Empty;
         public string EconomicActivity { get; set; } = string.Empty;
+        public string? MercantileRegistration { get; set; }
         public bool IsGranContribuyente { get; set; }
         public bool IsAgenteRetenedorIva { get; set; }
         public bool IsAutorretenedorRenta { get; set; }

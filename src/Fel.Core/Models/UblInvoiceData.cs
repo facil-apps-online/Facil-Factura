@@ -74,15 +74,23 @@ namespace Fel.Core.Models
         public string TaxId { get; set; } = string.Empty;
         public string IdentificationCode { get; set; } = "31"; // NIT
         public string Name { get; set; } = string.Empty;
-        public List<string> TaxLevelCodes { get; set; } = new List<string> { "O-47" };
-        public string TaxSchemeId { get; set; } = "01";
-        public string DepartmentCode { get; set; } = "11";
+        // Nada de esto lleva valor por defecto: sale del Client (o del tercero vendedor) en DianDocumentMapper.BuildIssuerData.
+        public List<string> TaxLevelCodes { get; set; } = new List<string>();
+        public string TaxSchemeId { get; set; } = string.Empty;
+        public string TaxSchemeName { get; set; } = string.Empty;
+        // Tipo de organización (lista 16.2.3): 1 persona jurídica, 2 persona natural.
+        public string AdditionalAccountId { get; set; } = string.Empty;
+        // Matrícula mercantil (Cámara de Comercio): va en CorporateRegistrationScheme/Name; vacía = no se informa.
+        public string? MercantileRegistration { get; set; }
+        public string DepartmentCode { get; set; } = string.Empty;
         public string DepartmentName { get; set; } = string.Empty;
-        public string CityCode { get; set; } = "11001";
+        public string CityCode { get; set; } = string.Empty;
         public string CityName { get; set; } = string.Empty;
-        public string PostalZone { get; set; } = "110011";
         public string Address { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
+        // Solo el vendedor de un documento soporte puede estar fuera de Colombia (operación 11, no residente).
+        public string CountryCode { get; set; } = "CO";
+        public string CountryName { get; set; } = "Colombia";
     }
 
     public class CustomerData
@@ -94,6 +102,9 @@ namespace Fel.Core.Models
         // valor anterior) no existe en esa lista — probable causa de las notificaciones FAK40/FAK41
         // ("contenido no corresponde a un contenido válido de la lista correspondiente").
         public string TaxSchemeId { get; set; } = "ZZ";
+        public string TaxSchemeName { get; set; } = "No aplica";
+        // Tipo de organización (16.2.3) cuando no se deduce del tipo de documento (el Client adquirente de un documento soporte la toma de su tipo de persona).
+        public string? AdditionalAccountId { get; set; }
         public List<string> TaxLevelCodes { get; set; } = new List<string> { "R-99-PN" };
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;

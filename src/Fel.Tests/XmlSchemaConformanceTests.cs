@@ -71,7 +71,7 @@ namespace Fel.Tests
                 TechnicalKey = "fc8eac422eba16e22ffd8c6f94b3f40a6e38162c", SoftwareId = "56f2ae4e-9812-4fad-9255-08fcfcd5ccb0", SoftwarePin = "12345",
                 Environment = "2", ResolutionNumber = "18764092013879", ResolutionValidFrom = new DateTime(2025, 4, 15), ResolutionValidTo = new DateTime(2027, 4, 15),
                 ResolutionNumberStart = 1000, ResolutionNumberEnd = 2000, DianCode = dianCode, OperationType = operationType, Currency = "COP",
-                Issuer = new IssuerData { TaxId = "900303194", Name = "SOFACTORY SAS", DepartmentCode = "11", DepartmentName = "Bogotá D.C.", CityCode = "11001", CityName = "Bogotá, D.C.", Address = "Cra. 17 # 63A-26", Email = "sofactorysas@gmail.com" },
+                Issuer = new IssuerData { TaxId = "900303194", Name = "SOFACTORY SAS", TaxLevelCodes = new List<string> { "O-47" }, TaxSchemeId = "01", TaxSchemeName = "IVA", AdditionalAccountId = "1", MercantileRegistration = "10181", DepartmentCode = "11", DepartmentName = "Bogotá D.C.", CityCode = "11001", CityName = "Bogotá, D.C.", Address = "Cra. 17 # 63A-26", Email = "sofactorysas@gmail.com" },
                 Customer = new CustomerData { TaxId = "222222222222", IdentificationCode = "13", Name = "Consumidor final", Email = "cliente@acme.co" },
                 PaymentMeans = new List<PaymentMeansData> { new() { Id = "1", PaymentMeansCode = "10" } },
                 LineExtensionAmount = 10000m, TaxExclusiveAmount = 10000m, TaxInclusiveAmount = 11900m, PayableAmount = 11900m,

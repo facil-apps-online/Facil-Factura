@@ -23,51 +23,12 @@ namespace Fel.Api.Client.Controllers
         // un DRAFT nunca se envió, y un REJECTED fue rechazado por Dataico, así que tampoco llegó.
         private static bool IsEditable(string status) => status == "DRAFT" || status == "REJECTED";
 
-        // Documento Soporte permite fechas anteriores, pero solo dentro de la vigencia de su resolución
-        // y nunca posteriores al día actual. Las Notas de Ajuste agregan el límite del documento original.
-        private static string? ValidateIssueDate(DateTime? issueDate) =>
-            !issueDate.HasValue
-                ? "Debes indicar la fecha de emisión."
-                : null;
-
-        private async Task<string?> ValidateSupportDatesAsync(
+        // Documento Soporte permite fechas anteriores, pero solo dentro de la vigencia de su resolución y nunca posteriores al día actual. Las Notas de
+        // Ajuste agregan el límite del documento original. La regla vive en el servicio de publicación, que también usa la API de integración.
+        private Task<string?> ValidateSupportDatesAsync(
             Guid clientId, Guid branchId, Guid? resolutionId, DateTime? issueDate,
-            Guid? referenceDocumentId, bool requireCurrentResolution)
-        {
-            var dateError = ValidateIssueDate(issueDate);
-            if (dateError != null) return dateError;
-            if (!resolutionId.HasValue) return "Debes seleccionar la resolución de documento soporte.";
-
-            var resolution = await _dbContext.Resolutions.ForBranch(_dbContext, branchId)
-                .FirstOrDefaultAsync(r => r.Id == resolutionId.Value && r.ClientId == clientId && r.IsActive && (r.DocumentType == TypeCode || r.DocumentType == "POS"));
-            if (resolution == null) return "La resolución seleccionada no es válida para este documento soporte o esta sucursal.";
-
-            var today = Fel.Core.Models.ColombiaTime.Today;
-            var minimumDate = resolution.ValidFrom.Date;
-            if (referenceDocumentId.HasValue)
-            {
-                var original = await BranchDocuments
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(d => d.Id == referenceDocumentId.Value && d.ClientId == clientId && d.BranchId == branchId && d.TypeCode == TypeCode);
-                if (original == null) return "El documento soporte original no existe o no pertenece a esta sucursal.";
-                if (original.IssueDate.Date > minimumDate) minimumDate = original.IssueDate.Date;
-            }
-
-            if (issueDate!.Value.Date < minimumDate || issueDate.Value.Date > today)
-                return referenceDocumentId.HasValue
-                    ? "La fecha de la nota debe estar entre la fecha del documento soporte original y hoy, dentro de la vigencia de la resolución."
-                    : "La fecha del documento debe estar dentro de la vigencia de la resolución y no puede ser futura.";
-            if (issueDate.Value.Date > resolution.ValidTo.Date)
-                return "La fecha del documento está fuera de la vigencia de la resolución.";
-            if (requireCurrentResolution && (today < resolution.ValidFrom.Date || today > resolution.ValidTo.Date))
-                return "La resolución está vencida o todavía no está vigente; no se puede emitir este documento.";
-            return null;
-        }
-
-        // Antes de usar el consecutivo de la resolución, el borrador se numeraba con DateTime.Ticks
-        // (18 dígitos). Esos borradores/rechazados viejos se renumeran al publicar.
-        private static bool NeedsConsecutive(string? number) =>
-            string.IsNullOrEmpty(number) || (number.Length >= 15 && number.All(char.IsDigit));
+            Guid? referenceDocumentId, bool requireCurrentResolution) =>
+            _publishing.ValidateDatesAsync(clientId, branchId, resolutionId, issueDate, referenceDocumentId, requireCurrentResolution);
 
         private async Task<Guid?> GetDocumentTypeIdAsync(string typeCode) =>
             await _dbContext.DocumentTypes.AsNoTracking()
@@ -76,20 +37,16 @@ namespace Fel.Api.Client.Controllers
                 .FirstOrDefaultAsync();
 
         private readonly FelDbContext _dbContext;
-        private readonly ICryptoService _cryptoService;
-        private readonly IDataicoApiService _dataicoApiService;
-        private readonly DataicoCustomPdfService _customPdfService;
         private readonly IFacilReportsClient _facilReportsClient;
         private readonly Fel.Infrastructure.Services.DocumentLegendService _legendService;
+        private readonly SupportDocumentPublishingService _publishing;
 
-        public SupportDocumentController(FelDbContext dbContext, ICryptoService cryptoService, IDataicoApiService dataicoApiService, DataicoCustomPdfService customPdfService, IFacilReportsClient facilReportsClient, Fel.Infrastructure.Services.DocumentLegendService legendService)
+        public SupportDocumentController(FelDbContext dbContext, IFacilReportsClient facilReportsClient, Fel.Infrastructure.Services.DocumentLegendService legendService, SupportDocumentPublishingService publishing)
         {
             _facilReportsClient = facilReportsClient;
             _dbContext = dbContext;
-            _cryptoService = cryptoService;
-            _dataicoApiService = dataicoApiService;
-            _customPdfService = customPdfService;
             _legendService = legendService;
+            _publishing = publishing;
         }
 
         // Consulta en Dataico de un documento soporte (kind vacío) o de su nota de ajuste (kind=adjustment). Solo lee: no guarda nada.
@@ -392,166 +349,19 @@ namespace Fel.Api.Client.Controllers
                     .FirstOrDefaultAsync(d => d.Id == id && d.ClientId == clientId && (d.TypeCode == TypeCode || d.TypeCode == AdjustmentTypeCode));
 
                 if (document == null) return NotFound("Documento soporte no encontrado.");
-                if (!IsEditable(document.Status)) return BadRequest("El documento ya fue emitido o está en proceso.");
 
-                var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
-                if (client == null) return NotFound("Emisor no encontrado.");
-
-                if (client.Integrator.Code != "DATAICO")
+                var outcome = await _publishing.PublishAsync(document, clientId);
+                switch (outcome.Kind)
                 {
-                    return BadRequest("Este emisor no tiene configurado un proveedor de documentos electrónicos habilitado.");
+                    case PublishOutcomeKind.NotFound: return NotFound(outcome.Message);
+                    case PublishOutcomeKind.TemplateRequired: return TemplateRequired();
+                    case PublishOutcomeKind.Conflict: return Conflict(outcome.Message);
+                    case PublishOutcomeKind.ProviderRejected:
+                        // `sent` es el JSON exacto enviado a Dataico, para comparar contra un envío que sí se aceptó.
+                        return BadRequest(new { message = outcome.Message, detail = outcome.Detail, sent = outcome.Sent });
+                    case PublishOutcomeKind.BadRequest: return BadRequest(outcome.Message);
+                    default: return Ok(new { message = outcome.Message, warning = outcome.Warning, document });
                 }
-
-                // Sin plantilla elegida el correo saldría con el diseño predeterminado de Dataico: se exige elegirla antes.
-                if (await _customPdfService.IsPublishedTemplateMissingAsync(clientId, document.DocumentTypeId, document.TypeCode))
-                {
-                    return TemplateRequired();
-                }
-
-                // El cliente puede tener varias resoluciones activas (una por prefijo); si no se
-                // eligió una explícitamente al crear el borrador, se usa la marcada como
-                // predeterminada, y si ninguna lo está, se cae al comportamiento anterior (la más
-                // reciente por vigencia) para no romper clientes que aún no eligieron default.
-                var resolution = document.ResolutionId.HasValue
-                    ? await _dbContext.Resolutions.ForBranch(_dbContext, document.BranchId).FirstOrDefaultAsync(r => r.Id == document.ResolutionId.Value && r.ClientId == clientId && r.IsActive)
-                    : await _dbContext.Resolutions.ForBranch(_dbContext, document.BranchId)
-                        .Where(r => r.ClientId == clientId && r.IsActive && (r.DocumentType == TypeCode || r.DocumentType == "POS"))
-                        .OrderByDescending(r => r.IsDefault)
-                        .ThenByDescending(r => r.ValidTo)
-                        .FirstOrDefaultAsync();
-
-                if (resolution == null)
-                {
-                    return BadRequest("No hay una resolución de documento soporte activa registrada para este emisor.");
-                }
-
-                var publicationDateError = await ValidateSupportDatesAsync(
-                    clientId, document.BranchId, resolution.Id, document.IssueDate,
-                    document.ReferenceDocumentId, requireCurrentResolution: true);
-                if (publicationDateError != null) return BadRequest(publicationDateError);
-
-                if (string.IsNullOrWhiteSpace(document.PaymentMeansType))
-                {
-                    return BadRequest("Debes indicar la forma de pago (Contado/Crédito).");
-                }
-
-                // DEBITO ("Contado") sí necesita el medio de pago concreto; CREDITO solo maneja
-                // plazo de pago y nunca lo captura en el formulario.
-                if (document.PaymentMeansType == "DEBITO" && string.IsNullOrWhiteSpace(document.PaymentMeans))
-                {
-                    return BadRequest("Debes indicar el medio de pago.");
-                }
-
-                Document? adjustedDocument = null;
-                if (document.TypeCode == AdjustmentTypeCode)
-                {
-                    if (!document.ReferenceDocumentId.HasValue)
-                    {
-                        return BadRequest("Esta nota de ajuste debe referenciar el documento soporte que ajusta.");
-                    }
-                    adjustedDocument = await _dbContext.Documents.FindAsync(document.ReferenceDocumentId.Value);
-                    if (adjustedDocument == null || string.IsNullOrEmpty(adjustedDocument.Cufe))
-                    {
-                        return BadRequest("El documento soporte original no tiene un CUDS registrado (puede no haberse emitido por Dataico). No se puede generar la nota.");
-                    }
-                }
-
-                // Antes de reservar el consecutivo: un documento que no se puede enviar no debe consumirlo.
-                var claimConflict = await ClaimSubmissionAsync(_dbContext, document);
-                if (claimConflict != null) return claimConflict;
-
-                // Consecutivo real, reclamado recién ahora que ya pasaron todas las validaciones (un
-                // documento rechazado que se reintenta conserva el que ya tiene). El Documento Soporte
-                // usa el rango de su resolución; la Nota de Ajuste, su contador propio del Client.
-                if (NeedsConsecutive(document.Number))
-                {
-                    try
-                    {
-                        document.Number = document.TypeCode == AdjustmentTypeCode
-                            ? (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNoteAsync(_dbContext, clientId, document.BranchId, NoteKind.SupportAdjustment)).Number.ToString()
-                            : (await Fel.Infrastructure.Services.ResolutionNumbering.ClaimNextNumberAsync(_dbContext, resolution.Id)).ToString();
-                    }
-                    catch (Fel.Infrastructure.Services.ResolutionExhaustedException ex)
-                    {
-                        // Numeración agotada: no se emite ni se consume nada; el documento sigue editable.
-                        DocumentSubmissionGuard.MarkFailed(document, ex.Message);
-                        await _dbContext.SaveChangesAsync();
-                        return BadRequest(ex.Message);
-                    }
-                }
-
-                // Prefijo del documento: se guarda en el propio documento y es el mismo que se envía a Dataico. El del
-                // soporte es el de su resolución. La nota de ajuste usa el configurado en Consecutivos de Notas (la
-                // numeración de ajustes de Dataico es distinta de la del soporte); sin uno configurado conserva el que
-                // ya tenga el documento y, si no tiene, el de la resolución.
-                document.Prefix = document.TypeCode == AdjustmentTypeCode
-                    ? (await Fel.Infrastructure.Services.ResolutionNumbering.GetNotePrefixAsync(_dbContext, clientId, document.BranchId, NoteKind.SupportAdjustment) ?? document.Prefix ?? resolution.Prefix)
-                    : resolution.Prefix;
-
-                Fel.Infrastructure.Dataico.Models.DataicoResult result;
-                if (adjustedDocument != null)
-                {
-                    var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
-                    var adjustmentRequest = DataicoDocumentMapper.BuildSupportDocAdjustmentRequest(
-                        document, adjustedDocument, document.Customer!, resolution, client, document.PaymentMeans, document.PaymentMeansType, document.Items);
-                    result = await SendClaimedAsync(_dbContext, document, () => _dataicoApiService.SendSupportDocAdjustmentAsync(adjustmentRequest, credentials));
-                    DataicoDianOutcome.Apply(result, client);
-
-                    document.Status = result.Success ? "APPROVED" : "REJECTED";
-                    document.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForDataico(client);
-                    document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
-                    document.Cufe = result.Cufe;
-                    document.QrCode = result.QrCode;
-                    document.ProcessedAt = DateTime.UtcNow;
-                }
-                else
-                {
-                    result = await SendClaimedAsync(_dbContext, document,
-                        () => SubmitSupportDocToDataicoAsync(document, document.Customer!, document.Items, client, resolution, document.PaymentMeans, document.PaymentMeansType));
-                }
-
-                if (result.Success)
-                {
-                    DocumentSubmissionGuard.MarkCompleted(document);
-                    document.IntegratorId = client.IntegratorId;
-
-                    var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
-                    var (paymentMeansCatalog, formaPagoCatalog) = await GetPaymentCatalogsAsync();
-                    var pdfCurrencyWords = await CurrencyWords.LoadAsync(_dbContext);
-                    var pdfRetentionNames = await RetentionShortNameCatalog.LoadAsync(_dbContext);
-                    var leyenda = await _legendService.ResolveAsync(client, resolution, document.TypeCode);
-                    var pdfLocation = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
-                    await _customPdfService.TrySendCustomPdfAsync(
-                        document, document.Customer?.Email, client,
-                        _ => SupportDocumentReportDataMapper.Build(document, document.Customer, client, pdfLocation, resolution, document.Items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: pdfCurrencyWords, documentTypeTitle: document.DocumentType?.ReportTitle, originalDocument: adjustedDocument, retentionShortNames: pdfRetentionNames),
-                        credentials);
-                }
-                else
-                {
-                    DocumentSubmissionGuard.MarkFailed(document, document.DianResponseMessage);
-                }
-
-                await _dbContext.SaveChangesAsync();
-
-                if (!result.Success)
-                {
-                    // `sent` es el JSON exacto enviado a Dataico, para comparar contra un envío que sí se aceptó.
-                    object? sent = null;
-                    if (!string.IsNullOrWhiteSpace(result.RequestBody))
-                    {
-                        try { sent = System.Text.Json.JsonDocument.Parse(result.RequestBody).RootElement.Clone(); }
-                        catch (System.Text.Json.JsonException) { sent = result.RequestBody; }
-                    }
-                    return BadRequest(new { message = "Dataico rechazó el documento soporte.", detail = DataicoDianOutcome.Readable(document.DianResponseMessage), sent });
-                }
-
-                // La dirección del proveedor sin ciudad DANE no viaja (Dataico la rechaza): se avisa para que no desaparezca sin que se note.
-                var customer = document.Customer;
-                var warning = customer == null ? null : Fel.Infrastructure.Dian.CustomerAddressRules.IncompleteCityMessage(
-                    !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO", customer.Address, customer.CityCode, customer.CityName, customer.StateName) == null
-                    ? null
-                    : "El proveedor tiene dirección pero no ciudad (código DANE): el documento se emitió sin su dirección. Complétala en el tercero para incluirla.";
-                return Ok(new { message = "Documento soporte emitido correctamente.", warning, document });
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -696,27 +506,6 @@ namespace Fel.Api.Client.Controllers
             }
 
             return document;
-        }
-
-        private async Task<Fel.Infrastructure.Dataico.Models.DataicoResult> SubmitSupportDocToDataicoAsync(
-            Document document, Customer provider, System.Collections.Generic.ICollection<DocumentItem> items,
-            Fel.Core.Entities.Client client, Resolution resolution, string paymentMeans, string paymentMeansType)
-        {
-            var dataicoRequest = DataicoDocumentMapper.BuildSupportDocumentRequest(
-                document, provider, items, resolution, client, paymentMeans, paymentMeansType);
-
-            var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
-            var result = await _dataicoApiService.SendSupportDocAsync(dataicoRequest, credentials);
-            DataicoDianOutcome.Apply(result, client);
-
-            document.Status = result.Success ? "APPROVED" : "REJECTED";
-            document.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForDataico(client);
-            document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
-            document.Cufe = result.Cufe;
-            document.QrCode = result.QrCode;
-            document.ProcessedAt = DateTime.UtcNow;
-
-            return result;
         }
     }
 

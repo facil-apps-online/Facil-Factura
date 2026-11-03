@@ -17,7 +17,7 @@ namespace Fel.Infrastructure.Dataico
     // Notas Crédito/Débito van a un endpoint distinto de Dataico (/credit_notes, /debit_notes,
     // no /invoices) y necesitan el "uuid" que Dataico le asignó a la factura original — antes se
     // enviaban siempre como si fueran una factura nueva, sin esa referencia.
-    public class DataicoSubmissionProvider : IDocumentSubmissionProvider
+    public class DataicoSubmissionProvider : IDocumentSubmissionProvider, ISupportDocumentSubmissionProvider
     {
         private readonly IDataicoApiService _dataicoApiService;
         private readonly ICryptoService _cryptoService;
@@ -313,6 +313,65 @@ namespace Fel.Infrastructure.Dataico
                 Cufe = result.Cufe,
                 ResponseMessage = invoice.DianResponseMessage,
                 Warning = warning
+            };
+        }
+
+        // Documento Soporte o su Nota de Ajuste por Dataico (endpoints propios). La numeración, las fechas y la resolución ya las resolvió quien llama.
+        public async Task<DocumentSubmissionResult> SubmitSupportAsync(
+            Document document, Customer seller, ICollection<DocumentItem> items,
+            Client client, Resolution resolution, Document? adjustedDocument)
+        {
+            var credentials = DataicoDocumentMapper.ToCredentials(client, _cryptoService);
+            Fel.Infrastructure.Dataico.Models.DataicoResult result;
+            if (adjustedDocument != null)
+            {
+                var adjustmentRequest = DataicoDocumentMapper.BuildSupportDocAdjustmentRequest(
+                    document, adjustedDocument, seller, resolution, client, document.PaymentMeans, document.PaymentMeansType, items);
+                result = await _dataicoApiService.SendSupportDocAdjustmentAsync(adjustmentRequest, credentials);
+            }
+            else
+            {
+                var request = DataicoDocumentMapper.BuildSupportDocumentRequest(
+                    document, seller, items, resolution, client, document.PaymentMeans, document.PaymentMeansType);
+                result = await _dataicoApiService.SendSupportDocAsync(request, credentials);
+            }
+            DataicoDianOutcome.Apply(result, client);
+
+            document.Status = result.Success ? "APPROVED" : "REJECTED";
+            document.SentToSandbox = Fel.Infrastructure.Services.SandboxRule.ForDataico(client);
+            document.DianResponseMessage = result.Success ? result.RawResponse : (result.ErrorMessage ?? result.RawResponse);
+            document.Cufe = result.Cufe;
+            document.QrCode = result.QrCode;
+            document.DataicoDocumentId = result.DataicoDocumentId;
+            document.PdfUrl = result.PdfUrl;
+            document.XmlUrl = result.XmlUrl;
+            document.ProcessedAt = DateTime.UtcNow;
+
+            string? warning = null;
+            if (result.Success && !document.SuppressEmail)
+            {
+                var paymentMeansCatalog = await _dbContext.TaxCatalogItems.Where(i => i.Kind == TaxCatalogKind.PaymentMeans).ToDictionaryAsync(i => i.Category, i => i.Name);
+                var formaPagoCatalog = await _dbContext.TaxCatalogItems.Where(i => i.Kind == TaxCatalogKind.FormaPago).ToDictionaryAsync(i => i.Category, i => i.Name);
+                var currencyWords = await CurrencyWords.LoadAsync(_dbContext);
+                var retentionNames = await RetentionShortNameCatalog.LoadAsync(_dbContext);
+                var leyenda = await _legendService.ResolveAsync(client, resolution, document.TypeCode);
+                var location = await BranchProvisioning.LocationAsync(_dbContext, client, document.BranchId);
+                var documentTypeTitle = document.DocumentType?.ReportTitle;
+                warning = await _customPdfService.TrySendCustomPdfAsync(
+                    document, seller.Email, client,
+                    _ => SupportDocumentReportDataMapper.Build(document, seller, client, location, resolution, items.ToList(), paymentMeansCatalog, formaPagoCatalog, leyenda, currencyWords: currencyWords, documentTypeTitle: documentTypeTitle, originalDocument: adjustedDocument, retentionShortNames: retentionNames),
+                    credentials);
+            }
+
+            return new DocumentSubmissionResult
+            {
+                Success = result.Success,
+                Status = document.Status,
+                Cufe = result.Cufe,
+                ResponseMessage = document.DianResponseMessage,
+                Warning = warning,
+                // Lo exacto enviado a Dataico, para que el portal lo muestre cuando lo rechazan.
+                RequestBody = result.Success ? null : result.RequestBody
             };
         }
 

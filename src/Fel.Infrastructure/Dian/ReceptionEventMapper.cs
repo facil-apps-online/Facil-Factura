@@ -27,6 +27,7 @@ namespace Fel.Infrastructure.Dian
                 IssueDate = Fel.Core.Models.ColombiaTime.Now,
                 IssueTime = Fel.Core.Models.ColombiaTime.Now,
                 Environment = client.DianHabilitationStatus == "Production" ? "1" : "2",
+                SoftwareId = client.SoftwareId,
                 SoftwarePin = client.SoftwarePin,
 
                 SenderTaxId = client.TaxId,

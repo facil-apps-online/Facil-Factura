@@ -10,6 +10,7 @@ namespace Fel.Core.Models
         public DateTime IssueDate { get; set; }
         public DateTime IssueTime { get; set; }
         public string Environment { get; set; } = "2";
+        public string SoftwareId { get; set; } = string.Empty; // Client.SoftwareId (cada cliente es dueño de su software)
         public string SoftwarePin { get; set; } = string.Empty;
 
         // SenderParty: quien genera el evento — nuestro Client (el que recibió la factura ajena).

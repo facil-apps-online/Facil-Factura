@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using Fel.Core.Models;
 using Fel.Core.Interfaces;
+using Fel.Infrastructure.Dian;
 
 namespace Fel.Infrastructure.Ubl.Strategies
 {
@@ -46,15 +47,23 @@ namespace Fel.Infrastructure.Ubl.Strategies
                     new XElement(ext + "UBLExtension",
                         new XElement(ext + "ExtensionContent",
                             new XElement(sts + "DianExtensions",
-                                new XElement(sts + "InvoiceSource", new XAttribute("schemeAgencyID", "6"), new XAttribute("schemeAgencyName", "United Nations Economic Commission for Europe"), new XElement(cbc + "IdentificationCode", "CO")),
+                                // Los atributos de lista van en el cbc:IdentificationCode (XSD y evento real de Dataico).
+                                new XElement(sts + "InvoiceSource",
+                                    new XElement(cbc + "IdentificationCode",
+                                        new XAttribute("listAgencyID", "6"),
+                                        new XAttribute("listAgencyName", "United Nations Economic Commission for Europe"),
+                                        new XAttribute("listSchemeURI", "urn:oasis:names:specification:ubl:codelist:gc:CountryIdentificationCode-2.1"),
+                                        "CO")),
+                                // Modelo autogestionado: el cliente es el dueño del software, así que el proveedor es su propio NIT.
                                 new XElement(sts + "SoftwareProvider",
-                                    new XElement(sts + "ProviderID", new XAttribute("schemeID", "4"), new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), new XAttribute("schemeName", "31"), data.SenderTaxId),
-                                    new XElement(sts + "SoftwareID", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), data.SenderTaxId)
+                                    new XElement(sts + "ProviderID", new XAttribute("schemeID", SenderDv(data)), new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), new XAttribute("schemeName", "31"), data.SenderTaxId),
+                                    new XElement(sts + "SoftwareID", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), data.SoftwareId)
                                 ),
+                                // SHA-384(SoftwareID + PIN + ID del evento), como en los demás documentos.
                                 new XElement(sts + "SoftwareSecurityCode", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"),
-                                    _cryptoService.GenerateCufeSha384($"{data.SenderTaxId}{data.SoftwarePin}")),
+                                    _cryptoService.GenerateCufeSha384($"{data.SoftwareId}{data.SoftwarePin}{data.DocumentNumber}")),
                                 new XElement(sts + "AuthorizationProvider",
-                                    new XElement(sts + "AuthorizationProviderID", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), new XAttribute("schemeName", "31"), DianNit)
+                                    new XElement(sts + "AuthorizationProviderID", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), new XAttribute("schemeID", "4"), new XAttribute("schemeName", "31"), DianNit)
                                 ),
                                 // El QR referencia el CUFE del documento AJENO sobre el que se emite el evento, no el CUDE propio del evento.
                                 new XElement(sts + "QRCode", $"https://catalogo-vpfe{(data.Environment == "1" ? "" : "-hab")}.dian.gov.co/document/searchqr?documentkey={data.ReferencedCufe}")
@@ -80,14 +89,14 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 new XElement(cac + "SenderParty",
                     new XElement(cac + "PartyTaxScheme",
                         new XElement(cbc + "RegistrationName", data.SenderName),
-                        new XElement(cbc + "CompanyID", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), new XAttribute("schemeName", "31"), data.SenderTaxId),
+                        new XElement(cbc + "CompanyID", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), new XAttribute("schemeID", SenderDv(data)), new XAttribute("schemeName", "31"), new XAttribute("schemeVersionID", "1"), data.SenderTaxId),
                         new XElement(cac + "TaxScheme", new XElement(cbc + "ID", "01"), new XElement(cbc + "Name", "IVA"))
                     )
                 ),
                 new XElement(cac + "ReceiverParty",
                     new XElement(cac + "PartyTaxScheme",
                         new XElement(cbc + "RegistrationName", data.ReceiverName),
-                        new XElement(cbc + "CompanyID", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), new XAttribute("schemeName", "31"), data.ReceiverTaxId),
+                        new XElement(cbc + "CompanyID", new XAttribute("schemeAgencyID", "195"), new XAttribute("schemeAgencyName", "CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)"), new XAttribute("schemeID", NitValidation.CalculateCheckDigit(data.ReceiverTaxId).ToString()), new XAttribute("schemeName", "31"), new XAttribute("schemeVersionID", "1"), data.ReceiverTaxId),
                         new XElement(cac + "TaxScheme", new XElement(cbc + "ID", "01"), new XElement(cbc + "Name", "IVA"))
                     )
                 ),
@@ -101,9 +110,22 @@ namespace Fel.Infrastructure.Ubl.Strategies
                         new XElement(cbc + "ID", data.ReferencedDocumentId),
                         new XElement(cbc + "UUID", new XAttribute("schemeName", "CUFE-SHA384"), data.ReferencedCufe),
                         new XElement(cbc + "DocumentTypeCode", data.ReferencedDocumentTypeCode)
+                    ),
+                    // Quien hace el evento. Obligatorio en el 032 (anexo, numeral 6.5) y lo envía Dataico en todos; con
+                    // la misma convención que ya valida la DIAN: el cliente como persona, cargo "Responsable", área "00".
+                    new XElement(cac + "IssuerParty",
+                        new XElement(cac + "Person",
+                            new XElement(cbc + "ID", new XAttribute("schemeID", SenderDv(data)), new XAttribute("schemeName", "31"), data.SenderTaxId),
+                            new XElement(cbc + "FirstName", data.SenderName),
+                            new XElement(cbc + "FamilyName", data.SenderName),
+                            new XElement(cbc + "JobTitle", "Responsable"),
+                            new XElement(cbc + "OrganizationDepartment", "00")
+                        )
                     )
                 )
             );
         }
+
+        private static string SenderDv(UblEventData data) => NitValidation.CalculateCheckDigit(data.SenderTaxId).ToString();
     }
 }

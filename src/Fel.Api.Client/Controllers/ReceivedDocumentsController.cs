@@ -87,15 +87,13 @@ namespace Fel.Api.Client.Controllers
                 .Where(e => e.Id == eventId && e.ReceivedDocumentId == id && e.ReceivedDocument.ClientId == clientId)
                 .FirstOrDefaultAsync();
             if (eventRow == null) return NotFound();
-            if (!string.Equals(eventRow.ReceivedDocument.Client.Integrator?.Code, "DATAICO", StringComparison.OrdinalIgnoreCase)) return BadRequest("El archivo del evento solo está disponible para Dataico.");
 
-            // Los eventos RADIAN no generan PDF: Dataico solo entrega el XML del evento.
+            // Los eventos RADIAN no generan PDF: solo hay XML (el de Dataico, o el que firmamos con emisión directa).
             if (!string.Equals(type, "xml", StringComparison.OrdinalIgnoreCase)) return BadRequest("Los eventos RADIAN solo tienen XML.");
-            var url = eventRow.ProviderXmlUrl;
-            if (string.IsNullOrWhiteSpace(url)) return NotFound(new { message = "Dataico no entregó este archivo." });
-            var file = await _dataicoApiService.DownloadFileAsync(url, DataicoDocumentMapper.ToCredentials(eventRow.ReceivedDocument.Client, _cryptoService));
-            if (file == null) return StatusCode(502, new { message = "Dataico no permitió descargar este archivo." });
-            return File(file.Value.Bytes, file.Value.ContentType, $"{eventRow.ReceivedDocument.DocumentId}-{eventRow.EventCode}.xml");
+            var (outcome, bytes, fileName) = await ReceptionEventFiles.GetXmlAsync(eventRow, _dataicoApiService, _cryptoService);
+            if (outcome == ReceptionEventFiles.Outcome.NotAvailable) return NotFound(new { message = "Este evento no tiene archivo almacenado." });
+            if (outcome == ReceptionEventFiles.Outcome.ProviderFailed) return StatusCode(502, new { message = "Dataico no permitió descargar este archivo." });
+            return File(bytes!, "application/xml", fileName);
         }
 
         [HttpGet("{id:guid}/xml")]
@@ -144,7 +142,9 @@ namespace Fel.Api.Client.Controllers
             string? originalPdfFileName = null;
             try
             {
-                var extracted = await ExtractFilesAsync(file);
+                using var buffer = new MemoryStream();
+                await file.CopyToAsync(buffer);
+                var extracted = ReceivedDocumentIngest.ReadFile(buffer.ToArray(), file.FileName);
                 xml = extracted.Xml;
                 originalPdf = extracted.Pdf;
                 originalPdfFileName = extracted.PdfFileName;
@@ -173,25 +173,7 @@ namespace Fel.Api.Client.Controllers
                 return BadRequest("Ya existe un documento recibido con ese CUFE/CUDE para este emisor.");
             }
 
-            var received = new ReceivedDocument
-            {
-                Id = Guid.NewGuid(),
-                ClientId = clientId,
-                BranchId = GetCurrentBranchId(),
-                SourceType = "Manual",
-                RawXml = xml,
-                OriginalPdf = originalPdf,
-                OriginalPdfFileName = originalPdfFileName,
-                Cufe = parsed.Cufe,
-                DocumentTypeCode = parsed.DocumentTypeCode,
-                IssuerTaxId = parsed.IssuerTaxId,
-                IssuerName = parsed.IssuerName,
-                DocumentId = parsed.DocumentId,
-                IssueDate = parsed.IssueDate,
-                TotalAmount = parsed.TotalAmount,
-                IsCredit = parsed.IsCredit,
-                ReceivedAt = DateTime.UtcNow
-            };
+            var received = ReceivedDocumentIngest.ToEntity(parsed, clientId, GetCurrentBranchId(), "Manual", xml, originalPdf, originalPdfFileName);
 
             _dbContext.ReceivedDocuments.Add(received);
             await _dbContext.SaveChangesAsync();
@@ -230,49 +212,6 @@ namespace Fel.Api.Client.Controllers
 
             var evt = await _eventService.TriggerEventAsync(received, client, eventCode);
             return Ok(new { evt.EventCode, evt.Status, evt.Cude, evt.DianResponseMessage });
-        }
-
-        private static async Task<(string Xml, byte[]? Pdf, string? PdfFileName)> ExtractFilesAsync(IFormFile file)
-        {
-            using var stream = new MemoryStream();
-            await file.CopyToAsync(stream);
-            stream.Position = 0;
-
-            var isZip = file.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
-            if (!isZip)
-            {
-                // Detecta ZIP por firma de archivo aunque venga con otra extensión.
-                var header = new byte[4];
-                stream.Read(header, 0, 4);
-                stream.Position = 0;
-                isZip = header[0] == 0x50 && header[1] == 0x4B;
-            }
-
-            if (!isZip)
-            {
-                using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
-                return (ReceivedDocumentXmlExtractor.Extract(await reader.ReadToEndAsync()), null, null);
-            }
-
-            using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
-            var xmlEntry = zip.Entries.FirstOrDefault(e => e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
-            if (xmlEntry == null)
-                throw new InvalidOperationException("El ZIP no contiene ningún archivo .xml.");
-
-            using var entryStream = xmlEntry.Open();
-            using var entryReader = new StreamReader(entryStream, System.Text.Encoding.UTF8);
-            var pdfEntry = zip.Entries.FirstOrDefault(e => e.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase));
-            byte[]? pdf = null;
-            string? pdfName = null;
-            if (pdfEntry != null)
-            {
-                using var pdfStream = new MemoryStream();
-                using var pdfEntryStream = pdfEntry.Open();
-                await pdfEntryStream.CopyToAsync(pdfStream);
-                pdf = pdfStream.ToArray();
-                pdfName = Path.GetFileName(pdfEntry.Name);
-            }
-            return (ReceivedDocumentXmlExtractor.Extract(await entryReader.ReadToEndAsync()), pdf, pdfName);
         }
     }
 }

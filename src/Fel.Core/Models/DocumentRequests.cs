@@ -153,11 +153,4 @@ namespace Fel.Core.Models
         public string DiscrepancyResponseCode { get; set; } = "2";
         public string DiscrepancyDescription { get; set; } = string.Empty;
     }
-
-    public class ReceptionEventRequest : DocumentRequestBase
-    {
-        public string EventCode { get; set; } = string.Empty; // 030 (Acuse), 032 (Recibo Bien), 033 (Aceptación)
-        public string IssuerName { get; set; } = string.Empty;
-        public string IssuerTaxId { get; set; } = string.Empty;
-    }
 }

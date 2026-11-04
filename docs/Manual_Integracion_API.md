@@ -72,7 +72,8 @@ romper las existentes — ej. mañana `api/mx/sat/invoices`.
 \* El literal exacto de `ProfileID` para Extracto y Servicios Públicos se reconstruyó a partir de la descripción del catálogo — no se pudo confirmar carácter por carácter contra el anexo por un salto de línea en el PDF. Conviene validarlo contra el set de pruebas de habilitación antes de producción real.
 | **Sector Salud (RIPS, con factura)** | `/api/co/dian/health-invoices/rips` | POST | Pendiente (501) |
 | **Sector Transporte** | `/api/co/dian/transport-invoices` | POST | Disponible |
-| **Eventos (Acuses/Radian)**| `/api/co/dian/reception-events` | POST | Pendiente (501) |
+| **Facturas recibidas (RADIAN)** | `/api/co/dian/received-documents` | GET, POST | Disponible |
+| **Eventos RADIAN de una factura recibida** | `/api/co/dian/received-documents/{id}/events` y `/events/{030\|031\|032\|033}` | GET, POST | Disponible |
 | **RIPS independiente de factura** | `/api/co/minsalud/rips/emit` | POST | Disponible |
 | **Consulta de adquirente (nombre y correo por documento)** | `/api/co/dian/acquirers` | POST | Disponible |
 
@@ -276,6 +277,41 @@ El documento va en el cuerpo JSON y no en la URL, para que no quede en las bitá
   "message": "OK"
 }
 ```
+
+### 4.7 Facturas recibidas y eventos RADIAN (`/api/co/dian/received-documents`)
+Son las facturas que tus proveedores le emitieron a tu empresa. Registrar sobre ellas el acuse, el recibo del bien y la aceptación (o el reclamo) es lo que las convierte en título valor y las hace deducibles. Es el mismo motor del portal: el evento lo firma y envía la plataforma con el certificado del emisor (emisión directa) o por Dataico, según cómo esté configurado. Se ven los documentos de la sucursal dueña de la llave.
+
+**Ingresar una factura recibida** — `POST /api/co/dian/received-documents`
+
+```json
+{ "file": "<XML o ZIP en Base64>", "fileName": "factura.zip" }
+```
+
+- `file`: el XML de la factura, o el ZIP que manda el proveedor (con el XML y, si lo trae, el PDF). También se acepta el `AttachedDocument` de la DIAN. `fileName` es opcional.
+- Responde `201` con el `id`, el CUFE, el proveedor, el total y `isCredit`. Si el emisor tiene eventos configurados para enviarse solos, se disparan en esa misma llamada y vienen en `events`.
+- `409 DUPLICATE_RECEIVED_DOCUMENT` si ese CUFE ya estaba ingresado (trae el `id` existente). `400` si el archivo no se puede leer, no es Invoice/CreditNote/DebitNote o es un documento soporte.
+
+**Listar** — `GET /api/co/dian/received-documents?q=&cufe=&page=&pageSize=`: del más reciente al más antiguo, con el estado de cada evento. `q` busca por proveedor, NIT o número (todas las palabras, en cualquier orden); `cufe` trae uno exacto. `pageSize` máximo 100.
+
+**Registrar un evento** — `POST /api/co/dian/received-documents/{id}/events/{código}`, sin cuerpo:
+
+| Código | Evento |
+|---|---|
+| 030 | Acuse de recibo |
+| 031 | Reclamo |
+| 032 | Recibo del bien o servicio |
+| 033 | Aceptación expresa |
+
+- Solo aplican a facturas **a crédito** (`isCredit: true`); en otra forma de pago responde `422 NOT_CREDIT_INVOICE`.
+- Orden que exige la DIAN: el 030 primero; el 032 después del 030; el 033 y el 031 después de ambos, y son excluyentes entre sí. Fuera de orden responde `422 EVENT_REJECTED` sin enviar nada a la DIAN ni gastar consecutivo.
+- Un evento ya aceptado no se reenvía: la llamada devuelve el mismo (`200`). Un rechazo sí se puede reintentar.
+- `200` con `status` `SENT` (y el `cude` del evento) o `DUPLICATE`; `409 EVENT_IN_PROGRESS` si ese evento se está procesando; `422 INVALID_EVENT_CODE` / `EVENT_REJECTED` con el motivo en `message`.
+
+**Historial** — `GET /api/co/dian/received-documents/{id}/events`: cada intento con `id`, `code`, `status`, `cude`, `number` (consecutivo, solo Dataico), `message` (respuesta de la DIAN) y `sentAt`.
+
+**XML del evento** — `GET /api/co/dian/received-documents/{id}/events/{eventId}/file`, con el `id` del evento: devuelve el XML que se envió a la DIAN (`application/xml`). Con emisión directa es el que firma la plataforma, guardado desde este cambio (los eventos anteriores responden `404 EVENT_FILE_NOT_AVAILABLE`); con Dataico se baja del proveedor (`502` si no lo permite). Los eventos no tienen PDF.
+
+Hoy el reclamo (031) se envía sin concepto de reclamo y la aceptación tácita (034) no se envía desde la plataforma.
 
 ---
 

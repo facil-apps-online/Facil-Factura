@@ -16,7 +16,7 @@ namespace Fel.Core.Entities
         public Guid BranchId { get; set; }
         public Branch? Branch { get; set; }
 
-        public string SourceType { get; set; } = "Manual"; // "Manual" | "Email"
+        public string SourceType { get; set; } = "Manual"; // "Manual" | "Email" | "Api"
         public string RawXml { get; set; } = string.Empty;
         public byte[]? OriginalPdf { get; set; }
         public string? OriginalPdfFileName { get; set; }
@@ -55,6 +55,8 @@ namespace Fel.Core.Entities
         public string? DianResponseMessage { get; set; }
         public string? ProviderResponse { get; set; }
         public string? ProviderXmlUrl { get; set; }
+        // Solo emisión directa: el XML del evento ya firmado, tal como se envió a la DIAN. Con Dataico el XML se baja de ProviderXmlUrl.
+        public string? SignedXml { get; set; }
         public string? ProviderPdfUrl { get; set; }
         public DateTime SentAt { get; set; }
     }

@@ -173,6 +173,7 @@ namespace Fel.Infrastructure.Dian
                 return evt;
             }
 
+            evt.SignedXml = signedXml;
             try
             {
                 var dianResponse = await _dianSoapClient.SendEventUpdateStatusAsync($"AR{ublData.DocumentNumber}.xml", signedXml, cert, ublData.Environment);

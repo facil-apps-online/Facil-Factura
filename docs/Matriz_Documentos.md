@@ -56,8 +56,9 @@ Dataico no maneja documentos equivalentes: solo nativo.
 
 | Función | Portal nativo | Portal Dataico | API hoy |
 |---|---|---|---|
-| Acuse, recibo, aceptación expresa/tácita, reclamo | ✅ (firma con certificado propio) | ✅ (firma Dataico) | ❌ 501 |
-| Archivo del evento | — | ✅ XML (sin PDF) | ❌ |
+| Acuse, recibo, aceptación expresa, reclamo | ✅ (firma con certificado propio) | ✅ (firma Dataico) | ✅ `received-documents` (ingreso, lista, eventos 030–033, historial) |
+| Aceptación tácita (034) | ❌ | ❌ | ❌ |
+| Archivo del evento | ✅ XML firmado (guardado desde ahora) | ✅ XML (sin PDF) | ✅ `events/{eventId}/file` |
 
 ## 5. Consulta y entrega de archivos (API hoy)
 
@@ -77,4 +78,4 @@ Dataico no maneja documentos equivalentes: solo nativo.
 4. Nómina y documento soporte: el portal solo emite por Dataico; el nativo vive solo en la API. Hay que unificar.
 5. Equivalentes: solo nativo; definir si el portal los incorpora.
 6. `files` con Base64 real; `/pdf` autenticado y ligado al emisor.
-7. Resoluciones por API; eventos RADIAN por API.
+7. Resoluciones por API (hecho); eventos RADIAN por API (hecho).

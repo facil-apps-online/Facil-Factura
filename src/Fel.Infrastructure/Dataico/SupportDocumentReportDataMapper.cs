@@ -217,8 +217,9 @@ namespace Fel.Infrastructure.Dataico
                     ["ValorUnitario"] = Money(i.UnitPrice),
                     ["PorcentajeDescuento"] = Pct(i.DiscountRate),
                     ["TratamientoIva"] = i.IvaTreatment.ToString(),
-                    ["PorcentajeIva"] = Pct(i.TaxRate),
-                    ["ValorIva"] = Money(i.TaxAmount),
+                    // Un ítem excluido está fuera del ámbito del IVA: tarifa y valor en blanco (no "0%"). Un exento lleva su 0% y su valor.
+                    ["PorcentajeIva"] = i.IvaTreatment == IvaTreatment.Excluido ? null : Pct(i.TaxRate),
+                    ["ValorIva"] = i.IvaTreatment == IvaTreatment.Excluido ? null : Money(i.TaxAmount),
                     // "TotalLinea", no "Total": ver el comentario en InvoiceReportDataMapper.
                     ["TotalLinea"] = Money(i.TotalAmount)
                 }).ToList(),

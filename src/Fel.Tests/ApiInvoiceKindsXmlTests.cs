@@ -55,6 +55,17 @@ namespace Fel.Tests
                 Factory = new SimpleInvoiceFactory(Db);
             }
 
+            // El JSON que va a la representación gráfica (PDF) de lo que arma la fábrica.
+            public async Task<Dictionary<string, object?>> ReportAsync(DataicoInvoiceRequest request)
+            {
+                var result = await Factory.BuildAsync(request, Client, BranchId);
+                Assert.True(result.Error == null, result.Error == null ? "" : result.Error.Code + ": " + string.Join("; ", result.Error.Details ?? Array.Empty<string>()));
+                var document = result.Document!;
+                Client.Integrator = new Integrator { Id = Guid.NewGuid(), Code = "NATIVE", Name = "Nativo", Kind = IntegratorKind.DirectDian };
+                var resolution = Db.Resolutions.First(r => r.Id == document.ResolutionId);
+                return Fel.Infrastructure.Dataico.InvoiceReportDataMapper.Build(document, document.Customer, Client, EmitterLocation.For(Client, null), resolution, document.Items.ToList());
+            }
+
             public async Task<string> XmlAsync(DataicoInvoiceRequest request)
             {
                 var result = await Factory.BuildAsync(request, Client, BranchId);
@@ -140,6 +151,32 @@ namespace Fel.Tests
             var xml = await new Env().XmlAsync(Request(r => r.invoice_type_code = "FACTURA_EXPORTACION"));
             Assert.DoesNotContain("DeliveryTerms", xml);
             AssertConforms(xml);
+        }
+
+        // En la representación gráfica, un ítem excluido (sin IVA) lleva la tarifa y el valor del IVA en blanco; el exento muestra su 0% y el gravado su tarifa.
+        [Fact]
+        public async Task The_graphic_representation_leaves_the_vat_blank_for_excluded_items_only()
+        {
+            var report = await new Env().ReportAsync(Request(r =>
+            {
+                r.items.Clear();
+                r.items.Add(new DataicoInvoiceItem { sku = "G", description = "Gravado", quantity = 1, price = 10000, taxes = { new DataicoTax { tax_category = "IVA", tax_rate = 19 } } });
+                r.items.Add(new DataicoInvoiceItem { sku = "E", description = "Exento", quantity = 1, price = 10000, taxes = { new DataicoTax { tax_category = "IVA", tax_rate = 0 } } });
+                r.items.Add(new DataicoInvoiceItem { sku = "X", description = "Excluido", quantity = 1, price = 10000 });
+            }));
+
+            var lines = ((IEnumerable<Dictionary<string, object?>>)report["Items"]!).ToDictionary(l => (string)l["Codigo"]!);
+            Assert.Equal("Gravado", lines["G"]["TratamientoIva"]);
+            Assert.Equal("19%", lines["G"]["PorcentajeIva"]);
+            Assert.NotNull(lines["G"]["ValorIva"]);
+
+            Assert.Equal("Exento", lines["E"]["TratamientoIva"]);
+            Assert.Equal("0%", lines["E"]["PorcentajeIva"]);
+            Assert.NotNull(lines["E"]["ValorIva"]);
+
+            Assert.Equal("Excluido", lines["X"]["TratamientoIva"]);
+            Assert.Null(lines["X"]["PorcentajeIva"]);
+            Assert.Null(lines["X"]["ValorIva"]);
         }
 
         private static DataicoHealthData Health(Action<DataicoHealthData>? tweak = null)

@@ -368,8 +368,10 @@ namespace Fel.Infrastructure.Dataico
                     // ámbito del impuesto) y uno Gravado casualmente al 0% se imprimían idénticos
                     // (ambos con "0%" y sin IVA), sin forma de distinguirlos en el comprobante.
                     ["TratamientoIva"] = i.IvaTreatment.ToString(),
-                    ["PorcentajeIva"] = Pct(i.TaxRate),
-                    ["ValorIva"] = Money(i.TaxAmount),
+                    // Un ítem excluido está fuera del ámbito del IVA: tarifa y valor van en blanco (no "0%"), como en la factura. Un exento sí
+                    // lleva su 0% y su valor.
+                    ["PorcentajeIva"] = i.IvaTreatment == IvaTreatment.Excluido ? null : Pct(i.TaxRate),
+                    ["ValorIva"] = i.IvaTreatment == IvaTreatment.Excluido ? null : Money(i.TaxAmount),
                     ["TotalLinea"] = Money(i.TotalAmount),
                     // Factura de mandato: mandante de la línea, y el texto que se imprime bajo la descripción (como en la
                     // representación gráfica de Dataico: "Mandante NIT: 800168654"). Vacíos en cualquier otra factura.

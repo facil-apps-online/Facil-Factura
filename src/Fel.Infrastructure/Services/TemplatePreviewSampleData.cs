@@ -38,8 +38,8 @@ namespace Fel.Infrastructure.Services
             Dictionary<string, object?> Line(string ordinal, string code, string name, string value, string iva, string pct, string? aiuPct) => new()
             {
                 ["Ordinal"] = ordinal, ["Codigo"] = code, ["Nombre"] = name, ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = value,
-                ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = iva == "0%" ? "Excluido" : "Gravado", ["PorcentajeIva"] = iva,
-                ["ValorIva"] = pct, ["TotalLinea"] = value, ["PorcentajeAiu"] = aiuPct,
+                ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = iva == "0%" ? "Excluido" : "Gravado", ["PorcentajeIva"] = iva == "0%" ? null : iva,
+                ["ValorIva"] = iva == "0%" ? null : pct, ["TotalLinea"] = value, ["PorcentajeAiu"] = aiuPct,
                 ["Marca"] = null, ["Modelo"] = null, ["PartidaArancelaria"] = null, ["MandanteNombre"] = null, ["MandanteIdentificacion"] = null, ["MandanteTexto"] = null
             };
             data["Items"] = new List<Dictionary<string, object?>>
@@ -148,7 +148,7 @@ namespace Fel.Infrastructure.Services
                 {
                     new() { ["Ordinal"] = "1", ["Codigo"] = "PRD001", ["Nombre"] = "Producto de ejemplo A", ["Cantidad"] = "2", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "50.000", ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = "Gravado", ["PorcentajeIva"] = "19%", ["ValorIva"] = "19.000", ["TotalLinea"] = "119.000" },
                     new() { ["Ordinal"] = "2", ["Codigo"] = "PRD002", ["Nombre"] = "Servicio de asistencia técnica agropecuaria mediante la metodología de taller de fortalecimiento socioempresarial dirigido a los productores de la Asociación de Mujeres Campesinas — nombre de ejemplo intencionalmente largo para probar el crecimiento de la celda", ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "68.000", ["PorcentajeDescuento"] = "10%", ["TratamientoIva"] = "Gravado", ["PorcentajeIva"] = "19%", ["ValorIva"] = "12.920", ["TotalLinea"] = "80.920" },
-                    new() { ["Ordinal"] = "3", ["Codigo"] = "PRD003", ["Nombre"] = "Producto de ejemplo C (excluido)", ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "30.000", ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = "Excluido", ["PorcentajeIva"] = "0%", ["ValorIva"] = "0", ["TotalLinea"] = "30.000" }
+                    new() { ["Ordinal"] = "3", ["Codigo"] = "PRD003", ["Nombre"] = "Producto de ejemplo C (excluido)", ["Cantidad"] = "1", ["Unidad"] = "94 - EA", ["ValorUnitario"] = "30.000", ["PorcentajeDescuento"] = "0%", ["TratamientoIva"] = "Excluido", ["PorcentajeIva"] = null, ["ValorIva"] = null, ["TotalLinea"] = "30.000" }
                 }, esMandato, esExportacion),
 
                 // Mismo shape que InvoiceReportDataMapper.Build: una fila por observación, en su orden.

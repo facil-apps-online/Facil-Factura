@@ -62,6 +62,8 @@ namespace Fel.Api.Integration.Controllers
             if (forcedOperation != null) request.operation = forcedOperation;
             else if (string.Equals(request.operation, "POS", StringComparison.OrdinalIgnoreCase))
                 return BadRequest(new { code = "VALIDATION_ERROR", message = "El documento equivalente POS se emite en POST /api/co/dian/equivalent-documents/pos.", details = new[] { "operation: POS no aplica en este endpoint." } });
+            else if (SimpleInvoiceFactory.IsHealth(request))
+                return BadRequest(new { code = "VALIDATION_ERROR", message = "La factura del sector salud se emite en POST /api/co/dian/health-invoices.", details = new[] { "operation: SALUD no aplica en este endpoint." } });
 
             var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
             if (client == null) return Unauthorized(new { code = "INVALID_API_KEY", message = "Emisor no encontrado." });
@@ -80,6 +82,8 @@ namespace Fel.Api.Integration.Controllers
             if (built.ExistingLocked != null) return AlreadyExists(built.ExistingLocked);
 
             var document = built.Document!;
+            var hookError = await ValidateBuiltAsync(request, client, document);
+            if (hookError != null) return Problem(hookError);
             document.SuppressEmail = suppressEmail;
             if (!built.Reused) _dbContext.Documents.Add(document);
             await _dbContext.SaveChangesAsync();
@@ -113,7 +117,8 @@ namespace Fel.Api.Integration.Controllers
                 object? files = string.Equals(Request.Query["include"], "files", StringComparison.OrdinalIgnoreCase) && document.Status == "APPROVED"
                     ? await DocumentFilesBuilder.BuildAsync(_dbContext, _pdf, document.Id, clientId)
                     : null;
-                return Created($"/api/co/dian/documents/{document.Id}", Summary(document, built.Warnings, outcome.Warning, files));
+                var extra = await AfterIssuedAsync(request, client, document, branchId);
+                return Created($"/api/co/dian/documents/{document.Id}", Summary(document, built.Warnings, outcome.Warning, files, extra));
             }
 
             return outcome.Kind switch
@@ -134,25 +139,31 @@ namespace Fel.Api.Integration.Controllers
         private static bool SuppressesEmail(JsonElement payload) =>
             payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("send_email", out var flag) && flag.ValueKind == JsonValueKind.False;
 
-        private static object Summary(Document d, List<string> warnings, string? warning, object? files)
+        // Puntos de extensión de los endpoints que agregan algo propio a la emisión (la factura de salud valida el RIPS antes y lo envía después).
+        protected virtual Task<ApiError?> ValidateBuiltAsync(DataicoInvoiceRequest request, Client client, Document document) => Task.FromResult<ApiError?>(null);
+        protected virtual Task<(string Key, object Value)?> AfterIssuedAsync(DataicoInvoiceRequest request, Client client, Document document, Guid branchId) => Task.FromResult<(string, object)?>(null);
+
+        private static object Summary(Document d, List<string> warnings, string? warning, object? files, (string Key, object Value)? extra = null)
         {
             var all = new List<string>(warnings);
             if (!string.IsNullOrWhiteSpace(warning)) all.Add(warning);
-            return new
+            var body = new Dictionary<string, object?>
             {
-                id = d.Id,
-                type = d.TypeCode,
-                number = FullNumber(d),
-                issueDate = d.IssueDate,
-                total = d.TotalAmount,
-                status = d.Status,
-                cufe = d.Cufe,
-                qr = d.QrCode,
-                dianResponse = DataicoDianOutcome.Readable(d.DianResponseMessage),
-                links = DocumentFilesBuilder.Links(d.Id),
-                files,
-                warnings = all
+                ["id"] = d.Id,
+                ["type"] = d.TypeCode,
+                ["number"] = FullNumber(d),
+                ["issueDate"] = d.IssueDate,
+                ["total"] = d.TotalAmount,
+                ["status"] = d.Status,
+                ["cufe"] = d.Cufe,
+                ["qr"] = d.QrCode,
+                ["dianResponse"] = DataicoDianOutcome.Readable(d.DianResponseMessage),
+                ["links"] = DocumentFilesBuilder.Links(d.Id),
+                ["files"] = files,
+                ["warnings"] = all
             };
+            if (extra.HasValue) body[extra.Value.Key] = extra.Value.Value;
+            return body;
         }
 
         private static object Rejected(Document d, string code, string? message, string? detail) => new

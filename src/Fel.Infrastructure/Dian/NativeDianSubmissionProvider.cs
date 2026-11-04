@@ -173,6 +173,16 @@ namespace Fel.Infrastructure.Dian
                         throw new NotSupportedException("El documento equivalente POS debe indicar los datos de la caja: placa, ubicación, cajero, tipo de caja y código de venta.");
                     filePrefix = Fel.Infrastructure.Services.DianFileNaming.DocumentoEquivalente;
                 }
+
+                // Factura del sector salud: sin los datos de salud válidos el Ministerio no podría soportarla con el RIPS.
+                if (documentType?.Code == "FE-SALUD")
+                {
+                    var healthErrors = Fel.Core.Models.HealthCatalogs.Validate(ublData.OperationType, ublData.Health, ublData.PayableAmount);
+                    if (ublData.Health == null && !Fel.Core.Models.HealthCatalogs.OperationsWithExtension.Contains(ublData.OperationType))
+                        healthErrors.Add("La factura del sector salud debe traer sus datos de salud (período y tipo de operación).");
+                    if (healthErrors.Count > 0)
+                        throw new NotSupportedException("Factura del sector salud inválida: " + string.Join(" ", healthErrors));
+                }
             }
 
             return await SignAndSendAsync(invoice, client, certificate!, cert!, ublData, filePrefix);

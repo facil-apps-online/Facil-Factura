@@ -22,6 +22,7 @@ namespace Fel.Infrastructure.Data
         public DbSet<EmailOutbox> EmailOutbox => Set<EmailOutbox>();
         public DbSet<PlatformEmailSettings> PlatformEmailSettings => Set<PlatformEmailSettings>();
         public DbSet<DocumentSignedXml> DocumentSignedXmls => Set<DocumentSignedXml>();
+        public DbSet<DocumentRips> DocumentRips => Set<DocumentRips>();
         public DbSet<CertificateEvent> CertificateEvents => Set<CertificateEvent>();
         public DbSet<Document> Documents => Set<Document>();
         public DbSet<ReceivedDocument> ReceivedDocuments => Set<ReceivedDocument>();
@@ -521,6 +522,16 @@ namespace Fel.Infrastructure.Data
                 entity.HasKey(e => e.DocumentId);
                 entity.Property(e => e.DocumentId).ValueGeneratedNever();
                 entity.HasOne(e => e.Document).WithOne().HasForeignKey<DocumentSignedXml>(e => e.DocumentId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<DocumentRips>(entity =>
+            {
+                entity.ToTable("DocumentRips");
+                entity.HasKey(e => e.DocumentId);
+                entity.Property(e => e.DocumentId).ValueGeneratedNever();
+                entity.Property(e => e.Status).HasMaxLength(20).IsRequired();
+                entity.Property(e => e.Cuv).HasMaxLength(128);
+                entity.HasOne(e => e.Document).WithOne().HasForeignKey<DocumentRips>(e => e.DocumentId).OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<PlatformEmailSettings>(entity =>

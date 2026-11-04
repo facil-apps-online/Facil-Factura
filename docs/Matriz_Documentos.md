@@ -1,6 +1,6 @@
 # Matriz de documentos: qué emite el sistema y por dónde
 
-> Estado: **inventario al 2026-11-01** (levantado leyendo el código; no se probó cada flujo contra la DIAN).
+> Estado: **inventario al 2026-11-01**, actualizado el 2026-11-04 (levantado leyendo el código; no se probó cada flujo contra la DIAN).
 > Sirve como guía de referencia para la simplificación de la API de integración.
 
 Leyenda: ✅ funciona · ⚠️ por verificar · ❌ no existe · — no aplica
@@ -18,7 +18,7 @@ Leyenda: ✅ funciona · ⚠️ por verificar · ❌ no existe · — no aplica
 | Factura AIU | FE-AIU | 01 / op 09 | ✅ | ✅ | ⚠️ | Exige objeto del contrato y líneas A, I, U |
 | Factura de exportación | FE-EXP | 02 / op 10 | ✅ | ✅ | ⚠️ | |
 | Factura de transporte | FE-TRANSP | 01 / op 15 | ❌ (no está en `SupportedDianCodes`) | ❌ (solo directo) | ✅ 202, solo NATIVE | |
-| Factura sector salud (RIPS) | FE-SALUD | 01 / op 10 | ❌ | ❌ | ❌ 501 | |
+| Factura sector salud (RIPS) | FE-SALUD | 01 / SS-* | ❌ | ❌ (solo directo) | ✅ síncrono 201, solo NATIVE (`/health-invoices`) | Extensión de salud, período y recaudos en el XML; el RIPS viaja en el mismo JSON o aparte y devuelve el CUV. Sin notas de salud (op. 20 y 30) ni portal todavía |
 | Contingencia facturador / DIAN | FC-FACT, FC-DIAN | 03 / 04 | ❌ | ❌ | ❌ sin endpoint | Definir si se expone |
 | Nota crédito | NC | 91 | ✅ (con y sin factura) | ✅ (con y sin factura) | ✅ síncrono 201, Dataico y NATIVE; con y sin factura | Sin factura: `customer` + `items` + `reason` |
 | Nota débito | ND | 92 | ✅ (solo con factura) | ✅ (solo con factura) | ✅ síncrono 201, Dataico y NATIVE; solo con factura | Sin factura: pendiente (motor nativo y confirmar Dataico) |
@@ -64,18 +64,20 @@ Dataico no maneja documentos equivalentes: solo nativo.
 
 | Función | Estado |
 |---|---|
-| Estado por `TrackingId` (prefijo + número) | ✅ pero no por UUID |
-| XML / PDF en Base64 (`/files`) | ⚠️ devuelve la URL guardada o `"PdfNoDisponible"`, no Base64 real |
-| Resoluciones por API (listar / sincronizar) | ❌ solo en el portal |
+| Estado por UUID (`GET /documents/{id}`) | ✅ |
+| PDF, XML, respuesta de la DIAN y AttachedDocument en Base64 (`/files`, o `?include=files` al emitir) | ✅ |
+| Descarga directa del PDF y del XML (`/pdf`, `/xml`) | ✅ |
+| Envío por correo con PDF propio (`POST /documents/{id}/send`) | ✅ |
+| Resoluciones por API (listar / sincronizar) | ✅ |
 | Consulta de adquirente | ✅ solo NATIVE |
-| Documentos emitidos por API visibles en el portal | ⚠️ solo los que pasan por el worker (cola); los síncronos por verificar |
+| Documentos emitidos por API visibles en el portal | ✅ los síncronos se guardan como `Document` del emisor |
 
 ## 6. Resumen de brechas que cierra el rediseño
 
 1. Todos los endpoints de factura aceptan el integrador del emisor (nativo o Dataico), no solo NATIVE.
-2. Respuesta uniforme `202 + UUID` y consulta por UUID.
-3. Todo documento emitido por API queda como `Document` y se ve en el portal.
+2. Respuesta uniforme con UUID y consulta por UUID (hecho: la emisión es síncrona y responde `201` con el `id`).
+3. Todo documento emitido por API queda como `Document` y se ve en el portal (hecho en los tipos síncronos).
 4. Nómina y documento soporte: el portal solo emite por Dataico; el nativo vive solo en la API. Hay que unificar.
 5. Equivalentes: solo nativo; definir si el portal los incorpora.
-6. `files` con Base64 real; `/pdf` autenticado y ligado al emisor.
+6. `files` con Base64 real; `/pdf` autenticado y ligado al emisor (hecho).
 7. Resoluciones por API (hecho); eventos RADIAN por API (hecho).

@@ -42,6 +42,7 @@ namespace Fel.Api.Integration.Services
         public const string ExportInvoice = "FE-EXP";
         public const string AiuInvoice = "FE-AIU";
         public const string PosDocument = "DE-POS";
+        public const string HealthInvoice = "FE-SALUD";
 
         private readonly FelDbContext _db;
 
@@ -64,10 +65,11 @@ namespace Fel.Api.Integration.Services
             var isExport = string.Equals(request.invoice_type_code, "FACTURA_EXPORTACION", StringComparison.OrdinalIgnoreCase);
             var isAiu = IsAiu(request);
             var isPos = IsPos(request);
-            if ((isAiu || isPos) && (isExport || isMandate))
+            var isHealth = IsHealth(request);
+            if ((isAiu || isPos || isHealth) && (isExport || isMandate))
                 return Fail(400, "VALIDATION_ERROR", "Este tipo de documento no puede ser a la vez de exportación o de mandato.");
 
-            var typeCode = isPos ? PosDocument : isExport ? ExportInvoice : isMandate ? MandateInvoice : isAiu ? AiuInvoice : StandardInvoice;
+            var typeCode = isHealth ? HealthInvoice : isPos ? PosDocument : isExport ? ExportInvoice : isMandate ? MandateInvoice : isAiu ? AiuInvoice : StandardInvoice;
             var documentType = await _db.DocumentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Code == typeCode && t.IsActive);
             if (documentType == null)
                 return Fail(422, "DOCUMENT_TYPE_UNAVAILABLE", $"El tipo de documento {typeCode} no está disponible.");
@@ -127,7 +129,7 @@ namespace Fel.Api.Integration.Services
             document.PaymentMeansType = request.payment_means_type.Trim().ToUpperInvariant();
             document.PaymentMeans = paymentMeansResult.Category;
             document.PurchaseOrderReference = string.IsNullOrWhiteSpace(request.order_reference) ? null : request.order_reference.Trim();
-            document.SectorExtensionData = isAiu ? AiuExtensionData(request.aiu!, itemsResult.Items) : isPos ? PosExtensionData(request.pos!) : "{}";
+            document.SectorExtensionData = isAiu ? AiuExtensionData(request.aiu!, itemsResult.Items) : isPos ? PosExtensionData(request.pos!) : isHealth ? HealthExtensionData(request.health!, issueDate) : "{}";
             var dueDate = ParseDate(request.payment_date);
             document.PaymentTermDays = dueDate.HasValue ? Math.Max(0, (int)(dueDate.Value.Date - issueDate.Date).TotalDays) : null;
 
@@ -171,6 +173,11 @@ namespace Fel.Api.Integration.Services
             // El servidor calcula los totales con las mismas fórmulas del portal; el integrador no los envía.
             DocumentTotalsCalculator.Apply(document, document.Items);
 
+            // Los recaudos del sector salud son informativos y no pueden superar el total de la factura (lo calcula el servidor, por eso se valida aquí).
+            if (isHealth && HealthSectorData.TryRead(document.SectorExtensionData) is { } healthData && healthData.Prepaid.Sum(x => x.Amount) > document.TotalAmount)
+                return Fail(400, "VALIDATION_ERROR", "El documento tiene datos inválidos o faltantes. Revisa el detalle de cada campo.",
+                    new[] { string.Create(CultureInfo.InvariantCulture, $"health: la suma de los recaudos ({healthData.Prepaid.Sum(x => x.Amount):0.00}) no puede superar el total de la factura ({document.TotalAmount:0.00}).") });
+
             // En un documento ya guardado, las filas nuevas traen su Id y EF las tomaría como existentes (UPDATE sobre filas que no están);
             // se marcan como nuevas para que se inserten.
             if (existing != null)
@@ -188,6 +195,44 @@ namespace Fel.Api.Integration.Services
         }
 
         private static bool IsPos(DataicoInvoiceRequest r) => string.Equals(r.operation, "POS", StringComparison.OrdinalIgnoreCase);
+
+        private static string HealthExtensionData(DataicoHealthData h, DateTime issueDate) => ReadHealth(h, issueDate, new List<string>())!.ToExtensionData();
+
+        public static bool IsHealth(DataicoInvoiceRequest r) => string.Equals(r.operation, "SALUD", StringComparison.OrdinalIgnoreCase);
+
+        // Convierte el bloque health de la petición (fechas dd/MM/yyyy o yyyy-MM-dd) en los datos de salud del documento; los errores de formato van a problems.
+        public static HealthSectorData? ReadHealth(DataicoHealthData h, DateTime issueDate, List<string> problems)
+        {
+            var start = ParseDate(h.period_start);
+            var end = ParseDate(h.period_end);
+            if (start == null) problems.Add("health.period_start: es obligatorio, con formato dd/MM/yyyy.");
+            if (end == null) problems.Add("health.period_end: es obligatorio, con formato dd/MM/yyyy.");
+            var collectionDate = string.IsNullOrWhiteSpace(h.collection_date) ? issueDate : ParseDate(h.collection_date);
+            if (collectionDate == null) { problems.Add("health.collection_date: formato inválido, usa dd/MM/yyyy."); collectionDate = issueDate; }
+            if (start == null || end == null) return null;
+
+            var data = new HealthSectorData
+            {
+                OperationType = string.IsNullOrWhiteSpace(h.operation_type) ? "SS-CUFE" : h.operation_type.Trim(),
+                ProviderCode = (h.provider_code ?? string.Empty).Trim(),
+                PaymentModality = (h.payment_modality ?? string.Empty).Trim(),
+                Coverage = (h.coverage ?? string.Empty).Trim(),
+                ContractNumber = string.IsNullOrWhiteSpace(h.contract_number) ? null : h.contract_number.Trim(),
+                PolicyNumber = string.IsNullOrWhiteSpace(h.policy_number) ? null : h.policy_number.Trim(),
+                NoContractReason = string.IsNullOrWhiteSpace(h.no_contract_reason) ? null : h.no_contract_reason.Trim(),
+                PeriodStart = start.Value.Date,
+                PeriodEnd = end.Value.Date
+            };
+            if (!HealthCatalogs.OperationTypes.Contains(data.OperationType))
+                problems.Add($"health.operation_type: '{data.OperationType}' no es válido ({string.Join(", ", HealthCatalogs.OperationTypes)}).");
+            void Collection(string concept, decimal? amount)
+            {
+                if (amount is > 0) data.Prepaid.Add(new HealthPrepaid { ConceptCode = concept, Amount = amount.Value, ReceivedDate = collectionDate.Value.Date });
+                else if (amount is < 0) problems.Add("health: los recaudos no pueden ser negativos.");
+            }
+            Collection("01", h.copayment); Collection("02", h.moderator_fee); Collection("03", h.shared_payments); Collection("04", h.advance);
+            return data;
+        }
 
         private static string PosExtensionData(DataicoPosData x) =>
             System.Text.Json.JsonSerializer.Serialize(new
@@ -295,7 +340,17 @@ namespace Fel.Api.Integration.Services
                     p.Add("customer: falta el nombre; envía company_name, o first_name y family_name.");
             }
 
-            if (IsPos(r))
+            if (IsHealth(r))
+            {
+                if (r.health == null) p.Add("health: es obligatorio en la factura del sector salud; indica el prestador, la modalidad de pago, la cobertura y el período.");
+                else
+                {
+                    var read = ReadHealth(r.health, ParseDate(r.issue_date) ?? ColombiaTime.Now, p);
+                    if (read != null) p.AddRange(HealthCatalogs.Validate(read.OperationType, read, decimal.MaxValue).Select(e => "health: " + e));
+                }
+                if (r.items == null || r.items.Count == 0) p.Add("items: debe traer al menos una línea.");
+            }
+            else if (IsPos(r))
             {
                 var x = r.pos;
                 if (x == null) p.Add("pos: es obligatorio en el documento equivalente POS; indica la placa, ubicación, cajero, tipo de caja y código de venta.");

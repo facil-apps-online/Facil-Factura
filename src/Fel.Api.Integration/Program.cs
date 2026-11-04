@@ -147,6 +147,11 @@ builder.Services.AddScoped<Fel.Core.Interfaces.ISupportDocumentSubmissionProvide
 builder.Services.AddScoped<Fel.Infrastructure.Services.SupportDocumentPublishingService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.InvoicePublishingService>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IReceptionEventService, Fel.Infrastructure.Dian.ReceptionEventService>();
+// RIPS soporte de la factura de salud: cliente del MUV del Ministerio (corre en el VPS de Bogotá, por el túnel WireGuard).
+// PENDIENTE de decidir: el MUV usa un certificado autofirmado y aquí todavía no se configura cómo confiar en él (ver el registro en el API del tenant).
+// Tope de espera: con el VPS del Ministerio apagado la emisión de la factura no debe quedarse esperando; el RIPS queda PENDING y se reenvía.
+builder.Services.AddHttpClient<Fel.Infrastructure.MinSalud.IMinSaludFevRipsClient, Fel.Infrastructure.MinSalud.MinSaludFevRipsClient>(c => c.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddScoped<Fel.Infrastructure.MinSalud.IHealthRipsService, Fel.Infrastructure.MinSalud.HealthRipsService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.DocumentPdfService>();
 // Correo saliente propio (nativo): bandeja de salida con aviso por Redis; el worker lo envía por el SMTP del cliente, el del tenant o SendPulse.
 builder.Services.AddSingleton<Fel.Core.Interfaces.IEmailSignal, Fel.Infrastructure.Messaging.RedisEmailSignal>();

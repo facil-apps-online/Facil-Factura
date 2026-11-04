@@ -62,7 +62,7 @@ namespace Fel.Tests
             return errors.Where(e => !e.Contains("SignaturePlaceholder") && !e.Contains("'schemeID' attribute is invalid")).ToList();
         }
 
-        private static UblInvoiceData Sample(string dianCode, string operationType = "10")
+        internal static UblInvoiceData Sample(string dianCode, string operationType = "10")
         {
             var now = new DateTime(2026, 11, 2, 10, 30, 0);
             var data = new UblInvoiceData

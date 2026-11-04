@@ -139,7 +139,67 @@ namespace Fel.Infrastructure.Ubl.Strategies
             // La firma debe seguir siendo la segunda extensión (el firmador la busca ahí); las propias del POS van después.
             foreach (var extra in BuildPosExtensions(data))
                 extensions.Add(new XElement(ext + "UBLExtension", new XElement(ext + "ExtensionContent", extra)));
+            // La del sector salud también va después de la firma, como el CustomTagGeneral de los ejemplos oficiales de la DIAN.
+            foreach (var extra in BuildHealthExtensions(data))
+                extensions.Add(new XElement(ext + "UBLExtension", new XElement(ext + "ExtensionContent", extra)));
             return extensions;
+        }
+
+        // Extensión del Sector Salud (Documento Técnico 2 del Ministerio de Salud, numeral 5): CustomTagGeneral/Interoperabilidad/Group "Sector Salud"
+        // con una Collection "Usuario" de pares Name/Value. Solo la llevan los tipos de operación SS-CUFE, SS-CUDE, SS-POS y SS-SNum; SS-Recaudo no.
+        protected static IEnumerable<XElement> BuildHealthExtensions(UblInvoiceData data)
+        {
+            if (data.Health == null || !HealthCatalogs.OperationsWithExtension.Contains(data.OperationType)) yield break;
+            var health = data.Health;
+
+            // Como en el POS, los elementos propios heredan el espacio de nombres por defecto del Invoice.
+            XNamespace doc = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
+            XElement Item(string name, string value, string? schemeName = null, string? schemeId = null)
+            {
+                var v = new XElement(doc + "Value", value);
+                if (schemeName != null) v.Add(new XAttribute("schemeName", schemeName));
+                if (schemeId != null) v.Add(new XAttribute("schemeID", schemeId));
+                return new XElement(doc + "AdditionalInformation", new XElement(doc + "Name", name), v);
+            }
+
+            var collection = new XElement(doc + "Collection", new XAttribute("schemeName", "Usuario"),
+                Item("CODIGO_PRESTADOR", health.ProviderCode),
+                Item("MODALIDAD_PAGO", health.PaymentModality, "salud_modalidad_pago.gc", health.PaymentModality),
+                Item("COBERTURA_PLAN_BENEFICIOS", health.Coverage, "salud_cobertura.gc", health.Coverage));
+            // Contrato y póliza son excluyentes; sin ninguno va la causa de la factura sin contrato.
+            if (!string.IsNullOrWhiteSpace(health.ContractNumber)) collection.Add(Item("NUMERO_CONTRATO", health.ContractNumber));
+            else if (!string.IsNullOrWhiteSpace(health.PolicyNumber)) collection.Add(Item("NUMERO_POLIZA", health.PolicyNumber));
+            if (!string.IsNullOrWhiteSpace(health.NoContractReason)) collection.Add(Item("FACTURA_SIN_CONTRATO", health.NoContractReason, "salud_factura_sin_contrato.gc", health.NoContractReason));
+
+            yield return new XElement(doc + "CustomTagGeneral",
+                new XElement(doc + "Interoperabilidad",
+                    new XElement(doc + "Group", new XAttribute("schemeName", "Sector Salud"), collection)));
+        }
+
+        // Período de prestación de los servicios de salud (cac:InvoicePeriod): obligatorio en las facturas del sector salud. Va después de
+        // LineCountNumeric (secuencia UBL).
+        protected static IEnumerable<XElement> BuildHealthPeriod(UblInvoiceData data)
+        {
+            if (data.Health == null || !data.OperationType.StartsWith("SS-")) yield break;
+            yield return new XElement(cac + "InvoicePeriod",
+                new XElement(cbc + "StartDate", data.Health.PeriodStart.ToString("yyyy-MM-dd")),
+                new XElement(cbc + "EndDate", data.Health.PeriodEnd.ToString("yyyy-MM-dd")));
+        }
+
+        // Recaudos del usuario (cac:PrepaidPayment, uno por concepto, ID consecutivo desde 1 con el concepto en schemeID). Son informativos:
+        // no restan al total de la factura. Va después de PaymentMeans y antes de los descuentos y cargos (secuencia UBL).
+        protected static IEnumerable<XElement> BuildHealthPrepaid(UblInvoiceData data)
+        {
+            if (data.Health == null || !data.OperationType.StartsWith("SS-")) yield break;
+            var n = 0;
+            foreach (var p in data.Health.Prepaid)
+            {
+                n++;
+                yield return new XElement(cac + "PrepaidPayment",
+                    new XElement(cbc + "ID", new XAttribute("schemeID", p.ConceptCode), n.ToString()),
+                    new XElement(cbc + "PaidAmount", new XAttribute("currencyID", "COP"), p.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)),
+                    new XElement(cbc + "ReceivedDate", p.ReceivedDate.ToString("yyyy-MM-dd")));
+            }
         }
 
         // Documento Equivalente POS (Anexo Técnico, numerales 8.2.1.1 y 8.2.1.2 / 10.2.1.1 y 10.2.1.2): beneficios del comprador (solo si el
@@ -462,6 +522,9 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 if (charges > 0)
                     total.Add(new XElement(cbc + "ChargeTotalAmount", new XAttribute("currencyID", data.Currency), charges.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)));
             }
+            // Total de los recaudos del sector salud: informativo, no resta a lo que se cobra (va antes de PayableAmount, secuencia UBL).
+            if (includeAllowances && data.Health != null && data.OperationType.StartsWith("SS-") && data.Health.Prepaid.Count > 0)
+                total.Add(new XElement(cbc + "PrepaidAmount", new XAttribute("currencyID", data.Currency), data.Health.Prepaid.Sum(p => p.Amount).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)));
             total.Add(new XElement(cbc + "PayableAmount", new XAttribute("currencyID", data.Currency), data.PayableAmount.ToString("0.00").Replace(",", ".")));
             return total;
         }

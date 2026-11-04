@@ -342,6 +342,13 @@ namespace Fel.Infrastructure.Dian
                 data.Pos = PosSaleData.TryRead(document.SectorExtensionData);
             }
 
+            // Factura del sector salud: el tipo de operación (SS-*) y la extensión de salud salen de los datos guardados con el documento.
+            if (documentType?.Code == "FE-SALUD")
+            {
+                data.Health = HealthSectorData.TryRead(document.SectorExtensionData);
+                if (data.Health != null) data.OperationType = data.Health.OperationType;
+            }
+
             return data;
         }
 

@@ -121,6 +121,9 @@
       - Certificates__RsaKeySize=${CERTIFICATES_RSA_KEY_SIZE}
       # PDF de los documentos por UUID: las plantillas viven en Facil Reports.
       - FacilReports__ApiKey=${FACIL_REPORTS_API_KEY}
+      # RIPS soporte de la factura de salud: mismo MUV del Ministerio que usa el API del tenant (VPS de Bogotá por el túnel WireGuard).
+      - MinSalud__MuvProductionUrl=https://10.10.0.2:9443
+      - MinSalud__MuvTestUrl=https://10.10.0.2:9444
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates

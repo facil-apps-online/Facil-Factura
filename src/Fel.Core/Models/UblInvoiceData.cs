@@ -34,6 +34,9 @@ namespace Fel.Core.Models
         // Documento Equivalente POS (DianCode "20"): datos de la caja y beneficios del comprador que van en extensiones propias del XML.
         public PosSaleData? Pos { get; set; }
 
+        // Factura del sector salud (CustomizationID SS-*): extensión "Sector Salud", período facturado y recaudos del usuario.
+        public HealthSectorData? Health { get; set; }
+
         public IssuerData Issuer { get; set; } = new IssuerData();
         public CustomerData Customer { get; set; } = new CustomerData();
         

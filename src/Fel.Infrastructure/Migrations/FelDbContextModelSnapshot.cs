@@ -2580,6 +2580,47 @@ namespace Fel.Infrastructure.Migrations
                     b.ToTable("DocumentRetentions", (string)null);
                 });
 
+            modelBuilder.Entity("Fel.Core.Entities.DocumentRips", b =>
+                {
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Cuv")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Message")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("ProcessId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ResponseJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RipsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("DocumentId");
+
+                    b.ToTable("DocumentRips", (string)null);
+                });
+
             modelBuilder.Entity("Fel.Core.Entities.DocumentSignedXml", b =>
                 {
                     b.Property<Guid>("DocumentId")
@@ -7972,6 +8013,17 @@ namespace Fel.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("DocumentItem");
+                });
+
+            modelBuilder.Entity("Fel.Core.Entities.DocumentRips", b =>
+                {
+                    b.HasOne("Fel.Core.Entities.Document", "Document")
+                        .WithOne()
+                        .HasForeignKey("Fel.Core.Entities.DocumentRips", "DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Document");
                 });
 
             modelBuilder.Entity("Fel.Core.Entities.DocumentSignedXml", b =>

@@ -40,7 +40,8 @@ namespace Fel.Tests
                 Db.DocumentTypes.AddRange(
                     new DocumentType { Id = Guid.NewGuid(), Code = "FE-STD", Name = "Factura", IsActive = true, DianCode = "01", OperationType = "10" },
                     new DocumentType { Id = Guid.NewGuid(), Code = "FE-EXP", Name = "Exportación", IsActive = true, DianCode = "02", OperationType = "10" },
-                    new DocumentType { Id = Guid.NewGuid(), Code = "FE-MANDATO", Name = "Mandato", IsActive = true, DianCode = "01", OperationType = "11" });
+                    new DocumentType { Id = Guid.NewGuid(), Code = "FE-MANDATO", Name = "Mandato", IsActive = true, DianCode = "01", OperationType = "11" },
+                    new DocumentType { Id = Guid.NewGuid(), Code = "FE-SALUD", Name = "Sector salud", IsActive = true, DianCode = "01", OperationType = "10" });
                 Db.IdentificationTypes.AddRange(
                     new IdentificationType { Id = Guid.NewGuid(), Code = "31", Name = "NIT", DataicoCode = "NIT", IsActive = true },
                     new IdentificationType { Id = Guid.NewGuid(), Code = "13", Name = "Cédula", DataicoCode = "CC", IsActive = true });
@@ -139,6 +140,72 @@ namespace Fel.Tests
             var xml = await new Env().XmlAsync(Request(r => r.invoice_type_code = "FACTURA_EXPORTACION"));
             Assert.DoesNotContain("DeliveryTerms", xml);
             AssertConforms(xml);
+        }
+
+        private static DataicoHealthData Health(Action<DataicoHealthData>? tweak = null)
+        {
+            var health = new DataicoHealthData
+            {
+                provider_code = "1100100001", payment_modality = "04", coverage = "01", contract_number = "CUCON-2026-0001",
+                period_start = "01/11/2026", period_end = "01/11/2026", copayment = 2000m, moderator_fee = 3000m
+            };
+            tweak?.Invoke(health);
+            return health;
+        }
+
+        // La factura de salud pasa por la fábrica, el mapeo nativo y el generador: el tipo de operación SS-*, la extensión, el período y los recaudos llegan al XML
+        // y el XML cumple el XSD de la DIAN.
+        [Fact]
+        public async Task A_health_invoice_carries_the_sector_salud_extension_the_period_and_the_collections()
+        {
+            var xml = await new Env().XmlAsync(Request(r => { r.operation = "SALUD"; r.health = Health(); }));
+            Assert.Contains("<cbc:CustomizationID>SS-CUFE</cbc:CustomizationID>", xml);
+            Assert.Contains("Sector Salud", xml);
+            Assert.Contains("CODIGO_PRESTADOR", xml);
+            Assert.Contains("1100100001", xml);
+            Assert.Contains("NUMERO_CONTRATO", xml);
+            Assert.Contains("<cac:InvoicePeriod>", xml);
+            Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(xml, "<cac:PrepaidPayment>").Count);
+            Assert.Contains(">5000.00</cbc:PrepaidAmount>", xml);
+            AssertConforms(xml);
+        }
+
+        [Fact]
+        public async Task A_collection_invoice_keeps_its_operation_and_has_no_extension()
+        {
+            var xml = await new Env().XmlAsync(Request(r => { r.operation = "SALUD"; r.health = Health(h => h.operation_type = "SS-Recaudo"); }));
+            Assert.Contains("<cbc:CustomizationID>SS-Recaudo</cbc:CustomizationID>", xml);
+            Assert.DoesNotContain("Sector Salud", xml);
+            AssertConforms(xml);
+        }
+
+        [Fact]
+        public async Task A_health_invoice_without_the_health_block_is_rejected()
+        {
+            var result = await new Env().Factory.BuildAsync(Request(r => r.operation = "SALUD"), new Env().Client, BranchId);
+            Assert.NotNull(result.Error);
+            Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
+            Assert.Contains(result.Error.Details!, d => d.StartsWith("health:"));
+        }
+
+        [Fact]
+        public async Task A_health_invoice_with_invalid_codes_lists_each_problem()
+        {
+            var env = new Env();
+            var result = await env.Factory.BuildAsync(Request(r => { r.operation = "SALUD"; r.health = Health(h => { h.provider_code = "123"; h.payment_modality = "09"; h.contract_number = null; }); }), env.Client, BranchId);
+            Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
+            Assert.Contains(result.Error.Details!, d => d.Contains("provider_code"));
+            Assert.Contains(result.Error.Details!, d => d.Contains("payment_modality"));
+            Assert.Contains(result.Error.Details!, d => d.Contains("no_contract_reason"));
+        }
+
+        [Fact]
+        public async Task Collections_above_the_invoice_total_are_rejected_once_the_total_is_known()
+        {
+            var env = new Env();
+            var result = await env.Factory.BuildAsync(Request(r => { r.operation = "SALUD"; r.health = Health(h => h.copayment = 900000m); }), env.Client, BranchId);
+            Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
+            Assert.Contains(result.Error.Details!, d => d.Contains("recaudos"));
         }
     }
 }

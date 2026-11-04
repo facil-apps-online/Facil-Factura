@@ -106,6 +106,16 @@ namespace Fel.Infrastructure.Dataico.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public DataicoPosData? pos { get; set; }
 
+        // Factura del sector salud (operation "SALUD"): datos de la extensión de salud, período y recaudos, y el RIPS soporte. Solo los lee la API de
+        // integración y solo con emisión directa; nunca viajan a Dataico.
+        [JsonPropertyName("health")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DataicoHealthData? health { get; set; }
+
+        [JsonPropertyName("rips")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public System.Text.Json.JsonElement? rips { get; set; }
+
         // Observaciones del documento, una por entrada y en orden.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<string>? notes { get; set; }
@@ -151,6 +161,26 @@ namespace Fel.Infrastructure.Dataico.Models
         public string? buyer_code { get; set; }
         public string? buyer_name { get; set; }
         public decimal? buyer_points { get; set; }
+    }
+
+    // Datos de salud de la factura (Documento Técnico 2 del Ministerio de Salud). Los códigos son los de las tablas de SISPRO; los recaudos se informan
+    // por concepto (copago, cuota moderadora, pagos compartidos, anticipo) con la fecha en que se recibió el último.
+    public class DataicoHealthData
+    {
+        public string? operation_type { get; set; }          // SS-CUFE (por defecto), SS-CUDE, SS-POS, SS-SNum, SS-Reporte, SS-SinAporte
+        public string provider_code { get; set; } = string.Empty;
+        public string payment_modality { get; set; } = string.Empty;
+        public string coverage { get; set; } = string.Empty;
+        public string? contract_number { get; set; }
+        public string? policy_number { get; set; }
+        public string? no_contract_reason { get; set; }
+        public string period_start { get; set; } = string.Empty;
+        public string period_end { get; set; } = string.Empty;
+        public decimal? copayment { get; set; }
+        public decimal? moderator_fee { get; set; }
+        public decimal? shared_payments { get; set; }
+        public decimal? advance { get; set; }
+        public string? collection_date { get; set; }          // fecha del último recaudo; por defecto la de emisión
     }
 
     // Datos del contrato AIU que envía el integrador. Los porcentajes se aplican sobre base_amount; A e I no causan IVA, la Utilidad usa

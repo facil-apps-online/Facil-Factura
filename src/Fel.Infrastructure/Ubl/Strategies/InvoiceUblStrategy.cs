@@ -40,11 +40,13 @@ namespace Fel.Infrastructure.Ubl.Strategies
                 // referencia en producción activa) faltaban por completo.
                 new XElement(cbc + "DocumentCurrencyCode", new XAttribute("listAgencyID", "6"), new XAttribute("listAgencyName", "United Nations Economic Commission for Europe"), new XAttribute("listID", "ISO 4217 Alpha"), data.Currency),
                 new XElement(cbc + "LineCountNumeric", data.Lines.Count.ToString()),
+                BuildHealthPeriod(data),
 
                 BuildAccountingSupplierParty(data),
                 BuildAccountingCustomerParty(data, omitEmptyAddress: true),
                 BuildDeliveryTerms(data),
                 BuildPaymentMeans(data),
+                BuildHealthPrepaid(data),
                 BuildAllowanceCharges(data),
                 BuildPaymentExchangeRate(data),
                 BuildTaxTotals(data),

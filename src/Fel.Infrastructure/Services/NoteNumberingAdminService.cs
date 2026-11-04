@@ -15,7 +15,34 @@ namespace Fel.Infrastructure.Services
     // resolución de factura (su prefijo). En Dataico la numeración debe existir en la cuenta con ese prefijo: su API no permite crearla, solo listarla.
     public sealed class NoteNumberingAdminService
     {
-        private static readonly NoteKind[] OwnKinds = { NoteKind.CreditNote, NoteKind.DebitNote };
+        private static readonly NoteKind[] OwnKinds = { NoteKind.CreditNote, NoteKind.DebitNote, NoteKind.PayrollDeletion, NoteKind.PayrollReplacement };
+
+        // Tipo de nota de un documento según su código de tipo (nulo si no es una nota con numeración propia).
+        public static NoteKind? KindOfTypeCode(string? typeCode) => typeCode switch
+        {
+            "NC" => NoteKind.CreditNote,
+            "ND" => NoteKind.DebitNote,
+            "NE-ELIMINACION" => NoteKind.PayrollDeletion,
+            "NE-REEMPLAZO" => NoteKind.PayrollReplacement,
+            _ => null
+        };
+
+        public static string TypeCodeOfKind(NoteKind kind) => kind switch
+        {
+            NoteKind.CreditNote => "NC",
+            NoteKind.DebitNote => "ND",
+            NoteKind.PayrollDeletion => "NE-ELIMINACION",
+            NoteKind.PayrollReplacement => "NE-REEMPLAZO",
+            _ => string.Empty
+        };
+
+        // Numeración con la que se emite una nota de nómina: la predeterminada del Client para ese tipo o, si ninguna lo es, la primera por prefijo.
+        // Devuelve la fila rastreada para que quien emite actualice el consecutivo y guarde junto con el documento. Nulo si el Client no configuró ninguna.
+        public static Task<NoteNumbering?> PayrollNoteNumberingAsync(FelDbContext db, Guid clientId, NoteKind kind) =>
+            db.NoteNumberings
+                .Where(n => n.ClientId == clientId && n.Kind == kind && n.BranchId == null && n.ResolutionId == null && n.Prefix != null && n.Prefix != "")
+                .OrderByDescending(n => n.IsDefault).ThenBy(n => n.Prefix)
+                .FirstOrDefaultAsync();
 
         private readonly FelDbContext _db;
         private readonly IDataicoApiService _dataico;
@@ -37,7 +64,7 @@ namespace Fel.Infrastructure.Services
 
         public sealed record SaveResult(NoteNumbering? Row, string? Error, DataicoCheck? Dataico);
 
-        public static string KindLabel(NoteKind kind) => NoteKinds.All.First(k => k.Kind == kind).Label;
+        public static string KindLabel(NoteKind kind) => NoteKinds.Label(kind);
 
         private static string? ModuleOf(NoteKind kind) => kind switch
         {
@@ -62,9 +89,12 @@ namespace Fel.Infrastructure.Services
 
             // Notas ya emitidas por (tipo, prefijo): una numeración con notas emitidas no se borra ni cambia de prefijo.
             var used = (await _db.Documents.AsNoTracking()
-                    .Where(d => d.ClientId == clientId && (d.TypeCode == "NC" || d.TypeCode == "ND") && d.Prefix != null && d.Prefix != "")
+                    .Where(d => d.ClientId == clientId && d.Prefix != null && d.Prefix != ""
+                        && (d.TypeCode == "NC" || d.TypeCode == "ND"
+                            // Las de nómina cuentan solo si Dataico las aprobó: una rechazada no consumió la numeración.
+                            || ((d.TypeCode == "NE-ELIMINACION" || d.TypeCode == "NE-REEMPLAZO") && d.Status == "APPROVED")))
                     .Select(d => new { d.TypeCode, d.Prefix }).Distinct().ToListAsync())
-                .Select(d => (Kind: d.TypeCode == "NC" ? NoteKind.CreditNote : NoteKind.DebitNote, Prefix: d.Prefix!.ToUpperInvariant()))
+                .Select(d => (Kind: KindOfTypeCode(d.TypeCode)!.Value, Prefix: d.Prefix!.ToUpperInvariant()))
                 .ToHashSet();
 
             var items = new List<Item>();
@@ -101,7 +131,8 @@ namespace Fel.Infrastructure.Services
                 .Select(p => p.ToUpperInvariant()).ToHashSet();
 
             var missing = new List<(NoteKind, string)>();
-            foreach (var kind in OwnKinds)
+            // Solo los tipos que la API de Dataico permite listar (las notas de nómina no).
+            foreach (var kind in OwnKinds.Where(k => ModuleOf(k) != null))
             {
                 var listed = await _dataico.ListNotePrefixesAsync(ModuleOf(kind)!, credentials);
                 if (!listed.Success) return (new(), $"{KindLabel(kind)}: {listed.Error}");
@@ -117,7 +148,13 @@ namespace Fel.Infrastructure.Services
             try
             {
                 var module = ModuleOf(kind);
-                if (module == null) return new DataicoCheck(false, false, null);
+                if (module == null)
+                {
+                    // Dataico no deja listar las numeraciones de nómina: no se puede verificar, pero sí avisar dónde debe existir el prefijo.
+                    if (!NoteKinds.IsPayroll(kind) || !await UsesDataicoAsync(clientId)) return new DataicoCheck(false, false, null);
+                    var what = kind == NoteKind.PayrollDeletion ? "notas de eliminación" : "notas de reemplazo";
+                    return new DataicoCheck(false, false, $"No se puede verificar desde aquí. Antes de emitir, el prefijo {prefix} debe existir en tu cuenta de Dataico como numeración de {what} de nómina.");
+                }
                 var client = await _db.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
                 if (client == null || client.Integrator?.Code != "DATAICO") return new DataicoCheck(false, false, null);
                 var credentials = DataicoDocumentMapper.ToCredentials(client, _crypto);
@@ -153,14 +190,17 @@ namespace Fel.Infrastructure.Services
         {
             if (await _db.NoteNumberings.AnyAsync(n => n.ClientId == clientId && n.Kind == kind && n.Prefix == prefix && (ignoreId == null || n.Id != ignoreId)))
                 return "Ese prefijo ya lo usa otra numeración de este tipo de nota.";
-            if (await _db.Resolutions.AnyAsync(r => r.ClientId == clientId && r.DocumentType == "FE" && r.Prefix == prefix))
+            // Las notas de nómina no se numeran con la factura: su prefijo puede coincidir con el de cualquier resolución.
+            if (!NoteKinds.IsPayroll(kind) && await _db.Resolutions.AnyAsync(r => r.ClientId == clientId && r.DocumentType == "FE" && r.Prefix == prefix))
                 return "Ese prefijo es el de una resolución de factura: las notas con el prefijo de la factura ya tienen su propio consecutivo.";
             return null;
         }
 
         public async Task<SaveResult> CreateAsync(Guid clientId, NoteKind kind, string? rawPrefix, long? nextNumber)
         {
-            if (!OwnKinds.Contains(kind)) return new SaveResult(null, "Solo las notas crédito y débito tienen numeraciones propias.", null);
+            if (!OwnKinds.Contains(kind)) return new SaveResult(null, "Solo las notas crédito, débito y de nómina tienen numeraciones propias.", null);
+            if (NoteKinds.IsPayroll(kind) && !await UsesDataicoAsync(clientId))
+                return new SaveResult(null, "Las notas de nómina solo aplican a emisores que facturan con Dataico.", null);
             var (prefix, error) = ValidatePrefix(rawPrefix);
             if (error != null) return new SaveResult(null, error, null);
             if (nextNumber is < 1) return new SaveResult(null, "El consecutivo debe ser mayor a 0.", null);
@@ -183,8 +223,11 @@ namespace Fel.Infrastructure.Services
 
         private async Task<bool> InUseAsync(Guid clientId, NoteNumbering row)
         {
-            var typeCode = row.Kind == NoteKind.CreditNote ? "NC" : "ND";
-            return await _db.Documents.AnyAsync(d => d.ClientId == clientId && (d.NoteNumberingId == row.Id || (d.TypeCode == typeCode && d.Prefix == row.Prefix && d.Number != null && d.Number != "")));
+            var typeCode = TypeCodeOfKind(row.Kind);
+            // Una nota de nómina solo consume su numeración cuando Dataico la aprueba (una rechazada conserva un número provisional).
+            var onlyApproved = NoteKinds.IsPayroll(row.Kind);
+            return await _db.Documents.AnyAsync(d => d.ClientId == clientId && (d.NoteNumberingId == row.Id
+                || (d.TypeCode == typeCode && d.Prefix == row.Prefix && d.Number != null && d.Number != "" && (!onlyApproved || d.Status == "APPROVED"))));
         }
 
         // Cambia el consecutivo y, mientras no se haya emitido ninguna nota con ella, el prefijo.

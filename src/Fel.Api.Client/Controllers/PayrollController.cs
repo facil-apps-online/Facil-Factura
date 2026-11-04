@@ -421,7 +421,20 @@ namespace Fel.Api.Client.Controllers
                 // NextNumber, con el mismo mecanismo atómico que ya usan las facturas.
                 long documentNumber;
                 Guid? pendingNumberResolutionId = null;
-                if (!document.ResolutionId.HasValue)
+                Fel.Core.Entities.NoteNumbering? noteNumbering = null;
+                if (document.TypeCode == DeletionTypeCode || document.TypeCode == ReplacementTypeCode)
+                {
+                    // Las notas de eliminación y de reemplazo tienen su propio prefijo y consecutivo (en Dataico son numeraciones aparte de la nómina), que
+                    // el Client configura en Resoluciones DIAN, Numeraciones de notas. Se consume cuando Dataico aprueba, igual que el de la nómina.
+                    var noteKind = document.TypeCode == DeletionTypeCode ? NoteKind.PayrollDeletion : NoteKind.PayrollReplacement;
+                    noteNumbering = await Fel.Infrastructure.Services.NoteNumberingAdminService.PayrollNoteNumberingAsync(_dbContext, clientId, noteKind);
+                    if (noteNumbering == null)
+                    {
+                        return BadRequest($"No hay una numeración de {NoteKinds.Label(noteKind).ToLowerInvariant()} configurada. Créala en Resoluciones DIAN, Numeraciones de notas, con el prefijo que tengas creado en Dataico.");
+                    }
+                    documentNumber = noteNumbering.NextNumber ?? 1;
+                }
+                else if (!document.ResolutionId.HasValue)
                 {
                     var payrollResolution = await _dbContext.Resolutions.ForBranch(_dbContext, document.BranchId)
                         .Where(r => r.ClientId == clientId && r.IsActive && r.DocumentType == "NE")
@@ -446,6 +459,8 @@ namespace Fel.Api.Client.Controllers
                 }
 
                 var draft = DeserializeDraft(document.SectorExtensionData);
+                // Las notas de nómina usan el prefijo de su numeración, no el del borrador (que es el de la nómina).
+                if (noteNumbering != null) draft.Prefix = noteNumbering.Prefix!;
                 // El prefijo queda guardado en el documento (la nómina lo lleva en su borrador).
                 document.Prefix = draft.Prefix;
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
@@ -506,6 +521,15 @@ namespace Fel.Api.Client.Controllers
                     document.Number = documentNumber.ToString();
                     document.ResolutionId = pendingNumberResolutionId;
                     await Fel.Infrastructure.Services.ResolutionNumbering.CommitNumberAsync(_dbContext, pendingNumberResolutionId.Value, documentNumber);
+                }
+
+                if (result.Success && noteNumbering != null)
+                {
+                    // Dataico aprobó la nota: el número queda asignado al documento y consumido de su numeración (se guarda con el documento).
+                    document.Number = documentNumber.ToString();
+                    document.NoteNumberingId = noteNumbering.Id;
+                    document.SectorExtensionData = JsonSerializer.Serialize(draft);
+                    if (noteNumbering.NextNumber == null || noteNumbering.NextNumber <= documentNumber) noteNumbering.NextNumber = documentNumber + 1;
                 }
 
                 Document? regeneratedDraft = null;

@@ -11,7 +11,7 @@ import { Button } from './ui/button';
 
 export interface NoteNumberingItem {
   id: string | null;
-  kind: 'CreditNote' | 'DebitNote';
+  kind: 'CreditNote' | 'DebitNote' | 'PayrollDeletion' | 'PayrollReplacement';
   kindLabel: string;
   prefix: string;
   nextNumber: number;
@@ -28,7 +28,9 @@ interface Form { kind: string; prefix: string; nextNumber: string }
 
 const INPUT_CLASS = 'w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary disabled:bg-slate-50 disabled:text-slate-500';
 const LABEL_CLASS = 'block text-sm font-bold text-slate-700 mb-1.5';
-const KIND_OPTIONS = [{ value: 'CreditNote', label: 'Nota crédito' }, { value: 'DebitNote', label: 'Nota débito' }];
+const NOTE_KIND_OPTIONS = [{ value: 'CreditNote', label: 'Nota crédito' }, { value: 'DebitNote', label: 'Nota débito' }];
+// Solo para emisores con Dataico (la nómina se emite por ahí): tienen su propio prefijo y consecutivo, distintos de los de la nómina.
+const PAYROLL_KIND_OPTIONS = [{ value: 'PayrollDeletion', label: 'Nota de eliminación de nómina' }, { value: 'PayrollReplacement', label: 'Nota de reemplazo de nómina' }];
 const SOURCE_LABEL = { own: 'Propia', invoice: 'Prefijo de la factura', branch: 'Sucursal' } as const;
 
 // Numeraciones de notas crédito y débito del cliente, agrupadas por prefijo. Sin una propia, las notas usan el prefijo de su factura; el cliente
@@ -77,7 +79,7 @@ export default function NoteNumberingsPanel() {
 
   const showDataico = (check: DataicoCheck | null | undefined) => {
     if (!check || !check.message) { setNotice(null); return; }
-    setNotice({ tone: check.checked && !check.exists ? 'warn' : 'ok', text: check.message });
+    setNotice({ tone: check.exists ? 'ok' : 'warn', text: check.message });
   };
 
   const openCreate = (preset?: Partial<Form>) => {
@@ -174,10 +176,11 @@ export default function NoteNumberingsPanel() {
     <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 shadow-sm border border-slate-100 mt-6 lg:mt-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-xl font-bold text-slate-800">Numeraciones de notas crédito y débito</h2>
+          <h2 className="text-xl font-bold text-slate-800">Numeraciones de notas</h2>
           <p className="text-slate-500 mt-1 text-sm max-w-2xl">
             Por defecto las notas usan el prefijo de su factura. Crea numeraciones con otros prefijos (por ejemplo NC y ND) y marca una como predeterminada para cada tipo de nota.
             {usesDataico && ' En Dataico el prefijo debe existir en tu cuenta (Ventas, Notas crédito o débito, Numeraciones): desde aquí no se puede crear allá.'}
+            {usesDataico && ' Las notas de eliminación y de reemplazo de nómina llevan su propio prefijo y consecutivo, distintos de los de la nómina: crea el prefijo antes en Dataico como numeración de ese tipo de nota y regístralo aquí.'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -268,7 +271,7 @@ export default function NoteNumberingsPanel() {
             ) : (
               <SearchableSelect
                 required
-                options={KIND_OPTIONS}
+                options={usesDataico ? [...NOTE_KIND_OPTIONS, ...PAYROLL_KIND_OPTIONS] : NOTE_KIND_OPTIONS}
                 value={form.kind}
                 onChange={kind => setForm(f => ({ ...f, kind }))}
                 placeholder="Elige el tipo de nota"

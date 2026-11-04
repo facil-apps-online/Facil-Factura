@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Fel.Core.Entities
 {
@@ -7,7 +8,10 @@ namespace Fel.Core.Entities
     {
         CreditNote = 1,
         DebitNote = 2,
-        SupportAdjustment = 3
+        SupportAdjustment = 3,
+        // Notas de la nómina electrónica (solo emisores con Dataico): cada una lleva su propio prefijo y consecutivo, distintos de los de la nómina.
+        PayrollDeletion = 4,
+        PayrollReplacement = 5
     }
 
     public static class NoteKinds
@@ -19,6 +23,17 @@ namespace Fel.Core.Entities
             (NoteKind.DebitNote, "Nota débito"),
             (NoteKind.SupportAdjustment, "Nota de ajuste")
         };
+
+        // Notas de nómina: no están en All porque la numeración por sucursal no las admite (solo propias del Client).
+        public static readonly IReadOnlyList<(NoteKind Kind, string Label)> Payroll = new[]
+        {
+            (NoteKind.PayrollDeletion, "Nota de eliminación de nómina"),
+            (NoteKind.PayrollReplacement, "Nota de reemplazo de nómina")
+        };
+
+        public static bool IsPayroll(NoteKind kind) => kind is NoteKind.PayrollDeletion or NoteKind.PayrollReplacement;
+
+        public static string Label(NoteKind kind) => All.Concat(Payroll).First(k => k.Kind == kind).Label;
     }
 
     // Consecutivo (y prefijo) de un tipo de nota. Por defecto es uno solo por Client (BranchId nulo); una sucursal que necesite

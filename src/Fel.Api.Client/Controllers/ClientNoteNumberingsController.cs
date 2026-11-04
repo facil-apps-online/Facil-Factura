@@ -73,7 +73,7 @@ namespace Fel.Api.Client.Controllers
         public async Task<IActionResult> Choices()
         {
             var overview = await _numberings.GetOverviewAsync(GetCurrentClientId());
-            return Ok(overview.Items.Where(i => i.Source == "own").Select(i => new { id = i.Id, kind = i.Kind.ToString(), prefix = i.Prefix, nextNumber = i.NextNumber, isDefault = i.IsDefault }));
+            return Ok(overview.Items.Where(i => i.Source == "own" && !NoteKinds.IsPayroll(i.Kind)).Select(i => new { id = i.Id, kind = i.Kind.ToString(), prefix = i.Prefix, nextNumber = i.NextNumber, isDefault = i.IsDefault }));
         }
 
         // Prefijos que ya existen en la cuenta de Dataico del Client y no están todavía como numeraciones propias.

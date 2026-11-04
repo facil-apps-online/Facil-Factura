@@ -127,20 +127,24 @@ export default function SearchableSelect({ options, value, onChange, loadOptions
   // El popup se renderiza en un portal sobre <body> con position:fixed, para que nunca quede
   // recortado por un ancestro con overflow:hidden/auto (tablas, modales, filas expandibles).
   // Como ya no vive dentro del flujo del contenedor, hay que recalcular su posición a mano.
+  // Se vuelve a medir en cada cuadro mientras la lista está abierta: un diálogo que se anima al abrirse (entra desplazado y con escala) mueve el campo
+  // después de que su lista ya se abrió (el campo recibe el foco al abrir el diálogo), y ni el scroll ni el cambio de tamaño avisan de ese movimiento.
+  // Solo se actualiza el estado cuando la posición cambió, y el ciclo termina al cerrar la lista.
   useLayoutEffect(() => {
     if (!isOpen) return;
+    let frame = 0;
     const updateCoords = () => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      setCoords({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      const next = { top: rect.bottom + 4, left: rect.left, width: rect.width };
+      setCoords((prev: { top: number; left: number; width: number }) => (prev.top === next.top && prev.left === next.left && prev.width === next.width ? prev : next));
     };
-    updateCoords();
-    window.addEventListener('scroll', updateCoords, true);
-    window.addEventListener('resize', updateCoords);
-    return () => {
-      window.removeEventListener('scroll', updateCoords, true);
-      window.removeEventListener('resize', updateCoords);
+    const follow = () => {
+      updateCoords();
+      frame = requestAnimationFrame(follow);
     };
+    follow();
+    return () => cancelAnimationFrame(frame);
   }, [isOpen]);
 
   const filtered = useMemo(() => {

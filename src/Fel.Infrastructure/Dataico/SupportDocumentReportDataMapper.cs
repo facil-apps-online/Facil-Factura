@@ -160,9 +160,13 @@ namespace Fel.Infrastructure.Dataico
                     ["ProveedorTelefono"] = proveedor?.Phone,
                     ["ProveedorEmail"] = proveedor?.Email,
 
+                    // Un documento soporte no tiene adquirente (es quien lo expide), pero los diseños estándar leen estos campos Adquirente*: se llenan con los
+                    // datos del proveedor, completos como en la factura (incluido el documento con su dígito de verificación y el país).
                     ["AdquirenteNombre"] = proveedor?.Name,
                     ["AdquirenteTipoIdentificacion"] = proveedor?.IdentificationType,
                     ["AdquirenteIdentificacion"] = proveedor?.IdentificationNumber,
+                    ["AdquirenteDocumento"] = InvoiceReportDataMapper.ThirdPartyDocument(proveedor),
+                    ["AdquirentePais"] = proveedor?.CountryCode,
                     ["AdquirenteDireccion"] = proveedor?.Address,
                     ["AdquirenteCiudad"] = proveedor?.CityName,
                     ["AdquirenteTelefono"] = proveedor?.Phone,

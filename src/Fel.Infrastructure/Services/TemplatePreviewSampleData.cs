@@ -230,6 +230,16 @@ namespace Fel.Infrastructure.Services
                     ["ProveedorCiudad"] = "Medellín",
                     ["ProveedorTelefono"] = "604 555 4321",
                     ["ProveedorEmail"] = "ventas@proveedor.com",
+                    // Los diseños estándar leen los campos Adquirente*; en un documento soporte se llenan con los datos del proveedor.
+                    ["AdquirenteNombre"] = "Distribuidora Proveedor Ltda.",
+                    ["AdquirenteTipoIdentificacion"] = "NIT",
+                    ["AdquirenteIdentificacion"] = "800987654",
+                    ["AdquirenteDocumento"] = "NIT 800987654-4",
+                    ["AdquirentePais"] = "CO",
+                    ["AdquirenteDireccion"] = "Avenida 30 # 5-15",
+                    ["AdquirenteCiudad"] = "Medellín",
+                    ["AdquirenteTelefono"] = "604 555 4321",
+                    ["AdquirenteEmail"] = "ventas@proveedor.com",
 
                     ["DocumentoTipo"] = string.IsNullOrWhiteSpace(documentTypeTitle)
                         ? (esAjuste ? "NOTA DE AJUSTE - DOCUMENTO SOPORTE" : "DOCUMENTO SOPORTE DE PAGO")

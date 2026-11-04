@@ -42,6 +42,14 @@ namespace Fel.Infrastructure.Dataico
 
         // Redacción idéntica a la que usan otros software de facturación (ej. Dataico) para
         // declarar Gran Contribuyente / Agente Retenedor de IVA / Autorretenedor en el header.
+        // Documento del tercero como se imprime ("NIT 900123456-7", "CC 1020304050"): tipo, número y, si es NIT, su dígito de verificación (el guardado o,
+        // si falta, el calculado). Lo usan la factura (el adquirente) y el documento soporte (el proveedor, que sale bajo los campos Adquirente*).
+        internal static string? ThirdPartyDocument(Customer? customer) => customer == null ? null
+            : $"{DataicoMapper.MapIdentificationType(customer.IdentificationType)} {customer.IdentificationNumber}"
+              + (customer.IdentificationType == "31"
+                  ? "-" + (string.IsNullOrWhiteSpace(customer.VerificationDigit) ? Fel.Infrastructure.Dian.NitValidation.CalculateCheckDigit(customer.IdentificationNumber).ToString() : customer.VerificationDigit)
+                  : string.Empty);
+
         internal static string ResponsabilidadTexto(bool activo, string etiqueta) =>
             (activo ? "Somos " : "No somos ") + etiqueta;
 
@@ -109,11 +117,7 @@ namespace Fel.Infrastructure.Dataico
             var aiu = invoice.TypeCode == "FE-AIU" ? AiuContractData.TryRead(invoice.SectorExtensionData) : null;
             var aiuResumen = aiu == null ? new List<Dictionary<string, object?>>() : BuildAiuSummary(aiu, items, Money, Pct);
             // NIT lleva su dígito de verificación (el del tercero o, si no lo tiene guardado, el calculado).
-            var documentoAdquirente = customer == null ? null
-                : $"{DataicoMapper.MapIdentificationType(customer.IdentificationType)} {customer.IdentificationNumber}"
-                  + (customer.IdentificationType == "31"
-                      ? "-" + (string.IsNullOrWhiteSpace(customer.VerificationDigit) ? Fel.Infrastructure.Dian.NitValidation.CalculateCheckDigit(customer.IdentificationNumber).ToString() : customer.VerificationDigit)
-                      : string.Empty);
+            var documentoAdquirente = ThirdPartyDocument(customer);
             var ciudadAdquirente = customer == null ? null
                 : !string.IsNullOrWhiteSpace(customer.CountryCode) && customer.CountryCode != "CO"
                     ? $"{customer.CityName}{(string.IsNullOrWhiteSpace(customer.StateName) ? string.Empty : ", " + customer.StateName)} ({customer.CountryCode})"

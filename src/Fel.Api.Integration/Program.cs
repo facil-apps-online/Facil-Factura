@@ -148,9 +148,16 @@ builder.Services.AddScoped<Fel.Infrastructure.Services.SupportDocumentPublishing
 builder.Services.AddScoped<Fel.Infrastructure.Services.InvoicePublishingService>();
 builder.Services.AddScoped<Fel.Core.Interfaces.IReceptionEventService, Fel.Infrastructure.Dian.ReceptionEventService>();
 // RIPS soporte de la factura de salud: cliente del MUV del Ministerio (corre en el VPS de Bogotá, por el túnel WireGuard).
-// PENDIENTE de decidir: el MUV usa un certificado autofirmado y aquí todavía no se configura cómo confiar en él (ver el registro en el API del tenant).
+// El proxy del MUV usa un certificado autofirmado propio: se confía solo en el que tenga la huella SHA-256 de MinSalud:MuvCertificateSha256
+// (ver MuvCertificatePinning); sin huella configurada, un certificado autofirmado falla.
 // Tope de espera: con el VPS del Ministerio apagado la emisión de la factura no debe quedarse esperando; el RIPS queda PENDING y se reenvía.
-builder.Services.AddHttpClient<Fel.Infrastructure.MinSalud.IMinSaludFevRipsClient, Fel.Infrastructure.MinSalud.MinSaludFevRipsClient>(c => c.Timeout = TimeSpan.FromSeconds(60));
+var muvCertificatePins = Fel.Infrastructure.MinSalud.MuvCertificatePinning.ParsePins(builder.Configuration["MinSalud:MuvCertificateSha256"]);
+builder.Services.AddHttpClient<Fel.Infrastructure.MinSalud.IMinSaludFevRipsClient, Fel.Infrastructure.MinSalud.MinSaludFevRipsClient>(c => c.Timeout = TimeSpan.FromSeconds(60))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback = (_, certificate, _, errors) =>
+            Fel.Infrastructure.MinSalud.MuvCertificatePinning.IsTrusted(certificate, errors, muvCertificatePins)
+    });
 builder.Services.AddScoped<Fel.Infrastructure.MinSalud.IHealthRipsService, Fel.Infrastructure.MinSalud.HealthRipsService>();
 builder.Services.AddScoped<Fel.Infrastructure.Services.DocumentPdfService>();
 // Correo saliente propio (nativo): bandeja de salida con aviso por Redis; el worker lo envía por el SMTP del cliente, el del tenant o SendPulse.

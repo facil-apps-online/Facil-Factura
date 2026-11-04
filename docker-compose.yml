@@ -124,6 +124,9 @@
       # RIPS soporte de la factura de salud: mismo MUV del Ministerio que usa el API del tenant (VPS de Bogotá por el túnel WireGuard).
       - MinSalud__MuvProductionUrl=https://10.10.0.2:9443
       - MinSalud__MuvTestUrl=https://10.10.0.2:9444
+      # Huella SHA-256 del certificado autofirmado del proxy del MUV (CN=fevrips-api, vigente hasta 2036-09-20; el mismo en los dos puertos).
+      # Solo se confía en el certificado con esta huella. Varias huellas, separadas por coma, permiten rotar el certificado sin cortar el servicio.
+      - MinSalud__MuvCertificateSha256=09:21:95:95:E7:7E:8E:85:C8:75:56:9A:19:EA:76:CE:34:CE:64:06:80:5E:88:BD:A0:06:70:46:F6:AB:B6:5C
     volumes:
       - fel_certs:/app/secure-storage
       - fel_templates:/app/templates

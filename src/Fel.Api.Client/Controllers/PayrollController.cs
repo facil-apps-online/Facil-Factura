@@ -373,6 +373,15 @@ namespace Fel.Api.Client.Controllers
                 if (document == null) return NotFound("Nómina no encontrada.");
                 if (!IsEditable(document.Status)) return BadRequest("La nómina ya fue emitida o está en proceso.");
 
+                // El consecutivo se toma al enviar y solo se consume cuando Dataico aprueba. Sin un candado por numeración, varias emisiones a la vez
+                // (el cliente hace clic en varias filas, cada una tarda de 10 a 20 s) leen el mismo "siguiente" y salen con el mismo número.
+                // Las emisiones del mismo emisor se hacen una tras otra; se suelta al terminar la acción.
+                await using var numberingLock = await SqlAppLock.AcquireAsync(_dbContext, $"PayrollNumbering:{clientId}", timeoutMilliseconds: 240000);
+                if (numberingLock == null) return Conflict("Hay otras nóminas emitiéndose. Intenta de nuevo en unos segundos.");
+                // Mientras esperaba su turno, esta nómina pudo cambiar de estado.
+                await _dbContext.Entry(document).ReloadAsync();
+                if (!IsEditable(document.Status)) return BadRequest("La nómina ya fue emitida o está en proceso.");
+
                 var client = await _dbContext.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
                 if (client == null) return NotFound("Emisor no encontrado.");
 

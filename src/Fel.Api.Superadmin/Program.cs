@@ -150,6 +150,9 @@ builder.Services.AddDbContext<FelDbContext>(options =>
 
 // Dependency Injection for Security Services
 builder.Services.AddSingleton<Fel.Core.Interfaces.ICryptoService, Fel.Infrastructure.Security.CryptoService>();
+// Consulta de solo lectura en Dataico para soporte (SuperadminDataicoLookupController).
+builder.Services.AddSingleton<Fel.Infrastructure.Dataico.IDataicoApiService, Fel.Infrastructure.Dataico.DataicoApiService>();
+builder.Services.AddScoped<Fel.Infrastructure.Dataico.DataicoLookupService>();
 builder.Services.AddHttpClient<Fel.Infrastructure.Services.DianHabilitationScraperService>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {

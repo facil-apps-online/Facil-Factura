@@ -318,6 +318,8 @@ export default function PayrollPage() {
   };
 
   const handlePublish = async (id: string) => {
+    // Una emisión a la vez: cada nómina toma el consecutivo siguiente al aprobarse la anterior. Para varias, usa la emisión en lote.
+    if (publishingId) return;
     setPublishingId(id);
     try {
       const res = await api.post(`/client/payroll/${id}/publish`);
@@ -669,7 +671,7 @@ export default function PayrollPage() {
                   <button onClick={() => handleEditDraft(entry)} className={`${actionButton} text-slate-600 bg-slate-100 hover:bg-slate-200`}>
                     <Edit2 size={16} /> Editar
                   </button>
-                  <button onClick={() => handlePublish(entry.id)} disabled={publishingId === entry.id} className={`${actionButton} text-white bg-primary hover:bg-primary/90 shadow-sm disabled:opacity-50`}>
+                  <button onClick={() => handlePublish(entry.id)} disabled={publishingId !== null} className={`${actionButton} text-white bg-primary hover:bg-primary/90 shadow-sm disabled:opacity-50`}>
                     <Send size={16} /> Emitir
                   </button>
                   <button onClick={() => handleDeleteDraft(entry.id)} className={`${actionButton} text-rose-600 bg-rose-50 hover:bg-rose-100`}>
@@ -901,7 +903,7 @@ export default function PayrollPage() {
             {(e.status === 'DRAFT' || e.status === 'REJECTED') && (
               <>
                 <RowIconButton action="edit" label={`Editar nómina ${e.consecutiveNumber || ''}`.trim()} onClick={() => handleEditDraft(e)} />
-                <button onClick={() => handlePublish(e.id)} disabled={publishingId === e.id} title="Emitir a la DIAN" className="min-h-11 px-3 text-white bg-primary hover:bg-primary/90 rounded-lg shadow-sm transition-all flex items-center gap-1 text-sm font-bold disabled:opacity-50 md:min-h-9">
+                <button onClick={() => handlePublish(e.id)} disabled={publishingId !== null} title="Emitir a la DIAN" className="min-h-11 px-3 text-white bg-primary hover:bg-primary/90 rounded-lg shadow-sm transition-all flex items-center gap-1 text-sm font-bold disabled:opacity-50 md:min-h-9">
                   <Send size={16} /> Emitir
                 </button>
                 <RowIconButton action="delete" label={`Eliminar nómina ${e.consecutiveNumber || ''}`.trim()} onClick={() => handleDeleteDraft(e.id)} />

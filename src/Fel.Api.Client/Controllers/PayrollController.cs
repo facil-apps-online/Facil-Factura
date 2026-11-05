@@ -421,6 +421,7 @@ namespace Fel.Api.Client.Controllers
                 // NextNumber, con el mismo mecanismo atómico que ya usan las facturas.
                 long documentNumber;
                 Guid? pendingNumberResolutionId = null;
+                string? payrollPrefix = null;
                 Fel.Core.Entities.NoteNumbering? noteNumbering = null;
                 if (document.TypeCode == DeletionTypeCode || document.TypeCode == ReplacementTypeCode)
                 {
@@ -451,16 +452,20 @@ namespace Fel.Api.Client.Controllers
                     // el documento no guarda número y el siguiente intento (de este u otro documento) usa el mismo.
                     documentNumber = await Fel.Infrastructure.Services.ResolutionNumbering.PeekNextNumberAsync(_dbContext, payrollResolution.Id);
                     pendingNumberResolutionId = payrollResolution.Id;
+                    payrollPrefix = payrollResolution.Prefix;
                 }
                 else
                 {
                     // Reservado en un intento anterior, de cuando el número se tomaba antes de enviar: se conserva para no dejar un hueco.
                     documentNumber = long.Parse(document.Number);
+                    payrollPrefix = await _dbContext.Resolutions.AsNoTracking().Where(r => r.Id == document.ResolutionId).Select(r => r.Prefix).FirstOrDefaultAsync();
                 }
 
                 var draft = DeserializeDraft(document.SectorExtensionData);
                 // Las notas de nómina usan el prefijo de su numeración, no el del borrador (que es el de la nómina).
                 if (noteNumbering != null) draft.Prefix = noteNumbering.Prefix!;
+                // La nómina usa el prefijo de su numeración, la dueña del consecutivo; el del borrador es solo un valor por defecto.
+                else draft.Prefix = Fel.Infrastructure.Services.ResolutionNumbering.PayrollPrefix(draft.Prefix, payrollPrefix);
                 // El prefijo queda guardado en el documento (la nómina lo lleva en su borrador).
                 document.Prefix = draft.Prefix;
                 Fel.Infrastructure.Dataico.Models.DataicoResult result;
@@ -520,6 +525,8 @@ namespace Fel.Api.Client.Controllers
                     // Dataico aprobó: recién ahora el número queda asignado al documento y consumido de la numeración.
                     document.Number = documentNumber.ToString();
                     document.ResolutionId = pendingNumberResolutionId;
+                    // El prefijo con el que salió queda también en el borrador, que es de donde la lista toma el consecutivo que muestra ("N-103").
+                    document.SectorExtensionData = JsonSerializer.Serialize(draft);
                     await Fel.Infrastructure.Services.ResolutionNumbering.CommitNumberAsync(_dbContext, pendingNumberResolutionId.Value, documentNumber);
                 }
 

@@ -24,6 +24,12 @@ namespace Fel.Infrastructure.Services
 
     public static class ResolutionNumbering
     {
+        // Prefijo con el que sale una nómina: el de su numeración, que es la dueña del consecutivo que se envía junto con él. El del borrador es solo un
+        // valor por defecto ("NE") que el formulario no muestra; usarlo mandaba a Dataico el prefijo de una numeración con el número de otra, y fallaba
+        // cuando ese prefijo ya existía como otra numeración de nómina (por ejemplo la de eliminación).
+        public static string PayrollPrefix(string draftPrefix, string? numberingPrefix) =>
+            string.IsNullOrWhiteSpace(numberingPrefix) ? draftPrefix : numberingPrefix.Trim();
+
         // ExecuteUpdateAsync filtrado por el valor de NextNumber leído hace un instante: si otra
         // petición ya lo cambió mientras tanto, la actualización afecta 0 filas y se reintenta con
         // el valor fresco — evita que dos publicaciones simultáneas reciban el mismo consecutivo

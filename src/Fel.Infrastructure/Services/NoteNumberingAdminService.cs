@@ -70,6 +70,9 @@ namespace Fel.Infrastructure.Services
         {
             NoteKind.CreditNote => "credit-note",
             NoteKind.DebitNote => "debit-note",
+            // Módulos de numeración de nómina de la API de Dataico (confirmados con la cuenta de un cliente): nómina es payroll-entry.
+            NoteKind.PayrollDeletion => "payroll-deletion",
+            NoteKind.PayrollReplacement => "payroll-entry-replacement",
             _ => null
         };
 
@@ -131,13 +134,16 @@ namespace Fel.Infrastructure.Services
                 .Select(p => p.ToUpperInvariant()).ToHashSet();
 
             var missing = new List<(NoteKind, string)>();
-            // Solo los tipos que la API de Dataico permite listar (las notas de nómina no).
-            foreach (var kind in OwnKinds.Where(k => ModuleOf(k) != null))
+            foreach (var kind in OwnKinds)
             {
                 var listed = await _dataico.ListNotePrefixesAsync(ModuleOf(kind)!, credentials);
                 if (!listed.Success) return (new(), $"{KindLabel(kind)}: {listed.Error}");
                 foreach (var prefix in listed.Prefixes.Select(p => ResolutionPrefix.Normalize(p)).Where(p => p.Length > 0).Distinct())
-                    if (!taken.Contains((kind, prefix)) && !invoicePrefixes.Contains(prefix)) missing.Add((kind, prefix));
+                {
+                    // Los prefijos de las resoluciones de factura ya numeran sus notas crédito y débito; las de nómina no se numeran con la factura.
+                    var isInvoicePrefix = !NoteKinds.IsPayroll(kind) && invoicePrefixes.Contains(prefix);
+                    if (!taken.Contains((kind, prefix)) && !isInvoicePrefix) missing.Add((kind, prefix));
+                }
             }
             return (missing, null);
         }
@@ -148,13 +154,7 @@ namespace Fel.Infrastructure.Services
             try
             {
                 var module = ModuleOf(kind);
-                if (module == null)
-                {
-                    // Dataico no deja listar las numeraciones de nómina: no se puede verificar, pero sí avisar dónde debe existir el prefijo.
-                    if (!NoteKinds.IsPayroll(kind) || !await UsesDataicoAsync(clientId)) return new DataicoCheck(false, false, null);
-                    var what = kind == NoteKind.PayrollDeletion ? "notas de eliminación" : "notas de reemplazo";
-                    return new DataicoCheck(false, false, $"No se puede verificar desde aquí. Antes de emitir, el prefijo {prefix} debe existir en tu cuenta de Dataico como numeración de {what} de nómina.");
-                }
+                if (module == null) return new DataicoCheck(false, false, null);
                 var client = await _db.Clients.Include(c => c.Integrator).FirstOrDefaultAsync(c => c.Id == clientId);
                 if (client == null || client.Integrator?.Code != "DATAICO") return new DataicoCheck(false, false, null);
                 var credentials = DataicoDocumentMapper.ToCredentials(client, _crypto);
@@ -165,8 +165,14 @@ namespace Fel.Infrastructure.Services
                 if (listed.Prefixes.Any(p => string.Equals(ResolutionPrefix.Normalize(p), prefix, StringComparison.OrdinalIgnoreCase)))
                     return new DataicoCheck(true, true, "Ya existe en Dataico.");
 
-                var where = kind == NoteKind.CreditNote ? "Ventas, Notas crédito, Numeraciones" : "Ventas, Notas débito, Numeraciones";
-                return new DataicoCheck(true, false, $"Dataico no tiene una numeración de {(kind == NoteKind.CreditNote ? "notas crédito" : "notas débito")} con el prefijo {prefix}. Créala en Dataico ({where}) antes de emitir: su API no permite crearla desde aquí.");
+                var (what, where) = kind switch
+                {
+                    NoteKind.CreditNote => ("notas crédito", " (Ventas, Notas crédito, Numeraciones)"),
+                    NoteKind.DebitNote => ("notas débito", " (Ventas, Notas débito, Numeraciones)"),
+                    NoteKind.PayrollDeletion => ("notas de eliminación de nómina", string.Empty),
+                    _ => ("notas de reemplazo de nómina", string.Empty)
+                };
+                return new DataicoCheck(true, false, $"Dataico no tiene una numeración de {what} con el prefijo {prefix}. Créala en Dataico{where} antes de emitir: su API no permite crearla desde aquí.");
             }
             catch (Exception ex)
             {
@@ -190,8 +196,18 @@ namespace Fel.Infrastructure.Services
         {
             if (await _db.NoteNumberings.AnyAsync(n => n.ClientId == clientId && n.Kind == kind && n.Prefix == prefix && (ignoreId == null || n.Id != ignoreId)))
                 return "Ese prefijo ya lo usa otra numeración de este tipo de nota.";
-            // Las notas de nómina no se numeran con la factura: su prefijo puede coincidir con el de cualquier resolución.
-            if (!NoteKinds.IsPayroll(kind) && await _db.Resolutions.AnyAsync(r => r.ClientId == clientId && r.DocumentType == "FE" && r.Prefix == prefix))
+            if (NoteKinds.IsPayroll(kind))
+            {
+                // Dataico no deja repetir un prefijo entre las numeraciones de nómina (nómina, eliminación y reemplazo): una nómina que salga con el
+                // prefijo de otra de ellas se rechaza ("el prefijo ya existe en otra numeración de soporte de nómina").
+                if (await _db.Resolutions.AnyAsync(r => r.ClientId == clientId && r.DocumentType == "NE" && r.Prefix == prefix))
+                    return "Ese prefijo es el de la numeración de nómina: Dataico no permite repetir un prefijo entre las numeraciones de nómina.";
+                var otherPayroll = kind == NoteKind.PayrollDeletion ? NoteKind.PayrollReplacement : NoteKind.PayrollDeletion;
+                if (await _db.NoteNumberings.AnyAsync(n => n.ClientId == clientId && n.Kind == otherPayroll && n.Prefix == prefix))
+                    return $"Ese prefijo ya lo usa la numeración de {KindLabel(otherPayroll).ToLowerInvariant()}: Dataico no permite repetir un prefijo entre las numeraciones de nómina.";
+                return null;
+            }
+            if (await _db.Resolutions.AnyAsync(r => r.ClientId == clientId && r.DocumentType == "FE" && r.Prefix == prefix))
                 return "Ese prefijo es el de una resolución de factura: las notas con el prefijo de la factura ya tienen su propio consecutivo.";
             return null;
         }
